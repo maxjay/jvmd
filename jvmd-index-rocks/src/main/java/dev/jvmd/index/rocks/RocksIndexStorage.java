@@ -88,6 +88,13 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
 
 
 
+    /** The active generation is this format's generation only after a completed, validated scan activated it. */
+    @Override public boolean scanCompleted(){
+        if(migration==null||candidateGeneration==null)return false;
+        try{return migration.manifest().active().equals(candidateGeneration)&&migration.validated(candidateGeneration);}
+        catch(Exception unreadable){return false;}
+    }
+
     @Override public Map<String,Object> status(){
         var result=new LinkedHashMap<String,Object>();
         result.put("backend","rocksdb-sst");result.put("validation_failures",validationFailures.get());

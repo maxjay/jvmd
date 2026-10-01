@@ -29,11 +29,14 @@ public final class Application implements AutoCloseable {
     private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
     private volatile IndexService bootstrappingIndex;
-    // §95 READY gating: the daemon is session-capable once persisted inventory is restored. The
-    // machine-wide repository reconciliation proceeds independently unless explicitly awaited.
+    // §95 READY gating: the daemon is session-capable once a complete persisted index is restored;
+    // reconciling it against the repository then proceeds in the background unless explicitly awaited.
+    // Without a complete persisted index (first start, an interrupted or faulted first scan, a new index
+    // format) there is nothing to serve from, so READY waits for the first scan.
     private final boolean awaitRepositoryScan=Boolean.getBoolean("jvmd.ready.awaitRepositoryScan");
     private final long constructedNanos=System.nanoTime();
     private volatile long sessionCapableNanos=-1,repositoryReconciledNanos=-1;
+    private volatile boolean persistedIndexComplete;
     private volatile boolean repositoryScanRequested;
     private final java.util.concurrent.atomic.AtomicBoolean closed=new java.util.concurrent.atomic.AtomicBoolean();
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
@@ -1092,9 +1095,9 @@ public final class Application implements AutoCloseable {
                 bootstrappingIndex=service;
                 if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");
                 if(scan){
-                    repositoryScanRequested=true;
+                    repositoryScanRequested=true;persistedIndexComplete=storage.scanCompleted();
                     var reconciliation=service.start().whenComplete((_,_)->repositoryReconciledNanos=System.nanoTime());
-                    if(awaitRepositoryScan)reconciliation.join();
+                    if(awaitRepositoryScan||!persistedIndexComplete)reconciliation.join();
                 }
                 sessionCapableNanos=System.nanoTime();
                 return service;
@@ -1114,6 +1117,7 @@ public final class Application implements AutoCloseable {
         boolean capable=index==null||index.isDone()&&!index.isCompletedExceptionally();
         result.put("session_capable",capable);result.put("await_repository_scan",awaitRepositoryScan);
         result.put("repository_scan_requested",repositoryScanRequested);
+        result.put("persisted_index_complete",persistedIndexComplete);
         result.put("repository_reconciled",repositoryReconciledNanos>=0);
         if(sessionCapableNanos>=0)result.put("session_capable_ms",(sessionCapableNanos-constructedNanos)/1_000_000.0);
         if(repositoryReconciledNanos>=0)result.put("repository_reconciled_ms",(repositoryReconciledNanos-constructedNanos)/1_000_000.0);

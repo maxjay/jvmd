@@ -270,9 +270,10 @@ Notes:
 - **Re-enable the epoch cache for captures** (`memoize` sets `epoch=null`) for values that do not depend on
   the captured unit's own content: `members(root)`, the static key and `configIdentity`. This needs the same
   observation-epoch key as restore.
-- **The benchmark itself:** the harness should wait for `daemon.status().index.phase == "ready"` (or report
-  the first-run samples separately) so that the after-edit numbers compare like with like. Whether READY
-  should wait for the scan is a product decision (`jvmd.ready.awaitRepositoryScan` exists and is off).
+- **READY over an empty index (fixed after this report).** READY now waits for the first repository scan
+  unless a completed, activated scan of this index format is persisted (`IndexStorage.scanCompleted`); a
+  warm restart still answers at once and reconciles in the background. See the status doc's progress log
+  and `ReadinessGatingTest`.
 
 ## 4. `consultedPackages` and a comment before the package declaration
 

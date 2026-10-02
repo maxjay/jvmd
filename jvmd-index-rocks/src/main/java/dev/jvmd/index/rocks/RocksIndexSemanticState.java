@@ -13,9 +13,9 @@ final class RocksIndexSemanticState implements IndexSemanticState,AutoCloseable 
     private final AtomicLong workspaceStateUpdates=new AtomicLong(),workspaceFileWrites=new AtomicLong(),workspaceDirectoryWrites=new AtomicLong(),workspaceMetadataWrites=new AtomicLong();
     private final java.util.concurrent.ConcurrentHashMap<String,ModuleStateInput> moduleInputs=new java.util.concurrent.ConcurrentHashMap<>();
     private volatile Map<String,Object> lastSemanticResult=Map.of(),lastWorkspaceState=Map.of();
-    RocksIndexSemanticState(Path root,RocksMemory memory)throws Exception{
-        semanticInvalidation=new RocksSemanticInvalidation(root.resolve("semantic-state"),memory);
-        try{workspaceState=new RocksWorkspaceState(root.resolve("workspace-state"),memory);}
+    RocksIndexSemanticState(Path root,java.util.function.Supplier<org.rocksdb.Options> options)throws Exception{
+        semanticInvalidation=new RocksSemanticInvalidation(root.resolve("semantic-state"),options.get());
+        try{workspaceState=new RocksWorkspaceState(root.resolve("workspace-state"),options.get());}
         catch(Exception|LinkageError error){semanticInvalidation.close();throw error;}
     }
 

@@ -16,7 +16,7 @@ class RocksWorkspaceStateTest {
         var tree=new LiveStateTree(List.of(src));tree.put(leaf(a,"a1","api-a","A"));tree.put(leaf(b,"b1","api-b","p.B"));
         Path storage=temp.resolve("state");var input=input(src,List.of("-g"),List.of("cp-a","cp-b"),"jdk-25");
         String firstFingerprint;
-        try(var state=new RocksWorkspaceState(storage)){
+        try(var state=new RocksWorkspaceState(storage,TestOptions.creating())){
             var first=state.update(input,tree.state(),tree.paths());firstFingerprint=first.fingerprint();
             assertThat(first.changedFiles()).containsExactlyInAnyOrder(a.toAbsolutePath().normalize(),b.toAbsolutePath().normalize());
             assertThat(first.fileWrites()).isEqualTo(2);
@@ -29,7 +29,7 @@ class RocksWorkspaceStateTest {
             assertThat(body.changedFiles()).isEmpty();assertThat(body.fileWrites()).isZero();
             assertThat(body.metadataWrites()).isEqualTo(1);assertThat(body.fingerprint()).isNotEqualTo(firstFingerprint);
         }
-        try(var reopened=new RocksWorkspaceState(storage)){
+        try(var reopened=new RocksWorkspaceState(storage,TestOptions.creating())){
             var unchanged=reopened.update(input,tree.state(),tree.paths());
             assertThat(unchanged.fileWrites()+unchanged.directoryWrites()+unchanged.metadataWrites()).isZero();
         }
@@ -38,7 +38,7 @@ class RocksWorkspaceStateTest {
     @Test void membershipDiffComesFromCanonicalStateRatherThanASecondRocksTree()throws Exception{
         Path src=temp.resolve("src"),a=src.resolve("A.java"),b=src.resolve("B.java"),renamed=src.resolve("Renamed.java");
         var tree=new LiveStateTree(List.of(src));tree.put(leaf(a,"a","api-a","A"));tree.put(leaf(b,"b","api-b","B"));
-        try(var state=new RocksWorkspaceState(temp.resolve("membership"))){
+        try(var state=new RocksWorkspaceState(temp.resolve("membership"),TestOptions.creating())){
             var input=input(src,List.of("-g"),List.of(),"jdk-25");state.update(input,tree.state(),tree.paths());
             tree.remove(b);tree.put(leaf(renamed,"b","api-b","B"));
             var changed=state.update(input,tree.state(),tree.paths());
@@ -50,7 +50,7 @@ class RocksWorkspaceStateTest {
 
     @Test void moduleEnvironmentStillParticipatesWithoutReconstructingSourceState()throws Exception{
         Path src=temp.resolve("src");var tree=new LiveStateTree(List.of(src));tree.put(leaf(src.resolve("A.java"),"a","api","A"));
-        try(var state=new RocksWorkspaceState(temp.resolve("environment"))){
+        try(var state=new RocksWorkspaceState(temp.resolve("environment"),TestOptions.creating())){
             var base=input(src,List.of("-g"),List.of("cp-a","cp-b"),"jdk-25");
             String initial=state.update(base,tree.state(),tree.paths()).fingerprint();
             var options=state.update(input(src,List.of("-g","-parameters"),List.of("cp-a","cp-b"),"jdk-25"),tree.state(),tree.paths());

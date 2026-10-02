@@ -1,0 +1,8 @@
+/** Boots the layers: decides cold or warm, and holds each boot as named stages. */
+module dev.jvmd.boot {
+    requires transitive dev.jvmd.index.rocks;
+    requires dev.jvmd.analyzer;
+    requires dev.jvmd.resolver;
+    exports dev.jvmd.boot;
+    exports dev.jvmd.boot.cold.machine;
+}

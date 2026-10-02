@@ -49,7 +49,7 @@ class SemanticUpdatePolicyTest {
 
     @Test void liveAndRocksAgreeAcrossReplacementDeletionCyclesAndUnresolvedChanges()throws Exception{
         var live=new SemanticUpdatePolicy.Live();
-        try(var rocks=new RocksSemanticInvalidation(root.resolve("store"))){
+        try(var rocks=new RocksSemanticInvalidation(root.resolve("store"),TestOptions.creating())){
             Path a=root.resolve("A"),b=root.resolve("B");
             var changes=List.of(
                 value("A","1","a",Set.of(b),Set.of("p.A"),Set.of()),

@@ -29,16 +29,56 @@ public final class BinaryReader {
     /** Implements 4.4: one artifact's detached skeleton, plus source-join models scoped to that read. */
     public record Content(List<Symbol> symbols, List<Edge> edges, Map<String,ClassModel> models, List<String> warnings) { }
     public Content read(Path path, boolean local) throws Exception {
-        var classes = new LinkedHashMap<String, ClassModel>(); var entries = new HashMap<String,String>(); var warnings = new ArrayList<String>();
+        var files=new LinkedHashMap<String,byte[]>();
         if (Files.isDirectory(path)) {
-            try (var files=Files.walk(path)) { for(var file:files.filter(p->p.toString().endsWith(".class")).toList()) parse(Files.readAllBytes(file),path.relativize(file).toString(),classes,entries,warnings); }
+            try (var walk=Files.walk(path)) { for(var file:walk.filter(p->p.toString().endsWith(".class")).toList()) files.put(path.relativize(file).toString(),Files.readAllBytes(file)); }
         } else if(path.toString().endsWith(".class")) {
-            parse(Files.readAllBytes(path),path.getFileName().toString(),classes,entries,warnings);
-        } else try (var jar=new JarFile(path.toFile(),false,JarFile.OPEN_READ,Runtime.version())) {
-            for(var entry:jar.versionedStream().filter(e->e.getName().endsWith(".class")).toList()) {
-                try(var stream=jar.getInputStream(entry)){parse(stream.readAllBytes(),entry.getRealName(),classes,entries,warnings);}
+            files.put(path.getFileName().toString(),Files.readAllBytes(path));
+        } else files.putAll(entries(Files.readAllBytes(path),".class"));
+        return read(files,local);
+    }
+
+    /**
+     * Entries of an in-memory jar whose names end with {@code suffix}, keyed by real entry name, as
+     * {@link JarFile#versionedStream()} selects them for this runtime: in a multi-release jar a
+     * versioned entry replaces its base entry, and versions above this runtime are ignored.
+     */
+    public static Map<String,byte[]> entries(byte[] jar,String suffix) throws java.io.IOException {
+        var order=new LinkedHashSet<String>();var base=new HashMap<String,byte[]>();var real=new LinkedHashMap<String,byte[]>();
+        var versioned=new HashMap<String,TreeMap<Integer,String>>();
+        boolean multiRelease=false;int feature=Runtime.version().feature();
+        try(var zip=new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(jar))){
+            java.util.zip.ZipEntry entry;
+            while((entry=zip.getNextEntry())!=null){
+                if(entry.isDirectory())continue;String name=entry.getName();
+                if(name.equalsIgnoreCase(JarFile.MANIFEST_NAME)){
+                    var manifest=new java.util.jar.Manifest(new java.io.ByteArrayInputStream(zip.readAllBytes()));
+                    multiRelease="true".equalsIgnoreCase(manifest.getMainAttributes().getValue("Multi-Release"));continue;
+                }
+                if(!name.endsWith(suffix))continue;
+                byte[] bytes=zip.readAllBytes();real.put(name,bytes);
+                var matcher=VERSIONED.matcher(name);
+                if(matcher.matches()){
+                    versioned.computeIfAbsent(matcher.group(2),_->new TreeMap<>()).put(Integer.parseInt(matcher.group(1)),name);
+                    order.add(matcher.group(2));
+                }else{base.put(name,bytes);order.add(name);}
             }
         }
+        if(!multiRelease)return real;
+        var result=new LinkedHashMap<String,byte[]>();
+        for(String name:order){
+            var versions=versioned.get(name);var selected=versions==null?null:versions.floorEntry(feature);
+            if(selected!=null)result.put(selected.getValue(),real.get(selected.getValue()));
+            else if(base.containsKey(name))result.put(name,base.get(name));
+        }
+        return result;
+    }
+    private static final java.util.regex.Pattern VERSIONED=java.util.regex.Pattern.compile("META-INF/versions/([0-9]+)/(.+)");
+
+    /** Skeletons from class-file bytes keyed by their entry names. */
+    public Content read(Map<String,byte[]> files, boolean local) {
+        var classes = new LinkedHashMap<String, ClassModel>(); var entries = new HashMap<String,String>(); var warnings = new ArrayList<String>();
+        for(var file:files.entrySet()) parse(file.getValue(),file.getKey(),classes,entries,warnings);
         var symbols=new ArrayList<Symbol>();var edges=new ArrayList<Edge>();
         for(var model:classes.values()) {
             String owner=name(model.thisClass()), entry=entries.get(owner);

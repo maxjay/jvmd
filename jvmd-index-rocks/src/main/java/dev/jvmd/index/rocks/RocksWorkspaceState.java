@@ -31,11 +31,9 @@ public final class RocksWorkspaceState implements AutoCloseable {
     private final Options options;
     private final RocksDB db;
 
-    public RocksWorkspaceState(Path root)throws Exception{this(root,null);}
-    RocksWorkspaceState(Path root,RocksMemory memory)throws Exception{
-        Path path=root.toAbsolutePath().normalize();Files.createDirectories(path);
-        options=memory==null?new Options().setCreateIfMissing(true).setMaxOpenFiles(64):memory.options(64);
-        db=RocksDB.open(options,path.toString());
+    /** Opens the store; {@code options} decide whether a missing database is created. */
+    RocksWorkspaceState(Path root,Options options)throws Exception{
+        this.options=options;db=RocksDB.open(options,root.toAbsolutePath().normalize().toString());
     }
 
     public synchronized ModuleState update(ModuleInput input,LiveStateTree.State sourceState,Set<Path> requestedFiles)throws Exception{

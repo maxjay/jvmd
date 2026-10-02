@@ -124,8 +124,11 @@ public final class KeyedTree<K,V> {
     }
 
     /** Write every node, children before parents, each with its subtree range sum and key bounds. */
-    public void writeNodes(NodeSink sink)throws Exception{
-        if(root!=null)write(root,sink);
+    public void writeNodes(NodeSink sink)throws Exception{writeNodes(sink,hash->false);}
+
+    /** Write the nodes not already stored, skipping every subtree whose root hash is stored. */
+    public void writeNodes(NodeSink sink,java.util.function.Predicate<Hash256> stored)throws Exception{
+        if(root!=null)write(root,sink,stored);
     }
 
     /** In-order cursor over a key range of one tree snapshot. */
@@ -285,9 +288,10 @@ public final class KeyedTree<K,V> {
         }
     }
 
-    private static <K,V> void write(Node<K,V> node,NodeSink sink)throws Exception{
-        var left=node.left();if(left!=null)write(left,sink);
-        var right=node.right();if(right!=null)write(right,sink);
+    private static <K,V> void write(Node<K,V> node,NodeSink sink,java.util.function.Predicate<Hash256> stored)throws Exception{
+        if(stored.test(node.hash))return;
+        var left=node.left();if(left!=null)write(left,sink,stored);
+        var right=node.right();if(right!=null)write(right,sink,stored);
         sink.node(node.hash,node.encode());
     }
 

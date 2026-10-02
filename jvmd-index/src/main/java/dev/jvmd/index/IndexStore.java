@@ -141,22 +141,14 @@ public interface IndexStore extends AutoCloseable {
 
     String backend();
     ArtifactRecord artifact(Path path)throws Exception;
-    void publishPath(Path path,long artifactId,long size,long mtime)throws Exception;
     long publishArtifact(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,
                          Map<String,Map<String,Object>> sourceData)throws Exception;
-    default long publishBinary(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
-        return publishArtifact(input,facts,classReferences,Map.of());
-    }
     void publishCode(long artifactId,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception;
-    void publishClassReferences(long artifactId,Set<String> classReferences)throws Exception;
     default void publishSourceFile(long artifactId,Path file,List<Map<String,Object>> symbols,int tier,List<SourceRelationship> relationships)throws Exception {
         publishSourceFile(artifactId,file,dev.jvmd.core.Hashing.sha256(file),symbols,tier,relationships);
     }
     void publishSourceFile(long artifactId,Path file,String contentHash,List<Map<String,Object>> symbols,int tier,
                            List<SourceRelationship> relationships)throws Exception;
-    long publishDocumentation(long binaryArtifactId,ArtifactInput sourceInput,
-                              Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception;
-    default boolean reconcilePaths(Path root,Set<Path> present)throws Exception{return false;}
 
     Map<String,Long> counts()throws Exception;
     Map<String,Object> status();

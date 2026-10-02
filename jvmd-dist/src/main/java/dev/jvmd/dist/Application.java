@@ -12,7 +12,6 @@ import dev.jvmd.resolver.Resolution;
 import dev.jvmd.index.IndexService;
 import dev.jvmd.index.IndexStore;
 import dev.jvmd.index.SymbolReadView;
-import dev.jvmd.index.IndexStorage;
 import dev.jvmd.index.IndexSemanticState;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,15 +28,9 @@ public final class Application implements AutoCloseable {
     private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
     private volatile IndexService bootstrappingIndex;
-    // §95 READY gating: the daemon is session-capable once a complete persisted index is restored;
-    // reconciling it against the repository then proceeds in the background unless explicitly awaited.
-    // Without a complete persisted index (first start, an interrupted or faulted first scan, a new index
-    // format) there is nothing to serve from, so READY waits for the first scan.
-    private final boolean awaitRepositoryScan=Boolean.getBoolean("jvmd.ready.awaitRepositoryScan");
+    // READY and sessions wait for the MACHINE layer to be committed; BootDecision builds it.
     private final long constructedNanos=System.nanoTime();
-    private volatile long sessionCapableNanos=-1,repositoryReconciledNanos=-1;
-    private volatile boolean persistedIndexComplete;
-    private volatile boolean repositoryScanRequested;
+    private volatile long sessionCapableNanos=-1;
     private final java.util.concurrent.atomic.AtomicBoolean closed=new java.util.concurrent.atomic.AtomicBoolean();
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
     private static void deleteQuietly(Path directory){
@@ -56,7 +49,7 @@ public final class Application implements AutoCloseable {
         // LOCAL semantic memo store (§68): independently validated records; loss is only a miss.
         localMemos=new dev.jvmd.index.SemanticMemoStore(config.stateDir().resolve("local-memo-v1"));
         sourceNamespaces=new dev.jvmd.analyzer.SourceNamespaces(localMemos);
-        if (config.indexOnStart()) initializeIndex(true);
+        if (config.indexOnStart()) initializeIndex();
         dispatcher.status("index", () -> {
             try { return index == null ? java.util.Map.of("phase", "disabled") : index.isDone() ? index.join().status() : java.util.Map.of("phase", "starting"); }
             catch (Exception e) { return java.util.Map.of("phase", "failed", "reason", e.toString()); }
@@ -65,13 +58,6 @@ public final class Application implements AutoCloseable {
         dispatcher.status("resolver", () -> resolver == null ? java.util.Map.of("maven_major", config.mavenMajor(), "initialized", false) : resolver.status());
         dispatcher.status("classpath_files",classpathFiles::status);
         dispatcher.status("readiness",this::readiness);
-        dispatcher.decorate((method,envelope)->{
-            // A partially reconciled machine universe must not read as established absence (§5).
-            if(!envelope.source().equals("index")||method.startsWith("daemon.")||!repositoryScanRequested)return envelope;
-            var service=index==null||!index.isDone()||index.isCompletedExceptionally()?null:index.join();
-            return service==null||service.repositoryReconciled()?envelope
-                    :envelope.warn("index_reconciling: machine-wide repository inventory is still reconciling; results outside this session's resolved dependencies may be incomplete");
-        });
         dispatcher.status("source_namespaces",sourceNamespaces::status);
         dispatcher.register("session.open", (_, p) -> {
             awaitReady();
@@ -660,7 +646,7 @@ public final class Application implements AutoCloseable {
             prepareIndex(session,database);var indexed=database.find(symbol.get("scip").toString(),workspace,false,2,0);
             if(indexed.size()==1){var current=new LinkedHashMap<>(indexed.getFirst());symbol.forEach((key,value)->{if(value!=null)current.put(key,value);});symbol=current;}
         }
-        var docs=session.state("documentation",()->new dev.jvmd.index.Documentation(database,config.jdkHome()));
+        var docs=session.state("documentation",()->new dev.jvmd.index.Documentation(database));
 
         var result=docs.describe(symbol,workspace,detail,depth,limit,offset);
 
@@ -1079,51 +1065,41 @@ public final class Application implements AutoCloseable {
 
         }
     }
-    private synchronized void initializeIndex(boolean scan) {
+    private synchronized void initializeIndex() {
         if(index!=null)return;
         var cause=RequestScope.detached();
         index=java.util.concurrent.CompletableFuture.supplyAsync(()->{
-            IndexStorage storage=null;
-            IndexService service=null;
+            dev.jvmd.index.rocks.RocksIndexStorage storage=null;
             try {
                 long defaultBudgetMb=Math.max(8L,Math.min(128L,config.heapCeilingMb()/8L));
                 long budgetMb=Long.getLong("jvmd.index.generation_budget_mb",defaultBudgetMb);
                 if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
-                storage=IndexStorage.open(config.stateDir().resolve("index-v2"),Math.multiplyExact(budgetMb,1024L*1024L));
-                service=new IndexService(storage,config.m2Repo());
+                storage=dev.jvmd.boot.BootDecision.machine(config.stateDir().resolve("index-v2"),config.m2Repo(),config.jdkHome(),
+                        Math.multiplyExact(budgetMb,1024L*1024L));
+                var service=new IndexService(storage,config.m2Repo());
                 bootstrappingIndex=service;
-                if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");
-                if(scan){
-                    repositoryScanRequested=true;persistedIndexComplete=storage.scanCompleted();
-                    var started=service;
-                    // Only a complete reconciliation is reconciled; a scan with faults or one that failed is reported as such.
-                    var reconciliation=service.start().whenComplete((_,failure)->{if(failure==null&&started.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();});
-                    if(awaitRepositoryScan||!persistedIndexComplete)reconciliation.join();
-                }
+                if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during MACHINE boot");
                 sessionCapableNanos=System.nanoTime();
                 return service;
             } catch(Exception|LinkageError e){
+                var service=bootstrappingIndex;
                 if(service!=null)try{service.close();}catch(Exception close){e.addSuppressed(close);}
                 else if(storage!=null)try{storage.close();}catch(Exception close){e.addSuppressed(close);}
                 throw new java.util.concurrent.CompletionException(e);
             }
-        }, task -> Thread.ofVirtual().name("jvmd-index-start").start(cause==null?task:()->{
-            try{RequestScope.with(cause,()->{try(var span=RequestScope.stage("index.bootstrap")){task.run();}return null;});}
+        }, task -> Thread.ofVirtual().name("jvmd-boot").start(cause==null?task:()->{
+            try{RequestScope.with(cause,()->{try(var span=RequestScope.stage("boot.machine")){task.run();}return null;});}
             catch(Exception error){throw new java.util.concurrent.CompletionException(error);}
         }));
     }
-    private IndexService index() { initializeIndex(false); return index.join(); }
+    private IndexService index() { initializeIndex(); return index.join(); }
     private Map<String,Object> readiness(){
         var result=new LinkedHashMap<String,Object>();
         boolean capable=index==null||index.isDone()&&!index.isCompletedExceptionally();
-        result.put("session_capable",capable);result.put("await_repository_scan",awaitRepositoryScan);
-        result.put("repository_scan_requested",repositoryScanRequested);
-        result.put("persisted_index_complete",persistedIndexComplete);
+        result.put("session_capable",capable);
         var service=index==null||!index.isDone()||index.isCompletedExceptionally()?null:index.join();
-        result.put("repository_reconciled",service!=null&&service.repositoryReconciled());
-        result.put("repository_reconciliation",service==null?(index!=null&&index.isCompletedExceptionally()?"failed":"pending"):service.reconciliationState());
+        result.put("machine_committed",service!=null);
         if(sessionCapableNanos>=0)result.put("session_capable_ms",(sessionCapableNanos-constructedNanos)/1_000_000.0);
-        if(repositoryReconciledNanos>=0)result.put("repository_reconciled_ms",(repositoryReconciledNanos-constructedNanos)/1_000_000.0);
         return result;
     }
     private void awaitReady(){if(config.indexOnStart())index();}
@@ -1138,13 +1114,6 @@ public final class Application implements AutoCloseable {
             database.registerLocal(new IndexService.LocalModule(Path.of(module.directory()),module.gav(),roots,List.of(Path.of(module.classes()),Path.of(module.testClasses()))));
         }
 
-        // A resolved workspace can introduce artifacts after the background repository scan.
-        // Publish those signatures before exposing the workspace; unchanged releases reuse
-        // their existing generations and SNAPSHOTs retain the normal content check.
-        for(var node:graph.nodes())if(node.path()!=null&&node.winner()==null&&node.extension().equals("jar")){
-            Path path=Path.of(node.path());if(Files.isRegularFile(path))database.indexJar(path,node.gav(),"jar");
-        }
-        generation=graph.fingerprint()+":"+database.generation();
 
         String jdkFingerprint=Runtime.version()+"|"+config.jdkHome().toAbsolutePath().normalize();
         for(var module:graph.modules()){
@@ -1243,7 +1212,6 @@ public final class Application implements AutoCloseable {
                 app.refresh(session);
                 var database=app.index();
                 Path jackson=config.m2Repo().resolve("com/fasterxml/jackson/core/jackson-databind/2.22.2/jackson-databind-2.22.2.jar");
-                database.indexJar(jackson,"com.fasterxml.jackson.core:jackson-databind:2.22.2","jar");
                 for (int i = 0; i < 20; i++) {
                     var request = Json.MAPPER.createObjectNode().put("jsonrpc", "2.0").put("id", i).put("method", "symbol.overview");
                     request.putObject("params").put("session", session.id()).put("path", file.toString());

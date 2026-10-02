@@ -25,12 +25,9 @@ public final class RocksSemanticInvalidation implements AutoCloseable {
     private final RocksDB db;
     private long contributionReads,moduleScans,reversePostingReads,unresolvedPostingReads,postingWrites,migrations,migrationFiles;
 
-    public RocksSemanticInvalidation(Path root)throws Exception{this(root,null);}
-
-    RocksSemanticInvalidation(Path root,RocksMemory memory)throws Exception{
-        Path path=root.toAbsolutePath().normalize();Files.createDirectories(path);
-        options=memory==null?new Options().setCreateIfMissing(true).setMaxOpenFiles(64):memory.options(64);
-        db=RocksDB.open(options,path.toString());
+    /** Opens the store; {@code options} decide whether a missing database is created. */
+    RocksSemanticInvalidation(Path root,Options options)throws Exception{
+        this.options=options;db=RocksDB.open(options,root.toAbsolutePath().normalize().toString());
     }
 
     public synchronized Result observeFile(String moduleId,String contextFingerprint,FileSemanticContribution contribution)throws Exception{

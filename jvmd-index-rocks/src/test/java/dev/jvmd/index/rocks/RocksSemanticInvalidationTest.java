@@ -12,7 +12,7 @@ class RocksSemanticInvalidationTest {
 
     @Test void bodyOnlyChangeStaysLocalButApiChangePropagatesTransitively()throws Exception{
         Path a=temp.resolve("A.java"),b=temp.resolve("B.java"),c=temp.resolve("C.java");
-        try(var state=new RocksSemanticInvalidation(temp.resolve("semantic"))){
+        try(var state=new RocksSemanticInvalidation(temp.resolve("semantic"),TestOptions.creating())){
             state.observeFile("module","ctx",file(a,"content-a1","api-a",Set.of(),Set.of("pkg.A"),Set.of()));
             state.observeFile("module","ctx",file(b,"content-b1","api-b",Set.of(a),Set.of("pkg.B"),Set.of()));
             state.observeFile("module","ctx",file(c,"content-c1","api-c",Set.of(b),Set.of("pkg.C"),Set.of()));
@@ -29,7 +29,7 @@ class RocksSemanticInvalidationTest {
 
     @Test void cyclesTerminateAndUnresolvedTargetsInvalidateConservatively()throws Exception{
         Path a=temp.resolve("A.java"),b=temp.resolve("B.java"),u=temp.resolve("U.java");
-        try(var state=new RocksSemanticInvalidation(temp.resolve("cycle"))){
+        try(var state=new RocksSemanticInvalidation(temp.resolve("cycle"),TestOptions.creating())){
             state.observeFile("module","ctx",file(a,"a1","api-a",Set.of(b),Set.of("pkg.A"),Set.of()));
             state.observeFile("module","ctx",file(b,"b1","api-b",Set.of(a),Set.of("pkg.B"),Set.of()));
             state.observeFile("module","ctx",file(u,"u1","api-u",Set.of(),Set.of("pkg.U"),Set.of("pkg.A")));
@@ -40,7 +40,7 @@ class RocksSemanticInvalidationTest {
 
     @Test void contextChangeInvalidatesAllAndDeletionInvalidatesDependants()throws Exception{
         Path a=temp.resolve("A.java"),b=temp.resolve("B.java");
-        try(var state=new RocksSemanticInvalidation(temp.resolve("context"))){
+        try(var state=new RocksSemanticInvalidation(temp.resolve("context"),TestOptions.creating())){
             state.observeFile("module","ctx-1",file(a,"a1","api-a",Set.of(),Set.of("pkg.A"),Set.of()));
             state.observeFile("module","ctx-1",file(b,"b1","api-b",Set.of(a),Set.of("pkg.B"),Set.of()));
 
@@ -56,7 +56,7 @@ class RocksSemanticInvalidationTest {
 
     @Test void unresolvedDependantsAndDeletionProducePersistentPerFileRevisions()throws Exception{
         Path a=temp.resolve("A.java"),b=temp.resolve("B.java"),c=temp.resolve("C.java"),root=temp.resolve("revisions");
-        try(var state=new RocksSemanticInvalidation(root)){
+        try(var state=new RocksSemanticInvalidation(root,TestOptions.creating())){
             state.observeFile("m","ctx",file(a,"a1","api-a",Set.of(),Set.of("pkg.A"),Set.of()));
             state.observeFile("m","ctx",file(b,"b1","api-b",Set.of(),Set.of("pkg.B"),Set.of("pkg.A")));
             state.observeFile("m","ctx",file(c,"c1","api-c",Set.of(b),Set.of("pkg.C"),Set.of()));
@@ -67,13 +67,13 @@ class RocksSemanticInvalidationTest {
             assertThat(state.revision(b)).isEqualTo(1);
             state.removeFiles("m",Set.of(a));assertThat(state.revision(b)).isEqualTo(2);assertThat(state.revision(c)).isEqualTo(2);
         }
-        try(var reopened=new RocksSemanticInvalidation(root)){assertThat(reopened.revision(b)).isEqualTo(2);}
+        try(var reopened=new RocksSemanticInvalidation(root,TestOptions.creating())){assertThat(reopened.revision(b)).isEqualTo(2);}
     }
 
 
     @Test void ordinaryObservationUsesDirectPostingsWithoutModuleScan()throws Exception{
         Path root=temp.resolve("direct");Path isolated=root.resolve("Isolated.java");
-        try(var state=new RocksSemanticInvalidation(temp.resolve("direct-state"))){
+        try(var state=new RocksSemanticInvalidation(temp.resolve("direct-state"),TestOptions.creating())){
             state.observeFile("module","ctx",file(isolated,"i1","api-i",Set.of(),Set.of("pkg.Isolated"),Set.of()));
             for(int i=0;i<100;i++){
                 Path value=root.resolve("F"+i+".java");
@@ -91,11 +91,11 @@ class RocksSemanticInvalidationTest {
 
     @Test void persistedPostingsSurviveRestartWithoutModuleRebuild()throws Exception{
         Path root=temp.resolve("restart-postings"),a=temp.resolve("restart-A.java"),b=temp.resolve("restart-B.java");
-        try(var state=new RocksSemanticInvalidation(root)){
+        try(var state=new RocksSemanticInvalidation(root,TestOptions.creating())){
             state.observeFile("module","ctx",file(a,"a1","api-a",Set.of(),Set.of("pkg.A"),Set.of()));
             state.observeFile("module","ctx",file(b,"b1","api-b",Set.of(a),Set.of("pkg.B"),Set.of()));
         }
-        try(var state=new RocksSemanticInvalidation(root)){
+        try(var state=new RocksSemanticInvalidation(root,TestOptions.creating())){
             var result=state.observeFile("module","ctx",file(a,"a2","api-a2",Set.of(),Set.of("pkg.A"),Set.of()));
             assertThat(result.reanalyze()).containsExactlyInAnyOrder(a.toAbsolutePath(),b.toAbsolutePath());
             assertThat(state.status()).containsEntry("module_scans",0L).containsEntry("migration_files",0L);
@@ -104,7 +104,7 @@ class RocksSemanticInvalidationTest {
 
     @Test void unresolvedPrefixRelationsUsePostingsWithoutScanningFiles()throws Exception{
         Path exported=temp.resolve("Exported.java"),child=temp.resolve("Child.java"),parent=temp.resolve("Parent.java");
-        try(var state=new RocksSemanticInvalidation(temp.resolve("unresolved-postings"))){
+        try(var state=new RocksSemanticInvalidation(temp.resolve("unresolved-postings"),TestOptions.creating())){
             state.observeFile("module","ctx",file(child,"c1","api-c",Set.of(),Set.of("pkg.Child"),Set.of("pkg.Type.Inner")));
             state.observeFile("module","ctx",file(parent,"p1","api-p",Set.of(),Set.of("pkg.Parent"),Set.of("pkg.Type")));
             state.observeFile("module","ctx",file(exported,"e1","api-e",Set.of(),Set.of("pkg.Other"),Set.of()));

@@ -1,9 +1,8 @@
 package dev.jvmd.index;
 
-import java.nio.file.Path;
-
-/** Bounds concurrent parsing and publication memory for an artifact. */
+/** Bounds the memory of artifacts being parsed and published at once. */
 @FunctionalInterface
 public interface ArtifactAdmission {
-    AutoCloseable acquireArtifact(Path path)throws Exception;
+    /** Wait until {@code estimatedBytes} fits in the budget; closing the permit returns it. */
+    AutoCloseable acquire(long estimatedBytes)throws Exception;
 }

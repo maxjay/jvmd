@@ -10,31 +10,11 @@ import java.util.zip.ZipFile;
 public final class Documentation {
     private static final Set<String> STRUCTURAL=Set.of("param_type","return_type","throws","extends","implements");
     private final IndexService index;
-    private final Path sourceZip;
-    private final Map<String,String> packages=new HashMap<>();
-    private final Set<String> attempted=new HashSet<>();
 
-    public Documentation(IndexService index,Path jdkHome){
-        this.index=index;sourceZip=jdkHome.resolve("lib/src.zip");
-        ModuleLayer.boot().modules().forEach(module->module.getPackages().forEach(pkg->packages.put(pkg,module.getName())));
-    }
+    public Documentation(IndexService index){this.index=index;}
 
     private List<Map<String,Object>> reachable(String rootScip,int depth,int limit,int offset,String workspace)throws Exception{
         return index.store().relationshipClosure(rootScip,depth,STRUCTURAL,workspace,limit,offset);
-    }
-
-    private void completeJdk(String rootScip,int depth,String workspace)throws Exception{
-        for(int pass=0;pass<depth;pass++){
-            var needed=index.store().unresolvedSignatureTargets(rootScip,depth,STRUCTURAL,workspace,1000);
-            boolean changed=false;
-            for(String name:needed){
-                int split=name.lastIndexOf('.');if(split<0)continue;
-                String module=packages.get(name.substring(0,split));if(module==null||!attempted.add(name))continue;
-                Path file=FileSystems.getFileSystem(URI.create("jrt:/")).getPath("/modules",module,name.replace('.','/')+".class");
-                if(Files.isRegularFile(file)){index.indexJdk(file,module,sourceZip);changed=true;}
-            }
-            if(!changed)break;
-        }
     }
 
     private String inherited(String scip,String workspace,Set<String> visited)throws Exception{
@@ -67,7 +47,6 @@ public final class Documentation {
         String scip=Objects.toString(symbol.get("scip"),"");
         var root=documented(symbol,detail,workspace);var closure=new ArrayList<Map<String,Object>>();boolean more=false;
         if(depth>0&&!scip.isBlank()){
-            completeJdk(scip,depth,workspace);
             int scan=offset;
             while(closure.size()<=limit){
                 var values=reachable(scip,depth,limit+1,scan,workspace);if(values.isEmpty())break;

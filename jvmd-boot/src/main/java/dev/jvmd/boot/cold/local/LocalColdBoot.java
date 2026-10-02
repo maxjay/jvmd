@@ -195,11 +195,15 @@ public final class LocalColdBoot implements AutoCloseable {
         };
     }
 
-    /** Read each source file once; its hash and its attribution use the same bytes. Queue one job per unit. */
+    /**
+     * Read each source file once; its hash and its attribution use the same bytes. Queue each
+     * context's units as batches that keep every dependency cycle together.
+     */
     void files()throws Exception{
         stage="files";
-        var units=new ArrayList<UnitQueue.Unit>();var expected=new LinkedHashMap<Path,String>();
+        var batches=new ArrayList<List<UnitQueue.Unit>>();var expected=new LinkedHashMap<Path,String>();
         for(var context:contexts){
+            var units=new ArrayList<UnitQueue.Unit>();
             var module=modules.get(context.module());
             var roots=context.scope().equals("test")?module.testSources():module.sources();
             for(String value:roots){
@@ -216,18 +220,20 @@ public final class LocalColdBoot implements AutoCloseable {
                     units.add(new UnitQueue.Unit(file,context,logicalPath(file),binaryName));expected.put(file,binaryName);
                 }
             }
+            var texts=new HashMap<Path,String>();for(var unit:units)texts.put(unit.file(),files.get(unit.file()).text());
+            batches.addAll(UnitGraph.batches(units,texts));
         }
-        layer=new LocalLayer(expected,routes);queue.addAll(units);enumerated.countDown();
+        layer=new LocalLayer(expected,routes);queue.addAll(batches);enumerated.countDown();
     }
 
-    /** Attribute every queued unit, one batch of one compiler context at a time, front of the queue first. */
+    /** Attribute every queued batch, front of the queue first, in its context's compiler context. */
     void declarations()throws Exception{
         stage="declarations";
         try(var compiler=new CompilerPool()){
             String configured=null;
             while(!queue.isEmpty()){
                 if(Thread.interrupted())throw new InterruptedException("LOCAL cold boot interrupted");
-                var batch=queue.next(BATCH);if(batch.isEmpty())break;
+                var batch=queue.next();if(batch.isEmpty())break;
                 var context=batch.getFirst().context();
                 if(!context.key().equals(configured)){
                     var c=context.compiler();

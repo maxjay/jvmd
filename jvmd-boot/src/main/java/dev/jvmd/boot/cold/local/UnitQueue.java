@@ -4,8 +4,9 @@ import java.nio.file.Path;
 import java.util.*;
 
 /**
- * The LOCAL cold boot's (unit, compiler context) jobs, in reactor order. A unit a request needs is
- * moved to the front; nothing else attributes it.
+ * The LOCAL cold boot's (unit, compiler context) jobs, as attribution batches: contexts in reactor
+ * order, and within a context the batches {@link UnitGraph} forms, in dependency order. A unit a
+ * request needs moves its batch to the front; nothing else attributes it.
  */
 final class UnitQueue {
     /** One source file to attribute, with the compiler context that compiles it. */
@@ -13,32 +14,21 @@ final class UnitQueue {
         Unit { file=file.toAbsolutePath().normalize(); }
     }
 
-    private final ArrayDeque<Unit> queue=new ArrayDeque<>();
+    private final ArrayDeque<List<Unit>> queue=new ArrayDeque<>();
 
-    synchronized void addAll(Collection<Unit> units){queue.addAll(units);}
+    /** Queue the batches of one context, after everything already queued. */
+    synchronized void addAll(Collection<List<Unit>> batches){for(var batch:batches)if(!batch.isEmpty())queue.add(List.copyOf(batch));}
     synchronized boolean isEmpty(){return queue.isEmpty();}
-    synchronized int size(){return queue.size();}
 
-    /**
-     * The next batch: the unit at the front and up to {@code max - 1} further queued units of the same
-     * compiler context, in queue order.
-     */
-    synchronized List<Unit> next(int max){
-        var first=queue.pollFirst();if(first==null)return List.of();
-        var batch=new ArrayList<Unit>();batch.add(first);
-        for(var iterator=queue.iterator();iterator.hasNext()&&batch.size()<max;){
-            var unit=iterator.next();
-            if(unit.context().key().equals(first.context().key())){batch.add(unit);iterator.remove();}
-        }
-        return batch;
-    }
+    /** The next batch, or an empty list when none is left. */
+    synchronized List<Unit> next(){var batch=queue.pollFirst();return batch==null?List.of():batch;}
 
-    /** Move {@code file}'s job to the front. False when it is not queued: built, being built, or not a unit. */
+    /** Move the batch holding {@code file} to the front. False when it is not queued: built, being built, or not a unit. */
     synchronized boolean prioritize(Path file){
         file=file.toAbsolutePath().normalize();
         for(var iterator=queue.iterator();iterator.hasNext();){
-            var unit=iterator.next();
-            if(unit.file().equals(file)){iterator.remove();queue.addFirst(unit);return true;}
+            var batch=iterator.next();
+            for(var unit:batch)if(unit.file().equals(file)){iterator.remove();queue.addFirst(batch);return true;}
         }
         return false;
     }

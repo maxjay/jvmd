@@ -75,24 +75,28 @@ Coordinate document ownership: one client opens and versions each file. A second
 
 ### Persistent state and restart
 
-The daemon keeps restartable state in its state directory (`config.stateDir()`):
+The daemon keeps its state in its state directory (`config.stateDir()`). Indexed state is held in layers; see [architecture.md](architecture.md).
 
-| State | Location | What a hit restores | Validity |
+| State | Location | What it holds | Complete when |
 | --- | --- | --- | --- |
-| Machine index | `index-v2/` | Dependency artifacts' symbols and search postings | Artifact identity; reconciled against the repository in the background |
+| MACHINE | `index-v2/generations/<generation>/` | One leaf per distinct artifact content under the Maven repository and per module of the configured JDK: declarations, resolution identities, documentation joined from paired sources | Its root is committed |
+| LOCAL | `index-v2/generations/<generation>/local/<project>/` | One project's source files and their declarations, its module graph, and one route per module scope into MACHINE | Its root is committed |
 | File observations | `file-observations-v1.bin` | File hashes, without rehashing | Exact stamp match outside the racy-timestamp window |
 | Namespace memos (`s0-namespace` v1) | `local-memo-v1/` | A file's package, type names and declarations | Content hash, javac runtime, language mode |
 | Attributed diagnostics (`attributed-diagnostics` v6) | `local-memo-v1/` | A unit's diagnostics, dependency graph and semantic contribution; dependants cut off when its diagnostic projection is unchanged | Static key (logical source, content, compile context, logical classpath slots, platform, processor binding, options) plus a certificate: dependency projections, consulted packages, reactor classes, negative resolutions, processor resources |
 | Annotation processor results | `apt/` | The external processor run's outputs and diagnostics | Fingerprint of sources, classpath, processor path, options and `lombok.config` |
 
-- Every record is validated on its own, against current inputs. A miss, a corrupt record or an older function version is recomputed, never an error. A failed observation (unreadable file or directory) is UNKNOWN: it is never stored and never matches.
-- A unit's record is written only when every unit it can reach has a known dependency set. Units whose cycle is still unproven when a workspace closes are not written (`scc-unproven` in status).
-- Definition, hover, references and completion are not persisted: they attribute the unit on first use after a restart.
+- A generation is named for the index format, the JDK feature release and the indexer version. A different name is a different, empty location.
+- A layer's root is written last, after everything it covers is durable. A layer whose root is absent is built again from its inputs (a cold boot); anything a stopped cold boot left behind is deleted first.
+- At start the daemon builds MACHINE when its root is absent, reading each artifact once, and prints `READY` after the root is committed. When the root is present it reopens the generation and reconciles the repository with a background scan.
+- When a resolved Maven project is opened and MACHINE is committed, the daemon builds the project's LOCAL on a background worker owned by the session: it routes each module scope's classpath to MACHINE (adding artifacts MACHINE lacks), reads each source file once and attributes it once. A request that needs a file not yet built moves it to the front. Until a file is built, the types it declares are unknown: no dependency answers for them. A project whose LOCAL root is committed is served on demand.
+- Every memo and observation record is validated on its own, against current inputs. A miss, a corrupt record or an older function version is recomputed, never an error. A failed observation (unreadable file or directory) is UNKNOWN: it is never stored and never matches.
+- A unit's attributed record is written only when every unit it can reach has a known dependency set. Units whose cycle is still unproven when a workspace closes are not written (`scc-unproven` in status).
 - Allowlisted processors (Lombok, MapStruct, the Spring Boot configuration processor), `-A` options, path-type options and other reactor modules' class outputs are bound into the key. Any other processor is refused with its reason.
-- `daemon.status` reports `session_capable`, `persisted_index_complete`, `repository_reconciled` and `repository_reconciliation` (`pending`, `complete`, `incomplete:n`, `failed:…`). READY waits for reconciliation only when the persisted index is incomplete, or with `-Djvmd.ready.awaitRepositoryScan=true`. Answers given before reconciliation completes carry an `index_reconciling` warning.
+- `daemon.status` reports `session_capable`, `persisted_index_complete`, `repository_reconciled` and `repository_reconciliation` (`pending`, `complete`, `incomplete:n`, `failed:…`). A MACHINE cold boot reconciles the repository; an artifact it could not read leaves the reconciliation `incomplete:n`. With a reopened generation, `-Djvmd.ready.awaitRepositoryScan=true` holds `READY` until the scan completes; otherwise answers given before it completes carry an `index_reconciling` warning.
 - `session.status` with `section: "persistence"` reports memo restores, writes, misses and refusals by reason, early cutoffs, and the processor results' persisted hits.
 
-Known limits: the first "diagnose all" after a cold start is slower than without persistence, because every unit's result is captured. A restart of a large Lombok project restores most but not all units. First-use references on a large workspace attributes every unit and can exceed the request deadline.
+Known limits: the first start in a generation reads every artifact in the repository and every module of the configured JDK before `READY`. The first "diagnose all" after a cold start is slower than without persistence, because every unit's result is captured. First-use references on a large workspace attribute every unit and can exceed the request deadline.
 
 ## LSP client contract
 

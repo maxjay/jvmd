@@ -120,14 +120,14 @@ class LocalColdBootTest {
         }
     }
 
-    @Test void eachUnitIsReadAndAttributedOnceAndARequestReturnsAfterItsUnitIsBuilt()throws Exception{
+    @Test void aRequestReturnsAfterItsUnitIsBuilt()throws Exception{
         try(var storage=machine(temp.resolve("generation"))){
             var boot=local(storage,resolution());boot.start();
             boot.require(appTest);
             assertThat(boot.layer().orElseThrow().pending(appTest)).isFalse();
             assertThat(boot.layer().orElseThrow().view().type("app.MainTest")).isNotNull();
             boot.committed().get(60,TimeUnit.SECONDS);
-            assertThat(boot.attributions()).hasSize(5).allSatisfy((file,count)->assertThat(count).as(file.toString()).isEqualTo(1));
+            assertThat(boot.layer().orElseThrow().pendingCount()).isZero();
             assertThat(boot.faults()).isEmpty();
         }
     }

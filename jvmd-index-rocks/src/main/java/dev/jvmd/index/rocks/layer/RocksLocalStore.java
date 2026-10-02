@@ -30,7 +30,6 @@ public final class RocksLocalStore implements AutoCloseable {
 
     private final RocksDB db;
     private final Options options;
-    private long batches,records,peakStagedBytes;
 
     private RocksLocalStore(Path directory,Options options)throws RocksDBException{
         this.options=options;db=RocksDB.open(options,directory.toString());
@@ -88,7 +87,6 @@ public final class RocksLocalStore implements AutoCloseable {
             for(var module:tree.modules().entrySet())commit.put(bytes("G|"+module.getKey()),bytes(String.join("\n",module.getValue())));
             for(var route:tree.routes().values())commit.put(bytes("R|"+route.key()),route.encode());
             var root=tree.root();commit.root(root);
-            batches+=commit.batches();records+=commit.records();peakStagedBytes=Math.max(peakStagedBytes,commit.peakBytes());
             return root;
         }
     }
@@ -105,10 +103,6 @@ public final class RocksLocalStore implements AutoCloseable {
     }
     private byte[] node(Hash256 hash)throws IOException{return get("N|"+hash.hex());}
     private byte[] get(String key)throws IOException{try{return db.get(bytes(key));}catch(RocksDBException e){throw new IOException(e);}}
-
-    public synchronized Map<String,Object> status(){
-        return Map.of("commit_batches",batches,"commit_records",records,"peak_staged_bytes",peakStagedBytes);
-    }
 
     private static byte[] bytes(String value){return value.getBytes(StandardCharsets.UTF_8);}
 

@@ -305,7 +305,7 @@ public final class Application implements AutoCloseable {
     private ModuleAnalyzerRegistry diagnosticActors(Session session){return session.state("diagnostic_actors",()->new ModuleAnalyzerRegistry(classpathFiles).memos(localMemos).local(()->localLayer(session)));}
     private DiagnosticEngine diagnosticAnalyzer(Session session,Path path)throws Exception{
         var cold=localColdBoot(session);
-        if(cold!=null)try(var span=RequestScope.stage("local.require")){cold.require(path);}
+        if(cold!=null)cold.require(path);
         var graph=maintainedResolution(session);
         var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
         var context=contexts.context(path,graph,contextCacheIdentity(session,graph,path),file->createAnalyzerContext(session,file,graph));
@@ -851,7 +851,7 @@ public final class Application implements AutoCloseable {
     private Analyzer analyzer(Session session,Path path)throws Exception{
         // A request for a file the LOCAL cold boot has not built yet moves that unit to the front and waits for it.
         var cold=localColdBoot(session);
-        if(cold!=null)try(var span=RequestScope.stage("local.require")){cold.require(path);}
+        if(cold!=null)cold.require(path);
         try(var preparation=RequestScope.stage("analyzer.context.prepare")){
         Resolution graph;
         try(var span=RequestScope.stage("project.maintained_resolution")){graph=maintainedResolution(session);}

@@ -48,7 +48,6 @@ public final class LocalColdBoot implements AutoCloseable {
     private final long compilerBudget;
     private final UnitQueue queue=new UnitQueue();
     private final CountDownLatch enumerated=new CountDownLatch(1);
-    private final Map<Path,Integer> attributions=new ConcurrentHashMap<>();
     private final List<Fault> faults=new CopyOnWriteArrayList<>();
     private final CompletableFuture<Root> committed=new CompletableFuture<>();
     private final CompletableFuture<SortedMap<String,Route>> routed=new CompletableFuture<>();
@@ -236,7 +235,6 @@ public final class LocalColdBoot implements AutoCloseable {
                     compiler.binarySources(c.binarySources());
                     configured=context.key();
                 }
-                for(var unit:batch)attributions.merge(unit.file(),1,Integer::sum);
                 for(var result:new UnitJob(compiler,batch,files).run()){
                     if(result.complete()){layer.admit(result.unit().file(),result.leaf(),result.declarations());built.add(result);}
                     else{layer.incomplete(result.unit().file());faults.add(new Fault(result.unit().path(),"attribution incomplete"));}
@@ -274,13 +272,11 @@ public final class LocalColdBoot implements AutoCloseable {
 
     /** The LOCAL layer, once the files are enumerated; empty before that. */
     public Optional<LocalLayer> layer(){return Optional.ofNullable(layer);}
-    /** How many times each unit was attributed. */
-    public Map<Path,Integer> attributions(){return Map.copyOf(attributions);}
     public List<Fault> faults(){return List.copyOf(faults);}
 
     public Map<String,Object> status(){
         var current=layer;var status=new LinkedHashMap<String,Object>();
-        status.put("stage",stage);status.put("faults",faults.size());status.put("attributed",attributions.size());
+        status.put("stage",stage);status.put("faults",faults.size());
         if(current!=null)status.putAll(current.status());
         return status;
     }

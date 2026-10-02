@@ -99,19 +99,24 @@ class KeyedTreeTest {
         assertThat(new Root(1,root.tree(),List.of(aggregates.get(0).add("y","2"),aggregates.get(1)),3).identity()).isNotEqualTo(root.identity());
     }
 
+    /** C3 and M4: staging holds one bounded batch whatever the layer's size; one sync, then the root. */
     @Test void commitStagesBoundedBatchesThenSyncsThenWritesTheRoot()throws Exception{
-        var events=new ArrayList<String>();var staged=new ArrayList<Integer>();
+        var events=new ArrayList<String>();var staged=new ArrayList<Integer>();var stagedBytes=new ArrayList<Integer>();
         var commit=new Commit(new Commit.Store(){
-            @Override public void stage(List<Map.Entry<byte[],byte[]>> batch){events.add("stage");staged.add(batch.size());}
+            @Override public void stage(List<Map.Entry<byte[],byte[]>> batch){
+                events.add("stage");staged.add(batch.size());stagedBytes.add(batch.stream().mapToInt(record->record.getKey().length+record.getValue().length).sum());
+            }
             @Override public void sync(){events.add("sync");}
             @Override public void root(byte[] root){events.add("root");}
         },100);
-        for(int i=0;i<50;i++)commit.put(new byte[10],new byte[10]);
+        for(int i=0;i<5000;i++)commit.put(new byte[10],new byte[10]);
         assertThat(events).doesNotContain("root","sync");
         commit.root(new Root(1,KeyedTree.EMPTY,List.of(),0));
         assertThat(events.subList(events.size()-2,events.size())).containsExactly("sync","root");
-        assertThat(staged.stream().mapToInt(Integer::intValue).sum()).isEqualTo(50);
-        assertThat(commit.peakBytes()).isLessThanOrEqualTo(100);
+        assertThat(staged.stream().mapToInt(Integer::intValue).sum()).isEqualTo(5000);
+        assertThat(stagedBytes).allSatisfy(bytes->assertThat(bytes).isLessThanOrEqualTo(100));
+        assertThat(events.stream().filter("sync"::equals).count()).isEqualTo(1);
+        assertThat(events.stream().filter("root"::equals).count()).isEqualTo(1);
         assertThatThrownBy(()->commit.put(new byte[1],new byte[1])).isInstanceOf(IllegalStateException.class);
     }
 }

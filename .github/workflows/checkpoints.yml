@@ -122,6 +122,9 @@ jobs:
       - name: RocksDB immutable artifact generations
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: mvn -B -pl jvmd-index-rocks test
+      - name: Boot unit tests
+        if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
+        run: mvn -B -pl jvmd-boot test
       - name: Phase 4 compiler prerequisites and checkpoints
         if: ${{ !cancelled() && steps.compile.outcome == 'success' }}
         run: |

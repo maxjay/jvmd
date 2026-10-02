@@ -26,7 +26,6 @@ public final class RocksMachineStore implements AutoCloseable {
     private final RocksDB db;
     private final Options options;
     private final Set<Hash256> written=new HashSet<>();
-    private long commits,batches,records,peakStagedBytes;
 
     /** Opens the store; {@code options} decide whether a missing database is created. */
     public RocksMachineStore(Path directory,Options options)throws RocksDBException{
@@ -56,8 +55,7 @@ public final class RocksMachineStore implements AutoCloseable {
             tree.tree().writeNodes((hash,node)->{commit.put(bytes("N|"+hash.hex()),node);newlyWritten.add(hash);},written::contains);
             for(var path:tree.paths().entrySet())commit.put(bytes("P|"+path.getKey()),bytes(path.getValue()));
             commit.root(tree.root());
-            written.addAll(newlyWritten);commits++;batches+=commit.batches();records+=commit.records();
-            peakStagedBytes=Math.max(peakStagedBytes,commit.peakBytes());
+            written.addAll(newlyWritten);
         }
     }
 
@@ -80,10 +78,6 @@ public final class RocksMachineStore implements AutoCloseable {
         if(value.length<prefix.length)return false;
         for(int i=0;i<prefix.length;i++)if(value[i]!=prefix[i])return false;
         return true;
-    }
-
-    public synchronized Map<String,Object> status(){
-        return Map.of("commits",commits,"commit_batches",batches,"commit_records",records,"peak_staged_bytes",peakStagedBytes);
     }
 
     private static byte[] bytes(String value){return value.getBytes(StandardCharsets.UTF_8);}

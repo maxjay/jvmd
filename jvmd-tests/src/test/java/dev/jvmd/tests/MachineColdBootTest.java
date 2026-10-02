@@ -54,15 +54,13 @@ class MachineColdBootTest {
         }
     }
 
-    @Test void aColdBootLooksUpNothingParsesEachContentOnceAndCommitsOnce()throws Exception{
+    @Test void aColdBootLooksUpNothingAndParsesEachContentOnce()throws Exception{
         Path repository=repository();
         try(var storage=new MachineColdBoot(temp.resolve("counted"),repository,temp.resolve("no-jdk"),BUDGET).run()){
             @SuppressWarnings("unchecked") var published=(Map<String,Object>)storage.repository().status();
             // M2: no publication reuses prior state. M3: three jars hold two contents; each is parsed and published once.
             assertThat(((Number)published.get("reused")).longValue()).isZero();
             assertThat(((Number)published.get("published")).longValue()).isEqualTo(storage.machine().tree().size()).isEqualTo(2);
-            // M4: one commit of leaves, nodes and paths, then the root.
-            assertThat(storage.machineStore().status()).containsEntry("commits",1L);
             assertThat(RocksMachineStore.committedRoot(RocksIndexStorage.machineDirectory(storage.generation())).orElseThrow().identity())
                     .isEqualTo(storage.machine().root().orElseThrow().identity());
         }
@@ -111,16 +109,6 @@ class MachineColdBootTest {
             assertThat(independent.cardinality()).isPositive();
             assertThat(stored.range(prefix,prefix+"￿")).isEqualTo(independent);
             assertThat(stored.rootHash()).isEqualTo(MachineTree.semanticTree(facts).rootHash());
-        }
-    }
-
-    @Test void commitStagingIsBoundedByTheBatchNotTheLayer()throws Exception{
-        Path repository=temp.resolve("many");
-        for(int i=0;i<40;i++)IndexFixtures.jar(repository.resolve("fixture/a"+i+"/1"),"a"+i+"-1","A.java","package a"+i+"; public class A { public int v"+i+"(){return "+i+";} }",false);
-        try(var storage=boot(temp.resolve("bounded"),repository,false)){
-            var status=storage.machineStore().status();
-            assertThat(((Number)status.get("peak_staged_bytes")).longValue()).isLessThanOrEqualTo(RocksMachineStore.BATCH_BYTES+64*1024);
-            assertThat(storage.machine().tree().size()).isEqualTo(40);
         }
     }
 

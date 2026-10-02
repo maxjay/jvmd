@@ -22,7 +22,7 @@ public final class Commit {
     private final Store store;
     private final long batchBytes;
     private final List<Map.Entry<byte[],byte[]>> pending=new ArrayList<>();
-    private long pendingBytes,peakBytes,records,batches;
+    private long pendingBytes;
     private boolean finished;
 
     public Commit(Store store,long batchBytes){
@@ -32,8 +32,7 @@ public final class Commit {
 
     public void put(byte[] key,byte[] value)throws Exception{
         if(finished)throw new IllegalStateException("Commit is finished");
-        pending.add(Map.entry(key,value));pendingBytes+=key.length+value.length;records++;
-        peakBytes=Math.max(peakBytes,pendingBytes);
+        pending.add(Map.entry(key,value));pendingBytes+=key.length+value.length;
         if(pendingBytes>=batchBytes)stage();
     }
 
@@ -43,13 +42,8 @@ public final class Commit {
         stage();store.sync();store.root(root.encode());finished=true;
     }
 
-    /** Largest number of record bytes staged in memory at once. */
-    public long peakBytes(){return peakBytes;}
-    public long records(){return records;}
-    public long batches(){return batches;}
-
     private void stage()throws Exception{
         if(pending.isEmpty())return;
-        store.stage(List.copyOf(pending));pending.clear();pendingBytes=0;batches++;
+        store.stage(List.copyOf(pending));pending.clear();pendingBytes=0;
     }
 }

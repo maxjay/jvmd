@@ -148,7 +148,7 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
         var result=new LinkedHashMap<String,Object>();
         result.put("backend","rocksdb-sst");result.put("generation",generation.getFileName().toString());
         result.put("machine_root",machine.root().map(root->root.identity().hex()).orElse(""));
-        result.put("machine_leaves",machine.tree().size());result.put("machine_store",machineStore.status());
+        result.put("machine_leaves",machine.tree().size());
         result.put("native_memory",memory.status());result.putAll(admission.status());result.putAll(semanticState.status());
         try{
             result.put("repository",repository.status());

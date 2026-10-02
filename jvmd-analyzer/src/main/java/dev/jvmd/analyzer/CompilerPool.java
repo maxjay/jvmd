@@ -134,7 +134,6 @@ public final class CompilerPool implements AutoCloseable {
         checkThread();var buffers=new Documents(inputFiles);documents.forEach((file,text)->buffers.open(file,text,1));documents(buffers);
     }
     public void binarySources(Set<Path> sources){checkThread();configuredBinarySources=Set.copyOf(sources);manager.binarySources(sources);}
-    public boolean cacheValid()throws Exception{return cacheValid(inputSnapshot());}
     public boolean cacheValid(CompilerInputs.Snapshot observed)throws Exception{
         checkThread();
         long started=System.nanoTime();classpathValidations++;
@@ -169,7 +168,7 @@ public final class CompilerPool implements AutoCloseable {
         if(tier<0||tier>2)throw new IllegalArgumentException("tier");
         if(heap()-baseline>budget)recycle();
         long queryStarted=System.nanoTime();
-        var diagnostics=new DiagnosticCollector<JavaFileObject>();var warnings=new ArrayList<String>();int[] actual={tier};boolean[] fault={false},implicitSource={false};queries++;
+        var diagnostics=new DiagnosticCollector<JavaFileObject>();var warnings=new ArrayList<String>();int[] actual={tier};boolean[] fault={false};queries++;
         var options=new ArrayList<String>(compilerOptions);
         for(String option:options)if(option.startsWith("-proc")||option.startsWith("-processor")||option.startsWith("--processor")||option.startsWith("-Xplugin"))throw new IllegalArgumentException("Compiler extensions run only in the external processor process: "+option);
         options.addAll(List.of("-proc:none","--should-stop=ifError=FLOW","-Xprefer:source","-parameters","-g"));
@@ -189,7 +188,7 @@ public final class CompilerPool implements AutoCloseable {
                 var units=new ArrayList<CompilationUnitTree>();var parsed=new ArrayList<CompilationUnitTree>();
                 task.addTaskListener(new com.sun.source.util.TaskListener(){
                     @Override public void finished(com.sun.source.util.TaskEvent event){
-                        if(event.getKind()==com.sun.source.util.TaskEvent.Kind.PARSE&&event.getCompilationUnit()!=null){parsed.add(event.getCompilationUnit());if(!event.getCompilationUnit().getSourceFile().toUri().equals(path.toUri()))implicitSource[0]=true;}
+                        if(event.getKind()==com.sun.source.util.TaskEvent.Kind.PARSE&&event.getCompilationUnit()!=null)parsed.add(event.getCompilationUnit());
                     }
                 });
                 try {
@@ -244,7 +243,6 @@ public final class CompilerPool implements AutoCloseable {
     }
     public void recycle(){checkThread();releasePlatform.close();pool=new JavacTaskPool(1);if(manager!=null)manager.invalidate();baseline=heap();recycles++;}
     /** JavacTaskPool clears source symbols after each task; refresh source discovery without dropping binary state. */
-    public void invalidateSourceInventory(){checkThread();if(manager!=null)manager.invalidateSourceInventory();}
     public void sourcesChanged(){checkThread();if(manager!=null){manager.sourcesChanged();refreshSourceModules();}}
     /** Recreate javac's file-manager/context boundary after a source namespace transition. */
     public void resetSourceContext()throws Exception{checkThread();if(manager!=null)resetEnvironment();}

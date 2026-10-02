@@ -27,7 +27,7 @@ class InheritDocTest {
             """;
         Path jar=IndexFixtures.jar(root,"sample",text,true);
         try(var index=new IndexService(root.resolve("index.db"),root)){
-            index.indexJar(jar,"fixture:sample:1","jar");index.indexSources(root.resolve("sample-sources.jar"));index.linkEdges();
+            index.indexJar(jar,"fixture:sample:1","jar");index.indexSources(root.resolve("sample-sources.jar"));
             var symbol=index.find("fixture.Sample/Child/speak()",null,false,10,0).getFirst();var docs=new Documentation(index,Path.of(System.getProperty("java.home")));
             String summary=dev.jvmd.core.Json.MAPPER.valueToTree(docs.describe(symbol,null,"summary",0,10,0).result()).path("doc").asText();
             String full=dev.jvmd.core.Json.MAPPER.valueToTree(docs.describe(symbol,null,"full",0,10,0).result()).path("doc").asText();

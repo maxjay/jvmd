@@ -350,16 +350,6 @@ public final class RocksArtifactRepository implements AutoCloseable {
         return new OwnerPage(rows,more?tokens.getLast():null);
     }
 
-    public List<Integer> nameIds(String cacheKey,String namePrefix,int limit){return idsByPrefix(cacheKey,"3|name|"+namePrefix,limit);}
-    public List<Integer> reverseSources(String cacheKey,String target,String kind,int limit){return idsByPrefix(cacheKey,"5|reverse|"+target+"|"+kind+"|",limit);}
-    public List<Integer> pathIds(String cacheKey,String pathPrefix,int limit){return idsByPrefix(cacheKey,"7|path|"+pathPrefix,limit);}
-    public List<Integer> substringIds(String cacheKey,String query,int limit){
-        String normalized=query.toLowerCase(Locale.ROOT);if(normalized.isBlank())return List.of();
-        String gram=normalized.substring(0,Math.min(3,normalized.length()));
-        return idsByPrefix(cacheKey,"8|gram|"+gram+"|",limit);
-    }
-
-
     public List<ArtifactIndexFormat.Relationship> incoming(String cacheKey,String target,Set<String> kinds,int limit){
         byte[] prefix=key(cacheKey,"5|reverse|"+target+"|");var result=new ArrayList<ArtifactIndexFormat.Relationship>();
         try(var read=new ReadOptions();var iterator=db.newIterator(read)){
@@ -412,23 +402,6 @@ public final class RocksArtifactRepository implements AutoCloseable {
                 "actual-delayed-write-rate","is-write-stopped","estimate-table-readers-mem","cur-size-all-mem-tables"))
             result.put(property.replace('-','_'),db.getLongProperty("rocksdb."+property));
         return Map.copyOf(result);
-    }
-
-    public long storageBytes()throws Exception{
-        try(var files=Files.walk(root)){
-            return files.filter(Files::isRegularFile).mapToLong(path->{try{return Files.size(path);}catch(IOException e){return 0L;}}).sum();
-        }
-    }
-
-    private List<Integer> idsByPrefix(String cacheKey,String suffix,int limit){
-        byte[] prefix=key(cacheKey,suffix);var result=new ArrayList<Integer>();
-        try(var read=new ReadOptions();var iterator=db.newIterator(read)){
-            for(iterator.seek(prefix);iterator.isValid()&&result.size()<limit;iterator.next()){
-                byte[] current=iterator.key();if(!startsWith(current,prefix))break;
-                for(int id:postingIds(current,iterator.value())){result.add(id);if(result.size()==limit)break;}
-            }
-        }
-        return List.copyOf(result);
     }
 
     private static int[] postingIds(byte[] key,byte[] value){
@@ -496,17 +469,6 @@ public final class RocksArtifactRepository implements AutoCloseable {
         }
     }
 
-    private long countPrefix(byte[] prefix){
-        long count=0;
-        try(var read=new ReadOptions();var iterator=db.newIterator(read)){
-            for(iterator.seek(prefix);iterator.isValid();iterator.next()){
-                if(!startsWith(iterator.key(),prefix))break;
-                count++;
-            }
-        }
-        return count;
-    }
-
     private static Map<String,String> parseManifest(byte[] bytes)throws IOException{
         var result=new LinkedHashMap<String,String>();
         for(String line:new String(bytes,StandardCharsets.UTF_8).split("\\R")){
@@ -533,7 +495,6 @@ public final class RocksArtifactRepository implements AutoCloseable {
     private static byte[] key(String cacheKey,String suffix){return (cacheKey+"|"+suffix).getBytes(StandardCharsets.UTF_8);}
     private static byte[] intBytes(int value){return ByteBuffer.allocate(Integer.BYTES).putInt(value).array();}
     private static String hex8(int value){String raw=Integer.toHexString(value);return "0".repeat(8-raw.length())+raw;}
-    private static void put(SstFileWriter writer,byte[] key,byte[] value)throws RocksDBException{writer.put(key,value);}
     private static boolean startsWith(byte[] value,byte[] prefix){
         if(value.length<prefix.length)return false;
         for(int i=0;i<prefix.length;i++)if(value[i]!=prefix[i])return false;

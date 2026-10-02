@@ -14,8 +14,6 @@ public final class CompilerInputs {
     public record SourceIdentity(String value) { }
     public record MembershipIdentity(String value) { }
     public record ContentIdentity(String value) { }
-    public record ApiIdentity(String value) { }
-    public record NamespaceIdentity(String value) { }
     public record EnvironmentIdentity(String value) { }
     public record Configuration(String generation,List<Path> roots,List<Path> classpath,List<String> options,String platform) {
         public Configuration {
@@ -39,9 +37,6 @@ public final class CompilerInputs {
         private LiveStateTree.State state(){return sourceState.state();}
         public MembershipIdentity membership(){return new MembershipIdentity(state().membership().fingerprint().value());}
         public ContentIdentity content(){return new ContentIdentity(state().content().fingerprint().value());}
-        public ApiIdentity api(){return new ApiIdentity(state().api().fingerprint().value());}
-        public NamespaceIdentity namespace(){return new NamespaceIdentity(state().namespace().fingerprint().value());}
-        public String merkle(){return state().merkle().value();}
         public long observation(){return sourceState.inputEpoch();}
         public boolean trusted(){return sourceState.trusted();}
         public boolean sameInputs(Snapshot other){
@@ -128,11 +123,6 @@ public final class CompilerInputs {
             environmentState=new LiveEnvironmentState(files,config);environmentConfiguration=config;
         }
         return environmentState.verifyBoundary(transactionEnd);
-    }
-
-    public static EnvironmentIdentity environment(String generation,List<Path> roots,List<String> options,List<String> processors,
-            Map<String,String> generated,List<String> classpath,String platform,Map<Path,String> contents){
-        return new EnvironmentIdentity(compose("environment-v1",generation,roots,options,processors,new TreeMap<>(generated),classpath,platform,new TreeMap<>(contents)));
     }
 
     /** Deterministic length-prefixed composition. Lists retain order; callers canonicalize genuine sets. */

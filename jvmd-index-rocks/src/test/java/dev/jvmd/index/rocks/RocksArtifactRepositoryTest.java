@@ -133,7 +133,7 @@ class RocksArtifactRepositoryTest {
         var data=new ArtifactIndexFormat.ArtifactData(facts(0,0).key(),symbols,List.of());
         try(var store=new RocksArtifactRepository(temp.resolve("gram-boundaries"))){
             store.publish(data,Set.of());
-            for(var entry:expected.entrySet())assertThat(store.substringIds(data.key().cacheKey(),entry.getKey(),100))
+            for(var entry:expected.entrySet())assertThat(substring(store,data.key().cacheKey(),entry.getKey(),100))
                     .as("gram %s",entry.getKey()).containsExactlyElementsOf(entry.getValue());
             assertThat(store.verify(data.key().cacheKey())).isTrue();
         }
@@ -179,8 +179,8 @@ class RocksArtifactRepositoryTest {
         try(var store=new RocksArtifactRepository(root)){store.publish(data,Set.of("dep.Shared"));}
         try(var store=new RocksArtifactRepository(root)){
             assertThat(store.verify(key)).isTrue();assertThat(store.artifact(key)).isEqualTo(data);
-            assertThat(store.substringIds(key,"method",2000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,1100).boxed().toList());
-            assertThat(store.reverseSources(key,"dep.Shared","calls",2000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,1100).boxed().toList());
+            assertThat(substring(store,key,"method",2000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,1100).boxed().toList());
+            assertThat(ids(store,key,"5|reverse|"+"dep.Shared"+"|"+"calls"+"|",2000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,1100).boxed().toList());
             assertThat(store.incoming(key,"dep.Shared",Set.of("calls"),2000)).containsExactlyElementsOf(edges);
             assertThat(store.incoming(key,"dep.Shared",Set.of("calls"),257)).hasSize(257);
             assertThat(store.select(key,"8|gram|met|",254,4,s->s.id()%2==0)).extracting(ArtifactIndexFormat.SymbolRecord::id).containsExactly(256,258,260,262);
@@ -195,7 +195,7 @@ class RocksArtifactRepositoryTest {
             var data=new ArtifactIndexFormat.ArtifactData(original.key(),shuffled,List.of());String key=data.key().cacheKey();
             try(var store=new RocksArtifactRepository(temp.resolve("interleaved"))){
                 store.publish(data,Set.of());assertThat(store.verify(key)).isTrue();
-                assertThat(store.substringIds(key,"method",6000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,5000).boxed().toList());
+                assertThat(substring(store,key,"method",6000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,5000).boxed().toList());
                 assertThat(store.select(key,"8|gram|met|",254,4,s->s.id()%2==0)).extracting(ArtifactIndexFormat.SymbolRecord::id).containsExactly(256,258,260,262);
                 assertThat(((Number)store.status().get("sort_peak_bytes")).longValue()).isLessThanOrEqualTo(65536L);
             }
@@ -206,20 +206,20 @@ class RocksArtifactRepositoryTest {
         var data=facts(5000,10000);
         String cacheKey=data.key().cacheKey();
         try(var store=new RocksArtifactRepository(temp.resolve("rocks"))){
-            long before=store.storageBytes();
+            long before=((Number)store.status().get("storage_bytes")).longValue();
             var first=store.publish(data,Set.of("dep.Type12","dep.Type77"));
             assertThat(first.reused()).isFalse();
             assertThat(store.contains(cacheKey)).isTrue();
             assertThat(store.artifact(cacheKey)).isEqualTo(data);
             assertThat(store.binaryId(cacheKey,"fixture.Type#method123()V")).isEqualTo(123);
-            assertThat(store.nameIds(cacheKey,"method12",100)).isNotEmpty();
-            assertThat(store.reverseSources(cacheKey,"dep.Type12","calls",100)).isNotEmpty();
-            long published=store.storageBytes();
+            assertThat(ids(store,cacheKey,"3|name|"+"method12",100)).isNotEmpty();
+            assertThat(ids(store,cacheKey,"5|reverse|"+"dep.Type12"+"|"+"calls"+"|",100)).isNotEmpty();
+            long published=((Number)store.status().get("storage_bytes")).longValue();
             assertThat(published).isGreaterThan(before);
 
             var second=store.publish(data,Set.of("dep.Type12","dep.Type77"));
             assertThat(second.reused()).isTrue();
-            assertThat(store.storageBytes()).isEqualTo(published);
+            assertThat(((Number)store.status().get("storage_bytes")).longValue()).isEqualTo(published);
         }
     }
 
@@ -352,4 +352,11 @@ class RocksArtifactRepositoryTest {
         }
     }
 
+    private static java.util.List<Integer> ids(RocksArtifactRepository store,String cacheKey,String posting,int limit)throws Exception{
+        return store.select(cacheKey,posting,-1,limit,symbol->true).stream().map(ArtifactIndexFormat.SymbolRecord::id).toList();
+    }
+    private static java.util.List<Integer> substring(RocksArtifactRepository store,String cacheKey,String query,int limit)throws Exception{
+        String normalized=query.toLowerCase(java.util.Locale.ROOT);
+        return ids(store,cacheKey,"8|gram|"+normalized.substring(0,Math.min(3,normalized.length()))+"|",limit);
+    }
 }

@@ -134,10 +134,6 @@ class CompilerInputsTest {
             var options=new CompilerInputs.Configuration("module",List.of(root),List.of(a,b),List.of("--release","17"),"other-jdk");
             assertThat(inputs.capture(options,docs).environment()).isNotEqualTo(initial.environment());
         }
-        var base=CompilerInputs.environment("module",List.of(root),List.of(),List.of("processor"),Map.of("generated","1"),List.of(a.toString()),"jdk",Map.of());
-        assertThat(CompilerInputs.environment("module",List.of(root),List.of("-g"),List.of("processor"),Map.of("generated","1"),List.of(a.toString()),"jdk",Map.of())).isNotEqualTo(base);
-        assertThat(CompilerInputs.environment("module",List.of(root),List.of(),List.of("processor"),Map.of("generated","2"),List.of(a.toString()),"jdk",Map.of())).isNotEqualTo(base);
-        assertThat(CompilerInputs.environment("module",List.of(root),List.of(),List.of("processor"),Map.of("generated","1"),List.of(a.toString()),"other-jdk",Map.of())).isNotEqualTo(base);
     }
 
     @Test void environmentReversionRestoresFingerprintButAdvancesTransactionEpoch()throws Exception {

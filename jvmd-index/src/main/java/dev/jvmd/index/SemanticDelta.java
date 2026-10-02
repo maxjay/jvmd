@@ -1,7 +1,6 @@
 package dev.jvmd.index;
 
 import java.util.*;
-import java.util.function.Function;
 
 /** Bounded semantic mutation detached from javac-owned state. */
 public record SemanticDelta(
@@ -31,9 +30,8 @@ public record SemanticDelta(
     public int factMutations(){return added.size()+changed.size()+removed.size();}
     public boolean emptyFacts(){return factMutations()==0;}
 
-    public static SemanticDelta between(SemanticUnitState previous,SemanticSnapshot next,
-                                        Function<String,SemanticFact> factLookup){
-        Objects.requireNonNull(next);Objects.requireNonNull(factLookup);
+    public static SemanticDelta between(SemanticUnitState previous,SemanticSnapshot next){
+        Objects.requireNonNull(next);
         var previousFacts=previous==null?SemanticUnitMerkle.empty():previous.facts();
         var nextFacts=SemanticUnitMerkle.from(next.facts().values());
         var factDiff=previousFacts.diff(nextFacts);

@@ -24,18 +24,7 @@ public final class Documents implements AutoCloseable {
     /** Verification-only mode keeps correctness without depending on WatchService availability. */
     public Documents(FileStateRegistry files,boolean sourceWatchEnabled){this.files=Objects.requireNonNull(files);this.sourceWatchEnabled=sourceWatchEnabled;}
     private long bytes,generation;
-    /** A module-owned subscription, weakly retained here; no closed-document history is stored. */
-    static final class Transitions {
-        List<Path> roots=List.of();Set<Path> files=Set.of();long version;
-        boolean relevant(Path file){return files.contains(file)||roots.stream().anyMatch(file::startsWith);}
-    }
-    private final Map<Transitions,Boolean> transitions=new WeakHashMap<>();
-    synchronized Transitions track(Transitions existing,List<Path> roots,Set<Path> files){
-        var tracked=existing==null?new Transitions():existing;
-        tracked.roots=roots;tracked.files=files;transitions.put(tracked,Boolean.TRUE);return tracked;
-    }
-    synchronized long transitionVersion(Transitions tracked){return tracked.version;}
-    private void transitioned(Path file){generation++;for(var tracked:transitions.keySet())if(tracked.relevant(file))tracked.version++;}
+    private void transitioned(Path file){generation++;}
     private static Path key(Path path){return path.toAbsolutePath().normalize();}
     public synchronized void open(Path file,String text,int version){if(contains(file))throw RpcException.invalid("Document is already open");set(key(file),text,version);}
     private void set(Path file,String text,int version){

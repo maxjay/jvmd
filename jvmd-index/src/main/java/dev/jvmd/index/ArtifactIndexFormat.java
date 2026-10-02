@@ -3,7 +3,6 @@ package dev.jvmd.index;
 import dev.jvmd.core.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.*;
 
 /**
@@ -13,8 +12,7 @@ import java.util.*;
 public final class ArtifactIndexFormat {
     public static final int FORMAT_VERSION=1;
     public static final String INDEXER_VERSION="jvmd-index-v9";
-    private static final byte[] MAGIC="JVIDX001".getBytes(StandardCharsets.US_ASCII);
-    private static final int MAX_STRINGS=5_000_000,MAX_SYMBOLS=5_000_000,MAX_RELATIONSHIPS=20_000_000,MAX_STRING_BYTES=32*1024*1024;
+    private static final int MAX_STRING_BYTES=32*1024*1024;
 
     public record Key(String binarySha256,int formatVersion,String indexerVersion,int runtimeFeature,String mode) {
         public Key {
@@ -54,18 +52,6 @@ public final class ArtifactIndexFormat {
         return Hashing.sha256((binary.cacheKey()+"\0"+sourceSha256).getBytes(StandardCharsets.UTF_8));
     }
 
-    /**
-     * Java-resolution identity of one indexed artifact generation.
-     *
-     * Deliberately excludes the raw binary SHA, class-entry path, parameter display names and the
-     * separately published documentation overlay. Two bytecode generations with the same indexed
-     * Java semantic surface therefore retain the same resolution identity.
-     */
-    private static final Set<String> RESOLUTION_METADATA=Set.of(
-            "generic_signature","binary_name","inner_classes","nest_host","nest_members",
-            "permitted_subclasses","record_components","module_exports",
-            "return_type","parameter_types","type_parameters","scip_return_disambiguated");
-
     /** Canonical Java-resolution identity shared with LIVE source facts. */
     public static Hash256 symbolResolutionIdentity(SymbolRecord symbol){
         return Objects.requireNonNull(symbol).resolution().identity();
@@ -90,19 +76,6 @@ public final class ArtifactIndexFormat {
                     return new Object[]{source.resolution().symbolKey(),edge.target(),edge.kind()};
                 }).sorted(Comparator.comparing(value->value[0].toString()+"\0"+value[1]+"\0"+value[2])).toList();
         return CanonicalDigestWriter.digest("artifact-java-resolution-v1",symbols,relationships);
-    }
-
-    private static List<Object> resolutionMetadata(String metadataJson){
-        try{
-            var node=Json.MAPPER.readTree(Objects.requireNonNullElse(metadataJson,"{}"));
-            var result=new ArrayList<Object>();
-            var names=new ArrayList<String>();node.fieldNames().forEachRemaining(names::add);names.sort(String::compareTo);
-            for(String name:names)if(RESOLUTION_METADATA.contains(name))
-                result.add(new Object[]{name,node.get(name).toString()});
-            return List.copyOf(result);
-        }catch(IOException invalid){
-            throw new IllegalArgumentException("Invalid artifact symbol metadata",invalid);
-        }
     }
 
     public static ArtifactData from(BinaryReader.Content content,Key key)throws Exception{
@@ -149,40 +122,6 @@ public final class ArtifactIndexFormat {
     private static String callableIdentity(BinaryReader.Symbol symbol){
         String descriptor=symbol.descriptor();
         return symbol.fqn()+"\0"+symbol.kind()+"\0"+symbol.name()+"\0"+descriptor.substring(0,descriptor.indexOf(')')+1);
-    }
-
-    public static byte[] encode(ArtifactData data)throws Exception{
-        if(data.key().formatVersion()!=FORMAT_VERSION)throw new IllegalArgumentException("Unsupported format version: "+data.key().formatVersion());
-        var strings=new TreeSet<String>();
-        for(var symbol:data.symbols()){
-            for(String value:List.of(symbol.key(),symbol.fqn(),symbol.name(),symbol.kind(),symbol.metadataJson(),symbol.resolution().encode()))strings.add(value);
-            if(symbol.signature()!=null)strings.add(symbol.signature());
-            if(symbol.descriptor()!=null)strings.add(symbol.descriptor());
-            if(symbol.entry()!=null)strings.add(symbol.entry());
-            strings.addAll(symbol.parameters());
-        }
-        for(var edge:data.relationships()){strings.add(edge.target());strings.add(edge.kind());}
-        var table=new ArrayList<>(strings);var ids=new HashMap<String,Integer>();for(int i=0;i<table.size();i++)ids.put(table.get(i),i);
-
-        var bytes=new ByteArrayOutputStream();
-        try(var out=new DataOutputStream(bytes)){
-            out.writeInt(data.key().formatVersion());writeString(out,data.key().binarySha256());writeString(out,data.key().indexerVersion());
-            out.writeInt(data.key().runtimeFeature());writeString(out,data.key().mode());
-            out.writeInt(table.size());for(String value:table)writeString(out,value);
-            out.writeInt(data.symbols().size());
-            for(var symbol:data.symbols()){
-                out.writeInt(symbol.id());out.writeInt(symbol.ownerId());out.writeInt(symbol.flags());
-                out.writeInt(id(ids,symbol.key()));out.writeInt(id(ids,symbol.fqn()));out.writeInt(id(ids,symbol.name()));out.writeInt(id(ids,symbol.kind()));
-                out.writeInt(id(ids,symbol.signature()));out.writeInt(id(ids,symbol.descriptor()));out.writeInt(id(ids,symbol.entry()));out.writeInt(id(ids,symbol.metadataJson()));
-                out.writeInt(id(ids,symbol.resolution().encode()));
-                out.writeInt(symbol.parameters().size());for(String parameter:symbol.parameters())out.writeInt(id(ids,parameter));
-            }
-            out.writeInt(data.relationships().size());
-            for(var edge:data.relationships()){out.writeInt(edge.sourceId());out.writeInt(id(ids,edge.target()));out.writeInt(id(ids,edge.kind()));}
-        }
-        byte[] body=bytes.toByteArray(),checksum=MessageDigest.getInstance("SHA-256").digest(body);
-        var result=new ByteArrayOutputStream(MAGIC.length+checksum.length+body.length);
-        result.write(MAGIC);result.write(checksum);result.write(body);return result.toByteArray();
     }
 
     /** Individually addressable records keep one typed lookup independent of artifact size. */
@@ -350,42 +289,6 @@ public final class ArtifactIndexFormat {
         }
     }
 
-    public static ArtifactData decode(byte[] encoded)throws Exception{
-        if(encoded.length<MAGIC.length+32+4)throw new IOException("Truncated artifact index");
-        for(int i=0;i<MAGIC.length;i++)if(encoded[i]!=MAGIC[i])throw new IOException("Invalid artifact index magic");
-        byte[] expected=Arrays.copyOfRange(encoded,MAGIC.length,MAGIC.length+32);
-        byte[] body=Arrays.copyOfRange(encoded,MAGIC.length+32,encoded.length);
-        if(!MessageDigest.isEqual(expected,MessageDigest.getInstance("SHA-256").digest(body)))throw new IOException("Artifact index checksum mismatch");
-        try(var in=new DataInputStream(new ByteArrayInputStream(body))){
-            int version=in.readInt();if(version!=FORMAT_VERSION)throw new IOException("Unsupported artifact index version: "+version);
-            String binaryHash=readString(in),indexer=readString(in);int runtime=in.readInt();String mode=readString(in);
-            var key=new Key(binaryHash,version,indexer,runtime,mode);
-            int stringCount=bounded(in.readInt(),MAX_STRINGS,"string count");var strings=new ArrayList<String>(stringCount);
-            for(int i=0;i<stringCount;i++)strings.add(readString(in));
-            int symbolCount=bounded(in.readInt(),MAX_SYMBOLS,"symbol count");var symbols=new ArrayList<SymbolRecord>(symbolCount);
-            for(int i=0;i<symbolCount;i++){
-                int id=in.readInt(),owner=in.readInt(),flags=in.readInt();
-                String localKey=value(strings,in.readInt()),fqn=value(strings,in.readInt()),name=value(strings,in.readInt()),kind=value(strings,in.readInt());
-                String signature=valueOrNull(strings,in.readInt()),descriptor=valueOrNull(strings,in.readInt()),entry=valueOrNull(strings,in.readInt()),metadata=value(strings,in.readInt());
-                String resolution=value(strings,in.readInt());
-                int parameterCount=bounded(in.readInt(),1_000_000,"parameter count");var parameters=new ArrayList<String>(parameterCount);
-                for(int p=0;p<parameterCount;p++)parameters.add(value(strings,in.readInt()));
-                if(id!=i)throw new IOException("Non-canonical local symbol id");
-                symbols.add(new SymbolRecord(id,owner,localKey,fqn,name,kind,signature,descriptor,flags,entry,List.copyOf(parameters),metadata,ResolutionFact.decode(resolution)));
-            }
-            int relationCount=bounded(in.readInt(),MAX_RELATIONSHIPS,"relationship count");var relations=new ArrayList<Relationship>(relationCount);
-            for(int i=0;i<relationCount;i++){
-                int source=in.readInt();if(source<0||source>=symbolCount)throw new IOException("Invalid relationship source");
-                relations.add(new Relationship(source,value(strings,in.readInt()),value(strings,in.readInt())));
-            }
-            if(in.available()!=0)throw new IOException("Trailing artifact index bytes");
-            return new ArtifactData(key,List.copyOf(symbols),List.copyOf(relations));
-        }
-    }
-
-    private static int id(Map<String,Integer> table,String value){return value==null?-1:table.get(value);}
-    private static String value(List<String> table,int id)throws IOException{if(id<0||id>=table.size())throw new IOException("Invalid string id");return table.get(id);}
-    private static String valueOrNull(List<String> table,int id)throws IOException{return id<0?null:value(table,id);}
     private static int bounded(int value,int max,String label)throws IOException{if(value<0||value>max)throw new IOException("Invalid "+label+": "+value);return value;}
     private static void writeString(DataOutputStream out,String value)throws IOException{
         byte[] bytes=value.getBytes(StandardCharsets.UTF_8);if(bytes.length>MAX_STRING_BYTES)throw new IOException("String too large");

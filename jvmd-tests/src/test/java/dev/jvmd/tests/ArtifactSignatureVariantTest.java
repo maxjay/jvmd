@@ -36,7 +36,7 @@ class ArtifactSignatureVariantTest {
         Path first=variant("first","First","Left"),second=variant("second","Second","Right");
         try(var index=new IndexService(root.resolve("index.db"),root)) {
             index.indexJar(first,"fixture:api:1","jar");index.indexSources(first.resolveSibling("first-sources.jar"));
-            index.indexJar(second,"fixture:api:1","jar");index.indexSources(second.resolveSibling("second-sources.jar"));index.linkEdges();
+            index.indexJar(second,"fixture:api:1","jar");index.indexSources(second.resolveSibling("second-sources.jar"));
             index.loadWorkspace("one",List.of(new IndexService.WorkspaceArtifact(first.toString(),"compile")),List.of());
             index.loadWorkspace("two",List.of(new IndexService.WorkspaceArtifact(second.toString(),"compile")),List.of());
             var docs=new Documentation(index,Path.of(System.getProperty("java.home")));var code=new CodePass(index);
@@ -58,7 +58,7 @@ class ArtifactSignatureVariantTest {
     }
     @Test void oldUnattributedEdgesAreRebuiltFromTheActualJarOnLookup() throws Exception {
         Path jar=variant("old","First","Left"),file=root.resolve("old-index.db");
-        try(var index=new IndexService(new ReferenceIndexStorage(file),root)) { index.indexJar(jar,"fixture:api:1","jar");index.linkEdges(); }
+        try(var index=new IndexService(new ReferenceIndexStorage(file),root)) { index.indexJar(jar,"fixture:api:1","jar"); }
         // Simulate a populated schema-3 database, whose union edges cannot identify their artifact variant.
         try(var connection=java.sql.DriverManager.getConnection("jdbc:sqlite:"+file);var statement=connection.createStatement()) {
             statement.execute("DROP TABLE artifact_edges");statement.execute("DROP TABLE signature_targets");

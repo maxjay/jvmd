@@ -1,6 +1,5 @@
 package dev.jvmd.boot.cold.machine;
 
-import dev.jvmd.core.BootEvents;
 import dev.jvmd.index.ArtifactAdmission;
 import dev.jvmd.index.ArtifactIndexFormat;
 import dev.jvmd.index.layer.machine.ArtifactBuilder;
@@ -41,21 +40,17 @@ public final class ArtifactJob implements Callable<ArtifactJob.Outcome> {
     }
 
     @Override public Outcome call()throws Exception{
-        MachineInput.Read read;long started=BootEvents.nanos();
+        MachineInput.Read read;
         try{read=input.read();}
         catch(Exception unreadable){return fault(unreadable);}
-        BootEvents.timed("jar.read_and_hash",started);
         String cacheKey=ArtifactIndexFormat.key(read.binary().sha256(),read.binary().mode()).cacheKey();
-        if(!claims.claim(cacheKey,new ClaimMap.Claim(input,read.sources()==null?null:read.sources().sha256()))){BootEvents.count("jar.duplicate_content",1);return new Duplicate();}
+        if(!claims.claim(cacheKey,new ClaimMap.Claim(input,read.sources()==null?null:read.sources().sha256())))return new Duplicate();
         return build(read);
     }
 
     private Outcome build(MachineInput.Read read)throws Exception{
         try(var permit=admission.acquire(read.estimatedBytes())){
-            long started=BootEvents.nanos();
-            var built=new Built(builder.build(read.binary(),read.sources()));
-            BootEvents.timed("jar.build",started);BootEvents.count("jar.parsed",1);if(read.sources()!=null)BootEvents.count("sources.parsed",1);
-            return built;
+            return new Built(builder.build(read.binary(),read.sources()));
         }catch(ArtifactBuilder.PublishFailed storage){throw storage;}
         catch(Exception malformed){return fault(malformed);}
     }

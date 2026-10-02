@@ -40,6 +40,8 @@ public final class RocksIndexStore implements IndexStore {
     private final WriteOptions durable=new WriteOptions().setSync(true);
     private final NavigableMap<Long,StoredArtifact> artifacts=new TreeMap<>();
     private final Map<String,Long> paths=new HashMap<>();
+    // TEMPORARY(warm-boot): each session's artifact selection, for store-backed queries. Routes in the
+    // committed LOCAL layer replace it once the warm boot reads them.
     private final Map<String,List<WorkspaceEntry>> workspaces=new HashMap<>();
     private final SourceOverlay sourceOverlay;
     private final Map<Long,Long> unmatched=new HashMap<>();

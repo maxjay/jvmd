@@ -219,6 +219,8 @@ public final class IndexService implements AutoCloseable {
     public record LocalModule(Path directory,String gav,List<Path> sources,List<Path> outputs) {
         public LocalModule { directory=directory.toAbsolutePath().normalize();sources=sources.stream().map(p->p.toAbsolutePath().normalize()).distinct().toList();outputs=outputs.stream().map(p->p.toAbsolutePath().normalize()).distinct().toList(); }
     }
+    // TEMPORARY(warm-boot): today's on-demand project path publishes reactor modules as local artifacts
+    // for store-backed queries. The LOCAL cold boot builds LOCAL from source; the warm boot task deletes this.
     private final LocalArtifacts locals=new LocalArtifacts(this);
     public void registerLocal(LocalModule module){if(locals.register(module))readers.submit(()->{try{locals.refresh(module.directory());}catch(Exception e){warn("local_artifact_fault: "+module.directory()+": "+e);}});}
     public long refreshLocal(Path directory)throws Exception{return locals.refresh(directory);}

@@ -20,11 +20,16 @@ public final class LocalLayer {
     private final Map<Path,String> pending=new HashMap<>();
     /** Top-level binary names of files that are not built, or could not be attributed completely. */
     private final Map<String,Integer> unknownTypes=new HashMap<>();
+    private final SortedMap<String,Route> routes;
     private volatile LocalTree tree;
     private volatile Root root;
 
-    /** A layer whose files are all still to be built: each file with the top-level binary name its path declares. */
-    public LocalLayer(Map<Path,String> files){
+    /**
+     * A layer whose files are all still to be built, each with the top-level binary name its path
+     * declares, over the project's routes.
+     */
+    public LocalLayer(Map<Path,String> files,SortedMap<String,Route> routes){
+        this.routes=Collections.unmodifiableSortedMap(new TreeMap<>(routes));
         files.forEach((file,binaryName)->{pending.put(file.toAbsolutePath().normalize(),binaryName);unknownTypes.merge(binaryName,1,Integer::sum);});
     }
 
@@ -70,6 +75,9 @@ public final class LocalLayer {
             int dot=top.lastIndexOf('.');if(dot<0)return false;top=top.substring(0,dot);
         }
     }
+
+    /** The route of a module scope ({@code <gav>:<scope>}), or null when the project has no such scope. */
+    public Route route(String key){return routes.get(key);}
 
     /** The LOCAL declarations built so far. */
     public SemanticReadView view(){return SemanticReadViews.resident(semantic,SemanticReadView.Origin.LOCAL);}

@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.*;
  * stat, hash and directory enumeration of the restarted process goes through one journaled
  * {@link FileStateRegistry}, so its counters are the whole cost.
  */
+@org.junit.jupiter.api.Tag("phase-3")
 class WarmRestartGateTest {
     static final int UNITS=Integer.getInteger("jvmd.scenario.units",200);
     private static final String GAV="g:warm:1";

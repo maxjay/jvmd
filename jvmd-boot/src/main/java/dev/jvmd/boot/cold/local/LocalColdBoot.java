@@ -217,7 +217,7 @@ public final class LocalColdBoot implements AutoCloseable {
                 }
             }
         }
-        layer=new LocalLayer(expected);queue.addAll(units);enumerated.countDown();
+        layer=new LocalLayer(expected,routes);queue.addAll(units);enumerated.countDown();
     }
 
     /** Attribute every queued unit, one batch of one compiler context at a time, front of the queue first. */

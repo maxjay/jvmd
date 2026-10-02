@@ -44,6 +44,10 @@ class LocalColdBootDaemonTest {
             assertThat(status.path("built").asInt()).isEqualTo(2);
             assertThat(status.path("faults").asInt()).isZero();
             assertThat(status.path("root").asText()).isNotBlank();
+            // Classpath search proofs are taken over the project's route into MACHINE.
+            TestSupport.complete(app.dispatcher(),"symbol.atPosition",Map.of("session",session,"path",use.toString(),"line",1,"character",50));
+            var analyzer=TestSupport.complete(app.dispatcher(),"session.status",Map.of("session",session,"section","analyzer")).path("result").path("result");
+            assertThat(analyzer.findValues("classpath_proof_precise")).as(analyzer.toString()).anyMatch(JsonNode::asBoolean);
         }
         assertThat(RocksLocalStore.committedRoot(local)).isPresent();
         try(var app=new Application(config)){

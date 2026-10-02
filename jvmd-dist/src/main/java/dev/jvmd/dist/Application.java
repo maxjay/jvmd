@@ -869,8 +869,8 @@ public final class Application implements AutoCloseable {
         analyzer=session.state("analyzer",()->new Analyzer(classpathFiles));
         IndexService availableIndex;
         availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
-        try(var span=RequestScope.stage("analyzer.configure")){analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));}
         analyzer.local(localLayer(session));
+        try(var span=RequestScope.stage("analyzer.configure")){analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));}
         analyzer.documents(documents(session));
         analyzer.memos(localMemos);
         return analyzer;

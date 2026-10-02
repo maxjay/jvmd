@@ -140,7 +140,7 @@ class LocalColdBootTest {
         var facts=new HashMap<String,Map<String,SemanticFact>>();
         for(var entry:tree.semantic().entries())facts.computeIfAbsent(entry.getValue().sourceFile(),_->new HashMap<>()).put(entry.getValue().id(),entry.getValue());
         Path shape=lib,square=project.resolve("lib/src/main/java/lib/Square.java");
-        var layer=new LocalLayer(Map.of(shape,"lib.Shape",square,"lib.Square"));
+        var layer=new LocalLayer(Map.of(shape,"lib.Shape",square,"lib.Square"),tree.routes());
         var leaf=tree.files().file("lib/src/main/java/lib/Shape.java");
         layer.admit(shape,leaf,new SemanticSnapshot("source:"+shape,shape.toString(),leaf.content(),facts.get(shape.toString()),Map.of(),leaf.api(),leaf.namespace(),"",Set.of()));
         // An installed copy of lib.Square in a lower layer must not answer while LOCAL's Square is unbuilt.

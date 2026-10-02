@@ -176,7 +176,7 @@ export async function boot(o:BootOptions){
     }
     const finished=seen.find(e=>e.event==="REPOSITORY_RECONCILIATION_FINISHED");
     if(finished){
-      result.detect_mono_ns=String(now());result.proc_at_detect=procSample(pid);
+      result.detect_mono_ns=String(now());result.proc_at_detect=procSample(pid);result.native_libraries=nativeLibraries(pid);
       if(finished.reconciled===true)domain=finished;else failure="reconciliation finished without a complete reconciliation: "+finished.state+" "+finished.failure;
       break;
     }
@@ -246,12 +246,17 @@ function parseGcLog(file:string,events:any[],spawnNs:bigint){
     concurrent_cycles:0});
   const rows:any[]=[];let cycles=0;
   for(const line of readFileSync(file,"utf8").split("\n")){
-    const m=line.match(/^\[([\d.]+)s\].*\[gc\s*\] GC\(\d+\) (Pause [^(]+(?:\([^)]*\))*)\s+(\d+)M->(\d+)M\((\d+)M\) ([\d.]+)ms/u);
+    const m=line.match(/^\[([\d.]+)s\].*?\[gc\s*\] GC\(\d+\) (Pause .+?) (\d+)M->(\d+)M\((\d+)M\) ([\d.]+)ms/u);
     if(m)rows.push({t:Number(m[1]),kind:m[2],before:Number(m[3]),after:Number(m[4]),committed:Number(m[5]),ms:Number(m[6])});
     if(/Concurrent Mark Cycle [\d.]+ms/u.test(line))cycles++;
   }
   const until=acc(rows.filter(r=>r.t<=drUptime)),all=acc(rows);all.concurrent_cycles=cycles;
-  return {until_domain_ready:until,whole_process:all,domain_ready_uptime_s:drUptime,note:"uptime correlated to spawn; heap figures are at GC pauses only"};
+  // Lower bound on heap allocation up to the last pause before DOMAIN_READY: what each pause found minus what the
+  // previous one left. A cross-check of the in-process counter's coverage, not a replacement for it.
+  const before=rows.filter(r=>r.t<=drUptime);let allocated=0,previous=0;
+  for(const r of before){allocated+=Math.max(0,r.before-previous);previous=r.after;}
+  return {until_domain_ready:until,whole_process:all,domain_ready_uptime_s:drUptime,allocation_lower_bound_mb_until_last_pause:allocated,
+    last_pause_before_domain_ready_s:before.at(-1)?.t??null,note:"uptime correlated to spawn; heap figures are at GC pauses only"};
 }
 function parseRetention(dir:string){
   const read=(f:string)=>{try{return readFileSync(path.join(dir,f),"utf8");}catch{return "";}};
@@ -271,6 +276,13 @@ function parseNmt(file:string){
   for(const m of t.matchAll(/^-\s+([\w ]+?) \(reserved=(\d+)KB, committed=(\d+)KB\)/gmu))out.categories[m[1].trim()]={reserved_kb:Number(m[2]),committed_kb:Number(m[3])};
   out.note="NMT covers JVM-owned native memory; RocksDB (malloc outside the JVM) is not in NMT";
   return out;
+}
+/** Mapped RocksDB JNI library: where the process loaded it from and its size (extracted copies live in java.io.tmpdir). */
+function nativeLibraries(pid:number){
+  try{
+    const paths=[...new Set(readFileSync(`/proc/${pid}/maps`,"utf8").split("\n").map(l=>l.trim().split(/\s+/u)[5]).filter(p=>p&&/rocksdbjni/u.test(p)))];
+    return paths.map(p=>{let size:number|null=null;try{size=statSync(p.replace(/ \(deleted\)$/u,"")).size;}catch{}return {path:p,size};});
+  }catch{return null;}
 }
 function jcmd(javaHome:string,pid:number,command:string[],file:string){
   const started=now();
@@ -331,7 +343,7 @@ function summarize(r:any,spawnNs:bigint,readyStdoutNs?:bigint){
     io_at_domain_ready:at?{rchar:at.io_rchar,wchar:at.io_wchar,read_bytes:at.io_read_bytes,write_bytes:at.io_write_bytes,syscr:at.io_syscr,syscw:at.io_syscw}:null,
     io_post_ready_delta:at&&post?{read_bytes:post.io_read_bytes-at.io_read_bytes,write_bytes:post.io_write_bytes-at.io_write_bytes,wchar:post.io_wchar-at.io_wchar}:null,
     faults_at_domain_ready:at?{minor:at.minflt,major:at.majflt}:null,threads_at_domain_ready:at?.threads??null,
-    counters:d?.counters??first.SCAN_COMPLETE?.counters??null,in_flight:d?.in_flight??null,gc:r.gc??null,retention:r.retention??null,nmt:r.nmt??null,series:r.series,store_files:r.store_files,
+    counters:d?.counters??first.SCAN_COMPLETE?.counters??null,in_flight:d?.in_flight??null,native_libraries:r.native_libraries??null,gc:r.gc??null,retention:r.retention??null,nmt:r.nmt??null,series:r.series,store_files:r.store_files,
     status_error:r.status_error??null,
     session_capable:first.SESSION_CAPABLE?{persisted_index_complete:first.SESSION_CAPABLE.persisted_index_complete}:null,
     storage_open_end:first.STORAGE_OPEN_END?{scan_completed:first.STORAGE_OPEN_END.scan_completed}:null,

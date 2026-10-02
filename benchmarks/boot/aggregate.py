@@ -46,7 +46,7 @@ def main(root):
                                                    "io_post_ready_delta", "cpu_post_ready_delta", "rss_post_ready", "pss_post_ready", "allocated_bytes",
                                                    "runtime_dump_ms", "detection_lag_ms", "socket_owner", "identity", "discovery", "classpath_files",
                                                    "gc", "retention", "nmt", "store_files", "status_error", "session_capable", "storage_open_end",
-                                                   "cpu_at_domain_ready", "peak_rss_bytes_at_domain_ready", "faults_at_domain_ready", "threads_at_domain_ready")}
+                                                   "cpu_at_domain_ready", "peak_rss_bytes_at_domain_ready", "faults_at_domain_ready", "threads_at_domain_ready", "native_libraries")}
             if "/pair-1/" in rel or "/counters-1/" in rel or "c1-no-change" in rel:
                 details[rel]["series"] = s.get("series")
     out["details"] = details

@@ -114,7 +114,10 @@ jobs:
       - id: matrix
         run: |
           all='pairs,controls,shutdown,scaling,experiments,counters,cpu,wall,alloc,native,retention'
-          s="${{ inputs.scenarios }}"; [ -n "$s" ] || s="$all"
+          s="${{ inputs.scenarios }}"
+          # A push may narrow the matrix with benchmarks/boot/ci-scenarios.txt (one comma-separated line).
+          [ -z "$s" ] && [ "${{ github.event_name }}" = push ] && [ -s benchmarks/boot/ci-scenarios.txt ] && s="$(tr -d ' \n' < benchmarks/boot/ci-scenarios.txt)"
+          [ -n "$s" ] || s="$all"
           echo "scenarios=$(python3 -c 'import json,sys;print(json.dumps([x for x in sys.argv[1].split(",") if x]))' "$s")" >> "$GITHUB_OUTPUT"
 
   fixture:

@@ -35,7 +35,7 @@ class EnhancedHotSwapTest {
                   }
                 }
                 """;
-            Files.writeString(file,source);var config=new Config(Path.of(System.getProperty("java.home")),enhanced?jbr:null,root.resolve("repository"),3,Duration.ofHours(4),512,false,root.resolve(enhanced?"enhanced-state":"stock-state"),root.resolve("unused.sock"));
+            Files.writeString(file,source);var config=new Config(Path.of(System.getProperty("java.home")),enhanced?jbr:null,root.resolve("repository"),3,Duration.ofHours(4),512,root.resolve(enhanced?"enhanced-state":"stock-state"),root.resolve("unused.sock"));
             try(var app=new Application(config)){
                 String session=TestSupport.open(app,workspace);var run=call(app,"run.start",Map.of("session",session,"target","Probe","debug",true));String id=run.path("run_session").asText();long pid=run.path("pid").asLong();
                 assertThat(run.path("hotswap").asText()).isEqualTo(enhanced?"enhanced":"bodies_only");assertThat(run.path("jdi_redefinition").has("add_method")).isTrue();

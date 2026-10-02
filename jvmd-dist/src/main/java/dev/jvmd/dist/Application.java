@@ -51,7 +51,8 @@ public final class Application implements AutoCloseable {
         // LOCAL semantic memo store: independently validated records; loss is only a miss.
         localMemos=new dev.jvmd.index.SemanticMemoStore(config.stateDir().resolve("local-memo-v1"));
         sourceNamespaces=new dev.jvmd.analyzer.SourceNamespaces(localMemos);
-        if (config.indexOnStart()) initializeIndex(true);
+        // MACHINE boots at daemon start; READY and sessions wait for its committed root.
+        initializeIndex();
         dispatcher.status("index", () -> {
             try { return index == null ? java.util.Map.of("phase", "disabled") : index.isDone() ? index.join().status() : java.util.Map.of("phase", "starting"); }
             catch (Exception e) { return java.util.Map.of("phase", "failed", "reason", e.toString()); }
@@ -1090,7 +1091,7 @@ public final class Application implements AutoCloseable {
 
         }
     }
-    private synchronized void initializeIndex(boolean scan) {
+    private synchronized void initializeIndex() {
         if(index!=null)return;
         var cause=RequestScope.detached();
         index=java.util.concurrent.CompletableFuture.supplyAsync(()->{
@@ -1107,7 +1108,7 @@ public final class Application implements AutoCloseable {
                 // TEMPORARY(warm-boot): the existing warm path reconciles a reopened generation with today's
                 // repository scan; the warm boot task replaces it. A cold-booted MACHINE is already complete.
                 if(!machine.warm()&&service.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();
-                if(machine.warm()&&scan){
+                if(machine.warm()){
                     var started=service;
                     // Only a complete reconciliation is reconciled; a scan with faults or one that failed is reported as such.
                     var reconciliation=service.start().whenComplete((_,failure)->{if(failure==null&&started.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();});
@@ -1125,7 +1126,7 @@ public final class Application implements AutoCloseable {
             catch(Exception error){throw new java.util.concurrent.CompletionException(error);}
         }));
     }
-    private IndexService index() { initializeIndex(false); return index.join(); }
+    private IndexService index() { return index.join(); }
     private volatile dev.jvmd.boot.BootDecision.Machine machineBoot;
     /**
      * LOCAL for a resolved project, once MACHINE is committed: BootDecision picks the cold boot, which
@@ -1169,7 +1170,7 @@ public final class Application implements AutoCloseable {
         if(repositoryReconciledNanos>=0)result.put("repository_reconciled_ms",(repositoryReconciledNanos-constructedNanos)/1_000_000.0);
         return result;
     }
-    private void awaitReady(){if(config.indexOnStart())index();}
+    private void awaitReady(){index();}
     /** Block until the daemon can serve sessions (storage open, persisted inventory restored). */
     public void awaitSessionCapable(){awaitReady();}
     private void bindIndex(Session session,IndexService database)throws Exception {
@@ -1273,7 +1274,7 @@ public final class Application implements AutoCloseable {
         if (Runtime.version().feature() != 25) throw new IllegalStateException("jvmd requires pinned JDK 25");
         Config config = Config.load();
         boolean training=args.length>0 && args[0].equals("--train");
-        if(training)config=new Config(config.jdkHome(),config.jbrHome(),config.m2Repo(),config.mavenMajor(),config.idleTimeout(),config.heapCeilingMb(),false,Files.createTempDirectory("jvmd-aot-state-"),config.socket());
+        if(training)config=new Config(config.jdkHome(),config.jbrHome(),config.m2Repo(),config.mavenMajor(),config.idleTimeout(),config.heapCeilingMb(),Files.createTempDirectory("jvmd-aot-state-"),config.socket());
         var app = new Application(config);
         if (training) {
             Path fixture = Files.createTempDirectory("jvmd-training-");
@@ -1300,7 +1301,7 @@ public final class Application implements AutoCloseable {
                 // Train platform services used only by the native Maven 4 bundle as well.
                 // Custom bundle classes retain their isolated loader at runtime.
                 Files.writeString(wrapper.resolve("maven-wrapper.properties"),"distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/4.0.0-rc-6/apache-maven-4.0.0-rc-6-bin.zip");
-                var nativeConfig=new Config(config.jdkHome(),null,config.m2Repo(),4,config.idleTimeout(),config.heapCeilingMb(),false,config.stateDir().resolve("maven4"),config.socket());
+                var nativeConfig=new Config(config.jdkHome(),null,config.m2Repo(),4,config.idleTimeout(),config.heapCeilingMb(),config.stateDir().resolve("maven4"),config.socket());
                 try(var nativeResolver=new MavenResolver(nativeConfig)){nativeResolver.resolve(fixture);nativeResolver.resolve(fixture);}
             } finally { app.close(); try (var files = Files.walk(fixture)) { for (Path file : files.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(file); } try(var files=Files.walk(config.stateDir())){for(Path path:files.sorted(java.util.Comparator.reverseOrder()).toList())Files.delete(path);} }
             return;

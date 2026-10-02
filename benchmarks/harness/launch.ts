@@ -31,7 +31,7 @@ export class JvmdDaemon {
     mkdirSync(o.state,{recursive:true});
     const dir=mkdtempSync(path.join(os.tmpdir(),"jvmd-bench-")),socket=path.join(dir,"daemon.sock"),probe=path.join(dir,"alloc.sock");
     const config=path.join(o.state,"config.json");
-    writeFileSync(config,JSON.stringify({jdk_home:o.javaHome,m2_repo:o.repository,index_on_start:true,heap_ceiling_mb:1024}));
+    writeFileSync(config,JSON.stringify({jdk_home:o.javaHome,m2_repo:o.repository,heap_ceiling_mb:1024}));
     const stderr=openSync(path.join(o.state,"daemon.log"),"a"),started=performance.now();
     const child=spawn(path.join(o.javaHome,"bin/java"),[o.heap?"-Xmx"+o.heap:HEAP,"-javaagent:"+agentJar(o.javaHome)+"="+probe,...JVMD_EXPORTS,"--enable-native-access=ALL-UNNAMED",
       "-Djvmd.config="+config,"-Djvmd.socket="+socket,"-Djvmd.state="+path.join(o.state,"store"),"-Djvmd.resolvers="+path.join(o.image,"lib/jvmd/resolvers"),

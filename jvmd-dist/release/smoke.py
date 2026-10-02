@@ -170,7 +170,7 @@ def main():
         source.write_text(text)
         (workspace / "pom.xml").write_text('<project><modelVersion>4.0.0</modelVersion><groupId>release</groupId><artifactId>smoke</artifactId><version>1</version><properties><maven.compiler.release>17</maven.compiler.release></properties></project>')
         config = work / "config.json"
-        config.write_text(json.dumps({"jdk_home": str(args.jdk_home.resolve()), "index_on_start": False, "idle_timeout": 30}))
+        config.write_text(json.dumps({"jdk_home": str(args.jdk_home.resolve()), "idle_timeout": 30}))
         socket_path = work / "daemon.sock"
         # A broken PATH node proves that launchers use the bundled runtime.
         fake_bin = work / "fake-bin"

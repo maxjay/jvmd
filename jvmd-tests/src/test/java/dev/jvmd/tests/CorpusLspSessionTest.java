@@ -16,7 +16,7 @@ class CorpusLspSessionTest {
     @TempDir Path temp;
     @Test void corpusEditorQueriesFollowUnsavedBuffersAndReturnApplicableRenameEdits()throws Exception{
         Path root=TestSupport.repo().resolve("jvmd-tests/corpus/petclinic"),file=root.resolve("src/main/java/org/springframework/samples/petclinic/owner/Owner.java");String source=Files.readString(file);
-        var config=new Config(Path.of(System.getProperty("java.home")),null,Path.of(System.getProperty("user.home"),".m2/repository"),3,Duration.ofHours(4),1024,false,temp,temp.resolve("daemon.sock"));
+        var config=new Config(Path.of(System.getProperty("java.home")),null,Path.of(System.getProperty("user.home"),".m2/repository"),3,Duration.ofHours(4),1024,temp,temp.resolve("daemon.sock"));
         try(var app=new Application(config)){
             String session=TestSupport.open(app,root);
             var described=request(app,"symbol.describe",Map.of("session",session,"ref","Owner/getPets()","doc_depth",0));int start=described.path("body_start").asInt(),end=described.path("body_end").asInt();assertThat(start).isPositive();assertThat(end).isGreaterThan(start);

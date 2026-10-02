@@ -16,7 +16,7 @@ class CorpusAgentSessionTest {
     @TempDir Path temp;
     @Test void callersThreeDeepBodyReplacementAndVerifiedBuildCompleteOnPetclinic()throws Exception{
         Path root=TestSupport.repo().resolve("jvmd-tests/corpus/petclinic"),source=root.resolve("src/main/java/org/springframework/samples/petclinic/owner/Owner.java");String before=Files.readString(source);
-        var config=new Config(Path.of(System.getProperty("java.home")),null,Path.of(System.getProperty("user.home"),".m2/repository"),3,Duration.ofHours(4),1024,false,temp,temp.resolve("daemon.sock"));
+        var config=new Config(Path.of(System.getProperty("java.home")),null,Path.of(System.getProperty("user.home"),".m2/repository"),3,Duration.ofHours(4),1024,temp,temp.resolve("daemon.sock"));
         try(var app=new Application(config)){
             String session=TestSupport.open(app,root);var found=tool(app,session,"find",Map.of("name_path","Owner/getPets()","scope","workspace"));
             assertThat(found.path("result").path("matches").size()).isEqualTo(1);

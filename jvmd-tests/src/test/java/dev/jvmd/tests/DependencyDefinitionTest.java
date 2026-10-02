@@ -16,7 +16,7 @@ class DependencyDefinitionTest {
     @org.junit.jupiter.params.provider.ValueSource(strings={"", "/* base() */\n  "})
     void liveBinaryReferenceNavigatesToMatchingSourceDeclaration(String gap) throws Exception {
         var config=new Config(TestJdk.home(),null,root.resolve("repository"),3,
-                Duration.ofHours(4),512,true,root.resolve("state"),root.resolve("daemon.sock"));
+                Duration.ofHours(4),512,root.resolve("state"),root.resolve("daemon.sock"));
         Path jar=MavenFixtures.artifact(config.m2Repo(),"sample","1","");
         String declaration="package fixture;\npublic class Sample {\n  public static int "+gap+"base(){return 40;}\n}\n";
         IndexFixtures.jar(jar.getParent(),"sample-1",declaration,false);

@@ -19,7 +19,7 @@ class SourceJarBodyTest {
         Path jar=IndexFixtures.jar(repo,"sample",IndexFixtures.generic(),false);
         assertThat(jar.resolveSibling("sample-sources.jar")).exists();
         // The daemon's MACHINE cold boot indexes the jar with its paired sources.
-        var config=new Config(TestJdk.home(),null,repo,3,Duration.ofHours(4),512,false,state,root.resolve("daemon.sock"));
+        var config=new Config(TestJdk.home(),null,repo,3,Duration.ofHours(4),512,state,root.resolve("daemon.sock"));
         try(var app=new Application(config)){
             String session=TestSupport.open(app,workspace);
             var response=TestSupport.request(app.dispatcher(),"symbol.find",Map.of("session",session,"name_path","Sample/transform","scope","deps","include_body",true)).path("result");

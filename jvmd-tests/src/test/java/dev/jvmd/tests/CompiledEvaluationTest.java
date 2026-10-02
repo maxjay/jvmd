@@ -34,7 +34,7 @@ class CompiledEvaluationTest {
             }
             """;
         Path file=workspace.resolve("Probe.java");Files.writeString(file,source);
-        var config=new Config(Path.of(System.getProperty("java.home")),null,root.resolve("repository"),3,Duration.ofHours(4),512,false,root.resolve("state"),root.resolve("unused.sock"));
+        var config=new Config(Path.of(System.getProperty("java.home")),null,root.resolve("repository"),3,Duration.ofHours(4),512,root.resolve("state"),root.resolve("unused.sock"));
         try(var app=new Application(config)){
             String session=TestSupport.open(app,workspace),id=call(app,"run.start",Map.of("session",session,"target","Probe","debug",true)).path("run_session").asText();
             op(app,session,id,"break",Map.of("class","Probe","path",file.toString(),"line",RuntimeFixtures.line(source,"System.out.println(\"STOP")));awaitStop(app,session,id);

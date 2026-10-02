@@ -18,7 +18,7 @@ class LiveVerifiedAgreementTest {
         for(Path root:List.of(TestSupport.repo().resolve("jvmd-tests/corpus/petclinic"),TestSupport.repo())){
             assertThat(Files.isRegularFile(root.resolve("pom.xml"))).as(root.toString()).isTrue();
             Path state=Files.createDirectories(temp.resolve(root.getFileName().toString()));
-            var config=new Config(Path.of(System.getProperty("java.home")),null,Path.of(System.getProperty("user.home"),".m2/repository"),3,Duration.ofHours(4),1024,false,state,state.resolve("daemon.sock"));
+            var config=new Config(Path.of(System.getProperty("java.home")),null,Path.of(System.getProperty("user.home"),".m2/repository"),3,Duration.ofHours(4),1024,state,state.resolve("daemon.sock"));
             try(var app=new Application(config)){
                 String session=TestSupport.open(app,root);assertThat(session).isNotBlank();
                 var live=new ArrayList<com.fasterxml.jackson.databind.JsonNode>();String cursor="0";long started=System.nanoTime();

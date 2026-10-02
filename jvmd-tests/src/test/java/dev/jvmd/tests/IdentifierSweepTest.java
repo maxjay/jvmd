@@ -20,7 +20,7 @@ class IdentifierSweepTest {
         long total=0,correct=0,probeCalls=0,probeReuse=0,lexicalWords=0,contextualKeywords=0;
         for(Path root:List.of(TestSupport.repo().resolve("jvmd-tests/corpus/petclinic"),TestSupport.repo())){
             Path state=Files.createDirectories(temp.resolve(root.getFileName().toString()));
-            var config=new Config(Path.of(System.getProperty("java.home")),null,Path.of(System.getProperty("user.home"),".m2/repository"),3,Duration.ofHours(4),1024,false,state,state.resolve("daemon.sock"));
+            var config=new Config(Path.of(System.getProperty("java.home")),null,Path.of(System.getProperty("user.home"),".m2/repository"),3,Duration.ofHours(4),1024,state,state.resolve("daemon.sock"));
             var files=new LinkedHashSet<Path>();
             try(var resolver=new MavenResolver(config)){for(var module:resolver.resolve(root).modules())for(String source:java.util.stream.Stream.concat(module.sources().stream(),module.testSources().stream()).toList())if(Files.isDirectory(Path.of(source)))try(var paths=Files.walk(Path.of(source))){paths.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".java")).sorted().forEach(files::add);}}
             try(var app=new Application(config);var syntaxFiles=javax.tools.ToolProvider.getSystemJavaCompiler().getStandardFileManager(null,null,null)){

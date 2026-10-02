@@ -19,7 +19,7 @@ final class AotDaemon implements AutoCloseable {
     AotDaemon(Path temp)throws Exception{this(temp,Map.of());}
     AotDaemon(Path temp,Map<String,Object> overrides)throws Exception{
         Path image=TestSupport.repo().resolve("jvmd-dist/target/image"),socket=temp.resolve("semantic.sock"),log=temp.resolve("daemon.log"),config=temp.resolve("config.json"),aot=temp.resolve("aot.log");
-        var settings=new LinkedHashMap<String,Object>();settings.put("index_on_start",false);settings.putAll(overrides);Json.MAPPER.writeValue(config.toFile(),settings);
+        var settings=new LinkedHashMap<String,Object>(overrides);Json.MAPPER.writeValue(config.toFile(),settings);
         // The daemon boots from a prepared MACHINE: a MACHINE cold boot of the machine's repository and
         // JDK is covered by its own tests, not repeated by every daemon process.
         TestMachine.prepareDaemon(temp.resolve("state"));

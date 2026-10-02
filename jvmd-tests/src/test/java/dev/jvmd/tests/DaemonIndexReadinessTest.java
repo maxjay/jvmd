@@ -33,7 +33,6 @@ class DaemonIndexReadinessTest {
                 base.mavenMajor(),
                 base.idleTimeout(),
                 base.heapCeilingMb(),
-                true,
                 base.stateDir(),
                 base.socket(),
                 base.hotswapAgent());

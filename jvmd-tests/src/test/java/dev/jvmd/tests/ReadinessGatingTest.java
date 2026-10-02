@@ -30,7 +30,7 @@ class ReadinessGatingTest {
     }
     private Application daemon(long scanDelaySeconds)throws Exception{
         System.setProperty("jvmd.index.scan.initial_delay_seconds",Long.toString(scanDelaySeconds));
-        var config=new Config(TestJdk.home(),null,root.resolve("repository"),3,Duration.ofHours(1),512,true,state,state.resolve("d.sock"));
+        var config=new Config(TestJdk.home(),null,root.resolve("repository"),3,Duration.ofHours(1),512,state,state.resolve("d.sock"));
         return new Application(config);
     }
     private static JsonNode status(Application app)throws Exception{

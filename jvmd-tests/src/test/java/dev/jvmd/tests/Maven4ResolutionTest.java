@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.*;
 @Tag("phase-2")
 class Maven4ResolutionTest {
     @TempDir Path temp;
-    private Config config() { var c=TestSupport.config(temp,Duration.ofHours(4));return new Config(c.jdkHome(),null,c.m2Repo(),4,c.idleTimeout(),c.heapCeilingMb(),false,c.stateDir(),c.socket()); }
+    private Config config() { var c=TestSupport.config(temp,Duration.ofHours(4));return new Config(c.jdkHome(),null,c.m2Repo(),4,c.idleTimeout(),c.heapCeilingMb(),c.stateDir(),c.socket()); }
     private static void wrapper(Path root) throws Exception {
         Path directory=Files.createDirectories(root.resolve(".mvn/wrapper"));
         Files.writeString(directory.resolve("maven-wrapper.properties"),"distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/4.0.0-rc-6/apache-maven-4.0.0-rc-6-bin.zip\n");

@@ -17,7 +17,7 @@ public final class TestSupport {
         try { TestMachine.prepareDaemon(temp.resolve("state")); }
         catch (Exception failed) { throw new IllegalStateException(failed); }
         return new Config(Path.of(System.getProperty("java.home")), null, temp.resolve("repository"), 3,
-                idle, 512, false, temp.resolve("state"), temp.resolve("daemon.sock"));
+                idle, 512, temp.resolve("state"), temp.resolve("daemon.sock"));
     }
     public static JsonNode request(Dispatcher dispatcher, String method, Object params) {
         var request = Json.MAPPER.createObjectNode().put("jsonrpc", "2.0").put("id", 1).put("method", method);

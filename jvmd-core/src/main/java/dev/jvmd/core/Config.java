@@ -8,10 +8,10 @@ import java.time.Duration;
 
 /** Machine-scoped configuration and private runtime paths. */
 public record Config(Path jdkHome, Path jbrHome, Path m2Repo, int mavenMajor,
-                     Duration idleTimeout, int heapCeilingMb, boolean indexOnStart,
+                     Duration idleTimeout, int heapCeilingMb,
                      Path stateDir, Path socket, Path hotswapAgent) {
-    public Config(Path jdkHome,Path jbrHome,Path m2Repo,int mavenMajor,Duration idleTimeout,int heapCeilingMb,boolean indexOnStart,Path stateDir,Path socket){
-        this(jdkHome,jbrHome,m2Repo,mavenMajor,idleTimeout,heapCeilingMb,indexOnStart,stateDir,socket,null);
+    public Config(Path jdkHome,Path jbrHome,Path m2Repo,int mavenMajor,Duration idleTimeout,int heapCeilingMb,Path stateDir,Path socket){
+        this(jdkHome,jbrHome,m2Repo,mavenMajor,idleTimeout,heapCeilingMb,stateDir,socket,null);
     }
     public Config {
         if (mavenMajor != 3 && mavenMajor != 4) throw new IllegalArgumentException("maven_major must be 3 or 4");
@@ -33,7 +33,7 @@ public record Config(Path jdkHome, Path jbrHome, Path m2Repo, int mavenMajor,
                 config.hasNonNull("jbr_home") ? Path.of(config.get("jbr_home").asText()) : null,
                 Path.of(config.path("m2_repo").asText(home.resolve(".m2/repository").toString())),
                 config.path("maven_major").asInt(3), Duration.ofSeconds(config.path("idle_timeout").asLong(14400)),
-                config.path("heap_ceiling_mb").asInt(1024), config.path("index_on_start").asBoolean(true), state, socket,
+                config.path("heap_ceiling_mb").asInt(1024), state, socket,
                 config.hasNonNull("hotswap_agent")?Path.of(config.get("hotswap_agent").asText()):null);
     }
 }

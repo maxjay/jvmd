@@ -62,7 +62,7 @@ class RealProjectBenchmark {
         }
     }
     private Config config(Path state,String name){
-        return new Config(Path.of(System.getProperty("java.home")),null,repository,3,Duration.ofHours(4),4096,false,state,work.resolve(name+".sock"));
+        return new Config(Path.of(System.getProperty("java.home")),null,repository,3,Duration.ofHours(4),4096,state,work.resolve(name+".sock"));
     }
     private static JsonNode request(Application app,String method,Map<String,Object> params){
         return TestSupport.request(app.dispatcher(),method,params).path("result").path("result");

@@ -122,7 +122,7 @@ export class ProfiledDaemon {
     d.dir=path.join(os.tmpdir(),"jvmd-mem-"+process.pid+"-"+Date.now());mkdirSync(d.dir,{recursive:true});
     d.socket=path.join(d.dir,"daemon.sock");const probe=path.join(d.dir,"alloc.sock");
     d.config=path.join(o.state,"config.json");
-    writeFileSync(d.config,JSON.stringify({jdk_home:o.javaHome,m2_repo:o.repository,index_on_start:true,heap_ceiling_mb:1024}));
+    writeFileSync(d.config,JSON.stringify({jdk_home:o.javaHome,m2_repo:o.repository,heap_ceiling_mb:1024}));
     d.stderr=openSync(path.join(o.state,"daemon.log"),"a");
     const args=[...(o.heapMb>0?["-Xmx"+o.heapMb+"m"]:[]),"-javaagent:"+agentJar(o.javaHome)+"="+probe,...o.jvmArgs,...JVMD_EXPORTS,"--enable-native-access=ALL-UNNAMED",
       "-Djvmd.config="+d.config,"-Djvmd.socket="+d.socket,"-Djvmd.state="+path.join(o.state,"store"),"-Djvmd.resolvers="+path.join(o.image,"lib/jvmd/resolvers"),

@@ -24,7 +24,7 @@ class RuntimeProtocolTest {
             }
             """;
         Path file=workspace.resolve("Probe.java");Files.writeString(file,source);
-        var config=new Config(Path.of(System.getProperty("java.home")),null,root.resolve("repository"),3,Duration.ofHours(4),512,false,root.resolve("state"),root.resolve("socket"));
+        var config=new Config(Path.of(System.getProperty("java.home")),null,root.resolve("repository"),3,Duration.ofHours(4),512,root.resolve("state"),root.resolve("socket"));
         try(var app=new Application(config)){
             String session=TestSupport.open(app,workspace);var run=call(app,"run.start",Map.of("session",session,"target","Probe","debug",true));String id=run.path("run_session").asText();long pid=run.path("pid").asLong();
             assertThat(id).isNotBlank();assertThat(run.path("port").asInt()).isPositive();

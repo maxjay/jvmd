@@ -22,7 +22,7 @@ class AuthenticatedRepositoryTest {
     @ParameterizedTest @ValueSource(ints={3,4})
     void authenticatedMirrorFillsMissesOnceAndAColdOfflineRebuildUsesTheLocalRepository(int major)throws Exception {
         var base=TestSupport.config(temp,Duration.ofHours(4));
-        var config=new Config(base.jdkHome(),null,base.m2Repo(),major,base.idleTimeout(),base.heapCeilingMb(),false,base.stateDir(),base.socket());
+        var config=new Config(base.jdkHome(),null,base.m2Repo(),major,base.idleTimeout(),base.heapCeilingMb(),base.stateDir(),base.socket());
         Path remote=Files.createDirectories(temp.resolve("remote"));MavenFixtures.artifact(remote,"lib","1","");
         Path project=MavenFixtures.project(temp.resolve("project"),"<dependencies>"+MavenFixtures.dependency("lib","1")+"</dependencies>");
         if(major==4)Files.writeString(project.resolve(".mvn/wrapper/maven-wrapper.properties"),"distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/4.0.0-rc-6/apache-maven-4.0.0-rc-6-bin.zip\n");

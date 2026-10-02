@@ -23,7 +23,7 @@ class LocalColdBootDaemonTest {
 
     @Test void aProjectWithoutALocalRootIsColdBootedAndTheNextDaemonFindsItCommitted()throws Exception{
         var base=TestSupport.config(root,Duration.ofHours(4));
-        var config=new Config(TestJdk.home(),null,base.m2Repo(),base.mavenMajor(),base.idleTimeout(),base.heapCeilingMb(),false,base.stateDir(),base.socket());
+        var config=new Config(TestJdk.home(),null,base.m2Repo(),base.mavenMajor(),base.idleTimeout(),base.heapCeilingMb(),base.stateDir(),base.socket());
         Path jar=MavenFixtures.artifact(config.m2Repo(),"sample","1","");
         IndexFixtures.jar(jar.getParent(),"sample-1","package fixture;\npublic class Sample {\n  public static int base(){return 40;}\n}\n",false);
         Files.writeString(jar.resolveSibling(jar.getFileName()+".sha1"),HexFormat.of().formatHex(

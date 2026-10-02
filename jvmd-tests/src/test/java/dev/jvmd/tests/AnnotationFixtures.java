@@ -9,7 +9,7 @@ final class AnnotationFixtures {
     static final String LOMBOK="1.18.48",MAPSTRUCT="1.6.3";
     static Config config(Path root){
         var plain=TestSupport.config(root,Duration.ofHours(4));
-        return new Config(plain.jdkHome(),null,Path.of(System.getProperty("maven.repo.local",System.getProperty("user.home")+"/.m2/repository")),3,plain.idleTimeout(),plain.heapCeilingMb(),false,plain.stateDir(),plain.socket());
+        return new Config(plain.jdkHome(),null,Path.of(System.getProperty("maven.repo.local",System.getProperty("user.home")+"/.m2/repository")),3,plain.idleTimeout(),plain.heapCeilingMb(),plain.stateDir(),plain.socket());
     }
     static String dependency(String group,String artifact,String version){return "<dependency><groupId>"+group+"</groupId><artifactId>"+artifact+"</artifactId><version>"+version+"</version></dependency>";}
     static String processor(String group,String artifact,String version){

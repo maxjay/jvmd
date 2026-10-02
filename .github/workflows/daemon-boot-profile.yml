@@ -1,0 +1,289 @@
+name: Daemon boot profile
+
+# Daemon boot/persistence assessment (docs/daemon-boot-persistence-assessment.md): cold versus warm boot of
+# one daemon process to DOMAIN_READY on the pinned apache/maven repository, plus correctness controls,
+# profiling modes and a scaling series. Opt-in: manual dispatch, or a push to the investigation branch.
+# Informational only; never gates anything.
+on:
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: 'Comma-separated scenarios (empty = all): pairs,controls,shutdown,scaling,experiments,counters,cpu,wall,alloc,native,retention'
+        default: ''
+      pairs:
+        description: Control pairs
+        default: '5'
+  push:
+    branches: [ccr-36d3dd4d-e594f0]
+    paths:
+      - 'benchmarks/boot/**'
+      - '.github/workflows/daemon-boot-profile.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daemon-boot-profile-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Frozen subject: merged main at the start of the assessment (#55). The branch adds only gated instrumentation.
+  SUBJECT_SHA: 0f7c825d7b49fe7ba24d26606517bb8208b72e72
+  APACHE_MAVEN: 5cd1b60264101080c712accd605180a4bd9222e0
+  JDK_SHA256: dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e
+  ASYNC_PROFILER: '4.3'
+  ASYNC_PROFILER_SHA256: 69a16462c34c06ff55618f41653cffad1f8946822d30842512a3e0e774841c06
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    outputs:
+      scenarios: ${{ steps.matrix.outputs.scenarios }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Cache third-party Maven dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/dev/jvmd
+          key: maven-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache pinned JDK
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/downloads/jdk25.tar.gz
+          key: jdk-${{ runner.os }}-${{ runner.arch }}-${{ env.JDK_SHA256 }}
+      - name: Install pinned JDK 25 and Maven
+        run: |
+          d="$RUNNER_TEMP/downloads"; mkdir -p "$d"
+          [ -f "$d/jdk25.tar.gz" ] || curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$d/jdk25.tar.gz"
+          echo "$JDK_SHA256  $d/jdk25.tar.gz" | sha256sum -c -
+          tar -xzf "$d/jdk25.tar.gz" -C "$RUNNER_TEMP"
+          echo "JAVA_HOME=$RUNNER_TEMP/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+          python3 - <<'PYCODE'
+          import importlib.util, os
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('release_tools','jvmd-dist/release/build.py')
+          module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+          maven=module.toolchain(module.PINS['maven'],Path(os.environ['RUNNER_TEMP'])/'tools/maven')
+          with open(os.environ['GITHUB_PATH'],'a') as out:out.write(str(maven/'bin')+'\n')
+          PYCODE
+      - name: Comparator sensitivity tests
+        run: python3 benchmarks/boot/test_compare.py -v
+      - name: Build, assemble and train AOT (product image)
+        run: |
+          mvn -B -q -DskipTests install
+          bash jvmd-dist/assemble.sh
+          bash jvmd-dist/train-aot.sh
+      - name: Instrumented module tests
+        run: mvn -B -q -pl jvmd-core,jvmd-index,jvmd-index-rocks test
+      - name: Provenance
+        run: |
+          image=jvmd-dist/target/image
+          mkdir -p provenance
+          {
+            echo "{"
+            echo "\"instrumentation_and_harness_sha\": \"$(git rev-parse HEAD)\","
+            echo "\"subject_sha\": \"$SUBJECT_SHA\", \"subject_is_ancestor\": $(git merge-base --is-ancestor "$SUBJECT_SHA" HEAD && echo true || echo false),"
+            echo "\"production_diff_vs_subject\": \"$(git diff --stat "$SUBJECT_SHA" HEAD -- ':(glob)jvmd-*/src/main/**' | tail -1)\","
+            echo "\"workflow_run\": \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT\","
+            echo "\"build_command\": \"mvn -B -q -DskipTests install && bash jvmd-dist/assemble.sh && bash jvmd-dist/train-aot.sh\","
+            echo "\"jdk\": \"$("$JAVA_HOME/bin/java" -version 2>&1 | tr '\n' ' ' | sed 's/"/\\"/g')\","
+            echo "\"image_java\": \"$("$image/bin/java" -version 2>&1 | tr '\n' ' ' | sed 's/"/\\"/g')\","
+            echo "\"rocksdbjni\": \"$(ls $image/lib/jvmd | grep -o 'rocksdbjni-[0-9.]*' | head -1)\","
+            echo "\"image_lib_sha256\": \"$(cd $image/lib/jvmd && find . -type f | sort | xargs sha256sum | sha256sum | cut -d' ' -f1)\","
+            echo "\"aot_cache_sha256\": \"$(sha256sum $image/lib/jvmd/jvmd.aot | cut -d' ' -f1)\""
+            echo "}"
+          } > provenance/build.json
+          cat provenance/build.json
+          tar -C jvmd-dist/target -czf image.tar.gz image
+          sha256sum image.tar.gz | tee provenance/image.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: image
+          retention-days: 7
+          path: |
+            image.tar.gz
+            provenance/
+      - id: matrix
+        run: |
+          all='pairs,controls,shutdown,scaling,experiments,counters,cpu,wall,alloc,native,retention'
+          s="${{ inputs.scenarios }}"
+          # A push may narrow the matrix with benchmarks/boot/ci-scenarios.txt (one comma-separated line).
+          [ -z "$s" ] && [ "${{ github.event_name }}" = push ] && [ -s benchmarks/boot/ci-scenarios.txt ] && s="$(tr -d ' \n' < benchmarks/boot/ci-scenarios.txt)"
+          [ -n "$s" ] || s="$all"
+          echo "scenarios=$(python3 -c 'import json,sys;print(json.dumps([x for x in sys.argv[1].split(",") if x]))' "$s")" >> "$GITHUB_OUTPUT"
+
+  fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Cache apache/maven fixture
+        id: project
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/apache-maven
+            ${{ runner.temp }}/apache-maven-repository
+          key: apache-maven-${{ env.APACHE_MAVEN }}-v1
+      - name: Install pinned JDK and Maven
+        if: steps.project.outputs.cache-hit != 'true'
+        run: |
+          d="$RUNNER_TEMP/downloads"; mkdir -p "$d"
+          curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$d/jdk25.tar.gz"
+          echo "$JDK_SHA256  $d/jdk25.tar.gz" | sha256sum -c -
+          tar -xzf "$d/jdk25.tar.gz" -C "$RUNNER_TEMP"
+          echo "JAVA_HOME=$RUNNER_TEMP/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/jdk-25.0.4.1+1/bin" >> "$GITHUB_PATH"
+          python3 - <<'PYCODE'
+          import importlib.util, os
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location('release_tools','jvmd-dist/release/build.py')
+          module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+          maven=module.toolchain(module.PINS['maven'],Path(os.environ['RUNNER_TEMP'])/'tools/maven')
+          with open(os.environ['GITHUB_PATH'],'a') as out:out.write(str(maven/'bin')+'\n')
+          PYCODE
+      - name: Prepare apache/maven fixture (outside every measurement)
+        if: steps.project.outputs.cache-hit != 'true'
+        run: |
+          git clone -q https://github.com/apache/maven.git "$RUNNER_TEMP/apache-maven"
+          git -C "$RUNNER_TEMP/apache-maven" checkout -q "$APACHE_MAVEN"
+          cd "$RUNNER_TEMP/apache-maven"
+          mvn -B -q -DskipTests -Dmaven.repo.local="$RUNNER_TEMP/apache-maven-repository" -Drat.skip -Dspotless.skip -Dcheckstyle.skip -Denforcer.skip install
+
+  measure:
+    needs: [build, fixture]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: ${{ fromJSON(needs.build.outputs.scenarios) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.21.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: image
+      - name: Restore apache/maven fixture
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ${{ runner.temp }}/apache-maven
+            ${{ runner.temp }}/apache-maven-repository
+          key: apache-maven-${{ env.APACHE_MAVEN }}-v1
+          fail-on-cache-miss: true
+      - name: Cache pinned tools
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ${{ runner.temp }}/downloads
+          key: boot-tools-${{ env.JDK_SHA256 }}-${{ env.ASYNC_PROFILER_SHA256 }}
+      - name: Install pinned JDK, image and async-profiler
+        run: |
+          d="$RUNNER_TEMP/downloads"; mkdir -p "$d"
+          [ -f "$d/jdk25.tar.gz" ] || curl -fsSL --retry 3 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4.1_1.tar.gz' -o "$d/jdk25.tar.gz"
+          [ -f "$d/ap.tar.gz" ] || curl -fsSL --retry 3 "https://github.com/async-profiler/async-profiler/releases/download/v$ASYNC_PROFILER/async-profiler-$ASYNC_PROFILER-linux-x64.tar.gz" -o "$d/ap.tar.gz"
+          echo "$JDK_SHA256  $d/jdk25.tar.gz" | sha256sum -c -
+          echo "$ASYNC_PROFILER_SHA256  $d/ap.tar.gz" | sha256sum -c -
+          tar -xzf "$d/jdk25.tar.gz" -C "$RUNNER_TEMP"; tar -xzf "$d/ap.tar.gz" -C "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/jvmd" && tar -xzf image.tar.gz -C "$RUNNER_TEMP/jvmd"
+          echo "JAVA_HOME=$RUNNER_TEMP/jdk-25.0.4.1+1" >> "$GITHUB_ENV"
+          echo "AP=$RUNNER_TEMP/async-profiler-$ASYNC_PROFILER-linux-x64" >> "$GITHUB_ENV"
+          # Kernel symbols and perf events for CPU stacks (async-profiler falls back to itimer otherwise).
+          sudo sysctl -w kernel.perf_event_paranoid=1 kernel.kptr_restrict=0
+          "$RUNNER_TEMP/async-profiler-$ASYNC_PROFILER-linux-x64/bin/asprof" --version || true
+      - name: Record environment and fixture checksums
+        run: |
+          mkdir -p "$RUNNER_TEMP/boot"
+          { echo "scenario=${{ matrix.scenario }}"; uname -a; nproc; free -b; df -h "$RUNNER_TEMP"; lscpu | head -20
+            echo "page cache policy: no cache drop in either scenario"; cat /proc/sys/vm/swappiness; } > "$RUNNER_TEMP/boot/environment.txt" 2>&1
+          (cd "$RUNNER_TEMP/apache-maven-repository" && find . -name '*.jar' | sort | xargs sha256sum) > "$RUNNER_TEMP/boot/fixture-jar-sha256.txt"
+          sha256sum "$RUNNER_TEMP/boot/fixture-jar-sha256.txt"
+          cp provenance/* "$RUNNER_TEMP/boot/"
+      - name: Run scenario
+        timeout-minutes: 280
+        run: |
+          common=(--image "$RUNNER_TEMP/jvmd/image" --java-home "$JAVA_HOME" --repository "$RUNNER_TEMP/apache-maven-repository" --asprof "$AP")
+          out="$RUNNER_TEMP/boot/${{ matrix.scenario }}"
+          case "${{ matrix.scenario }}" in
+            pairs) node benchmarks/boot/boot.ts pairs --mode control --pairs "${{ inputs.pairs || '5' }}" --output "$out" "${common[@]}" ;;
+            controls) node benchmarks/boot/boot.ts controls --output "$out" "${common[@]}" ;;
+            shutdown) node benchmarks/boot/boot.ts shutdown --output "$out" "${common[@]}" ;;
+            experiments) node benchmarks/boot/boot.ts experiments --output "$out" "${common[@]}" ;;
+            scaling) node benchmarks/boot/boot.ts scaling --fractions 25,50,100 --mode counters --output "$out" "${common[@]}" ;;
+            counters) node benchmarks/boot/boot.ts profile --mode counters --repeat 2 --output "$out" "${common[@]}" ;;
+            cpu|wall|alloc) node benchmarks/boot/boot.ts profile --mode "${{ matrix.scenario }}" --repeat 2 --output "$out" "${common[@]}" ;;
+            *) node benchmarks/boot/boot.ts profile --mode "${{ matrix.scenario }}" --output "$out" "${common[@]}" ;;
+          esac
+      - name: Convert profiles
+        if: always()
+        run: |
+          shopt -s globstar nullglob
+          for f in "$RUNNER_TEMP"/boot/**/{cpu,wall,alloc}.jfr; do
+            kind=$(basename "$f" .jfr); flag=--cpu; [ "$kind" = wall ] && flag=--wall; [ "$kind" = alloc ] && flag=--alloc
+            "$AP/bin/jfrconv" $flag "$f" "${f%.jfr}.html" || echo "jfrconv html failed: $f"
+            "$AP/bin/jfrconv" $flag "$f" "${f%.jfr}.collapsed" || echo "jfrconv collapsed failed: $f"
+            [ "$kind" = alloc ] && { "$AP/bin/jfrconv" --alloc --total "$f" "${f%.jfr}-bytes.collapsed" || true; }
+            [ "$kind" = wall ] && { "$AP/bin/jfrconv" --wall --threads "$f" "${f%.jfr}-threads.collapsed" || true; }
+          done
+          python3 benchmarks/boot/reduce.py "$RUNNER_TEMP/boot/${{ matrix.scenario }}" | tee "$RUNNER_TEMP/boot/${{ matrix.scenario }}/reduction.txt" || true
+          cat "$RUNNER_TEMP/boot/${{ matrix.scenario }}/reduction.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - name: Remove measured stores before upload
+        if: always()
+        run: |
+          find "$RUNNER_TEMP/boot" -type d \( -name state -o -name 'snapshot*' -o -name 'repository*' -o -name '*-validation-copy' \) -prune -exec rm -rf {} + 2>/dev/null || true
+          du -sh "$RUNNER_TEMP/boot"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: boot-${{ matrix.scenario }}
+          retention-days: 30
+          path: ${{ runner.temp }}/boot/
+
+  report:
+    needs: [measure]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write   # commits the compact aggregate under docs/boot-evidence/ on this branch
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: boot-*
+          path: ${{ runner.temp }}/all
+      - name: Aggregate (compact evidence in the job log)
+        run: |
+          ls "$RUNNER_TEMP/all"
+          python3 benchmarks/boot/aggregate.py "$RUNNER_TEMP/all"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: boot-aggregate
+          retention-days: 30
+          path: ${{ runner.temp }}/all/aggregate.json
+      - name: Commit compact evidence to the investigation branch
+        if: github.ref == 'refs/heads/ccr-36d3dd4d-e594f0'
+        run: |
+          mkdir -p docs/boot-evidence
+          dest="docs/boot-evidence/run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          cp "$RUNNER_TEMP/all/aggregate.json" "$dest"
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$dest"
+          git commit -q -m "boot evidence: run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT ($(git rev-parse --short HEAD))"
+          for i in 1 2 3 4; do git pull -q --rebase origin "${GITHUB_REF_NAME}" && git push -q origin "HEAD:${GITHUB_REF_NAME}" && break; sleep $((2**i)); done

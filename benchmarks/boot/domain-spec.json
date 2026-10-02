@@ -1,0 +1,53 @@
+{
+  "name": "BootDomainSpec",
+  "version": 1,
+  "purpose": "Test configuration for the daemon boot/persistence assessment; not a production abstraction.",
+  "subject_sha": "0f7c825d7b49fe7ba24d26606517bb8208b72e72",
+  "input_universe": {
+    "repository": "apache/maven @ 5cd1b60264101080c712accd605180a4bd9222e0, built once with -Dmaven.repo.local into RUNNER_TEMP/apache-maven-repository (outside every measurement); the daemon's m2_repo",
+    "artifact_inventory": "Every regular file under m2_repo whose name ends in .jar, except *-javadoc.jar (IndexService.scan, Files.walk without following directory links). Recorded per run in input-manifest.json with sizes; fixture-jar-sha256.txt holds content checksums.",
+    "binaries": "*.jar that are not *-sources.jar: indexJar(kind=jar)",
+    "companions": "*-sources.jar with a sibling binary: indexSources; *.jar.sha1 beside a JAR is verified before hashing it",
+    "exclusions": ["*-javadoc.jar", "every non-JAR file (POMs, metadata, .lastUpdated)", "the workspace sources of apache/maven (no session is opened)"],
+    "stability": "Input paths, mtimes and ctimes are not touched between a cold run and its paired warm run; inputs are never copied between them."
+  },
+  "platform": {
+    "jdk": "Temurin 25.0.4.1+1 (sha256 dbb698396d478e7fa2b1e50f4103324b2a99b90569ee27c33f2261f9215cf41e) is the daemon's jdk_home; the product jlink image of the same build runs the daemon",
+    "expected_indexing": "None at native boot: IndexService.indexJdk is reached only from ensureSignatureEdges, Documentation and CodePass, all session requests. Coverage state NOT_EXERCISED_BY_NATIVE_BOOT."
+  },
+  "configuration": {
+    "config_json": {"jdk_home": "<pinned JDK>", "m2_repo": "<fixture repository>"},
+    "defaults_kept": {
+      "heap_ceiling_mb": 1024, "index_on_start": true, "idle_timeout_s": 14400, "maven_major": 3,
+      "jvmd.index.scan.initial_delay_seconds": 2, "periodic_scan_delay_s": 60,
+      "jvmd.ready.awaitRepositoryScan": false, "jvmd.index.generation_budget_mb": 128, "jvmd.index.native_budget_mb": 64,
+      "jvmd.index.sort_buffer_bytes": 4194304, "index_readers": "min(4, available processors)", "-Xmx": "unset (JVM default)"
+    },
+    "semantic_versions": {"ArtifactIndexFormat.FORMAT_VERSION": 1, "ArtifactIndexFormat.INDEXER_VERSION": "jvmd-index-v9", "format_generation": "format-1-jdk25-jvmd-index-v9"},
+    "launch": "Product launcher equivalent: IMAGE/bin/java -XX:AOTCache=IMAGE/lib/jvmd/jvmd.aot -Xlog:aot -cp IMAGE/lib/jvmd/* dev.jvmd.dist.Application, plus -Djvmd.config/-Djvmd.state/-Djvmd.socket (isolated paths) and -Djvmd.profile.boot_events/boot_dump. The counters mode uses the full JDK of the same build (allocation counter), without the AOT cache.",
+    "environment": "LANG=C.UTF-8; no network is used by the native boot path (no resolver, no session)"
+  },
+  "semantic_result_families": {
+    "binary_signature_facts": {"state": "REQUIRED_AND_ESTABLISHED (to be verified)", "owner": "RocksArtifactRepository generation keyed by cacheKey(sha256, format, indexer, jdk feature, mode=signatures)", "content": "symbols, binary keys, SCIP, names, owner paths, name paths, trigram postings, outgoing and reverse relationships, class references, manifest with checksum"},
+    "artifact_manifests": {"state": "REQUIRED_AND_ESTABLISHED (to be verified)", "owner": "RocksIndexStore A| records (path -> key, docsKey, resolutionIdentity, counts)"},
+    "documentation_members": {"state": "REQUIRED_AND_ESTABLISHED where *-sources.jar exist; the corpus has none (see input-manifest), so the small fixture exercises it", "owner": "RocksArtifactRepository documentation generation + sources artifact manifest + U| unmatched count"},
+    "repository_inventory": {"state": "REQUIRED_AND_ESTABLISHED (to be verified)", "owner": "RocksArtifactInventory P| (path, gav, kind, cacheKey, sha, stamp) and R| refcounts; scan generation numbers excluded"},
+    "completeness": {"state": "REQUIRED_AND_ESTABLISHED (to be verified)", "owner": "RocksMigrationManager active.manifest + VALIDATED marker of the format generation; IndexService.repositoryReconciled()"},
+    "code_body_edges": {"state": "NOT_EXERCISED_BY_NATIVE_BOOT", "reason": "CodePass/storeCode run from session requests only"},
+    "jdk_platform_facts": {"state": "NOT_EXERCISED_BY_NATIVE_BOOT", "reason": "indexJdk is demand-driven"},
+    "global_relationship_linking": {"state": "INTENTIONALLY_OUT_OF_DOMAIN", "reason": "RocksIndexStore.resolveGlobalRelationships is a no-op: targets stay symbolic until a workspace query"},
+    "classpath_sequences_and_proofs": {"state": "NOT_EXERCISED_BY_NATIVE_BOOT", "reason": "built lazily per workspace/ClasspathContext; caches are empty without sessions (observation_caches runtime view)"}
+  },
+  "local_scope": {"state": "NOT_EXERCISED_BY_NATIVE_BOOT", "finding": "TARGET GAP: local semantic restoration is demand-driven, not part of native boot.", "detail": "SemanticMemoStore (local-memo-v1) is constructed without reading records; AttributedMemos, workspace bindings, LOCAL artifacts and module state are created by session.open/diagnostics."},
+  "live_scope": {"state": "Empty in both scenarios: no session, no documents, empty unsaved-editor overlay. The file-observation journal is loaded at construction and only consulted by session requests."},
+  "required_completeness": "Every binary JAR of the inventory has an artifact manifest and an immutable signature generation; every sources JAR with a binary has documentation joined; the inventory holds every path; the format generation is activated and validated; the scan recorded no artifact or source fault.",
+  "ready_predicate": "DOMAIN_READY = first boot event REPOSITORY_RECONCILIATION_FINISHED with reconciled=true: emitted from the whenComplete of IndexService.start()'s readiness future after the initial scan returned with lastScanComplete (all reader futures joined, inventory completed, candidate validated/activated, removed paths reconciled, link pass returned). It carries in-flight evidence (active artifacts, reader pool, source publisher, admission and build gauges). PRODUCT_READY (stdout READY) and SESSION_CAPABLE are recorded as milestones only.",
+  "persistence_contract": {
+    "metadata_store": "RocksIndexStore writes with WriteOptions.setSync(true): durable before the call returns",
+    "signature_and_documentation_generations": "SST built in staging, fsync'd, verified, then ingested (move); RocksDB records the ingestion in its MANIFEST",
+    "inventory": "RocksArtifactInventory writes with default WriteOptions: WAL without sync; process-restart recoverable (WAL in the page cache), not power-loss durable",
+    "activation": "VALIDATED marker and active.manifest written with fsync and directory fsync, manifest by atomic rename",
+    "file_observation_journal": "flushed by size/age thresholds and at Application.close(); not written by native boot (no session hashes classpath files)",
+    "claim_tested": "process-restart recoverability at DOMAIN_READY (SIGKILL after the endpoint, warm boot from the stopped copy). Power-loss durability is not tested."
+  }
+}

@@ -13,7 +13,7 @@ final class RocksArtifactAdmission implements ArtifactAdmission {
     private final Semaphore budget;
     private final int totalUnits;
     private final AtomicLong waitNanos=new AtomicLong();
-    private final AtomicInteger unitsInFlight=new AtomicInteger(),peakUnits=new AtomicInteger();
+    private final AtomicInteger unitsInFlight=new AtomicInteger(),peakUnits=new AtomicInteger(),artifactsInFlight=new AtomicInteger();
 
     RocksArtifactAdmission(long maxEstimatedBytes){
         if(maxEstimatedBytes<UNIT)throw new IllegalArgumentException("maxEstimatedBytes must be at least 1 MiB");
@@ -40,8 +40,18 @@ final class RocksArtifactAdmission implements ArtifactAdmission {
         int units=(int)Math.min(totalUnits,Math.max(1,(estimate+UNIT-1)/UNIT));
         long waiting=System.nanoTime();budget.acquire(units);waitNanos.addAndGet(System.nanoTime()-waiting);
         dev.jvmd.core.BootEvents.timed("admission.artifact_wait",waiting);dev.jvmd.core.BootEvents.count("admission.units_in_flight",units);
+        if(dev.jvmd.core.BootEvents.ENABLED){
+            dev.jvmd.core.BootEvents.count("admission.estimated_units",units);
+            if(units>=totalUnits)dev.jvmd.core.BootEvents.count("admission.whole_budget_artifacts",1);
+            if(System.nanoTime()-waiting>1_000_000L)dev.jvmd.core.BootEvents.count("admission.waited_over_1ms",1);
+        }
         int active=unitsInFlight.addAndGet(units);peakUnits.accumulateAndGet(active,Math::max);artifactPermit.set(true);
-        return ()->{artifactPermit.remove();unitsInFlight.addAndGet(-units);budget.release(units);dev.jvmd.core.BootEvents.count("admission.units_in_flight",-units);};
+        if(dev.jvmd.core.BootEvents.ENABLED){
+            int artifacts=artifactsInFlight.incrementAndGet();
+            dev.jvmd.core.BootEvents.maximum("admission.artifacts_in_flight",artifacts);dev.jvmd.core.BootEvents.maximum("admission.units_in_flight",active);
+        }
+        return ()->{artifactPermit.remove();unitsInFlight.addAndGet(-units);budget.release(units);dev.jvmd.core.BootEvents.count("admission.units_in_flight",-units);
+            if(dev.jvmd.core.BootEvents.ENABLED)artifactsInFlight.decrementAndGet();};
     }
 
     AutoCloseable acquirePublication(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{

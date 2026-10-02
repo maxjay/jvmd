@@ -22,7 +22,9 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
 
     RocksIndexStorage(Path root,long maxEstimatedBytes,RocksMigrationManager migration,String candidateGeneration)throws Exception{
         admission=new RocksArtifactAdmission(maxEstimatedBytes);
+        long memoryStarted=dev.jvmd.core.BootEvents.nanos();
         memory=new RocksMemory(Math.multiplyExact(Long.getLong("jvmd.index.native_budget_mb",64L),1024L*1024L));
+        dev.jvmd.core.BootEvents.timed("open.native_library_and_memory",memoryStarted);
         var opened=new ArrayList<AutoCloseable>();opened.add(memory);
         try{
             long started=dev.jvmd.core.BootEvents.nanos();

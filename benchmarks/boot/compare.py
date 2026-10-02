@@ -13,7 +13,7 @@ import json
 import sys
 
 # Reported, never part of equality: physical or history/evidence data.
-NON_SEMANTIC = {"metadata.key_prefix_counts", "evidence.inventory_ctime_filekey"}
+NON_SEMANTIC = {"metadata.key_prefix_counts", "evidence.inventory_ctime_filekey", "repository.unreferenced_generations"}
 DIFF_LIMIT = 25
 
 
@@ -52,8 +52,28 @@ def completeness(export):
             "state": "COMPLETE" if m.get("complete") else "PARTIAL"}
 
 
+def derive(families):
+    """Split content-addressed generations into those an artifact manifest references (readable state) and the
+    rest. Readers reach generations only through manifests (cacheKey, docsKey, codeKey), so an unreferenced
+    generation is retained storage, not semantic state; it is reported, never silently dropped."""
+    families = dict(families)
+    gens = families.pop("repository.generations", None)
+    if gens is None:
+        return families
+    referenced = set()
+    for a in families.get("metadata.artifacts", {}).values():
+        referenced.add(cache_key(a["input"]["key"]))
+        for k in ("docsKey", "codeKey"):
+            if a.get(k):
+                referenced.add(a[k])
+    families["repository.reachable_generations"] = {k: v for k, v in gens.items() if k in referenced}
+    families["repository.unreferenced_generations"] = {k: v for k, v in gens.items() if k not in referenced}
+    families["repository.referenced_but_missing"] = sorted(referenced - set(gens))
+    return families
+
+
 def compare_exports(a, b):
-    fa, fb = a.get("families", {}), b.get("families", {})
+    fa, fb = derive(a.get("families", {})), derive(b.get("families", {}))
     families = {}
     for name in sorted(set(fa) | set(fb)):
         if name not in fa or name not in fb:

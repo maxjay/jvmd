@@ -121,7 +121,7 @@ def main(root):
                              "export_ms": {k: (v or {}).get("export_ms") for k, v in (p.get("exports") or {}).items()}})
     for path in sorted(glob.glob(os.path.join(root, "**", "*.collapsed"), recursive=True)):
         out["profiles"].append(collapsed(path))
-    for extra in ("controls.json", "shutdown/shutdown.json"):
+    for extra in ("controls.json", "shutdown/shutdown.json", "experiments.json"):
         if os.path.exists(os.path.join(root, extra)):
             out[extra.split("/")[-1].replace(".json", "")] = load(os.path.join(root, extra))
     # Aggregates by scenario (cold/warm) across pairs.

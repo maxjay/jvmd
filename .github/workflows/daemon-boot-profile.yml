@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       scenarios:
-        description: 'Comma-separated scenarios (empty = all): pairs,controls,shutdown,scaling,counters,cpu,wall,alloc,native,retention'
+        description: 'Comma-separated scenarios (empty = all): pairs,controls,shutdown,scaling,experiments,counters,cpu,wall,alloc,native,retention'
         default: ''
       pairs:
         description: Control pairs
@@ -113,7 +113,7 @@ jobs:
             provenance/
       - id: matrix
         run: |
-          all='pairs,controls,shutdown,scaling,counters,cpu,wall,alloc,native,retention'
+          all='pairs,controls,shutdown,scaling,experiments,counters,cpu,wall,alloc,native,retention'
           s="${{ inputs.scenarios }}"; [ -n "$s" ] || s="$all"
           echo "scenarios=$(python3 -c 'import json,sys;print(json.dumps([x for x in sys.argv[1].split(",") if x]))' "$s")" >> "$GITHUB_OUTPUT"
 
@@ -219,6 +219,7 @@ jobs:
             pairs) node benchmarks/boot/boot.ts pairs --mode control --pairs "${{ inputs.pairs || '5' }}" --output "$out" "${common[@]}" ;;
             controls) node benchmarks/boot/boot.ts controls --output "$out" "${common[@]}" ;;
             shutdown) node benchmarks/boot/boot.ts shutdown --output "$out" "${common[@]}" ;;
+            experiments) node benchmarks/boot/boot.ts experiments --output "$out" "${common[@]}" ;;
             scaling) node benchmarks/boot/boot.ts scaling --fractions 25,50,100 --mode counters --output "$out" "${common[@]}" ;;
             counters) node benchmarks/boot/boot.ts profile --mode counters --repeat 2 --output "$out" "${common[@]}" ;;
             cpu|wall|alloc) node benchmarks/boot/boot.ts profile --mode "${{ matrix.scenario }}" --repeat 2 --output "$out" "${common[@]}" ;;
@@ -254,10 +255,12 @@ jobs:
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      contents: write   # commits the compact aggregate under docs/boot-evidence/ on this branch
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          persist-credentials: false
+          ref: ${{ github.ref }}
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: boot-*
@@ -271,3 +274,13 @@ jobs:
           name: boot-aggregate
           retention-days: 30
           path: ${{ runner.temp }}/all/aggregate.json
+      - name: Commit compact evidence to the investigation branch
+        if: github.ref == 'refs/heads/ccr-36d3dd4d-e594f0'
+        run: |
+          mkdir -p docs/boot-evidence
+          dest="docs/boot-evidence/run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          cp "$RUNNER_TEMP/all/aggregate.json" "$dest"
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$dest"
+          git commit -q -m "boot evidence: run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT ($(git rev-parse --short HEAD))"
+          for i in 1 2 3 4; do git pull -q --rebase origin "${GITHUB_REF_NAME}" && git push -q origin "HEAD:${GITHUB_REF_NAME}" && break; sleep $((2**i)); done

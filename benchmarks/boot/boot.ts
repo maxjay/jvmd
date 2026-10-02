@@ -35,7 +35,9 @@ const POST_READY_MS=5000;
 type Mode="control"|"counters"|"cpu"|"wall"|"alloc"|"native"|"retention";
 type Common={image:string;javaHome:string;repository:string;output:string;asprof?:string;timeoutMs:number};
 type Terminate={kind:"kill"}|{kind:"graceful"}|{kind:"kill-after";event:string;delayMs:number};
-type BootOptions=Common&{label:string;mode:Mode;state:string;dir:string;terminate:Terminate;repositoryOverride?:string};
+type BootOptions=Common&{label:string;mode:Mode;state:string;dir:string;terminate:Terminate;repositoryOverride?:string;
+  /** Labelled supplementary runs only: system properties that change product defaults. */
+  props?:Record<string,string>};
 
 function args(argv:string[]){
   const out:Record<string,string>={};for(let i=0;i<argv.length;i++)if(argv[i].startsWith("--")){out[argv[i].slice(2)]=argv[i+1]??"";i++;}
@@ -115,6 +117,7 @@ function launchCommand(o:BootOptions,events:string){
   const config=path.join(o.dir,"config.json");
   writeFileSync(config,JSON.stringify({jdk_home:o.javaHome,m2_repo:o.repositoryOverride??o.repository}));
   const socket=path.join(o.dir,"daemon.sock");
+  for(const [k,v] of Object.entries(o.props??{}))flags.push(`-D${k}=${v}`);
   return {java,socket,config,args:[...flags,"-Djvmd.config="+config,"-Djvmd.state="+o.state,"-Djvmd.socket="+socket,
     "-Djvmd.profile.boot_events="+events,"-Djvmd.profile.boot_dump=true","-cp",path.join(o.image,"lib/jvmd/*"),"dev.jvmd.dist.Application"]};
 }
@@ -122,7 +125,8 @@ function launchCommand(o:BootOptions,events:string){
 async function rpc(socket:string,method:string,params:any={},timeout=60000){
   const s=await new Promise<net.Socket>((resolve,reject)=>{const c=net.createConnection(socket);c.once("connect",()=>resolve(c));c.once("error",reject);});
   const client=new RpcClient(s);
-  try{const r=await client.raw(method,params,timeout);if(r.error)throw new Error(method+": "+JSON.stringify(r.error));return r.result;}
+  // The JSON-RPC result is the daemon's envelope; its payload is envelope.result.
+  try{const r=await client.raw(method,params,timeout);if(r.error)throw new Error(method+": "+JSON.stringify(r.error));return r.result?.result??r.result;}
   finally{s.destroy();}
 }
 
@@ -204,6 +208,10 @@ export async function boot(o:BootOptions){
   result.socket_owner=socketOwner;
   result.events=seen=readEvents(events);
   result.failure=failure;result.domain_ready=!!domain;
+  result.series=series(samples,spawnNs);result.store_files=storeFiles(result.listing_at_ready??result.listing_after_exit);
+  if(o.mode==="counters")result.gc=parseGcLog(path.join(o.dir,"gc.log"),result.events,spawnNs);
+  if(o.mode==="retention")result.retention=parseRetention(o.dir);
+  if(o.mode==="native")result.nmt=parseNmt(path.join(o.dir,"nmt-summary.txt"));
   result.summary=summarize(result,spawnNs,readyStdoutNs);
   writeFileSync(path.join(o.dir,"result.json"),JSON.stringify(result,null,1));
   writeFileSync(path.join(o.dir,"summary.json"),JSON.stringify(result.summary,null,1));
@@ -212,6 +220,58 @@ export async function boot(o:BootOptions){
   return result;
 }
 
+/** Every fifth 100 ms sample (and the last), relative to spawn: CPU, RSS and process I/O over time. */
+function series(file:string,spawnNs:bigint){
+  if(!existsSync(file))return [];
+  const rows=readFileSync(file,"utf8").split("\n").filter(Boolean).map(l=>JSON.parse(l));
+  return rows.filter((_,i)=>i%5===0||i===rows.length-1).map(r=>[Math.round(ms(BigInt(r.mono_ns)-spawnNs)),r.utime_ms,r.stime_ms,r.VmRSS,r.io_read_bytes,r.io_write_bytes,r.threads]);
+}
+/** SST and WAL files per Rocks database directory of a state listing. */
+function storeFiles(files:Record<string,{size:number}>){
+  const out:Record<string,{sst:number;sst_bytes:number;wal:number;wal_bytes:number;other_bytes:number}>={};
+  for(const [name,f] of Object.entries(files??{})){
+    const dir=path.dirname(name);const o=out[dir]??={sst:0,sst_bytes:0,wal:0,wal_bytes:0,other_bytes:0};
+    if(name.endsWith(".sst")){o.sst++;o.sst_bytes+=f.size;}else if(/\/\d+\.log$/u.test(name)){o.wal++;o.wal_bytes+=f.size;}else o.other_bytes+=f.size;
+  }
+  return out;
+}
+/** G1 pauses from -Xlog:gc: count, total pause, peak heap before a pause and live heap after, up to DOMAIN_READY and in total. */
+function parseGcLog(file:string,events:any[],spawnNs:bigint){
+  if(!existsSync(file))return null;
+  const dr=events.find((e:any)=>e.event==="REPOSITORY_RECONCILIATION_FINISHED");
+  const drUptime=dr?ms(BigInt(dr.mono_ns)-spawnNs)/1000:Infinity;// JVM uptime ≈ time since spawn (launch latency of a few ms)
+  const acc=(rows:any[])=>({pauses:rows.length,pause_ms:rows.reduce((s,r)=>s+r.ms,0),max_before_mb:Math.max(0,...rows.map(r=>r.before)),
+    max_after_mb:Math.max(0,...rows.map(r=>r.after)),max_committed_mb:Math.max(0,...rows.map(r=>r.committed)),last_after_mb:rows.at(-1)?.after??null,
+    young:rows.filter(r=>/Young/u.test(r.kind)).length,mixed:rows.filter(r=>/Mixed/u.test(r.kind)).length,full:rows.filter(r=>/Full/u.test(r.kind)).length,
+    concurrent_cycles:0});
+  const rows:any[]=[];let cycles=0;
+  for(const line of readFileSync(file,"utf8").split("\n")){
+    const m=line.match(/^\[([\d.]+)s\].*\[gc\s*\] GC\(\d+\) (Pause [^(]+(?:\([^)]*\))*)\s+(\d+)M->(\d+)M\((\d+)M\) ([\d.]+)ms/u);
+    if(m)rows.push({t:Number(m[1]),kind:m[2],before:Number(m[3]),after:Number(m[4]),committed:Number(m[5]),ms:Number(m[6])});
+    if(/Concurrent Mark Cycle [\d.]+ms/u.test(line))cycles++;
+  }
+  const until=acc(rows.filter(r=>r.t<=drUptime)),all=acc(rows);all.concurrent_cycles=cycles;
+  return {until_domain_ready:until,whole_process:all,domain_ready_uptime_s:drUptime,note:"uptime correlated to spawn; heap figures are at GC pauses only"};
+}
+function parseRetention(dir:string){
+  const read=(f:string)=>{try{return readFileSync(path.join(dir,f),"utf8");}catch{return "";}};
+  const heap=(t:string)=>{const m=t.match(/garbage-first heap\s+total reserved (\d+)K, committed (\d+)K, used (\d+)K/u);return m?{reserved_kb:Number(m[1]),committed_kb:Number(m[2]),used_kb:Number(m[3])}:null;};
+  const hist=read("class-histogram.txt").split("\n").filter(l=>/^\s*\d+:/u.test(l)).slice(0,25).map(l=>{const f=l.trim().split(/\s+/u);return [f[3],Number(f[1]),Number(f[2])];});
+  const total=read("class-histogram.txt").match(/^Total\s+(\d+)\s+(\d+)/mu);
+  const threads=(read("threads.txt").match(/^"/gmu)??[]).length;
+  return {heap_before_gc:heap(read("heap-info-before.txt")),heap_after_full_gc:heap(read("heap-info-after-gc.txt")),
+    histogram_total:total?{instances:Number(total[1]),bytes:Number(total[2])}:null,histogram_top:hist,platform_threads_listed:threads,
+    note:"Retention procedure: GC.class_histogram forces a full GC; values after it are altered by the procedure"};
+}
+function parseNmt(file:string){
+  if(!existsSync(file))return null;
+  const t=readFileSync(file,"utf8");const out:any={};
+  const total=t.match(/Total: reserved=(\d+)KB, committed=(\d+)KB/u);if(total)out.total={reserved_kb:Number(total[1]),committed_kb:Number(total[2])};
+  out.categories={};
+  for(const m of t.matchAll(/^-\s+([\w ]+?) \(reserved=(\d+)KB, committed=(\d+)KB\)/gmu))out.categories[m[1].trim()]={reserved_kb:Number(m[2]),committed_kb:Number(m[3])};
+  out.note="NMT covers JVM-owned native memory; RocksDB (malloc outside the JVM) is not in NMT";
+  return out;
+}
 function jcmd(javaHome:string,pid:number,command:string[],file:string){
   const started=now();
   const r=spawnSync(path.join(javaHome,"bin/jcmd"),[String(pid),...command],{encoding:"utf8",timeout:600000,maxBuffer:1<<30});
@@ -271,7 +331,8 @@ function summarize(r:any,spawnNs:bigint,readyStdoutNs?:bigint){
     io_at_domain_ready:at?{rchar:at.io_rchar,wchar:at.io_wchar,read_bytes:at.io_read_bytes,write_bytes:at.io_write_bytes,syscr:at.io_syscr,syscw:at.io_syscw}:null,
     io_post_ready_delta:at&&post?{read_bytes:post.io_read_bytes-at.io_read_bytes,write_bytes:post.io_write_bytes-at.io_write_bytes,wchar:post.io_wchar-at.io_wchar}:null,
     faults_at_domain_ready:at?{minor:at.minflt,major:at.majflt}:null,threads_at_domain_ready:at?.threads??null,
-    counters:d?.counters??first.SCAN_COMPLETE?.counters??null,in_flight:d?.in_flight??null,
+    counters:d?.counters??first.SCAN_COMPLETE?.counters??null,in_flight:d?.in_flight??null,gc:r.gc??null,retention:r.retention??null,nmt:r.nmt??null,series:r.series,store_files:r.store_files,
+    status_error:r.status_error??null,
     session_capable:first.SESSION_CAPABLE?{persisted_index_complete:first.SESSION_CAPABLE.persisted_index_complete}:null,
     storage_open_end:first.STORAGE_OPEN_END?{scan_completed:first.STORAGE_OPEN_END.scan_completed}:null,
     discovery:first.DISCOVERY_COMPLETE?{jars:first.DISCOVERY_COMPLETE.jars,sources_jars:first.DISCOVERY_COMPLETE.sources_jars}:null,
@@ -455,6 +516,7 @@ async function controls(c:Common){
     const warmVsClean=compareExports(ew.file,ec.file,path.join(pd,"warm-vs-clean.json"),path.join(pd,"warm/milestones.jsonl"),path.join(pd,"clean/milestones.jsonl"));
     const warmVsOriginal=compareExports(ew.file,eo.file,path.join(pd,"warm-vs-original.json"));
     out.c2_offline_change={cold:cold.domain_ready,warm:warm.domain_ready,clean:clean.domain_ready,
+      warm_vs_clean_families:warmVsClean.families,
       warm_vs_clean_cold:warmVsClean.verdict,warm_vs_clean_runtime:warmVsClean.runtime?.status,
       warm_vs_original_cold:warmVsOriginal.verdict,stale_accepted:warmVsOriginal.verdict==="EQUAL",
       changed_families:Object.entries(warmVsOriginal.families).filter(([,v]:any)=>v.status==="DIFFERENT").map(([k])=>k),
@@ -544,6 +606,31 @@ async function shutdownAccounting(c:Common){
   return result;
 }
 
+/**
+ * Supplementary, labelled causal experiments. They change one product default each and never replace the
+ * default-configuration results: a larger and a smaller admission budget (is admission waiting on the cold critical
+ * path?), no initial scan delay, and READY held until reconciliation (the existing awaitRepositoryScan option).
+ */
+async function experiments(c:Common){
+  const dir=path.join(c.output,"experiments");const out:any={label:"SUPPLEMENTARY: changed configuration, not the default product result"};
+  const run=async(id:string,state:string,props?:Record<string,string>)=>(await boot({...c,label:"experiments/"+id,mode:"counters",state,dir:path.join(dir,id),terminate:{kind:"kill"},props})).summary;
+  out.cold_default=await run("cold-default",path.join(dir,"cold-default/state"));
+  copyTree(path.join(dir,"cold-default/state"),path.join(dir,"snapshot"));
+  for(const [id,props] of [["warm-default",{}],["warm-initial-delay-0",{"jvmd.index.scan.initial_delay_seconds":"0"}],["warm-await-repository-scan",{"jvmd.ready.awaitRepositoryScan":"true"}]] as [string,Record<string,string>][]){
+    copyTree(path.join(dir,"snapshot"),path.join(dir,id,"state"));out[id]={props,summary:await run(id,path.join(dir,id,"state"),props)};
+    rmSync(path.join(dir,id,"state"),{recursive:true,force:true});
+  }
+  for(const budget of ["512","32"]){
+    const id="cold-generation-budget-"+budget+"mb";
+    out[id]={props:{"jvmd.index.generation_budget_mb":budget},summary:await run(id,path.join(dir,id,"state"),{"jvmd.index.generation_budget_mb":budget})};
+    rmSync(path.join(dir,id,"state"),{recursive:true,force:true});
+  }
+  out.cold_default_repeat=await run("cold-default-repeat",path.join(dir,"cold-default-repeat/state"));
+  for(const d of ["cold-default/state","cold-default-repeat/state","snapshot"])rmSync(path.join(dir,d),{recursive:true,force:true});
+  writeFileSync(path.join(c.output,"experiments.json"),JSON.stringify(out,null,1));
+  return out;
+}
+
 /** Deterministic artifact subsets of the corpus (every k-th version directory), copied with preserved mtimes. */
 function subsetRepository(repository:string,target:string,fraction:number){
   const dirs:string[]=[];
@@ -587,7 +674,8 @@ async function main(){
       const p=await pair(c,{id:`${a.mode}-${i}`,mode:a.mode as Mode});
       results.pairs.push({id:`${a.mode}-${i}`,equivalence:p.equivalence,verdict:p.comparison?.verdict,cold:p.cold.summary,warm:p.warm?.summary});
     }
-  }else if(command==="controls")results.controls=await controls(c);
+  }else if(command==="experiments")results.experiments=await experiments(c);
+  else if(command==="controls")results.controls=await controls(c);
   else if(command==="shutdown")results.shutdown=await shutdownAccounting(c);
   else if(command==="scaling"){
     results.scaling=[];

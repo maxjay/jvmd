@@ -9,8 +9,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 import compare  # noqa: E402
 
 
+KEY = {"binarySha256": "a" * 64, "formatVersion": 1, "indexerVersion": "jvmd-index-v9", "runtimeFeature": 25, "mode": "signatures"}
+
+
 def export(complete=True):
-    key = {"binarySha256": "a" * 64, "formatVersion": 1, "indexerVersion": "jvmd-index-v9", "runtimeFeature": 25, "mode": "signatures"}
+    key = KEY
     return {
         "migration": {"active": "format-1-jdk25-jvmd-index-v9" if complete else "", "complete": complete},
         "families": {
@@ -23,7 +26,9 @@ def export(complete=True):
                              "classReferences": True, "sourceRevision": 0, "simpleNames": 2},
             },
             "metadata.unmatched_source_members": {"/r/b-sources.jar": "0"},
-            "repository.generations": {"k1": {"sha256": "1" * 64, "records": {"1|symbol": 3}}, "k2": {"sha256": "2" * 64, "records": {"1|symbol": 4}}},
+            "repository.generations": {compare.cache_key(key): {"sha256": "1" * 64, "records": {"1|symbol": 3}},
+                                       compare.cache_key(dict(key, binarySha256="b" * 64)): {"sha256": "2" * 64, "records": {"1|symbol": 4}},
+                                       "d" * 64: {"sha256": "4" * 64, "records": {"9|member": 2}}},
             "classpath.slots": ["slot:a", "slot:b", "slot:c"],
             "metadata.key_prefix_counts": {"A": 2, "next-artifact": 1},
         },
@@ -36,11 +41,27 @@ class ComparatorSensitivity(unittest.TestCase):
 
     def test_changed_fact_with_equal_counts(self):
         b = export()
-        b["families"]["repository.generations"]["k2"]["sha256"] = "3" * 64  # same record counts, different content
+        k2 = compare.cache_key(dict(KEY, binarySha256="b" * 64))
+        b["families"]["repository.generations"][k2]["sha256"] = "3" * 64  # same record counts, different content
         r = compare.compare_exports(export(), b)
         self.assertEqual(r["verdict"], "NOT_EQUIVALENT")
-        self.assertEqual(r["families"]["repository.generations"]["changed_count"], 1)
-        self.assertEqual(r["families"]["repository.generations"]["a_count"], r["families"]["repository.generations"]["b_count"])
+        f = r["families"]["repository.reachable_generations"]
+        self.assertEqual(f["changed_count"], 1)
+        self.assertEqual(f["a_count"], f["b_count"])
+
+    def test_unreferenced_generation_is_reported_not_compared(self):
+        b = export()
+        b["families"]["repository.generations"]["e" * 64] = {"sha256": "5" * 64, "records": {"1|symbol": 9}}
+        r = compare.compare_exports(export(), b)
+        self.assertEqual(r["verdict"], "EQUAL")
+        self.assertEqual(r["families"]["repository.unreferenced_generations"], {"status": "NOT_COMPARED", "observed": "DIFFERENT"})
+
+    def test_missing_reachable_generation(self):
+        b = export()
+        del b["families"]["repository.generations"]["d" * 64]
+        r = compare.compare_exports(export(), b)
+        self.assertEqual(r["verdict"], "NOT_EQUIVALENT")
+        self.assertEqual(r["families"]["repository.referenced_but_missing"]["status"], "DIFFERENT")
 
     def test_changed_value_inside_artifact(self):
         b = export()

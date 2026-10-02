@@ -25,6 +25,7 @@ public final class BootEvents {
     public static final boolean DUMP=ENABLED&&Boolean.getBoolean("jvmd.profile.boot_dump");
     private static final String FILE=System.getProperty("jvmd.profile.boot_events");
     private static final Map<String,LongAdder> COUNTERS=new ConcurrentHashMap<>();
+    private static final Map<String,java.util.concurrent.atomic.AtomicLong> MAXIMA=new ConcurrentHashMap<>();
     private static final Map<String,Supplier<Object>> PROVIDERS=new ConcurrentHashMap<>();
     private static final Object WRITE=new Object();
     private BootEvents(){}
@@ -33,6 +34,10 @@ public final class BootEvents {
         if(ENABLED)COUNTERS.computeIfAbsent(name,_->new LongAdder()).add(delta);
     }
     public static long nanos(){return ENABLED?System.nanoTime():0L;}
+    /** Records the largest value seen under {@code name} (reported with the counters as {@code name}_max). */
+    public static void maximum(String name,long value){
+        if(ENABLED)MAXIMA.computeIfAbsent(name,_->new java.util.concurrent.atomic.AtomicLong(Long.MIN_VALUE)).accumulateAndGet(value,Math::max);
+    }
     /** Adds the elapsed time since {@code started} (from {@link #nanos}) to {@code name}_ns and counts one call. */
     public static void timed(String name,long started){
         if(!ENABLED)return;
@@ -40,7 +45,8 @@ public final class BootEvents {
         COUNTERS.computeIfAbsent(name+"_calls",_->new LongAdder()).increment();
     }
     public static Map<String,Long> counters(){
-        var result=new TreeMap<String,Long>();COUNTERS.forEach((name,value)->result.put(name,value.sum()));return result;
+        var result=new TreeMap<String,Long>();COUNTERS.forEach((name,value)->result.put(name,value.sum()));
+        MAXIMA.forEach((name,value)->result.put(name+"_max",value.get()));return result;
     }
     /** Registers an in-memory diagnostic view, read only by {@link #dump}. */
     public static void provider(String name,Supplier<Object> value){if(DUMP)PROVIDERS.put(name,value);}

@@ -40,17 +40,22 @@ def main(root):
     details = {}
     for path in sorted(glob.glob(os.path.join(root, "**", "summary.json"), recursive=True)):
         rel = os.path.relpath(path, root)
-        if "/pair-1/" in rel or "/counters-1/" in rel or "/scale-" in rel:
+        if any(m in rel for m in ("/pair-1/", "/pair-2/", "/counters-1/", "/scale-", "/retention-1/", "/native-1/", "/experiments/", "/shutdown/", "c1-no-change")):
             s = load(path)
             details[rel] = {k: s.get(k) for k in ("t_ms", "counters", "in_flight", "index_status", "readiness", "exit_vs_ready", "io_at_domain_ready",
                                                    "io_post_ready_delta", "cpu_post_ready_delta", "rss_post_ready", "pss_post_ready", "allocated_bytes",
-                                                   "runtime_dump_ms", "detection_lag_ms", "socket_owner", "identity", "discovery", "classpath_files")}
+                                                   "runtime_dump_ms", "detection_lag_ms", "socket_owner", "identity", "discovery", "classpath_files",
+                                                   "gc", "retention", "nmt", "store_files", "status_error", "session_capable", "storage_open_end",
+                                                   "cpu_at_domain_ready", "peak_rss_bytes_at_domain_ready", "faults_at_domain_ready", "threads_at_domain_ready")}
+            if "/pair-1/" in rel or "/counters-1/" in rel or "c1-no-change" in rel:
+                details[rel]["series"] = s.get("series")
     out["details"] = details
-    for path in sorted(glob.glob(os.path.join(root, "**", "semantic-comparison.json"), recursive=True)):
+    names = ("semantic-comparison.json", "warm-vs-clean.json", "warm-vs-original.json", "reference-vs-restart.json", "vs-cold.json", "graceful-vs-warm.json")
+    for path in sorted(p for p in glob.glob(os.path.join(root, "**", "*.json"), recursive=True) if os.path.basename(p) in names):
         c = load(path)
         rel = os.path.relpath(path, root)
         out.setdefault("comparisons", {})[rel] = {"verdict": c["verdict"], "completeness": c["completeness"],
-                                                   "families": {k: {kk: vv for kk, vv in v.items() if kk in ("status", "a_count", "b_count", "changed_count", "missing_in_b_count", "extra_in_b_count", "observed")} for k, v in c["families"].items()},
+                                                   "families": {k: {kk: vv for kk, vv in v.items() if kk in ("status", "a_count", "b_count", "changed_count", "missing_in_b_count", "extra_in_b_count", "observed", "missing_in_b", "extra_in_b")} for k, v in c["families"].items()},
                                                    "runtime": {k: (v.get("status") if isinstance(v, dict) else v) for k, v in (c.get("runtime") or {}).items()},
                                                    "runtime_vs_disk": [c.get("runtime_vs_disk_a", {}).get("status"), c.get("runtime_vs_disk_b", {}).get("status")]}
     for path in sorted(glob.glob(os.path.join(root, "**", "input-manifest*.json"), recursive=True)):

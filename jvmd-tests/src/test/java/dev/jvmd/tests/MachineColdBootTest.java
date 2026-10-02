@@ -61,6 +61,39 @@ class MachineColdBootTest {
         assertThat(roots).hasSize(1);
     }
 
+    @Test void documentationIdentityFollowsDocCommentsNotPositions()throws Exception{
+        Path base=temp.resolve("base");Path jar=IndexFixtures.jar(base.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
+        // The same binary, paired with sources whose declarations moved, or whose doc comment changed.
+        Path moved=sourcesVariant("moved",jar,"\n\n\n"+IndexFixtures.generic().replace("public class Sample","\n  public class Sample"));
+        Path edited=sourcesVariant("edited",jar,IndexFixtures.generic().replace("Transform the value.","Transform the given value."));
+        var identities=new ArrayList<dev.jvmd.core.Hash256>();var ranges=new ArrayList<Object>();
+        for(Path repository:List.of(base,moved,edited))
+            try(var storage=new MachineColdBoot(temp.resolve("generation-"+repository.getFileName()),repository,temp.resolve("no-jdk"),BUDGET).run()){
+                var leaf=storage.machine().leafAt(repository.resolve("fixture/sample/1/sample-1.jar").toString());
+                identities.add(leaf.documentation());
+                var transform=storage.repository().documentation(leaf.docsKey(),"fixture.Sample#transform(Ljava/lang/Number;Ljava/lang/CharSequence;)Ljava/util/List;");
+                ranges.add(transform.get("name_range"));
+            }
+        assertThat(identities.get(1)).isEqualTo(identities.get(0));
+        assertThat(identities.get(2)).isNotEqualTo(identities.get(0));
+        // Positions are still recorded for navigation, from the parser's line map.
+        String text=IndexFixtures.generic();int name=text.indexOf(" transform(")+1;
+        var start=dev.jvmd.core.Documents.position(text,name);var end=dev.jvmd.core.Documents.position(text,name+"transform".length());
+        assertThat(ranges.get(0)).isEqualTo(Map.of("start",Map.of("line",start.line(),"character",start.character()),
+                "end",Map.of("line",end.line(),"character",end.character())));
+        assertThat(ranges.get(1)).isNotEqualTo(ranges.get(0));
+    }
+
+    /** A repository with {@code jar}'s binary and sources made from {@code source}. */
+    private Path sourcesVariant(String name,Path jar,String source)throws Exception{
+        Path directory=Files.createDirectories(temp.resolve(name).resolve("fixture/sample/1"));
+        Files.copy(jar,directory.resolve("sample-1.jar"));
+        try(var output=new java.util.jar.JarOutputStream(Files.newOutputStream(directory.resolve("sample-1-sources.jar")))){
+            output.putNextEntry(new java.util.jar.JarEntry("fixture/Sample.java"));output.write(source.getBytes(StandardCharsets.UTF_8));output.closeEntry();
+        }
+        return temp.resolve(name);
+    }
+
     @Test void equalInputsGiveEqualRootsInAnyEnumerationOrder()throws Exception{
         Path repository=repository();
         try(var forward=boot(temp.resolve("forward"),repository,false);var reversed=boot(temp.resolve("reversed"),repository,true)){

@@ -30,7 +30,7 @@ This describes how jvmd holds what it knows about Java code: the layers, how eac
 
 A read goes LIVE, then LOCAL, then MACHINE; the first layer that has the answer wins.
 
-**MACHINE** holds each distinct artifact content once, whatever number of paths it was found at. A leaf carries its cacheKey, every path with its file stamp, its resolution and documentation identities, and the root of its own semantic tree (declarations ordered by owner, then member, with resolution range sums). The artifact tree orders leaves by cacheKey; the path table maps each location to its leaf.
+**MACHINE** holds each distinct artifact content once, whatever number of paths it was found at. A leaf carries its cacheKey, every path with its file stamp, its resolution and documentation identities, and the root of its own semantic tree (declarations ordered by owner, then member, with resolution range sums). Its documentation identity is the commutative sum, over the members joined to its sources, of each member's doc comment hash: the same projection LOCAL takes of a declaration, so rendering and source positions do not reach it. The artifact tree orders leaves by cacheKey; the path table maps each location to its leaf.
 
 **LOCAL** holds one project's source files (`LocalFileTree`, ordered by logical path, with membership, content, api, namespace and resolution aggregates), the declarations attributed from them (`LocalSemanticTree`), the module graph, and one route per module scope. It holds no copy of an artifact: a route refers to MACHINE leaves by key, and a sibling module of the same project is reached through LOCAL.
 

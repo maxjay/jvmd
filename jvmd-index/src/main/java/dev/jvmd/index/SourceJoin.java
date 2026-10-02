@@ -13,10 +13,14 @@ import javax.tools.*;
 /** Parse-only source signatures joined to binary descriptors. */
 public final class SourceJoin {
     private static final java.util.regex.Pattern TRIVIA=java.util.regex.Pattern.compile("(?:\\s|/\\*.*?\\*/|//[^\\r\\n]*)*",java.util.regex.Pattern.DOTALL);
-    /** Immutable source metadata, keyed by owner/name/erased descriptor. */
+    /**
+     * Immutable source metadata, keyed by owner/name/erased descriptor. {@code doc} is the rendered
+     * documentation and {@code comment} the doc comment as written; the name's zero-based line and
+     * character come from the parser's line map, and are -1 when the name was not found.
+     */
     public record Member(String owner, String name, String descriptor, List<String> parameters,
                          String doc, String file, int line, int start, int end, int bodyStart, int bodyEnd,
-                         int nameStart, int nameEnd) { }
+                         int nameStart, int nameEnd, String comment, int nameLine, int nameCharacter) { }
     /** Matched source declarations and explicit unmatched count. */
     public record Result(List<Member> members, int eligible, List<String> unmatched) { }
     /** In-memory source, never added to the daemon classpath. */
@@ -98,10 +102,13 @@ public final class SourceJoin {
                                 if(trivia.lookingAt()&&source.startsWith(name,trivia.end()))nameStart=trivia.end();
                             }
                         }
+                        var lines = unit.getLineMap();int nameLine = -1, nameCharacter = -1;
+                        if (nameStart >= 0) { long line = lines.getLineNumber(nameStart); nameLine = (int) line - 1; nameCharacter = (int) (nameStart - lines.getStartPosition(line)); }
                         matched.add(new Member(owner, name, descriptor, params, comment == null ? null : DocMarkdown.render(comment.toString()),
-                                unit.getSourceFile().getName().replaceFirst("^/", ""), (int) unit.getLineMap().getLineNumber(Math.max(0,start)),
+                                unit.getSourceFile().getName().replaceFirst("^/", ""), (int) lines.getLineNumber(Math.max(0,start)),
                                 (int) start, (int) end, body == null ? -1 : (int) positions.getStartPosition(unit, body),
-                                body == null ? -1 : (int) positions.getEndPosition(unit, body),nameStart,nameStart<0?-1:nameStart+name.length()));
+                                body == null ? -1 : (int) positions.getEndPosition(unit, body),nameStart,nameStart<0?-1:nameStart+name.length(),
+                                docs.getDocComment(getCurrentPath()), nameLine, nameCharacter));
                     }
                 }.scan(unit, null);
             }

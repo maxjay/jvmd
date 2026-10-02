@@ -83,22 +83,6 @@ public final class Documents implements AutoCloseable {
     public static Position position(String text,long requested){
         int offset=(int)Math.max(0,Math.min(text.length(),requested)),line=0,start=0;for(int i=0;i<offset;i++)if(text.charAt(i)=='\n'){line++;start=i+1;}return new Position(line,offset-start);
     }
-    /** The line starts of one text, so that many positions in it are found without rescanning it. */
-    public static final class Lines {
-        private final int length;
-        private final int[] starts;
-        public Lines(String text){
-            length=text.length();int[] found=new int[16];int count=1;
-            for(int i=0;i<length;i++)if(text.charAt(i)=='\n'){if(count==found.length)found=Arrays.copyOf(found,count*2);found[count++]=i+1;}
-            starts=Arrays.copyOf(found,count);
-        }
-        /** The position {@link Documents#position} gives for this text. */
-        public Position position(long requested){
-            int offset=(int)Math.max(0,Math.min(length,requested));
-            int index=Arrays.binarySearch(starts,offset),line=index>=0?index:-index-2;
-            return new Position(line,offset-starts[line]);
-        }
-    }
     public static int offset(String text,Position position){
         if(position.line()<0||position.character()<0)throw RpcException.invalid("Negative document position");
         int line=0,start=0;while(line<position.line()){int next=text.indexOf('\n',start);if(next<0)throw RpcException.invalid("Position outside document");start=next+1;line++;}

@@ -1,8 +1,9 @@
 package dev.jvmd.index.layer.machine;
 
-import dev.jvmd.core.CanonicalDigestWriter;
+import dev.jvmd.core.AlgebraicAccumulator;
 import dev.jvmd.core.Documents;
 import dev.jvmd.core.Hash256;
+import dev.jvmd.core.Hashing;
 import dev.jvmd.index.*;
 import java.util.*;
 
@@ -41,10 +42,10 @@ public final class ArtifactBuilder {
         var key=ArtifactIndexFormat.key(binary.sha256(),binary.mode());
         var facts=ArtifactIndexFormat.from(content,key);
         var classReferences=CodeReader.classReferences(content.models().values());
-        Map<String,Map<String,Object>> members=Map.of();int unmatched=0;
+        Map<String,Map<String,Object>> members=Map.of();int unmatched=0;Hash256 documentation=documentationIdentity(List.of());
         if(sources!=null){
             var join=new SourceJoin().join(content.models(),sources.files());
-            members=documentation(join,sources.files());unmatched=join.unmatched().size();
+            members=documentation(join);unmatched=join.unmatched().size();documentation=documentationIdentity(join.members());
         }
         var semanticTree=MachineTree.semanticTree(facts);
         String docsKey=null;
@@ -54,29 +55,45 @@ public final class ArtifactBuilder {
         }catch(Exception storage){throw new PublishFailed(storage);}
         long types=facts.symbols().stream().filter(symbol->TYPES.contains(symbol.kind())).count();
         return new MachineLeaf(binary.sha256(),binary.mode(),List.of(),ArtifactIndexFormat.resolutionIdentity(facts),
-                documentationIdentity(members),sources==null?null:sources.sha256(),docsKey,semanticTree.rootHash(),facts.symbols().size(),facts.relationships().size(),types);
+                documentation,sources==null?null:sources.sha256(),docsKey,semanticTree.rootHash(),facts.symbols().size(),facts.relationships().size(),types);
     }
 
     /** Documentation records by member key. Locations are entry names inside the sources, never paths. */
-    private static Map<String,Map<String,Object>> documentation(SourceJoin.Result join,Map<String,String> text){
-        var members=new TreeMap<String,Map<String,Object>>();var lines=new HashMap<String,Documents.Lines>();
+    private static Map<String,Map<String,Object>> documentation(SourceJoin.Result join){
+        var members=new TreeMap<String,Map<String,Object>>();
         for(var member:join.members()){
-            String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")
-                    ?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
             var data=new LinkedHashMap<String,Object>();
             data.put("doc",member.doc());data.put("source_entry",member.file());
             data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());
-            if(member.nameStart()>=0){
-                var file=lines.computeIfAbsent(member.file(),entry->new Documents.Lines(text.get(entry)));
-                data.put("name_range",Map.of("start",file.position(member.nameStart()),"end",file.position(member.nameEnd())));
+            if(member.nameLine()>=0){
+                var range=new LinkedHashMap<String,Object>();
+                range.put("start",new Documents.Position(member.nameLine(),member.nameCharacter()));
+                range.put("end",new Documents.Position(member.nameLine(),member.nameCharacter()+member.nameEnd()-member.nameStart()));
+                data.put("name_range",range);
             }
             data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());
-            members.put(key,Collections.unmodifiableMap(data));
+            members.put(key(member),Collections.unmodifiableMap(data));
         }
         return Collections.unmodifiableMap(members);
     }
 
-    private static Hash256 documentationIdentity(Map<String,Map<String,Object>> members)throws Exception{
-        return CanonicalDigestWriter.digest("machine-documentation-v1",ArtifactIndexFormat.canonicalJson(members).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    /**
+     * The artifact's documentation identity: the commutative sum, over the members joined to its sources,
+     * of each member's documentation identity, the SHA-256 of its doc comment as written (empty if none). It is the
+     * projection LOCAL takes of a declaration's documentation, and neither rendering nor positions
+     * reach it, so a source change that moves declarations or reformats text leaves it equal.
+     */
+    private static Hash256 documentationIdentity(List<SourceJoin.Member> members){
+        var identities=new TreeMap<String,String>();
+        for(var member:members)identities.put(key(member),Hashing.sha256(Objects.requireNonNullElse(member.comment(),"").getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        var aggregate=new AlgebraicAccumulator(DOCUMENTATION);identities.forEach(aggregate::add);
+        return aggregate.identity();
     }
+
+    private static String key(SourceJoin.Member member){
+        return member.descriptor()==null?member.owner():member.descriptor().equals("field")
+                ?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
+    }
+
+    private static final String DOCUMENTATION="machine-member-documentation-v2";
 }

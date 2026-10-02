@@ -64,6 +64,8 @@ public final class CompilerPool implements AutoCloseable {
     private CompilerInputs inputs=new CompilerInputs(inputFiles);
     private CompilerInputs.Configuration inputConfiguration;
     private Documents liveDocuments=new Documents(inputFiles);
+    /** Whether {@link #liveDocuments} is this pool's own, which it closes, rather than its owner's. */
+    private boolean ownsDocuments=true;
     public CompilerPool(dev.jvmd.core.FileStateRegistry files){this();inputFiles=files;inputs=new CompilerInputs(files);liveDocuments=new Documents(files);}
     public CompilerPool(){this(()->java.lang.management.ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed());}
     public CompilerPool(java.util.function.LongSupplier heapUsage){this.heapUsage=heapUsage;}
@@ -102,7 +104,9 @@ public final class CompilerPool implements AutoCloseable {
         }finally{configureNanos+=System.nanoTime()-started;}
     }
     public void documents(Documents documents){
-        checkThread();liveDocuments=Objects.requireNonNull(documents);ensureDocumentsAttached();
+        checkThread();Objects.requireNonNull(documents);
+        if(ownsDocuments&&liveDocuments!=documents)liveDocuments.close();
+        liveDocuments=documents;ownsDocuments=false;ensureDocumentsAttached();
     }
     private void ensureDocumentsAttached(){
         if(manager==null)return;
@@ -262,5 +266,10 @@ public final class CompilerPool implements AutoCloseable {
         status.put("recycles",recycles);status.put("faults",faults);status.put("heap_growth_bytes",Math.max(0,heap()-baseline));status.put("heap_budget_bytes",budget);if(manager!=null)status.putAll(manager.status());var output=new java.io.ByteArrayOutputStream();pool.printStatistics(new java.io.PrintStream(output));status.put("pool_statistics",output.toString(java.nio.charset.StandardCharsets.UTF_8));return status;
     }
     private static double nanosToMillis(long nanos){return Math.round(nanos/1000.0)/1000.0;}
-    @Override public void close()throws Exception{checkThread();releasePlatform.close();inputs.close();if(manager!=null)manager.close();pool=new JavacTaskPool(1);}
+    @Override public void close()throws Exception{
+        checkThread();
+        // The pool's own live documents watch its source roots; documents an owner attached are the owner's to close.
+        if(ownsDocuments)liveDocuments.close();
+        releasePlatform.close();inputs.close();if(manager!=null)manager.close();pool=new JavacTaskPool(1);
+    }
 }

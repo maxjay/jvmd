@@ -132,6 +132,20 @@ class LocalColdBootTest {
         }
     }
 
+    @Test void aFinishedBootLeavesNoSourceWatcherBehind()throws Exception{
+        var before=sourceWatchers();
+        try(var storage=machine(temp.resolve("generation"))){local(storage,resolution()).run();}
+        // A watcher outliving the boot would keep writing the daemon's state after it closed.
+        var after=sourceWatchers();after.removeAll(before);
+        assertThat(after).isEmpty();
+    }
+
+    private static Set<Thread> sourceWatchers(){
+        var result=new HashSet<Thread>();
+        for(var thread:Thread.getAllStackTraces().keySet())if(thread.getName().startsWith("jvmd-source-state-"))result.add(thread);
+        return result;
+    }
+
     @Test void anOwnerWhoseUnitIsNotBuiltIsUnknownNeverAnsweredByALowerLayer()throws Exception{
         LocalTree tree;
         try(var storage=machine(temp.resolve("generation"))){

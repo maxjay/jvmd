@@ -17,8 +17,8 @@ import java.util.*;
 public final class ResidentSemanticState {
     private static final String EMPTY=Hashing.sha256(new byte[0]);
     private static final String MEMBER_RANGE="semantic-member-range-v1";
-    private static final KeyedTree.Schema<SemanticFact> FACTS=new KeyedTree.Schema<>("resident-semantic-v1",
-            SemanticFact::factIdentity,List.of(new KeyedTree.Projection<>(MEMBER_RANGE,SemanticFact::resolutionIdentity)));
+    private static final KeyedTree.Schema<SemanticFact> FACTS=new KeyedTree.Schema<SemanticFact>("resident-semantic-v1",
+            SemanticFact::factIdentity,List.of(new KeyedTree.Projection<SemanticFact>(MEMBER_RANGE,SemanticFact::resolutionIdentity)));
     private static final int RESOLUTION=FACTS.projection(MEMBER_RANGE);
 
     public record Aggregate(AlgebraicAccumulator.Value membership,AlgebraicAccumulator.Value api,

@@ -12,8 +12,8 @@ import java.util.*;
  * take identities that are already maintained.
  */
 public final class LiveStateTree {
-    private static final KeyedTree.Schema<Fingerprint> CHILDREN=new KeyedTree.Schema<>("live-state-children-v1",
-            fingerprint->Hash256.fromHex(fingerprint.value()),List.of());
+    private static final KeyedTree.Schema<Fingerprint> CHILDREN=new KeyedTree.Schema<Fingerprint>("live-state-children-v1",
+            fingerprint->Hash256.fromHex(fingerprint.value()),List.<KeyedTree.Projection<Fingerprint>>of());
     private static final Fingerprint PRESENT=fingerprint("membership-present-v1","present");
     public static final Fingerprint UNKNOWN=fingerprint("semantic-unknown-v1","unknown");
     public static final Fingerprint UNATTRIBUTED_CONTENT=fingerprint("semantic-content-unattributed-v1","unknown");

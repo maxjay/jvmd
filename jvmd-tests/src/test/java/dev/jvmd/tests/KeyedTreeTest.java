@@ -9,9 +9,9 @@ import static org.assertj.core.api.Assertions.*;
 
 @Tag("phase-1")
 class KeyedTreeTest {
-    private static final KeyedTree.Schema<String> SCHEMA=new KeyedTree.Schema<>("keyed-tree-test",
+    private static final KeyedTree.Schema<String> SCHEMA=new KeyedTree.Schema<String>("keyed-tree-test",
             value->Hash256.sha256(value.getBytes(StandardCharsets.UTF_8)),
-            List.of(new KeyedTree.Projection<>("signature",value->value.startsWith("body:")?null:value.split("\\|")[0])));
+            List.of(new KeyedTree.Projection<String>("signature",value->value.startsWith("body:")?null:value.split("\\|")[0])));
 
     private static Map<String,String> entries(int count){
         var result=new LinkedHashMap<String,String>();

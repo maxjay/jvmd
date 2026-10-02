@@ -55,7 +55,7 @@ public final class KeyedTree<V> {
         final String minKey,maxKey;
         Node(Schema<V> schema,String key,V value,Hash256 priority,Node<V> left,Node<V> right){
             this.key=key;this.value=value;this.priority=priority;this.left=left;this.right=right;
-            Hash256 empty=empty(schema);
+            Hash256 empty=emptyHash(schema);
             hash=CanonicalDigestWriter.digest(schema.domain()+"/node",left==null?empty:left.hash,key,
                     schema.identity().apply(value),right==null?empty:right.hash);
             size=1+(left==null?0:left.size)+(right==null?0:right.size);
@@ -109,7 +109,7 @@ public final class KeyedTree<V> {
     public Schema<V> schema(){return schema;}
     public int size(){return root==null?0:root.size;}
     public boolean isEmpty(){return root==null;}
-    public Hash256 rootHash(){return root==null?empty(schema):root.hash;}
+    public Hash256 rootHash(){return root==null?emptyHash(schema):root.hash;}
 
     public V get(String key){
         var node=root;
@@ -154,18 +154,19 @@ public final class KeyedTree<V> {
 
     /** Rebuilds the tree whose root hash is {@code rootHash} from its stored nodes. */
     public static <V> KeyedTree<V> read(Schema<V> schema,Hash256 rootHash,Function<Hash256,StoredNode> nodes,Function<byte[],V> codec){
-        return new KeyedTree<>(schema,rootHash.equals(empty(schema))?null:read(schema,rootHash,nodes,codec));
+        return new KeyedTree<>(schema,rootHash.equals(emptyHash(schema))?null:readNode(schema,rootHash,nodes,codec));
     }
 
-    private static <V> Node<V> read(Schema<V> schema,Hash256 hash,Function<Hash256,StoredNode> nodes,Function<byte[],V> codec){
+    private static <V> Node<V> readNode(Schema<V> schema,Hash256 hash,Function<Hash256,StoredNode> nodes,Function<byte[],V> codec){
         var stored=Objects.requireNonNull(nodes.apply(hash),()->"Missing tree node "+hash);
-        Hash256 empty=empty(schema);
-        var left=stored.left().equals(empty)?null:read(schema,stored.left(),nodes,codec);
-        var right=stored.right().equals(empty)?null:read(schema,stored.right(),nodes,codec);
+        Hash256 empty=emptyHash(schema);
+        var left=stored.left().equals(empty)?null:readNode(schema,stored.left(),nodes,codec);
+        var right=stored.right().equals(empty)?null:readNode(schema,stored.right(),nodes,codec);
         return new Node<>(schema,stored.key(),codec.apply(stored.value()),priority(schema,stored.key()),left,right);
     }
 
-    public static <V> Hash256 empty(Schema<V> schema){return CanonicalDigestWriter.digest(schema.domain()+"/empty");}
+    /** The root hash of an empty tree with this schema. */
+    public static <V> Hash256 emptyHash(Schema<V> schema){return CanonicalDigestWriter.digest(schema.domain()+"/empty");}
 
     public static final class Cursor<V> {
         private final String lower,upper;private final ArrayDeque<Node<V>> stack=new ArrayDeque<>();
@@ -246,7 +247,7 @@ public final class KeyedTree<V> {
     }
     private void nodes(Node<V> node,Function<V,byte[]> codec,List<StoredNode> result){
         if(node==null)return;nodes(node.left,codec,result);nodes(node.right,codec,result);
-        Hash256 empty=empty(schema);
+        Hash256 empty=emptyHash(schema);
         result.add(new StoredNode(node.hash,node.key,codec.apply(node.value),node.left==null?empty:node.left.hash,node.right==null?empty:node.right.hash));
     }
 }

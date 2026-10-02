@@ -9,7 +9,7 @@ This describes how jvmd holds what it knows about Java code: the layers, how eac
 | Daemon | The one jvmd process per machine user. Owns MACHINE and serves every project on the machine. |
 | Project | One canonical root path opened through `session.open`. Owns one LOCAL. |
 | Layer | MACHINE, LOCAL or LIVE. A layer has one root, which covers all of that layer's trees and aggregates. |
-| MACHINE | The content-addressed index of every artifact under the Maven repository and every module of the configured JDK. One per daemon. |
+| MACHINE | The content-addressed index of every artifact under the Maven repository. One per daemon. |
 | LOCAL | One project's own state: its source files and their declarations, its module graph, and its routes into MACHINE. Persisted. |
 | LIVE | What a session's editors and in-flight analysis see that differs from LOCAL. Never persisted. |
 | Route | The ordered classpath of one module scope (main or test), as references: MACHINE leaf keys and sibling modules. Never a copy. |
@@ -156,7 +156,7 @@ Where the code does not yet reach these costs:
 `MachineColdBoot`, at daemon start:
 
 1. **Create.** Create the generation's storage (`RocksIndexStorage.create`). This is the only call site that creates it. A generation that already has a committed root is refused; anything else in it is deleted.
-2. **Enumerate.** One walk of the repository (`*.jar` except `*-javadoc.jar`, one stat per file, each `-sources.jar` paired with its binary) and the configured JDK's modules.
+2. **Enumerate.** One walk of the repository (`*.jar` except `*-javadoc.jar`, one stat per file, each `-sources.jar` paired with its binary).
 3. **Build artifacts.** One `ArtifactJob` per input, at most four at a time, inputs with paired sources first: read the binary into memory once and hash those bytes (checking its `.sha1` when present); claim the content in the boot's `ClaimMap` (a later job with equal content only records its path); take admission and build the leaf with `ArtifactBuilder` from the same bytes: facts, resolution identity, documentation joined from the paired sources, the semantic tree, and one published, once-verified SST. An input that cannot be read or parsed is a fault and contributes no leaf.
 4. **Build the tree.** Bulk-build the artifact tree, the aggregates and the path table.
 5. **Commit.** `RocksMachineStore` stages leaves, nodes and paths in bounded batches, syncs once, then writes the root.

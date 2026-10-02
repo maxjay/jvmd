@@ -124,7 +124,7 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
         long scan=inventory.currentScan();
         for(var location:tree.paths().entrySet()){
             var leaf=tree.leaf(location.getValue());
-            if(location.getKey().startsWith("jrt:")||leaf.equals(previous.leafAt(location.getKey())))continue;
+            if(leaf.equals(previous.leafAt(location.getKey())))continue;
             var path=leaf.paths().stream().filter(candidate->candidate.location().equals(location.getKey())).findFirst().orElseThrow();
             inventory.observe(scan,Path.of(path.location()),path.gav(),"jar",leaf.cacheKey(),leaf.binarySha256(),
                     new RocksArtifactInventory.Stamp(path.stamp().size(),path.stamp().modifiedNanos(),path.stamp().modifiedNanos(),path.stamp().fileKey()));

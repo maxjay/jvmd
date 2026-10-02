@@ -33,15 +33,15 @@ public final class BootDecision {
 
     /**
      * MACHINE at daemon start, in the current generation under {@code indexRoot}: a cold boot from
-     * {@code repository} and {@code jdkHome} when no MACHINE root is committed, otherwise the warm boot.
+     * {@code repository} when no MACHINE root is committed, otherwise the warm boot.
      */
-    public static Machine machine(Path indexRoot,Path repository,Path jdkHome,long admissionBytes)throws Exception{
+    public static Machine machine(Path indexRoot,Path repository,long admissionBytes)throws Exception{
         Path generation=RocksIndexStorage.generation(indexRoot);
         if(RocksMachineStore.committedRoot(RocksIndexStorage.machineDirectory(generation)).isPresent()){
             var storage=new MachineWarmBoot(generation,admissionBytes).run();
             return new Machine(storage,index(storage,repository),true);
         }
-        var boot=new MachineColdBoot(generation,repository,jdkHome,admissionBytes);
+        var boot=new MachineColdBoot(generation,repository,admissionBytes);
         var storage=boot.run();
         var index=index(storage,repository);
         index.repositoryEnumerated(boot.faults().size());

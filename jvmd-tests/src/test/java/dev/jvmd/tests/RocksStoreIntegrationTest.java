@@ -80,9 +80,9 @@ class RocksStoreIntegrationTest {
             assertThat(index.store().status()).containsEntry("backend","rocksdb-sst").containsEntry("link_passes",0L);
         }
     }
-    @Test void signatureClosureEnrichesJdkDocumentationAndPaginates()throws Exception{
+    @Test void signatureClosurePaginatesWithoutDuplicates()throws Exception{
         Path jar=IndexFixtures.jar(root.resolve("repo"),"fixture",IndexFixtures.generic(),true);
-        try(var index=TestMachine.indexWithJdk(root.resolve("index.db"),root.resolve("repo"))){
+        try(var index=TestMachine.index(root.resolve("index.db"),root.resolve("repo"))){
             index.indexJar(jar,"fixture:api:1","jar");index.indexSources(jar.resolveSibling("fixture-sources.jar"));
             var symbol=index.find("transform",null,false,10,0).stream().filter(s->s.get("scip").toString().contains("fixture/Sample#")).findFirst().orElseThrow();var docs=new Documentation(index);
             var identities=new LinkedHashSet<String>();int cursor=0,pages=0;
@@ -92,8 +92,7 @@ class RocksStoreIntegrationTest {
                 for(var member:result.path("closure")){assertThat(identities.add(member.path("scip").asText())).isTrue();assertThat(member.path("signature").asText()).isNotBlank();}
                 if(!page.truncated())break;cursor=Integer.parseInt(page.cursor());assertThat(++pages).isLessThan(30);
             }
-            assertThat(identities).doesNotContain(symbol.get("scip").toString()).anyMatch(s->s.contains("java/util/List#")).anyMatch(s->s.contains("java/lang/CharSequence#")).anyMatch(s->s.contains("java/lang/Number#"));
-            assertThat(index.find("java.util.List",null,false,10,0).stream().filter(s->s.get("kind").equals("interface")).findFirst().orElseThrow().get("doc")).isNotNull();
+            assertThat(identities).doesNotContain(symbol.get("scip").toString());
         }
     }
     @Test void aliasesDoNotDuplicateLaterPagesAndKeepIndependentCoordinates()throws Exception{

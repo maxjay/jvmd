@@ -11,7 +11,7 @@ import java.util.*;
 import java.util.concurrent.*;
 
 /**
- * MACHINE cold boot: builds the MACHINE layer from {@code ~/.m2} and the configured JDK because the
+ * MACHINE cold boot: builds the MACHINE layer from the local Maven repository because the
  * generation holds no committed MACHINE root. It never reads prior state, because there is none.
  * Each stage is one method; {@link #run} calls them in order. A failure in any stage aborts the
  * boot without writing a root.
@@ -20,21 +20,18 @@ public final class MachineColdBoot {
     /** An input that could not be read or parsed, and why. It contributes no leaf. */
     public record Fault(String location,String reason) { }
 
-    private final Path generation,repository,jdkHome;
+    private final Path generation,repository;
     private final long admissionBytes;
     private final List<Fault> faults=new CopyOnWriteArrayList<>();
-    /** The configured JDK's image while this boot reads its modules: opened by enumeration, closed once they are built. */
-    private MachineInput.JdkImage jdkImage;
 
     /**
      * @param generation     the generation directory this boot creates
      * @param repository     the local Maven repository
-     * @param jdkHome        the configured JDK, whose modules become leaves
      * @param admissionBytes the memory budget for artifacts being parsed at once
      */
-    public MachineColdBoot(Path generation,Path repository,Path jdkHome,long admissionBytes){
+    public MachineColdBoot(Path generation,Path repository,long admissionBytes){
         this.generation=generation.toAbsolutePath().normalize();this.repository=repository.toAbsolutePath().normalize();
-        this.jdkHome=jdkHome.toAbsolutePath().normalize();this.admissionBytes=admissionBytes;
+        this.admissionBytes=admissionBytes;
     }
 
     /** Create, enumerate, build, commit. Returns the generation's storage with MACHINE committed. */
@@ -47,7 +44,6 @@ public final class MachineColdBoot {
             commit(storage,tree);
             return storage;
         }catch(Exception|Error failure){
-            try{closeJdkImage();}catch(Exception close){failure.addSuppressed(close);}
             try{storage.close();}catch(Exception close){failure.addSuppressed(close);}
             throw failure;
         }
@@ -57,8 +53,8 @@ public final class MachineColdBoot {
     public RocksIndexStorage create()throws Exception{return RocksIndexStorage.create(generation,admissionBytes);}
 
     /**
-     * One walk of the repository (every {@code *.jar} except {@code *-javadoc.jar}) plus the configured
-     * JDK's modules, one stat per file. A {@code -sources.jar} is paired with its binary into one input.
+     * One walk of the repository (every {@code *.jar} except {@code *-javadoc.jar}), one stat per file.
+     * A {@code -sources.jar} is paired with its binary into one input.
      */
     public List<MachineInput> enumerate()throws IOException{
         var inputs=new ArrayList<MachineInput>();
@@ -79,17 +75,6 @@ public final class MachineColdBoot {
                 inputs.add(new MachineInput.Jar(path,binary,paired?sources:null));
             }
         }
-        Path modules=jdkHome.resolve("lib/modules");
-        if(Files.isRegularFile(modules)){
-            var stamp=MachinePath.Stamp.read(modules);String feature=feature(jdkHome);
-            Path zip=jdkHome.resolve("lib/src.zip");String sources=Files.isRegularFile(zip)?zip.toString():null;
-            var sourcesStamp=sources==null?null:MachinePath.Stamp.read(zip);
-            closeJdkImage();jdkImage=new MachineInput.JdkImage(jdkHome);
-            try(var names=Files.list(jdkImage.modules().getPath("/modules"))){
-                for(String module:names.map(path->path.getFileName().toString()).sorted().toList())
-                    inputs.add(new MachineInput.JdkModule(new MachinePath("jrt:/"+module,"jdk:"+module+":"+feature,stamp,sources,sourcesStamp),jdkImage,module));
-            }
-        }
         return List.copyOf(inputs);
     }
 
@@ -99,10 +84,6 @@ public final class MachineColdBoot {
      * so the leaves do not depend on which job built them.
      */
     public List<MachineLeaf> buildArtifacts(RocksIndexStorage storage,List<MachineInput> inputs)throws Exception{
-        try{return build(storage,inputs);}finally{closeJdkImage();}
-    }
-
-    private List<MachineLeaf> build(RocksIndexStorage storage,List<MachineInput> inputs)throws Exception{
         var claims=new ClaimMap();var builder=new ArtifactBuilder(storage.repository());
         int threads=Math.max(1,Math.min(4,Runtime.getRuntime().availableProcessors()));
         var built=new ArrayList<MachineLeaf>();
@@ -149,10 +130,6 @@ public final class MachineColdBoot {
         storage.commitMachine(tree);
     }
 
-    private void closeJdkImage()throws java.io.IOException{
-        var image=jdkImage;jdkImage=null;if(image!=null)image.close();
-    }
-
     /** Inputs this boot could not read or parse. */
     public List<Fault> faults(){return List.copyOf(faults);}
 
@@ -160,16 +137,6 @@ public final class MachineColdBoot {
         Path relative=repository.relativize(path);int n=relative.getNameCount();
         if(n<4)return "local:"+path.getFileName()+":0";
         return relative.subpath(0,n-3).toString().replace(java.io.File.separatorChar,'.')+":"+relative.getName(n-3)+":"+relative.getName(n-2);
-    }
-
-    private static String feature(Path jdkHome)throws IOException{
-        Path release=jdkHome.resolve("release");
-        if(Files.isRegularFile(release))for(String line:Files.readAllLines(release)){
-            if(!line.startsWith("JAVA_VERSION="))continue;
-            String version=line.substring("JAVA_VERSION=".length()).replace("\"","");
-            return Integer.toString(Runtime.Version.parse(version).feature());
-        }
-        return Integer.toString(Runtime.version().feature());
     }
 
     private static ArtifactJob.Outcome get(Future<ArtifactJob.Outcome> job)throws Exception{

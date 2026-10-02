@@ -79,7 +79,7 @@ class LocalColdBootTest {
     }
 
     private RocksIndexStorage machine(Path generation)throws Exception{
-        return new MachineColdBoot(generation,repository,temp.resolve("no-jdk"),BUDGET).run();
+        return new MachineColdBoot(generation,repository,BUDGET).run();
     }
 
     private LocalColdBoot local(RocksIndexStorage storage,Resolution resolution)throws Exception{

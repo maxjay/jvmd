@@ -79,7 +79,7 @@ The daemon keeps its state in its state directory (`config.stateDir()`). Indexed
 
 | State | Location | What it holds | Complete when |
 | --- | --- | --- | --- |
-| MACHINE | `index-v2/generations/<generation>/` | One leaf per distinct artifact content under the Maven repository and per module of the configured JDK: declarations, resolution identities, documentation joined from paired sources | Its root is committed |
+| MACHINE | `index-v2/generations/<generation>/` | One leaf per distinct artifact content under the Maven repository: declarations, resolution identities, documentation joined from paired sources | Its root is committed |
 | LOCAL | `index-v2/generations/<generation>/local/<project>/` | One project's source files and their declarations, its module graph, and one route per module scope into MACHINE | Its root is committed |
 | File observations | `file-observations-v1.bin` | File hashes, without rehashing | Exact stamp match outside the racy-timestamp window |
 | Namespace memos (`s0-namespace` v1) | `local-memo-v1/` | A file's package, type names and declarations | Content hash, javac runtime, language mode |
@@ -96,7 +96,7 @@ The daemon keeps its state in its state directory (`config.stateDir()`). Indexed
 - `daemon.status` reports `session_capable`, `persisted_index_complete`, `repository_reconciled` and `repository_reconciliation` (`pending`, `complete`, `incomplete:n`, `failed:…`). A MACHINE cold boot reconciles the repository; an artifact it could not read leaves the reconciliation `incomplete:n`. With a reopened generation, `-Djvmd.ready.awaitRepositoryScan=true` holds `READY` until the scan completes; otherwise answers given before it completes carry an `index_reconciling` warning.
 - `session.status` with `section: "persistence"` reports memo restores, writes, misses and refusals by reason, early cutoffs, and the processor results' persisted hits.
 
-Known limits: the first start in a generation reads every artifact in the repository and every module of the configured JDK before `READY`. The first "diagnose all" after a cold start is slower than without persistence, because every unit's result is captured. First-use references on a large workspace attribute every unit and can exceed the request deadline.
+Known limits: the first start in a generation reads every artifact in the repository before `READY`. The first "diagnose all" after a cold start is slower than without persistence, because every unit's result is captured. First-use references on a large workspace attribute every unit and can exceed the request deadline.
 
 ## LSP client contract
 

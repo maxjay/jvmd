@@ -16,8 +16,7 @@ import static org.assertj.core.api.Assertions.*;
  * READY is session capability. A daemon whose generation has a committed MACHINE root serves from it at
  * once and reconciles it against the repository in the background. A daemon without one (first start, a
  * cold boot interrupted before its root, a new index format) runs the MACHINE cold boot, so READY waits for
- * it: READY is never reported over an uncommitted MACHINE. The daemon's JDK is the tiny test JDK, whose
- * modules are MACHINE leaves like any configured JDK's.
+ * it: READY is never reported over an uncommitted MACHINE.
  */
 class ReadinessGatingTest {
     @TempDir Path root;
@@ -83,7 +82,7 @@ class ReadinessGatingTest {
         try{
             // Stop after every leaf is built and before the commit: the generation holds data but no root.
             var boot=new dev.jvmd.boot.cold.machine.MachineColdBoot(dev.jvmd.index.rocks.RocksIndexStorage.generation(state.resolve("index-v2")),
-                    root.resolve("repository"),TestJdk.home(),8L*1024*1024);
+                    root.resolve("repository"),8L*1024*1024);
             try(var storage=boot.create()){boot.buildArtifacts(storage,boot.enumerate());}
             assertThat(committedRoot()).isEmpty();
             try(var app=daemon(30)){

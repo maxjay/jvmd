@@ -1105,7 +1105,7 @@ public final class Application implements AutoCloseable {
                 long budgetMb=Long.getLong("jvmd.index.generation_budget_mb",defaultBudgetMb);
                 if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
                 if(BootEvents.ENABLED)BootEvents.mark("STORAGE_OPEN_BEGIN","generation_budget_mb",budgetMb);
-                var machine=dev.jvmd.boot.BootDecision.machine(config.stateDir().resolve("index-v2"),config.m2Repo(),config.jdkHome(),
+                var machine=dev.jvmd.boot.BootDecision.machine(config.stateDir().resolve("index-v2"),config.m2Repo(),
                         Math.multiplyExact(budgetMb,1024L*1024L));
                 if(BootEvents.ENABLED)BootEvents.markWithCounters("STORAGE_OPEN_END","boot",machine.warm()?"warm":"cold");
                 var machineLayer=machine.storage().machine();

@@ -34,7 +34,7 @@ class MachineColdBootTest {
     }
 
     private RocksIndexStorage boot(Path generation,Path repository,boolean reverse)throws Exception{
-        var boot=new MachineColdBoot(generation,repository,temp.resolve("no-jdk"),BUDGET);
+        var boot=new MachineColdBoot(generation,repository,BUDGET);
         var storage=boot.create();
         var inputs=new ArrayList<>(boot.enumerate());
         if(reverse)Collections.reverse(inputs);
@@ -53,7 +53,7 @@ class MachineColdBootTest {
         for(int run=0;run<3;run++){
             var command=new ArrayList<String>(List.of(Path.of(System.getProperty("java.home"),"bin","java").toString()));command.addAll(flags);
             command.addAll(List.of("-cp",System.getProperty("java.class.path"),MachineRootProcess.class.getName(),
-                    temp.resolve("process-"+run).toString(),repository.toString(),temp.resolve("no-jdk").toString()));
+                    temp.resolve("process-"+run).toString(),repository.toString()));
             var process=new ProcessBuilder(command).redirectErrorStream(true).start();
             String output=new String(process.getInputStream().readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
             assertThat(process.waitFor()).as(output).isZero();
@@ -64,7 +64,7 @@ class MachineColdBootTest {
 
     @Test void aReopenedGenerationServesItsCommittedRootAndReadsItsTreeWhenNeeded()throws Exception{
         Path repository=repository(),generation=temp.resolve("generation");Root committed;
-        try(var storage=new MachineColdBoot(generation,repository,temp.resolve("no-jdk"),BUDGET).run()){committed=storage.machine().root().orElseThrow();}
+        try(var storage=new MachineColdBoot(generation,repository,BUDGET).run()){committed=storage.machine().root().orElseThrow();}
         try(var storage=RocksIndexStorage.open(generation,BUDGET)){
             assertThat(storage.machine().root().orElseThrow().identity()).isEqualTo(committed.identity());
             assertThat(storage.status().get("machine_leaves")).isEqualTo(committed.leaves());
@@ -80,7 +80,7 @@ class MachineColdBootTest {
         Path edited=sourcesVariant("edited",jar,IndexFixtures.generic().replace("Transform the value.","Transform the given value."));
         var identities=new ArrayList<dev.jvmd.core.Hash256>();var ranges=new ArrayList<Object>();
         for(Path repository:List.of(base,moved,edited))
-            try(var storage=new MachineColdBoot(temp.resolve("generation-"+repository.getFileName()),repository,temp.resolve("no-jdk"),BUDGET).run()){
+            try(var storage=new MachineColdBoot(temp.resolve("generation-"+repository.getFileName()),repository,BUDGET).run()){
                 var leaf=storage.machine().leafAt(repository.resolve("fixture/sample/1/sample-1.jar").toString());
                 identities.add(leaf.documentation());
                 var transform=storage.repository().documentation(leaf.docsKey(),"fixture.Sample#transform(Ljava/lang/Number;Ljava/lang/CharSequence;)Ljava/util/List;");
@@ -119,7 +119,7 @@ class MachineColdBootTest {
 
     @Test void aColdBootLooksUpNothingAndParsesEachContentOnce()throws Exception{
         Path repository=repository();
-        try(var storage=new MachineColdBoot(temp.resolve("counted"),repository,temp.resolve("no-jdk"),BUDGET).run()){
+        try(var storage=new MachineColdBoot(temp.resolve("counted"),repository,BUDGET).run()){
             @SuppressWarnings("unchecked") var published=(Map<String,Object>)storage.repository().status();
             // M2: no publication reuses prior state. M3: three jars hold two contents; each is parsed and published once.
             assertThat(((Number)published.get("reused")).longValue()).isZero();
@@ -135,7 +135,7 @@ class MachineColdBootTest {
         for(int i=0;i<12;i++)IndexFixtures.jar(repository.resolve("fixture/more"+i+"/1"),"more"+i+"-1","M.java","package more"+i+"; public class M { public int v(){return "+i+";} }",i%2==0);
         var roots=new HashSet<dev.jvmd.core.Hash256>();
         for(long seed:List.of(1L,7L,42L)){
-            var boot=new MachineColdBoot(temp.resolve("shuffled-"+seed),repository,temp.resolve("no-jdk"),BUDGET);
+            var boot=new MachineColdBoot(temp.resolve("shuffled-"+seed),repository,BUDGET);
             try(var storage=boot.create()){
                 var inputs=new ArrayList<>(boot.enumerate());Collections.shuffle(inputs,new Random(seed));
                 var leaves=new ArrayList<>(boot.buildArtifacts(storage,inputs));Collections.shuffle(leaves,new Random(seed+1));
@@ -148,7 +148,7 @@ class MachineColdBootTest {
 
     @Test void theRootIsWrittenLastAndIsTheOnlyCompletenessSignal()throws Exception{
         Path repository=repository();Path generation=temp.resolve("interrupted");
-        var boot=new MachineColdBoot(generation,repository,temp.resolve("no-jdk"),BUDGET);
+        var boot=new MachineColdBoot(generation,repository,BUDGET);
         try(var storage=boot.create()){
             var tree=boot.buildTree(boot.buildArtifacts(storage,boot.enumerate()));
             assertThat(RocksMachineStore.committedRoot(RocksIndexStorage.machineDirectory(generation))).isEmpty();
@@ -156,15 +156,15 @@ class MachineColdBootTest {
         }
         // Nothing committed: the next start is a cold boot, which replaces what the interrupted one left.
         assertThat(RocksMachineStore.committedRoot(RocksIndexStorage.machineDirectory(generation))).isEmpty();
-        try(var storage=new MachineColdBoot(generation,repository,temp.resolve("no-jdk"),BUDGET).run()){
+        try(var storage=new MachineColdBoot(generation,repository,BUDGET).run()){
             assertThat(RocksMachineStore.committedRoot(RocksIndexStorage.machineDirectory(generation)))
                     .contains(storage.machine().root().orElseThrow());
         }
         // A committed root sends the next start to the warm boot.
         var index=temp.resolve("index");
-        var cold=BootDecision.machine(index,repository,temp.resolve("no-jdk"),BUDGET);
+        var cold=BootDecision.machine(index,repository,BUDGET);
         assertThat(cold.warm()).isFalse();cold.index().close();
-        var warm=BootDecision.machine(index,repository,temp.resolve("no-jdk"),BUDGET);
+        var warm=BootDecision.machine(index,repository,BUDGET);
         assertThat(warm.warm()).isTrue();
         try(var reopened=warm.index()){
             assertThat(reopened.find("transform",null,false,10,0)).isNotEmpty();
@@ -197,7 +197,7 @@ class MachineColdBootTest {
         Path broken=Files.createDirectories(repository.resolve("fixture/broken/1")).resolve("broken-1.jar");
         Files.writeString(broken,"not a jar");
         Files.writeString(broken.resolveSibling("broken-1.jar.sha1"),"0000");
-        var boot=new MachineColdBoot(temp.resolve("faults"),repository,temp.resolve("no-jdk"),BUDGET);
+        var boot=new MachineColdBoot(temp.resolve("faults"),repository,BUDGET);
         try(var storage=boot.run()){
             assertThat(storage.machine().leafAt(broken.toString())).isNull();
             assertThat(boot.faults()).extracting(MachineColdBoot.Fault::location).containsExactly(broken.toString());
@@ -207,7 +207,7 @@ class MachineColdBootTest {
     @Test void enumerationPairsSourcesAndSkipsJavadoc()throws Exception{
         Path repository=repository();
         Files.copy(repository.resolve("fixture/other/2/other-2.jar"),repository.resolve("fixture/other/2/other-2-javadoc.jar"));
-        var inputs=new MachineColdBoot(temp.resolve("enumerate"),repository,temp.resolve("no-jdk"),BUDGET).enumerate();
+        var inputs=new MachineColdBoot(temp.resolve("enumerate"),repository,BUDGET).enumerate();
         assertThat(inputs).hasSize(3).allMatch(input->input instanceof MachineInput.Jar);
         assertThat(inputs).extracting(input->input.path().sources()).filteredOn(Objects::nonNull).hasSize(2);
     }

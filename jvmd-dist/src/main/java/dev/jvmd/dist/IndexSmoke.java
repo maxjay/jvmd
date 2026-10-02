@@ -18,7 +18,7 @@ public final class IndexSmoke {
             out.write(java.lang.classfile.ClassFile.of().build(java.lang.constant.ClassDesc.of("smoke.Type"),builder->builder.withFlags(java.lang.classfile.ClassFile.ACC_PUBLIC)));
             out.closeEntry();
         }
-        var boot=new MachineColdBoot(root.resolve("index-v2/generation"),root.resolve("repository"),root.resolve("no-jdk"),8L*1024*1024);
+        var boot=new MachineColdBoot(root.resolve("index-v2/generation"),root.resolve("repository"),8L*1024*1024);
         try(var storage=boot.run()){
             var store=storage.store();
             store.loadWorkspace("smoke",List.of(new IndexStore.WorkspaceEntry(jar.toString(),"compile")),List.of());

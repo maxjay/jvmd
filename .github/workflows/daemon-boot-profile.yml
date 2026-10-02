@@ -248,3 +248,26 @@ jobs:
           name: boot-${{ matrix.scenario }}
           retention-days: 30
           path: ${{ runner.temp }}/boot/
+
+  report:
+    needs: [measure]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: boot-*
+          path: ${{ runner.temp }}/all
+      - name: Aggregate (compact evidence in the job log)
+        run: |
+          ls "$RUNNER_TEMP/all"
+          python3 benchmarks/boot/aggregate.py "$RUNNER_TEMP/all"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: boot-aggregate
+          retention-days: 30
+          path: ${{ runner.temp }}/all/aggregate.json

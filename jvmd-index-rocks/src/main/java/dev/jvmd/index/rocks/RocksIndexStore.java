@@ -72,6 +72,10 @@ public final class RocksIndexStore implements IndexStore {
             sequence=state.get(bytes("next-artifact"));if(sequence!=null)nextArtifact=Math.max(nextArtifact,Long.parseLong(new String(sequence,StandardCharsets.UTF_8)));
             dev.jvmd.core.BootEvents.timed("restore.metadata_store",restoreStarted);
             dev.jvmd.core.BootEvents.provider("store.artifacts",this::diagnosticArtifacts);
+            dev.jvmd.core.BootEvents.provider("store.semantic_work",this::semanticWork);
+            dev.jvmd.core.BootEvents.provider("store.observation_caches",()->{synchronized(this){return Map.of("semantic_lookups",semanticLookups.size(),
+                    "classpath_lookups",classpathLookups.size(),"classpath_sequences",classpathSequences.size(),"context_sequences",contextSequences.size(),
+                    "context_lookups",contextLookups.size(),"workspaces",workspaces.size(),"source_overlay_decodes",sourceOverlay.decoded());}});
         }catch(Exception error){sourceOverlay.close();state.close();options.close();durable.close();throw error;}
     }
     @Override public String backend(){return "rocksdb-sst";}

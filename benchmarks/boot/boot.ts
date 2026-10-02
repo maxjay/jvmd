@@ -131,6 +131,8 @@ export async function boot(o:BootOptions){
   const events=path.join(o.dir,"milestones.jsonl"),samples=path.join(o.dir,"samples.jsonl");
   const stateExisted=existsSync(o.state);
   const preListing=listing(o.state);
+  // As the product launcher does (mkdir -p "$state"): the AOT log is written there from JVM start.
+  mkdirSync(o.state,{recursive:true});
   const cmd=launchCommand(o,events);
   writeFileSync(path.join(o.dir,"command.json"),JSON.stringify([cmd.java,...cmd.args],null,1));
   const stdout=openSync(path.join(o.dir,"daemon.stdout.log"),"w"),stderr=openSync(path.join(o.dir,"daemon.log"),"w");
@@ -205,6 +207,7 @@ export async function boot(o:BootOptions){
   result.summary=summarize(result,spawnNs,readyStdoutNs);
   writeFileSync(path.join(o.dir,"result.json"),JSON.stringify(result,null,1));
   writeFileSync(path.join(o.dir,"summary.json"),JSON.stringify(result.summary,null,1));
+  if(!domain&&!killedEarly)for(const line of tail(path.join(o.dir,"daemon.log"),25).concat(tail(path.join(o.dir,"daemon.stdout.log"),10)))log("  | "+line);
   log(`${o.label}: ${domain?"DOMAIN_READY "+result.summary.t_ms.DOMAIN_READY?.toFixed(0)+" ms":"NOT REACHED ("+(failure??(killedEarly?"killed by design":"?"))+")"} product READY ${result.summary.t_ms.PRODUCT_READY?.toFixed(0)} ms`);
   return result;
 }

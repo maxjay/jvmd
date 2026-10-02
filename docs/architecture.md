@@ -70,7 +70,7 @@ Two cold boots over the same inputs produce the same root, whatever the enumerat
 
 1. **Create.** Create the generation's storage (`RocksIndexStorage.create`). This is the only call site that creates it. A generation that already has a committed root is refused; anything else in it is deleted.
 2. **Enumerate.** One walk of the repository (`*.jar` except `*-javadoc.jar`, one stat per file, each `-sources.jar` paired with its binary) and the configured JDK's modules.
-3. **Build artifacts.** One `ArtifactJob` per input, at most four at a time: read the binary into memory once and hash those bytes (checking its `.sha1` when present); claim the content in the boot's `ClaimMap` (a later job with equal content only records its path); take admission and build the leaf with `ArtifactBuilder` from the same bytes: facts, resolution identity, documentation joined from the paired sources, the semantic tree, and one published, once-verified SST. An input that cannot be read or parsed is a fault and contributes no leaf.
+3. **Build artifacts.** One `ArtifactJob` per input, at most four at a time, inputs with paired sources first: read the binary into memory once and hash those bytes (checking its `.sha1` when present); claim the content in the boot's `ClaimMap` (a later job with equal content only records its path); take admission and build the leaf with `ArtifactBuilder` from the same bytes: facts, resolution identity, documentation joined from the paired sources, the semantic tree, and one published, once-verified SST. An input that cannot be read or parsed is a fault and contributes no leaf.
 4. **Build the tree.** Bulk-build the artifact tree, the aggregates and the path table.
 5. **Commit.** `RocksMachineStore` stages leaves, nodes and paths in bounded batches, syncs once, then writes the root.
 
@@ -81,14 +81,14 @@ The daemon prints `READY` after the root is committed.
 `LocalColdBoot`, after `session.open` for a resolved Maven project, once MACHINE is committed, on a platform worker the session owns:
 
 1. **Create.** Create the project's LOCAL storage (`RocksLocalStore.create`), keyed by canonical root within the generation.
-2. **Module graph.** Resolve with `MavenResolver`: modules in reactor order, the edges between them, and one compiler context per module scope. A sibling module's sources are on its dependants' source path.
+2. **Module graph.** Resolve with `MavenResolver`: modules in reactor order, the edges between them, and one compiler context per module scope, including that scope's annotation processing output. A sibling module's sources are on its dependants' source path.
 3. **Routes.** Map each module scope's classpath entries to MACHINE leaf keys or sibling modules. An artifact MACHINE lacks is built by the MACHINE `ArtifactJob`, added to the MACHINE tree, and the MACHINE root is recommitted once.
 4. **Files.** Read each source file once; its hash and its attribution use the same bytes.
 5. **Declarations.** One job per (unit, compiler context) in `UnitQueue`, batched by context. `UnitCapture` compiles and captures; nothing is admitted into analyzer state, proved, cached or published. A request that needs a file moves its job to the front and waits for it (`require`).
 6. **Build the trees.** Bulk-build the file tree and the semantic tree.
 7. **Commit.** Stage file leaves, nodes, the module graph and routes in bounded batches, sync once, then write the LOCAL root.
 
-While it runs, analysis reads LOCAL from `LocalLayer`: the files built so far, with the types of unbuilt files owned by project source and unknown.
+While it runs, analysis reads LOCAL from `LocalLayer`: the files built so far, with the types of unbuilt files owned by project source and unknown. The session's dependency selection comes from its routes.
 
 ### Warm boot
 
@@ -110,6 +110,6 @@ The folder a class sits in says whether it is a cold boot, a warm boot, or a lay
 | `jvmd-boot/.../boot/` | `BootDecision` | Reads roots and picks cold or warm |
 | `jvmd-boot/.../boot/cold/machine/` | `MachineColdBoot`, `MachineInput`, `ArtifactJob`, `ClaimMap` | The MACHINE cold boot, one method per stage |
 | `jvmd-boot/.../boot/cold/local/` | `LocalColdBoot`, `Context`, `UnitQueue`, `UnitJob` | The LOCAL cold boot, one method per stage; the (unit, context) queue |
-| `jvmd-boot/.../boot/warm/` | `MachineWarmBoot` | Reopening a committed MACHINE generation |
+| `jvmd-boot/.../boot/warm/` | `MachineWarmBoot`, `LocalWarmBoot` | Reopening a committed MACHINE generation; serving a project whose LOCAL root is committed on demand |
 
 Code that exists only so a reopened generation or a committed LOCAL root keeps working until the warm boot reads the committed layers directly is marked `TEMPORARY(warm-boot)`.

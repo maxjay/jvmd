@@ -1,30 +1,25 @@
 package dev.jvmd.core;
 
-import java.io.*;
-import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
+import dev.jvmd.core.tree.Aggregate;
+import dev.jvmd.core.tree.KeyedTree;
 import java.nio.file.Path;
-import java.security.DigestOutputStream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 /**
- * Canonical live source-state identity. Mutations update compact semantic aggregates and a
- * deterministic Merkle hierarchy; readers consume already-maintained identities.
- *
- * <p>The algebraic accumulator is deliberately not XOR. Each path-bound contribution is a
- * domain-separated SHA-256 value interpreted in the secp256k1 prime field. Aggregates retain
- * both the modular sum and cardinality, then hash those fixed-size values into the exposed
- * identity. Controlled modular cancellation would require controlling SHA-256 field values;
- * the independent Merkle identity remains the authoritative structural identity.
+ * Live source-state identity of a set of source roots. Each directory is a Merkle node over a
+ * {@link KeyedTree} of its children, and carries one {@link Aggregate} per projection (membership,
+ * content, api, namespace) over the files beneath it. A file mutation updates the aggregates and
+ * the Merkle hashes on its path only; readers consume the maintained identities.
  */
 public final class LiveStateTree {
-    private static final BigInteger FIELD=new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F",16);
     private static final Fingerprint PRESENT=fingerprint("membership-present-v1","present");
     public static final Fingerprint UNKNOWN=fingerprint("semantic-unknown-v1","unknown");
     public static final Fingerprint UNATTRIBUTED_CONTENT=fingerprint("semantic-content-unattributed-v1","unknown");
-    private static final Fingerprint EMPTY_MERKLE_MAP=fingerprint("merkle-map-empty-v1","empty");
+    private static final KeyedTree.Spec<String,Fingerprint> CHILDREN=new KeyedTree.StringKeys<>("live-state-children-v1"){
+        @Override public byte[] encodeValue(Fingerprint value){return value.value().getBytes(java.nio.charset.StandardCharsets.UTF_8);}
+        @Override public Fingerprint decodeValue(byte[] bytes){return new Fingerprint(new String(bytes,java.nio.charset.StandardCharsets.UTF_8));}
+        @Override public Hash256 identity(Fingerprint value){return Hash256.fromHex(value.value());}
+    };
 
     public record Fingerprint(String value) {
         public Fingerprint { Objects.requireNonNull(value); }
@@ -68,7 +63,7 @@ public final class LiveStateTree {
     }
 
     private final List<Path> roots;
-    private final Node workspace=new Node("workspace",null,null,true);
+    private final Node workspace=new Node("workspace",null,true);
     private final Map<Path,Leaf> leaves=new HashMap<>();
     private long epoch;
 
@@ -76,8 +71,8 @@ public final class LiveStateTree {
         var normalized=sourceRoots.stream().map(LiveStateTree::normalize).distinct().sorted(Comparator.comparing(Path::toString)).toList();
         roots=List.copyOf(normalized);
         for(Path root:roots){
-            String key=rootKey(root);var child=new Node(root.toString(),root,key,true);
-            workspace.directories.put(key,child);workspace.children.put(key,child.merkle);
+            String key=rootKey(root);var child=new Node(root.toString(),key,true);
+            workspace.directories.put(key,child);workspace.putChild(key,child.merkle);
         }
         workspace.recompute();
     }
@@ -111,7 +106,7 @@ public final class LiveStateTree {
         var changed=domains(beforeLeaf,next);
         updateAggregates(chain,beforeLeaf,next,nextEpoch);
         Node parent=chain.get(chain.size()-1);
-        parent.children.put(fileKey(file),leafMerkle(next));parent.recompute();
+        parent.putChild(fileKey(file),leafMerkle(next));parent.recompute();
         propagate(chain,false);
         leaves.put(file,next);
         return new Transition(before,state(),changed);
@@ -124,7 +119,7 @@ public final class LiveStateTree {
         if(chain==null)throw new IllegalStateException("Missing live-state branch for "+file);
         long nextEpoch=++epoch;
         updateAggregates(chain,old,null,nextEpoch);
-        Node parent=chain.get(chain.size()-1);parent.children.remove(fileKey(file));parent.recompute();
+        Node parent=chain.get(chain.size()-1);parent.removeChild(fileKey(file));parent.recompute();
         propagate(chain,true);leaves.remove(file);
         return new Transition(before,state(),domains(old,null));
     }
@@ -151,7 +146,7 @@ public final class LiveStateTree {
         if(parentDirectory!=null&&!parentDirectory.equals(root))for(Path part:root.relativize(parentDirectory)){
             cursor=cursor.resolve(part);String key=directoryKey(part.toString());
             Node next=current.directories.get(key);
-            if(next==null){next=new Node(cursor.toString(),cursor,key,false);current.directories.put(key,next);}
+            if(next==null){next=new Node(cursor.toString(),key,false);current.directories.put(key,next);}
             current=next;chain.add(current);
         }
         return chain;
@@ -168,8 +163,8 @@ public final class LiveStateTree {
         for(int i=chain.size()-1;i>0;i--){
             Node child=chain.get(i),parent=chain.get(i-1);
             if(prune&&!child.sourceRoot&&child.files==0){
-                parent.directories.remove(child.keyInParent);parent.children.remove(child.keyInParent);
-            }else parent.children.put(child.keyInParent,child.merkle);
+                parent.directories.remove(child.keyInParent);parent.removeChild(child.keyInParent);
+            }else parent.putChild(child.keyInParent,child.merkle);
             parent.recompute();
         }
     }
@@ -181,12 +176,15 @@ public final class LiveStateTree {
         int fileDelta=old==null?1:next==null?-1:0;
         int pendingDelta=(next!=null&&!next.semanticsCurrent()?1:0)-(old!=null&&!old.semanticsCurrent()?1:0);
         for(Node node:chain){
-            if(membership)node.membership.replace(old==null?null:old.path(),old==null?null:PRESENT,next==null?null:next.path(),next==null?null:PRESENT);
-            if(content)node.content.replace(old==null?null:old.path(),old==null?null:old.content(),next==null?null:next.path(),next==null?null:next.content());
-            if(api)node.api.replace(old==null?null:old.path(),old==null?null:old.api(),next==null?null:next.path(),next==null?null:next.api());
-            if(namespace)node.namespace.replace(old==null?null:old.path(),old==null?null:old.namespace(),next==null?null:next.path(),next==null?null:next.namespace());
+            if(membership)node.membership=replace(node.membership,old,old==null?null:PRESENT,next,next==null?null:PRESENT);
+            if(content)node.content=replace(node.content,old,old==null?null:old.content(),next,next==null?null:next.content());
+            if(api)node.api=replace(node.api,old,old==null?null:old.api(),next,next==null?null:next.api());
+            if(namespace)node.namespace=replace(node.namespace,old,old==null?null:old.namespace(),next,next==null?null:next.namespace());
             node.files+=fileDelta;node.pendingSemanticFiles+=pendingDelta;node.epoch=epoch;
         }
+    }
+    private static Aggregate replace(Aggregate aggregate,Leaf old,Fingerprint oldValue,Leaf next,Fingerprint nextValue){
+        return aggregate.replace(old==null?null:old.path(),oldValue==null?null:oldValue.value(),next==null?null:next.path(),nextValue==null?null:nextValue.value());
     }
     private static void markEpoch(Node node,long value){node.epoch=value;for(Node child:node.directories.values())markEpoch(child,value);}
     private static Set<Domain> domains(Leaf old,Leaf next){
@@ -210,81 +208,22 @@ public final class LiveStateTree {
     }
 
     private static final class Node {
-        final String id;final Path directory;final String keyInParent;final boolean sourceRoot;
+        final String id;final String keyInParent;final boolean sourceRoot;
         final Map<String,Node> directories=new HashMap<>();
-        final MerkleMap children=new MerkleMap();
-        final Aggregate membership=new Aggregate("membership"),content=new Aggregate("content"),api=new Aggregate("api"),namespace=new Aggregate("namespace");
+        KeyedTree<String,Fingerprint> children=KeyedTree.empty(CHILDREN);
+        Aggregate membership=Aggregate.empty("membership"),content=Aggregate.empty("content"),api=Aggregate.empty("api"),namespace=Aggregate.empty("namespace");
         Fingerprint merkle;long epoch;int files,pendingSemanticFiles;
-        Node(String id,Path directory,String keyInParent,boolean sourceRoot){
-            this.id=id;this.directory=directory;this.keyInParent=keyInParent;this.sourceRoot=sourceRoot;recompute();
+        Node(String id,String keyInParent,boolean sourceRoot){
+            this.id=id;this.keyInParent=keyInParent;this.sourceRoot=sourceRoot;recompute();
         }
-        void recompute(){merkle=fingerprint("state-node-v1",id,children.rootHash().value());}
-        State state(){return new State(merkle,membership.identity(),content.identity(),api.identity(),namespace.identity(),epoch,files,pendingSemanticFiles);}
-    }
-
-    private static final class Aggregate {
-        final AlgebraicAccumulator values;
-        Aggregate(String domain){values=new AlgebraicAccumulator(domain);}
-        void replace(Path oldPath,Fingerprint oldValue,Path newPath,Fingerprint newValue){
-            values.replace(oldPath,oldValue==null?null:oldValue.value(),newPath,newValue==null?null:newValue.value());
-        }
-        AggregateIdentity identity(){return new AggregateIdentity(new Fingerprint(values.identity().hex()),values.cardinality());}
-    }
-
-    /** Deterministic treap: priorities are derived from the key, so shape does not depend on mutation history. */
-    private static final class MerkleMap {
-        Entry root;
-        Fingerprint rootHash(){return root==null?EMPTY_MERKLE_MAP:root.hash;}
-        void put(String key,Fingerprint value){root=put(root,key,value,priority(key));}
-        void remove(String key){root=remove(root,key);}
-        private static Entry put(Entry node,String key,Fingerprint value,BigInteger priority){
-            if(node==null)return new Entry(key,value,priority);
-            int order=key.compareTo(node.key);
-            if(order==0){node.value=value;node.update();return node;}
-            if(order<0){node.left=put(node.left,key,value,priority);if(higher(node.left,node))node=rotateRight(node);}
-            else{node.right=put(node.right,key,value,priority);if(higher(node.right,node))node=rotateLeft(node);}
-            node.update();return node;
-        }
-        private static Entry remove(Entry node,String key){
-            if(node==null)return null;int order=key.compareTo(node.key);
-            if(order<0)node.left=remove(node.left,key);
-            else if(order>0)node.right=remove(node.right,key);
-            else return merge(node.left,node.right);
-            node.update();return node;
-        }
-        private static Entry merge(Entry left,Entry right){
-            if(left==null)return right;if(right==null)return left;
-            if(higher(left,right)){left.right=merge(left.right,right);left.update();return left;}
-            right.left=merge(left,right.left);right.update();return right;
-        }
-        private static boolean higher(Entry a,Entry b){
-            int compared=a.priority.compareTo(b.priority);return compared>0||compared==0&&a.key.compareTo(b.key)>0;
-        }
-        private static Entry rotateRight(Entry node){Entry next=node.left;node.left=next.right;next.right=node;node.update();next.update();return next;}
-        private static Entry rotateLeft(Entry node){Entry next=node.right;node.right=next.left;next.left=node;node.update();next.update();return next;}
-        private static final class Entry {
-            final String key;final BigInteger priority;Fingerprint value,hash;Entry left,right;
-            Entry(String key,Fingerprint value,BigInteger priority){this.key=key;this.value=value;this.priority=priority;update();}
-            void update(){hash=fingerprint("merkle-map-node-v1",left==null?EMPTY_MERKLE_MAP.value():left.hash.value(),key,value.value(),right==null?EMPTY_MERKLE_MAP.value():right.hash.value());}
+        void putChild(String key,Fingerprint value){children=children.put(key,value);}
+        void removeChild(String key){children=children.remove(key);}
+        void recompute(){merkle=fingerprint("state-node-v1",id,children.rootHash().hex());}
+        State state(){return new State(merkle,identity(membership),identity(content),identity(api),identity(namespace),epoch,files,pendingSemanticFiles);}
+        private static AggregateIdentity identity(Aggregate aggregate){
+            return new AggregateIdentity(new Fingerprint(aggregate.identity().hex()),aggregate.cardinality());
         }
     }
 
-    private static BigInteger priority(String key){return new BigInteger(1,digest("merkle-priority-v1",key));}
-    private static BigInteger contribution(String domain,Path path,Fingerprint value){return new BigInteger(1,digest("aggregate-contribution-v1",domain,normalize(path),value.value())).mod(FIELD);}
-    private static String fixedHex(BigInteger value){return String.format(Locale.ROOT,"%064x",value);}
-    private static Fingerprint fingerprint(String domain,Object... parts){return new Fingerprint(HexFormat.of().formatHex(digest(domain,parts)));}
-    private static byte[] digest(String domain,Object... parts){
-        try{
-            MessageDigest digest=MessageDigest.getInstance("SHA-256");
-            try(var out=new DataOutputStream(new DigestOutputStream(OutputStream.nullOutputStream(),digest))){
-                write(out,domain);for(Object part:parts)write(out,part);
-            }
-            return digest.digest();
-        }catch(IOException|NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}
-    }
-    private static void write(DataOutputStream out,Object value)throws IOException{
-        if(value instanceof Object[] values){out.writeByte(1);out.writeInt(values.length);for(Object item:values)write(out,item);return;}
-        if(value instanceof Collection<?> values){out.writeByte(2);out.writeInt(values.size());for(Object item:values)write(out,item);return;}
-        byte[] bytes=Objects.toString(value,"").getBytes(StandardCharsets.UTF_8);out.writeByte(3);out.writeInt(bytes.length);out.write(bytes);
-    }
+    private static Fingerprint fingerprint(String domain,Object... parts){return new Fingerprint(CanonicalDigestWriter.digest(domain,parts).hex());}
 }

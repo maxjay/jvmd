@@ -47,14 +47,6 @@ public final class RocksArtifactInventory implements AutoCloseable {
         db.put(GENERATION,longBytes(generation));return generation;
     }
 
-    public synchronized Optional<Entry> reusable(Path path,String gav,String kind,Stamp stamp,boolean forceHash)throws Exception{
-        if(forceHash)return Optional.empty();
-        byte[] value=db.get(pathKey(path));if(value==null)return Optional.empty();
-        Entry entry=decode(value);
-        if(!entry.gav().equals(gav)||!entry.kind().equals(kind)||!entry.stamp().equals(stamp))return Optional.empty();
-        return Optional.of(entry);
-    }
-
     public synchronized void observe(long generation,Path path,String gav,String kind,String cacheKey,String binarySha256,Stamp stamp)throws Exception{
         if(generation<=0)throw new IllegalArgumentException("generation");
         String location=normalize(path);byte[] key=pathKey(path),oldBytes=db.get(key);

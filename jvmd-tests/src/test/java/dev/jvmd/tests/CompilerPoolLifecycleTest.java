@@ -18,14 +18,14 @@ class CompilerPoolLifecycleTest {
    pool.configure("watch","25",List.of(classes),List.of(useRoot),null,256L*1024*1024);
    String text="class Use { int n=new Dependency().value(); }";
    assertThat(pool.query(use,text,2,(task,units,tier)->units.size()).diagnostics()).isEmpty();
-   for(int i=0;i<10;i++)assertThat(pool.cacheValid()).isTrue();
+   for(int i=0;i<10;i++)assertThat(pool.cacheValid(pool.inputSnapshot())).isTrue();
    var before=pool.status();
    assertThat(before).containsEntry("classpath_changes",0L);
 
    Files.writeString(dependency,"public class Dependency { public String value(){return \"changed\";} }");
    assertThat(javax.tools.ToolProvider.getSystemJavaCompiler().run(null,null,null,"-d",classes.toString(),dependency.toString())).isZero();
    boolean invalidated=false;
-   for(int i=0;i<200&&!invalidated;i++){invalidated=!pool.cacheValid();if(!invalidated)Thread.sleep(10);}
+   for(int i=0;i<200&&!invalidated;i++){invalidated=!pool.cacheValid(pool.inputSnapshot());if(!invalidated)Thread.sleep(10);}
    assertThat(invalidated).as("loose classpath mutation observed").isTrue();
    assertThat(pool.query(use,text,2,(task,units,tier)->units.size()).diagnostics()).anyMatch(d->d.code().startsWith("compiler.err.prob.found.req"));
    assertThat(((Number)pool.status().get("classpath_changes")).longValue()).isGreaterThan(0);

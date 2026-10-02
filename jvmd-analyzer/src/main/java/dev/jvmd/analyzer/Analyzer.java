@@ -73,7 +73,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     private final Set<Path> settlingPrerequisites=new HashSet<>();
     private final SourceProofEvidence sourceProofEvidence=new SourceProofEvidence();
     private final LinkedHashMap<String,SourceText> sourceTexts=new LinkedHashMap<>(16,.75f,true);
-    private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWrites,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
+    private long cacheHits,bindingComputations,diagnosticFilesAnalysed,diagnosticFilesReused,indexWriteNanos,apiFingerprintChanges,apiFingerprintUnchanged;
     private long completionRequests,residentDescriptionLoads,residentDescriptionCacheHits;
     private long documentProofBuilds,documentProofChecks,sourceSemanticRepairs,hierarchyRecoveries;
     private Context context;
@@ -84,7 +84,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     /** Wait for queued LOCAL memo writes (tests, shutdown and benchmarks). */
     public void awaitMemoWrites()throws InterruptedException{attributedMemos.awaitWrites();}
     private final AttributedMemos attributedMemos=new AttributedMemos(this);
-    private long budget;
 
     private String platformFingerprint()throws Exception{
         Path home=Path.of(System.getProperty("java.home")).toAbsolutePath().normalize();
@@ -507,7 +506,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         boolean ownerChanged=hadState&&!owner.equals(caches.semanticOwnerIdentity);
         var currentClasspath=preciseClasspathSequence(context,index);
 
-        this.context=context;this.index=index;this.budget=budget;semanticBudgetBytes=Math.max(8L*1024*1024,budget/2);
+        this.context=context;this.index=index;semanticBudgetBytes=Math.max(8L*1024*1024,budget/2);
         outlines=caches.outlines;focused=caches.focused;
         diagnosticStore.budget(Math.max(1024*1024,budget/8));
 
@@ -627,16 +626,13 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         for(String id:delta.removed()){var fact=semanticState().symbol(id);if(fact!=null)removed.add(fact);}
         semanticState().apply(delta);return new SemanticAdmission(delta,removed);
     }
-    private void admitSemantic(SemanticSnapshot snapshot,FileSemanticContribution contribution){
-        admitSemanticMutation(snapshot,contribution);
-    }
     private void admitDetachedSemantic(SemanticSnapshot snapshot){
         if(snapshot==null)return;
         if(snapshot.sourceFile()!=null&&liveSourceState!=null)try{
             Path source=Path.of(snapshot.sourceFile()).toAbsolutePath().normalize();
             if(liveSourceState.accepts(source)){
                 var contribution=contribution(source);
-                if(contribution!=null&&contribution.sourceHash().equals(snapshot.contentIdentity())){admitSemantic(snapshot,contribution);return;}
+                if(contribution!=null&&contribution.sourceHash().equals(snapshot.contentIdentity())){admitSemanticMutation(snapshot,contribution);return;}
             }
         }catch(Exception ignored){}
         semanticState().admit(snapshot);
@@ -1857,31 +1853,6 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         }
         return Map.copyOf(result);
     }
-    private static Set<String> completionNameResolutionBinaries(String text,Collection<String> simpleNames){
-        if(simpleNames==null||simpleNames.isEmpty())return Set.of();
-        var names=new LinkedHashSet<>(simpleNames);var result=new LinkedHashSet<String>();
-        var packageMatch=java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)*)\\s*;").matcher(text);
-        String current=packageMatch.find()?packageMatch.group(1):"";
-        for(String name:names)result.add(current.isEmpty()?name:current+"."+name);
-        var imports=java.util.regex.Pattern.compile("\\bimport\\s+(static\\s+)?([A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$*][\\w$*]*)*)\\s*;").matcher(text);
-        while(imports.find()){
-            boolean statik=imports.group(1)!=null;String imported=imports.group(2);
-            if(statik){
-                if(imported.endsWith(".*"))result.add(imported.substring(0,imported.length()-2));
-                else{
-                    int cut=imported.lastIndexOf('.');String member=cut<0?imported:imported.substring(cut+1);
-                    if(cut>=0&&names.contains(member))result.add(imported.substring(0,cut));
-                }
-            }else if(imported.endsWith(".*")){
-                String pkg=imported.substring(0,imported.length()-2);
-                for(String name:names)result.add(pkg+"."+name);
-            }else{
-                int cut=imported.lastIndexOf('.');String simple=cut<0?imported:imported.substring(cut+1);
-                if(names.contains(simple))result.add(imported);
-            }
-        }
-        return Set.copyOf(result);
-    }
     private boolean ensureCompletionSemantics(Set<Path> dependenciesToCheck)throws Exception{
         var live=documents.liveState(context.sources());live.observe(dependenciesToCheck);
         for(Path dependency:dependenciesToCheck){
@@ -2441,7 +2412,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return NamePath.parse(ref).matches(symbol);
     }
     public Map<String,Object> status(){
-        var result=new LinkedHashMap<String,Object>(compiler.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_record_source_calls",indexWrites);result.put("index_record_source_ms",0.0);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
+        var result=new LinkedHashMap<String,Object>(compiler.status());result.putAll(focusing.status());result.put("outline_cache_entries",outlines.size());result.put("configured",context!=null);result.put("binding_cache_entries",focused.size());result.put("binding_cache_hits",cacheHits);result.put("binding_computations",bindingComputations);result.put("classpath_fingerprints",classpathFingerprints);result.put("diagnostic_store",diagnosticStore.status());result.put("diagnostic_files_analysed",diagnosticFilesAnalysed);result.put("diagnostic_files_reused",diagnosticFilesReused);result.put("index_publish_enqueue_ms",Math.round(indexWriteNanos/1000.0)/1000.0);if(index!=null)result.put("source_publisher",index.sourcePublisherStatus());result.put("api_fingerprint_changes",apiFingerprintChanges);result.put("api_fingerprint_unchanged",apiFingerprintUnchanged);result.put("pending_api_files",dependencies.semantic().pendingCount());result.put("conditional_files",dependencies.semantic().conditionalCount());result.put("dependencies",dependencies.status());
         if(liveSourceState!=null)result.put("live_source_state",liveSourceState.status());
         if(context!=null)result.put("resident_semantic_state",semanticState().status());
         result.put("completion_requests",completionRequests);result.put("resident_description_loads",residentDescriptionLoads);result.put("resident_description_cache_hits",residentDescriptionCacheHits);

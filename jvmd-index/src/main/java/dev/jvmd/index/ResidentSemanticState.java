@@ -4,21 +4,25 @@ import dev.jvmd.core.AlgebraicAccumulator;
 import dev.jvmd.core.CanonicalDigestWriter;
 import dev.jvmd.core.Hash256;
 import dev.jvmd.core.Hashing;
-import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
+import dev.jvmd.core.tree.KeyedTree;
+import java.io.IOException;
 import java.util.*;
 
 /**
- * Resident ordered semantic state.
- *
- * The content-derived treap is a prolly-style persistent ordered Merkle tree: key hashes determine
- * structure, path-copy updates recalculate only structural Merkle identity, semantic-domain
- * aggregates are maintained once outside the tree, and exact symbols share the same canonical facts.
+ * Resident ordered semantic state: a {@link KeyedTree} of declaration facts ordered by owner, then
+ * member, whose nodes carry resolution range sums. Member-range and overload-group identities are
+ * read from those sums. Semantic-domain aggregates are maintained once outside the tree, and exact
+ * symbols share the same canonical facts.
  */
 public final class ResidentSemanticState {
-    private static final BigInteger FIELD=new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F",16);
     private static final String EMPTY=Hashing.sha256(new byte[0]);
-    private static final Hash256 EMPTY_HASH=Hash256.fromHex(EMPTY);
+    /** Facts ordered by {@link SemanticFact#orderedKey()}; ranges sum resolution identities. */
+    public static final KeyedTree.Spec<String,SemanticFact> FACTS=new KeyedTree.StringKeys<>("semantic-facts-v1"){
+        @Override public byte[] encodeValue(SemanticFact value)throws IOException{return FactCodec.encode(value);}
+        @Override public SemanticFact decodeValue(byte[] bytes)throws IOException{return FactCodec.decode(bytes,SemanticFact.class);}
+        @Override public Hash256 identity(SemanticFact value){return value.factIdentity();}
+        @Override public Hash256 rangeIdentity(SemanticFact value){return value.resolutionIdentity();}
+    };
 
     public record Aggregate(AlgebraicAccumulator.Value membership,AlgebraicAccumulator.Value api,
                             AlgebraicAccumulator.Value namespace,AlgebraicAccumulator.Value documentation) {
@@ -36,23 +40,7 @@ public final class ResidentSemanticState {
 
     public record Identity(long epoch,String merkleRoot,String membership,String api,String namespace,String documentation) { }
 
-    private record Entry(String key,SemanticFact fact,Hash256 valueIdentity,Aggregate contribution,BigInteger priority) { }
-    private static final class Node {
-        final Entry entry;final Node left,right;final Hash256 merkle;
-        final AlgebraicAccumulator.Value resolutionRange;
-        final String minKey,maxKey;
-        Node(Entry entry,Node left,Node right){
-            this.entry=entry;this.left=left;this.right=right;
-            merkle=CanonicalDigestWriter.digest("resident-node-v1",left==null?EMPTY_HASH:left.merkle,entry.key(),entry.valueIdentity(),right==null?EMPTY_HASH:right.merkle);
-            var self=AlgebraicAccumulator.contribution("semantic-member-range-v1",entry.key(),entry.fact().resolutionIdentity());
-            resolutionRange=(left==null?AlgebraicAccumulator.Value.ZERO:left.resolutionRange)
-                    .plus(self).plus(right==null?AlgebraicAccumulator.Value.ZERO:right.resolutionRange);
-            minKey=left==null?entry.key():left.minKey;
-            maxKey=right==null?entry.key():right.maxKey;
-        }
-    }
-
-    private Node root;
+    private KeyedTree<String,SemanticFact> root=KeyedTree.empty(FACTS);
     private final Map<String,SemanticFact> symbols=new HashMap<>();
     private final Map<String,String> typesByFqn=new HashMap<>();
     private final Map<String,Set<String>> typesBySimpleName=new HashMap<>();
@@ -67,7 +55,7 @@ public final class ResidentSemanticState {
     private long epoch,rangeEntriesRead,factMutations;
 
     public synchronized SemanticDelta diff(SemanticSnapshot next){
-        return SemanticDelta.between(units.get(next.unit()),next,symbols::get);
+        return SemanticDelta.between(units.get(next.unit()),next);
     }
 
     public synchronized SemanticDelta admit(SemanticSnapshot next){
@@ -78,7 +66,7 @@ public final class ResidentSemanticState {
         var previous=units.get(delta.unit());
         boolean generationStale=previous!=null&&previous.uncertaintyGeneration()!=uncertaintyGeneration;
         boolean wasStale=staleUnits.containsKey(delta.unit())||generationStale;
-        if(previous==null&&root==null&&symbols.isEmpty()&&units.isEmpty()&&delta.changed().isEmpty()&&delta.removed().isEmpty()){
+        if(previous==null&&root.isEmpty()&&symbols.isEmpty()&&units.isEmpty()&&delta.changed().isEmpty()&&delta.removed().isEmpty()){
             applyInitial(delta);return;
         }
         boolean transition=previous==null||!Objects.equals(previous.contentIdentity(),delta.contentIdentity())
@@ -112,17 +100,16 @@ public final class ResidentSemanticState {
     }
 
     private void applyInitial(SemanticDelta delta){
-        var ordered=new ArrayList<Entry>(delta.added().size());
+        var ordered=new TreeMap<String,SemanticFact>();
         var hierarchyAffected=new LinkedHashSet<String>();
         for(var fact:delta.added()){
             symbols.put(fact.id(),fact);indexType(fact);
             var contribution=contribution(fact);
-            ordered.add(entry(fact,contribution));semanticAggregate=semanticAggregate.add(contribution);
+            ordered.put(fact.orderedKey(),fact);semanticAggregate=semanticAggregate.add(contribution);
             if(fact.member())memberAggregates.merge(fact.ownerId(),contribution,Aggregate::add);
             if(fact.typeDeclaration()){linkHierarchy(fact);hierarchyAffected.add(fact.id());}
         }
-        ordered.sort(Comparator.comparing(Entry::key));
-        root=bulkBuild(ordered);
+        root=KeyedTree.build(FACTS,List.copyOf(ordered.entrySet()));
         units.put(delta.unit(),nextUnitState(delta));
         recomputeHierarchyApis(hierarchyAffected);
         factMutations+=delta.factMutations();epoch++;
@@ -216,22 +203,13 @@ public final class ResidentSemanticState {
      * visible when it is created, so later mutations cannot change the sequence already being read.
      */
     public final class MemberCursor {
-        private final String lower,upper;
-        private final ArrayDeque<Node> stack=new ArrayDeque<>();
-        private MemberCursor(Node snapshot,String lower,String upper){this.lower=lower;this.upper=upper;push(snapshot);}
-        private void push(Node node){
-            while(node!=null){
-                int low=node.entry.key().compareTo(lower),high=node.entry.key().compareTo(upper);
-                if(low<0){node=node.right;continue;}
-                if(high>0){node=node.left;continue;}
-                stack.push(node);node=node.left;
-            }
-        }
+        private final KeyedTree.Cursor<String,SemanticFact> cursor;
+        private MemberCursor(KeyedTree<String,SemanticFact> snapshot,String lower,String upper){cursor=snapshot.cursor(lower,upper);}
         /** Returns the next ordered fact, or null when the requested range is exhausted. */
         public SemanticFact next(){
             synchronized(ResidentSemanticState.this){
-                if(stack.isEmpty())return null;
-                var node=stack.pop();push(node.right);rangeEntriesRead++;return node.entry.fact();
+                var entry=cursor.next();if(entry==null)return null;
+                rangeEntriesRead++;return entry.getValue();
             }
         }
     }
@@ -261,12 +239,12 @@ public final class ResidentSemanticState {
     /** Resolution-only identity for one direct owner/name-prefix domain. */
     public synchronized Hash256 memberRangeIdentity(String ownerId,String namePrefix){
         String prefix=SemanticFact.memberPrefix(ownerId,Objects.requireNonNullElse(namePrefix,""));
-        return resolutionRange(root,prefix,prefix+"\uffff").identity("semantic-member-range-v1");
+        return root.range(prefix,prefix+"\uffff").identity("semantic-member-range-v1");
     }
     /** Resolution-only identity for the exact overload group of one member name. */
     public synchronized Hash256 overloadGroupIdentity(String ownerId,String name){
         String prefix=SemanticFact.memberPrefix(ownerId,Objects.requireNonNullElse(name,""))+"\0";
-        var exact=resolutionRange(root,prefix,prefix+"\uffff").identity("semantic-member-range-v1");
+        var exact=root.range(prefix,prefix+"\uffff").identity("semantic-member-range-v1");
         return CanonicalDigestWriter.digest("semantic-overload-group-v1",exact);
     }
     /** Constant-time validity identity for the effective API reachable from a receiver type. */
@@ -303,15 +281,15 @@ public final class ResidentSemanticState {
     public synchronized long uncertaintyGeneration(){return uncertaintyGeneration;}
 
     public synchronized Identity identity(){
-        String structural=root==null?EMPTY:root.merkle.hex();
+        String structural=root.rootHash().hex();
         String merkle=CanonicalDigestWriter.digest("resident-state-v2",structural,freshnessIdentity()).hex();
         return new Identity(epoch,merkle,semanticAggregate.membershipIdentity(),semanticAggregate.apiIdentity(),
                 semanticAggregate.namespaceIdentity(),semanticAggregate.documentationIdentity());
     }
 
     public synchronized void clear(){
-        if(root==null&&symbols.isEmpty()&&units.isEmpty())return;
-        root=null;symbols.clear();typesByFqn.clear();typesBySimpleName.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");uncertaintyGeneration=0;epoch++;
+        if(root.isEmpty()&&symbols.isEmpty()&&units.isEmpty())return;
+        root=KeyedTree.empty(FACTS);symbols.clear();typesByFqn.clear();typesBySimpleName.clear();units.clear();memberAggregates.clear();semanticAggregate=Aggregate.ZERO;directSupers.clear();directSubs.clear();hierarchyApis.clear();staleUnits.clear();staleAggregate=new AlgebraicAccumulator("semantic-stale-v2");uncertaintyGeneration=0;epoch++;
     }
 
     /** Conservative retained-size estimate used only for semantic cache budgeting/retirement. */
@@ -443,20 +421,16 @@ public final class ResidentSemanticState {
     }
     private void addFact(SemanticFact fact){
         indexType(fact);
-        var contribution=contribution(fact);root=put(root,entry(fact,contribution));semanticAggregate=semanticAggregate.add(contribution);
+        var contribution=contribution(fact);root=root.put(fact.orderedKey(),fact);semanticAggregate=semanticAggregate.add(contribution);
         if(fact.member())memberAggregates.merge(fact.ownerId(),contribution,Aggregate::add);
     }
 
     private void removeFact(SemanticFact fact){
         unindexType(fact);
-        var contribution=contribution(fact);root=remove(root,fact.orderedKey());semanticAggregate=semanticAggregate.subtract(contribution);
+        var contribution=contribution(fact);root=root.remove(fact.orderedKey());semanticAggregate=semanticAggregate.subtract(contribution);
         if(fact.member())memberAggregates.compute(fact.ownerId(),(_,old)->{
             if(old==null)return null;var next=old.subtract(contribution);return next.equals(Aggregate.ZERO)?null:next;
         });
-    }
-
-    private static Entry entry(SemanticFact fact,Aggregate contribution){
-        String key=fact.orderedKey();return new Entry(key,fact,fact.factIdentity(),contribution,point("priority",key));
     }
 
     private static Aggregate contribution(SemanticFact fact){
@@ -466,77 +440,4 @@ public final class ResidentSemanticState {
                 AlgebraicAccumulator.contribution("namespace",fact.id(),fact.namespaceIdentity().isBlank()?fact.packageName()+"\0"+fact.name()+"\0"+fact.kind():fact.namespaceIdentity()),
                 AlgebraicAccumulator.contribution("documentation",fact.id(),fact.documentationIdentity()));
     }
-
-    private static BigInteger point(String domain,String value){
-        return Hash256.sha256((domain+"\0"+Objects.requireNonNullElse(value,"")).getBytes(StandardCharsets.UTF_8)).unsignedInteger().mod(FIELD);
-    }
-
-    private static AlgebraicAccumulator.Value resolutionRange(Node node,String lower,String upper){
-        if(node==null||node.maxKey.compareTo(lower)<0||node.minKey.compareTo(upper)>0)
-            return AlgebraicAccumulator.Value.ZERO;
-        if(node.minKey.compareTo(lower)>=0&&node.maxKey.compareTo(upper)<=0)return node.resolutionRange;
-        var result=resolutionRange(node.left,lower,upper);
-        if(node.entry.key().compareTo(lower)>=0&&node.entry.key().compareTo(upper)<=0)
-            result=result.plus(AlgebraicAccumulator.contribution("semantic-member-range-v1",
-                    node.entry.key(),node.entry.fact().resolutionIdentity()));
-        return result.plus(resolutionRange(node.right,lower,upper));
-    }
-
-    private Node newNode(Entry entry,Node left,Node right){return new Node(entry,left,right);}
-
-    /**
-     * Build the deterministic priority treap in linear structural time from already ordered facts.
-     * The Cartesian-tree shape is exactly the shape produced by incremental inserts with the same
-     * strict priority comparison, but without persistent path-copying during first admission.
-     */
-    private Node bulkBuild(List<Entry> ordered){
-        int size=ordered.size();if(size==0)return null;
-        var left=new int[size];var right=new int[size];var stack=new int[size];
-        Arrays.fill(left,-1);Arrays.fill(right,-1);int top=-1;
-        for(int i=0;i<size;i++){
-            int previous=-1;
-            while(top>=0&&ordered.get(stack[top]).priority().compareTo(ordered.get(i).priority())<0)previous=stack[top--];
-            left[i]=previous;if(top>=0)right[stack[top]]=i;stack[++top]=i;
-        }
-        return freezeBulk(ordered,left,right,stack[0]);
-    }
-
-    private Node freezeBulk(List<Entry> ordered,int[] left,int[] right,int index){
-        if(index<0)return null;
-        var leftNode=freezeBulk(ordered,left,right,left[index]);
-        var rightNode=freezeBulk(ordered,left,right,right[index]);
-        return newNode(ordered.get(index),leftNode,rightNode);
-    }
-
-    private Node put(Node node,Entry entry){
-        if(node==null)return newNode(entry,null,null);
-        int compare=entry.key().compareTo(node.entry.key());
-        if(compare==0)return newNode(entry,node.left,node.right);
-        if(compare<0){
-            var next=newNode(node.entry,put(node.left,entry),node.right);
-            return next.left.entry.priority().compareTo(next.entry.priority())>0?rotateRight(next):next;
-        }
-        var next=newNode(node.entry,node.left,put(node.right,entry));
-        return next.right.entry.priority().compareTo(next.entry.priority())>0?rotateLeft(next):next;
-    }
-
-    private Node remove(Node node,String key){
-        if(node==null)return null;int compare=key.compareTo(node.entry.key());
-        if(compare==0)return merge(node.left,node.right);
-        return compare<0?newNode(node.entry,remove(node.left,key),node.right):newNode(node.entry,node.left,remove(node.right,key));
-    }
-
-    private Node merge(Node left,Node right){
-        if(left==null)return right;if(right==null)return left;
-        if(left.entry.priority().compareTo(right.entry.priority())>0)return newNode(left.entry,left.left,merge(left.right,right));
-        return newNode(right.entry,merge(left,right.left),right.right);
-    }
-
-    private Node rotateRight(Node node){
-        var top=node.left;var lower=newNode(node.entry,top.right,node.right);return newNode(top.entry,top.left,lower);
-    }
-    private Node rotateLeft(Node node){
-        var top=node.right;var lower=newNode(node.entry,node.left,top.left);return newNode(top.entry,lower,top.right);
-    }
-
 }

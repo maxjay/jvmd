@@ -14,7 +14,7 @@ class SignatureClosureTest {
     @Test void followsSignaturesWithJdkDocsAndResumesWithoutDuplicates()throws Exception{
         Path jar=IndexFixtures.jar(root,"sample",IndexFixtures.generic(),true);
         try(var index=new IndexService(new ReferenceIndexStorage(root.resolve("index.db")),root)){
-            index.indexJar(jar,"fixture:sample:1","jar");index.indexSources(root.resolve("sample-sources.jar"));index.linkEdges();
+            index.indexJar(jar,"fixture:sample:1","jar");index.indexSources(root.resolve("sample-sources.jar"));
             var symbol=index.find("transform",null,false,10,0).getFirst();long id=((Number)symbol.get("id")).longValue();
             // A self-cycle must not duplicate the root or prevent pagination.
             ((SqliteIndexStore)index.store()).database().write(c->{try(var q=c.prepareStatement("INSERT OR IGNORE INTO edges VALUES(?,?,'return_type')")){q.setLong(1,id);q.setLong(2,id);q.executeUpdate();}return null;});

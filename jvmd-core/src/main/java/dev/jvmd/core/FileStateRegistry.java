@@ -151,11 +151,6 @@ public final class FileStateRegistry {
         }
     }
 
-    /** Return matching content and observation evidence under the same registry lock. */
-    public synchronized Observation observe(Path file)throws IOException {
-        String hash=hash(file);var observed=files.get(file.toAbsolutePath().normalize());
-        return observed==null?new Observation(null,hash):observed;
-    }
     public record Inventory(List<Path> members,Object evidence) { }
     private record DirectoryEvidence(Map<String,Object> stamp,Map<Path,DirectoryEvidence> children) { }
     private record InventoryKey(Path root,String suffix,boolean followLinks) { }
@@ -305,10 +300,6 @@ public final class FileStateRegistry {
         directoryJournal.append(record);
         if(directoryJournal.pending()>=512||System.nanoTime()-lastFlushNanos>1_000_000_000L)flushObservations();
     }
-    /** Startup/configuration uncertainty or overflow discards observations, never accepted semantic state. */
-    public synchronized void reconcile(){files.clear();inventories.clear();restored.clear();}
-
-    public synchronized void forget(Path file) { files.remove(file.toAbsolutePath().normalize()); }
     public synchronized Map<String, Object> status() {
         var result=new LinkedHashMap<String,Object>();
         result.put("entries", files.size());result.put("hashes", hashes);result.put("stat_hits", hits);result.put("bytes_hashed", bytes);

@@ -268,7 +268,6 @@ public final class RocksIndexStore implements IndexStore {
             this.unmatched.put(id,(long)unmatched);installed(source);installed(updated);return id;
         }
     }
-    @Override public void resolveGlobalRelationships(){/* Targets remain symbolic until a workspace query. */}
     @Override public synchronized boolean reconcilePaths(Path root,Set<Path> present)throws Exception{
         var removed=new ArrayList<StoredArtifact>();Path normalized=root.toAbsolutePath().normalize();
         for(var value:artifacts.values()){
@@ -795,7 +794,6 @@ public final class RocksIndexStore implements IndexStore {
     }
     private static ArtifactCandidate candidate(StoredArtifact a){return new ArtifactCandidate(a.id(),a.input().context().path(),a.input().context().gav(),a.classReferences(),a.codeKey()!=null);}
     @Override public synchronized List<ArtifactCandidate> binaryArtifacts(String workspace){return selected(workspace,false).stream().filter(a->a.input().context().kind().equals("jar")&&!a.input().context().path().startsWith("jrt:")).map(RocksIndexStore::candidate).toList();}
-    @Override public List<ArtifactWork> pendingSignatureArtifacts(String workspace){return List.of();}
     @Override public synchronized List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception{
         var result=new TreeMap<Long,ArtifactCandidate>();for(String scip:scips){var symbol=byScip(scip,workspace);if(symbol==null)continue;var artifact=required(((Number)symbol.get("artifact_id")).longValue());
             if(artifact.input().context().kind().equals("jar")&&!artifact.input().context().path().startsWith("jrt:"))result.put(artifact.id(),candidate(artifact));

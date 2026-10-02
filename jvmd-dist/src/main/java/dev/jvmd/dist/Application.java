@@ -1244,7 +1244,6 @@ public final class Application implements AutoCloseable {
                 var database=app.index();
                 Path jackson=config.m2Repo().resolve("com/fasterxml/jackson/core/jackson-databind/2.22.2/jackson-databind-2.22.2.jar");
                 database.indexJar(jackson,"com.fasterxml.jackson.core:jackson-databind:2.22.2","jar");
-                database.linkEdges();
                 for (int i = 0; i < 20; i++) {
                     var request = Json.MAPPER.createObjectNode().put("jsonrpc", "2.0").put("id", i).put("method", "symbol.overview");
                     request.putObject("params").put("session", session.id()).put("path", file.toString());

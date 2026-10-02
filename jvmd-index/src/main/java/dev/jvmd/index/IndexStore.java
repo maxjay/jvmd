@@ -15,7 +15,6 @@ public interface IndexStore extends AutoCloseable {
                           boolean hasDocs,boolean hasCodeEdges,boolean hasSignatureEdges) { }
     record WorkspaceEntry(String path,String scope) { }
     record ArtifactCandidate(long id,String path,String gav,boolean hasClassRefs,boolean hasCodeEdges) { }
-    record ArtifactWork(String path,String gav,String kind) { }
     record ResolvedRelationship(Map<String,Object> source,Map<String,Object> target,String kind) { }
     record MemberPage(List<Map<String,Object>> symbols,String cursor) {
         public MemberPage { symbols=List.copyOf(symbols); }
@@ -157,7 +156,6 @@ public interface IndexStore extends AutoCloseable {
                            List<SourceRelationship> relationships)throws Exception;
     long publishDocumentation(long binaryArtifactId,ArtifactInput sourceInput,
                               Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception;
-    void resolveGlobalRelationships()throws Exception;
     default boolean reconcilePaths(Path root,Set<Path> present)throws Exception{return false;}
 
     Map<String,Long> counts()throws Exception;
@@ -265,7 +263,6 @@ public interface IndexStore extends AutoCloseable {
         return CanonicalDigestWriter.digest("semantic-overload-group-v1",aggregate.identity());
     }
     List<ArtifactCandidate> binaryArtifacts(String workspace)throws Exception;
-    List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception;
     List<ArtifactCandidate> artifactsOwning(Collection<String> scips,String workspace)throws Exception;
     List<ArtifactCandidate> artifactsReferencing(Collection<String> fqns,String workspace)throws Exception;
     List<ResolvedRelationship> relationships(Collection<String> scips,boolean outgoing,Set<String> kinds,String workspace)throws Exception;

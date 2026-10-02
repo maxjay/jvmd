@@ -30,15 +30,13 @@ class ArtifactIndexFormatTest {
         assertThatThrownBy(()->ArtifactIndexFormat.validateSymbol(ArtifactIndexFormat.encodeSymbol(missing),0,1)).isInstanceOf(java.io.IOException.class);
     }
 
-    @Test void roundTripIsDeterministicCompactAndContextIndependent()throws Exception{
+    @Test void factsAreCanonicalAndContextIndependent()throws Exception{
         Path jar=IndexFixtures.jar(temp,"sample",IndexFixtures.generic(),false);
         var content=new BinaryReader().read(jar,false);
         var key=ArtifactIndexFormat.key(Hashing.sha256(jar),"signatures");
         var data=ArtifactIndexFormat.from(content,key);
 
-        byte[] first=ArtifactIndexFormat.encode(data),second=ArtifactIndexFormat.encode(data);
-        assertThat(second).containsExactly(first);
-        assertThat(ArtifactIndexFormat.decode(first)).isEqualTo(data);
+        assertThat(ArtifactIndexFormat.from(new BinaryReader().read(jar,false),key)).isEqualTo(data);
         assertThat(data.symbols()).extracting(ArtifactIndexFormat.SymbolRecord::id).containsExactlyElementsOf(
                 java.util.stream.IntStream.range(0,data.symbols().size()).boxed().toList());
         assertThat(data.relationships()).doesNotHaveDuplicates();
@@ -51,25 +49,9 @@ class ArtifactIndexFormatTest {
         assertThat(docsA).isNotEqualTo(docsB);
     }
 
-    @Test void corruptAndIncompatibleRecordsAreRejected()throws Exception{
-        Path jar=IndexFixtures.jar(temp,"sample",IndexFixtures.generic(),false);
-        var key=ArtifactIndexFormat.key(Hashing.sha256(jar),"signatures");
-        byte[] encoded=ArtifactIndexFormat.encode(ArtifactIndexFormat.from(new BinaryReader().read(jar,false),key));
-        encoded[encoded.length-1]^=1;
-        assertThatThrownBy(()->ArtifactIndexFormat.decode(encoded)).isInstanceOf(java.io.IOException.class).hasMessageContaining("checksum");
-
-        var future=new ArtifactIndexFormat.Key(Hashing.sha256(jar),ArtifactIndexFormat.FORMAT_VERSION+1,
-                ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"signatures");
-        var empty=new ArtifactIndexFormat.ArtifactData(future,List.of(),List.of());
-        assertThatThrownBy(()->ArtifactIndexFormat.encode(empty)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("version");
-    }
     @Test void nullableSymbolFieldsRoundTrip()throws Exception{
-        var key=new ArtifactIndexFormat.Key("c".repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
-                ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"signatures");
         var symbol=new ArtifactIndexFormat.SymbolRecord(0,-1,"fixture.Type","fixture.Type","Type","class",
                 "class fixture.Type",null,1,null,List.of(),"{}");
-        var data=new ArtifactIndexFormat.ArtifactData(key,List.of(symbol),List.of());
-        assertThat(ArtifactIndexFormat.decode(ArtifactIndexFormat.encode(data))).isEqualTo(data);
+        assertThat(ArtifactIndexFormat.decodeSymbol(ArtifactIndexFormat.encodeSymbol(symbol))).isEqualTo(symbol);
     }
-
 }

@@ -37,8 +37,6 @@ class RocksArtifactInventoryTest {
             inventory.observe(first,b,"g:b:1","jar",one,shaOne,bStamp);
             assertThat(inventory.completeScan(first)).isEmpty();
             assertThat(inventory.refcount(one)).isEqualTo(2);
-            assertThat(inventory.reusable(a,"g:a:1","jar",aStamp,false)).isPresent();
-            assertThat(inventory.reusable(a,"g:a:1-SNAPSHOT","jar",aStamp,true)).isEmpty();
 
             long second=inventory.beginScan();
             inventory.observe(second,a,"g:a:1","jar",one,shaOne,aStamp);
@@ -57,17 +55,6 @@ class RocksArtifactInventoryTest {
             assertThat(reopened.entries()).hasSize(1);
             assertThat(reopened.entries().getFirst().cacheKey()).isEqualTo(two);
             assertThat(reopened.refcount(two)).isEqualTo(1);
-        }
-    }
-
-    @Test void changedStampPreventsUnsafeReuse()throws Exception{
-        Path file=Files.writeString(temp.resolve("artifact.jar"),"first");
-        try(var inventory=new RocksArtifactInventory(temp.resolve("changed"))){
-            long generation=inventory.beginScan();var first=RocksArtifactInventory.Stamp.read(file);
-            inventory.observe(generation,file,"g:a:1","jar","3".repeat(64),"c".repeat(64),first);inventory.completeScan(generation);
-            Files.writeString(file,"second-content");var changed=RocksArtifactInventory.Stamp.read(file);
-            assertThat(changed).isNotEqualTo(first);
-            assertThat(inventory.reusable(file,"g:a:1","jar",changed,false)).isEmpty();
         }
     }
 }

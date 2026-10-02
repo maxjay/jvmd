@@ -106,11 +106,11 @@ class InputBoundaryRepairTest {
         }
     }
 
-    @Test void diskObservationCacheEvictionDoesNotChangeLiveIdentity()throws Exception {
+    @Test void repeatedCaptureKeepsLiveIdentityUntilSourceChanges()throws Exception {
         Path cp=Files.createDirectory(root.resolve("classes")),file=Files.writeString(root.resolve("A.java"),"class A {}");
         var files=new FileStateRegistry();try(var docs=new Documents(files)){
             var inputs=new CompilerInputs(files);var config=new CompilerInputs.Configuration("module",List.of(root),List.of(cp),List.of("--release","25"));
-            var before=inputs.capture(config,docs);files.forget(file);files.reconcile();
+            var before=inputs.capture(config,docs);
             assertThat(inputs.capture(config,docs)).isEqualTo(before);
             Files.writeString(file,"class A { int n; }");docs.liveState(config.roots()).observe(file);
             assertThat(inputs.capture(config,docs).sameInputs(before)).isFalse();

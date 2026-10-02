@@ -25,7 +25,7 @@ public final class IndexService implements AutoCloseable {
     private final ScheduledExecutorService scanner=Executors.newSingleThreadScheduledExecutor(Thread.ofVirtual().name("jvmd-index-scan").factory());
     private final AtomicLong scanned=new AtomicLong(),indexed=new AtomicLong(),reused=new AtomicLong(),hashed=new AtomicLong(),faults=new AtomicLong();
     private final AtomicLong scans=new AtomicLong(),scanNanos=new AtomicLong(),discoveryNanos=new AtomicLong(),hashNanos=new AtomicLong(),
-            parseNanos=new AtomicLong(),storageNanos=new AtomicLong(),docsNanos=new AtomicLong(),linkNanos=new AtomicLong(),
+            parseNanos=new AtomicLong(),storageNanos=new AtomicLong(),docsNanos=new AtomicLong(),
             queryCalls=new AtomicLong(),queryNanos=new AtomicLong(),workspaceResolutionCalls=new AtomicLong(),workspaceResolutionNanos=new AtomicLong();
     private final ConcurrentHashMap<String,String> activeArtifacts=new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<String> warnings=new ConcurrentLinkedDeque<>();
@@ -100,7 +100,6 @@ public final class IndexService implements AutoCloseable {
             storage.inventory().completeScan(inventoryGeneration);
             if(store.reconcilePaths(repository,Set.of()))indexed.incrementAndGet();
             lastScanComplete=true;lastScanFaults=0;
-            phase="linking";long linkStarted=System.nanoTime();linkEdges();linkNanos.addAndGet(System.nanoTime()-linkStarted);
             phase="ready";scanNanos.addAndGet(System.nanoTime()-start);return;
         }
         phase="discovering";
@@ -138,7 +137,7 @@ public final class IndexService implements AutoCloseable {
             if(store.reconcilePaths(repository,Set.copyOf(jars)))indexed.incrementAndGet();
         }
         lastScanComplete=complete;lastScanFaults=scanFaults.get();
-        phase="linking";long linkStarted=System.nanoTime();linkEdges();linkNanos.addAndGet(System.nanoTime()-linkStarted);phase="ready";
+        phase="ready";
         long elapsed=System.nanoTime()-start;scanNanos.addAndGet(elapsed);
         System.getLogger("dev.jvmd.index").log(System.Logger.Level.INFO,"index scan: {0} artifacts in {1} ms",jars.size(),elapsed/1_000_000);
         }
@@ -153,7 +152,7 @@ public final class IndexService implements AutoCloseable {
         var timings=new LinkedHashMap<String,Object>();
         timings.put("scans",scans.get());timings.put("scan_ms",millis(scanNanos.get()));timings.put("discovery_ms",millis(discoveryNanos.get()));
         timings.put("hash_ms",millis(hashNanos.get()));timings.put("parse_ms",millis(parseNanos.get()));timings.put("storage_ms",millis(storageNanos.get()));
-        timings.put("docs_ms",millis(docsNanos.get()));timings.put("link_ms",millis(linkNanos.get()));
+        timings.put("docs_ms",millis(docsNanos.get()));
         timings.put("query_calls",queryCalls.get());timings.put("query_ms",millis(queryNanos.get()));
         timings.put("workspace_resolution_calls",workspaceResolutionCalls.get());timings.put("workspace_resolution_ms",millis(workspaceResolutionNanos.get()));
         result.put("timings",Map.copyOf(timings));
@@ -292,20 +291,6 @@ public final class IndexService implements AutoCloseable {
             storageNanos.addAndGet(System.nanoTime()-storageStarted);return id;
         }finally{activeArtifacts.remove(location(tracked));}
     }
-    void ensureSignatureEdges(String workspace)throws Exception {
-        boolean changed=false;
-        for(var item:store.pendingSignatureArtifacts(workspace)){
-            Path path=item.path().startsWith("jrt:")?Path.of(java.net.URI.create(item.path())):Path.of(item.path());
-            if(!Files.exists(path))continue;
-            if(item.gav().startsWith("jdk:"))indexJdk(path,item.gav().split(":")[1],Path.of(System.getProperty("java.home"),"lib/src.zip"));
-            else if(item.kind().equals("local"))locals.refresh(path);
-            else indexJar(path,item.gav(),item.kind());
-            changed=true;
-        }
-        if(changed)linkEdges();
-    }
-    public void linkEdges()throws Exception{store.resolveGlobalRelationships();}
-
     public void configureModuleState(IndexSemanticState.ModuleStateInput input)throws Exception{
         storage.semanticState().configureModuleState(input);
     }

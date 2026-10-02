@@ -52,7 +52,6 @@ public final class CodePass {
     public Expansion hierarchy(List<Map<String,Object>> frontier,boolean outgoing,String workspace)throws Exception{
         var identities=frontier.stream().map(symbol->Objects.toString(symbol.get("scip"),"")).filter(value->!value.isEmpty()).distinct().toList();
         if(identities.isEmpty())return new Expansion(List.of(),List.of(),List.of());
-        index.ensureSignatureEdges(workspace);index.linkEdges();
         var relationshipKinds=Set.of("extends","implements","overrides");
         var rows=index.store().relationships(identities,outgoing,relationshipKinds,workspace);
         var nodes=new LinkedHashMap<String,Map<String,Object>>();var edges=new ArrayList<IndexService.SourceEdge>();

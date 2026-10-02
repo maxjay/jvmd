@@ -44,7 +44,7 @@ public final class SqliteIndexStore implements IndexStore {
     @Override public long publishArtifact(ArtifactInput input,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,
                                           Map<String,Map<String,Object>> sourceData)throws Exception{
         if(!facts.key().equals(input.key()))throw new IllegalArgumentException("Artifact facts/key mismatch");
-        return database.write(c->{
+        long id=database.write(c->{
             markRelationshipsDirty(c);long artifact=putArtifact(c,input);
             var ids=ensureSymbols(c,artifact,input.context(),facts,sourceData);
             storeSignatureTargets(c,artifact,facts.relationships(),ids);
@@ -54,6 +54,7 @@ public final class SqliteIndexStore implements IndexStore {
             }
             return artifact;
         });
+        resolveGlobalRelationships();return id;
     }
 
     @Override public void publishCode(long artifactId,ArtifactContext context,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
@@ -75,6 +76,7 @@ public final class SqliteIndexStore implements IndexStore {
             }
             return null;
         });
+        resolveGlobalRelationships();
     }
 
     @Override public void publishClassReferences(long artifactId,Set<String> classReferences)throws Exception{
@@ -188,7 +190,8 @@ public final class SqliteIndexStore implements IndexStore {
         });
     }
 
-    @Override public void resolveGlobalRelationships()throws Exception{
+    /** Relationships resolve once their targets exist; every publication that adds targets runs this. */
+    private void resolveGlobalRelationships()throws Exception{
         if(!database.read(SqliteIndexStore::relationshipsDirty))return;
         database.write(c->{if(!relationshipsDirty(c))return null;try(var s=c.createStatement()){
             s.executeUpdate("INSERT OR IGNORE INTO edges SELECT t.src,s.id,t.kind FROM edge_targets t JOIN symbols s ON s.binary_key=t.target");
@@ -486,17 +489,6 @@ public final class SqliteIndexStore implements IndexStore {
             String sql="SELECT a.id,a.path,a.gav,a.has_class_refs,a.has_code_edges FROM artifacts a WHERE a.kind='jar' AND a.path NOT LIKE 'jrt:%'"+membership("a",workspace)+" ORDER BY a.id";
             try(var q=c.prepareStatement(sql)){if(workspace!=null)q.setString(1,workspace);
                 try(var r=q.executeQuery()){while(r.next())result.add(new ArtifactCandidate(r.getLong(1),r.getString(2),r.getString(3),r.getBoolean(4),r.getBoolean(5)));}
-            }
-            return List.copyOf(result);
-        });
-    }
-
-    @Override public List<ArtifactWork> pendingSignatureArtifacts(String workspace)throws Exception{
-        return database.read(c->{var result=new ArrayList<ArtifactWork>();
-            String sql="SELECT a.path,a.gav,a.kind FROM artifacts a WHERE a.has_signature_edges=0 AND a.kind<>'sources'"+
-                    (workspace==null?"":" AND (a.gav LIKE 'jdk:%' OR EXISTS(SELECT 1 FROM workspace_artifacts w WHERE w.workspace_id=? AND w.artifact_id=a.id))")+" ORDER BY a.id";
-            try(var q=c.prepareStatement(sql)){if(workspace!=null)q.setString(1,workspace);
-                try(var r=q.executeQuery()){while(r.next())result.add(new ArtifactWork(r.getString(1),r.getString(2),r.getString(3)));}
             }
             return List.copyOf(result);
         });

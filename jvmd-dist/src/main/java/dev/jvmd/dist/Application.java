@@ -50,9 +50,9 @@ public final class Application implements AutoCloseable {
         this.config = config;
         // Restart reuse of unchanged content hashes (§90). Restored observations are validated
         // against current file stamps before use; the journal is never semantic authority.
-        BootEvents.mark("OBSERVATION_JOURNAL_LOAD_BEGIN");
+        if(BootEvents.ENABLED)BootEvents.mark("OBSERVATION_JOURNAL_LOAD_BEGIN");
         classpathFiles.persistence(config.stateDir().resolve("file-observations-v1.bin"));
-        BootEvents.mark("OBSERVATION_JOURNAL_LOAD_END","classpath_files",classpathFiles.status());
+        if(BootEvents.ENABLED)BootEvents.mark("OBSERVATION_JOURNAL_LOAD_END","classpath_files",classpathFiles.status());
         // Attributed LOCAL memos are the only persisted diagnostics; old snapshot state is deleted, never migrated.
         deleteQuietly(config.stateDir().resolve("diagnostics-v2"));
         // LOCAL semantic memo store (§68): independently validated records; loss is only a miss.
@@ -1091,9 +1091,9 @@ public final class Application implements AutoCloseable {
                 long defaultBudgetMb=Math.max(8L,Math.min(128L,config.heapCeilingMb()/8L));
                 long budgetMb=Long.getLong("jvmd.index.generation_budget_mb",defaultBudgetMb);
                 if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
-                BootEvents.mark("STORAGE_OPEN_BEGIN","generation_budget_mb",budgetMb);
+                if(BootEvents.ENABLED)BootEvents.mark("STORAGE_OPEN_BEGIN","generation_budget_mb",budgetMb);
                 storage=IndexStorage.open(config.stateDir().resolve("index-v2"),Math.multiplyExact(budgetMb,1024L*1024L));
-                BootEvents.markWithCounters("STORAGE_OPEN_END","scan_completed",storage.scanCompleted());
+                if(BootEvents.ENABLED)BootEvents.markWithCounters("STORAGE_OPEN_END","scan_completed",storage.scanCompleted());
                 service=new IndexService(storage,config.m2Repo());
                 bootstrappingIndex=service;
                 if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");
@@ -1112,7 +1112,7 @@ public final class Application implements AutoCloseable {
                     if(awaitRepositoryScan||!persistedIndexComplete)reconciliation.join();
                 }
                 sessionCapableNanos=System.nanoTime();
-                BootEvents.mark("SESSION_CAPABLE","persisted_index_complete",persistedIndexComplete,"await_repository_scan",awaitRepositoryScan);
+                if(BootEvents.ENABLED)BootEvents.mark("SESSION_CAPABLE","persisted_index_complete",persistedIndexComplete,"await_repository_scan",awaitRepositoryScan);
                 return service;
             } catch(Exception|LinkageError e){
                 if(service!=null)try{service.close();}catch(Exception close){e.addSuppressed(close);}
@@ -1276,15 +1276,15 @@ public final class Application implements AutoCloseable {
             } finally { app.close(); try (var files = Files.walk(fixture)) { for (Path file : files.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(file); } try(var files=Files.walk(config.stateDir())){for(Path path:files.sorted(java.util.Comparator.reverseOrder()).toList())Files.delete(path);} }
             return;
         }
-        BootEvents.mark("APPLICATION_CONSTRUCTED");
+        if(BootEvents.ENABLED)BootEvents.mark("APPLICATION_CONSTRUCTED");
         var server = new UnixServer(config, app.dispatcher, app);
         Runtime.getRuntime().addShutdownHook(Thread.ofPlatform().unstarted(server::close));
         server.start();
-        BootEvents.mark("SOCKET_LISTENING");
+        if(BootEvents.ENABLED)BootEvents.mark("SOCKET_LISTENING");
         try {
             app.awaitReady();
             server.ready();
-            BootEvents.mark("PRODUCT_READY");
+            if(BootEvents.ENABLED)BootEvents.mark("PRODUCT_READY");
             System.out.println("READY " + config.socket());
             server.await();
         } catch(Exception|LinkageError e) {

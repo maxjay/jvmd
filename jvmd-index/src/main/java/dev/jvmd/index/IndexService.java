@@ -71,7 +71,7 @@ public final class IndexService implements AutoCloseable {
         if(initialDelaySeconds<0)throw new IllegalArgumentException("jvmd.index.scan.initial_delay_seconds must be non-negative");
         if(!started.compareAndSet(false,true))return readiness;
         var initialCause=RequestScope.detached();
-        BootEvents.mark("INITIAL_SCAN_SCHEDULED","initial_delay_seconds",initialDelaySeconds);
+        if(BootEvents.ENABLED)BootEvents.mark("INITIAL_SCAN_SCHEDULED","initial_delay_seconds",initialDelaySeconds);
         scanner.schedule(()->{
             if(closed){
                 readiness.completeExceptionally(new CancellationException("Index closed before initial scan"));
@@ -79,7 +79,7 @@ public final class IndexService implements AutoCloseable {
             }
             try{
                 if(initialCause==null)scan();else RequestScope.with(initialCause,()->{scan();return null;});
-                BootEvents.markWithCounters("INITIAL_SCAN_RETURNED","complete",lastScanComplete,"faults",lastScanFaults,"in_flight",inFlight());
+                if(BootEvents.ENABLED)BootEvents.markWithCounters("INITIAL_SCAN_RETURNED","complete",lastScanComplete,"faults",lastScanFaults,"in_flight",inFlight());
                 readiness.complete(null);
                 if(!closed)scanner.scheduleWithFixedDelay(()->{
                     try{scan();}
@@ -96,7 +96,7 @@ public final class IndexService implements AutoCloseable {
         if(closed)return;
         try(var trace=RequestScope.stage("index.scan")){
         long start=System.nanoTime();long scanNumber=scans.incrementAndGet();
-        BootEvents.mark("SCAN_STARTED","scan",scanNumber);
+        if(BootEvents.ENABLED)BootEvents.mark("SCAN_STARTED","scan",scanNumber);
         if(!Files.isDirectory(repository)){
             total=0;scanned.set(0);phase="reconciling";
             long inventoryGeneration=storage.inventory().beginScan();
@@ -111,7 +111,7 @@ public final class IndexService implements AutoCloseable {
         List<Path> jars;try(var files=Files.walk(repository)){jars=files.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".jar")&&!p.getFileName().toString().endsWith("-javadoc.jar")).sorted().toList();}
         discoveryNanos.addAndGet(System.nanoTime()-discoveryStarted);
         trace.count("jar_inventory_entries",jars.size());
-        BootEvents.markWithCounters("DISCOVERY_COMPLETE","scan",scanNumber,"jars",jars.size(),
+        if(BootEvents.ENABLED)BootEvents.markWithCounters("DISCOVERY_COMPLETE","scan",scanNumber,"jars",jars.size(),
                 "sources_jars",jars.stream().filter(jar->jar.getFileName().toString().endsWith("-sources.jar")).count());
         total=jars.size();scanned.set(0);phase="skeletons";
         long inventoryGeneration=storage.inventory().beginScan();
@@ -127,7 +127,7 @@ public final class IndexService implements AutoCloseable {
             finally{scanned.incrementAndGet();}
         }));
         for(var job:jobs)job.get();
-        BootEvents.markWithCounters("SKELETONS_COMPLETE","scan",scanNumber,"complete",skeletonComplete.get(),"faults",scanFaults.get());
+        if(BootEvents.ENABLED)BootEvents.markWithCounters("SKELETONS_COMPLETE","scan",scanNumber,"complete",skeletonComplete.get(),"faults",scanFaults.get());
         jobs.clear();phase="docs";long docsStarted=System.nanoTime();var docsComplete=new AtomicBoolean(true);
         for(var jar:jars)if(jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{
             try{
@@ -138,18 +138,18 @@ public final class IndexService implements AutoCloseable {
             finally{scanned.incrementAndGet();}
         }));
         for(var job:jobs)job.get();docsNanos.addAndGet(System.nanoTime()-docsStarted);
-        BootEvents.markWithCounters("DOCS_COMPLETE","scan",scanNumber,"complete",docsComplete.get(),"faults",scanFaults.get());
+        if(BootEvents.ENABLED)BootEvents.markWithCounters("DOCS_COMPLETE","scan",scanNumber,"complete",docsComplete.get(),"faults",scanFaults.get());
         boolean complete=skeletonComplete.get()&&docsComplete.get();
         if(complete){
             storage.inventory().completeScan(inventoryGeneration);
-            BootEvents.markWithCounters("INVENTORY_COMPLETED","scan",scanNumber,"scan_completed",storage.scanCompleted());
+            if(BootEvents.ENABLED)BootEvents.markWithCounters("INVENTORY_COMPLETED","scan",scanNumber,"scan_completed",storage.scanCompleted());
             boolean removed=store.reconcilePaths(repository,Set.copyOf(jars));
             if(removed)indexed.incrementAndGet();
-            BootEvents.mark("PATHS_RECONCILED","scan",scanNumber,"removed_any",removed);
+            if(BootEvents.ENABLED)BootEvents.mark("PATHS_RECONCILED","scan",scanNumber,"removed_any",removed);
         }
         lastScanComplete=complete;lastScanFaults=scanFaults.get();
         phase="linking";long linkStarted=System.nanoTime();linkEdges();linkNanos.addAndGet(System.nanoTime()-linkStarted);phase="ready";
-        BootEvents.markWithCounters("SCAN_COMPLETE","scan",scanNumber,"complete",complete,"faults",scanFaults.get());
+        if(BootEvents.ENABLED)BootEvents.markWithCounters("SCAN_COMPLETE","scan",scanNumber,"complete",complete,"faults",scanFaults.get());
         long elapsed=System.nanoTime()-start;scanNanos.addAndGet(elapsed);
         System.getLogger("dev.jvmd.index").log(System.Logger.Level.INFO,"index scan: {0} artifacts in {1} ms",jars.size(),elapsed/1_000_000);
         }
@@ -203,7 +203,7 @@ public final class IndexService implements AutoCloseable {
                 RequestScope.count("metadata_reuses",1);reused.incrementAndGet();BootEvents.count("jar.metadata_reuse",1);return previous.id();
             }
             active(path,"hash");long hashStarted=System.nanoTime();verifyChecksum(path);String hash=Files.isDirectory(path)?directoryHash(path):Hashing.sha256(path);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();RequestScope.count("artifact_hash_operations",1);
-            BootEvents.timed("jar.hash",hashStarted);if(!Files.isDirectory(path))BootEvents.count("jar.hash_sha256_bytes",size);
+            BootEvents.timed("jar.hash",hashStarted);if(BootEvents.ENABLED&&!Files.isDirectory(path))BootEvents.count("jar.hash_sha256_bytes",size);
             if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){
                 store.publishPath(path,previous.id(),size,mtime);BootEvents.count("jar.hash_reuse",1);
                 if(inventoryGeneration>0){

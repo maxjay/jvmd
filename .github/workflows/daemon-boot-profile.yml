@@ -221,6 +221,14 @@ jobs:
             cpu|wall|alloc) node benchmarks/boot/boot.ts profile --mode "${{ matrix.scenario }}" --repeat 2 --output "$out" "${common[@]}" ;;
             *) node benchmarks/boot/boot.ts profile --mode "${{ matrix.scenario }}" --output "$out" "${common[@]}" ;;
           esac
+      - name: JVM crash reports
+        if: always()
+        run: |
+          shopt -s nullglob
+          for f in hs_err_pid*.log; do
+            echo "== $f"; sed -n '1,40p' "$f"
+            awk '/^(Current thread|Stack:|Native frames|Java frames|siginfo)/{p=1} p&&n<120{print;n++} /^$/{if(p&&n>0)p=0}' "$f"
+          done
       - name: Convert profiles
         if: always()
         run: |

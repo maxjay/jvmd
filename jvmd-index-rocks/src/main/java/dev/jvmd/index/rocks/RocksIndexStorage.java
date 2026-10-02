@@ -41,6 +41,7 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
      * an interrupted cold boot, covers nothing committed, and is deleted.
      */
     public static RocksIndexStorage create(Path generation,long maxEstimatedBytes)throws Exception{
+        rejectRetiredSettings();
         if(RocksMachineStore.committedRoot(machineDirectory(generation)).isPresent())
             throw new IllegalStateException("Generation already has a committed MACHINE root: "+generation);
         delete(generation);
@@ -54,7 +55,17 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
      * restoring the committed MACHINE tree.
      */
     public static RocksIndexStorage open(Path generation,long maxEstimatedBytes)throws Exception{
+        rejectRetiredSettings();
         return new RocksIndexStorage(generation,maxEstimatedBytes,RocksMemory::options);
+    }
+
+    /** Old settings must fail visibly, never silently select a different data store. */
+    private static void rejectRetiredSettings(){
+        for(String property:List.of("jvmd.index.store.backend","jvmd.index.read.backend","jvmd.index.generation.backend")){
+            String value=System.getProperty(property);
+            if(value!=null&&!value.equals("rocksdb-sst")&&!(property.equals("jvmd.index.generation.backend")&&value.equals("auto")))
+                throw new IllegalArgumentException(property+"="+value+" is no longer supported; Rocks is the sole production backend. Remove this setting and rebuild the index from source artifacts. Existing SQLite files are left untouched.");
+        }
     }
 
     private RocksIndexStorage(Path generation,long maxEstimatedBytes,OptionsFactory factory)throws Exception{

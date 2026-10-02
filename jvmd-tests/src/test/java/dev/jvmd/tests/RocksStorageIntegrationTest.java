@@ -38,7 +38,7 @@ class RocksStorageIntegrationTest {
             assertThat(index.status()).doesNotContainKeys("generation_sink","shadow_validation");
         }
         assertThat(Files.readAllBytes(database)).isEqualTo(original);
-        assertThat(temp.resolve("index-v2")).isDirectory();
+        assertThat(temp.resolve("index.db.machine")).isDirectory();
     }
 
     @Test void repositoryPublicationHasOneOwner()throws Exception{

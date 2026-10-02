@@ -26,7 +26,7 @@ class RocksStoreIntegrationTest {
         var fixture=new SourceDocumentationJoinTest();fixture.temp=root;fixture.joinsBoundedTypeVariablesAndRendersDocs();assertThat(root.resolve("index.db")).doesNotExist();
     }
     @Test void applicationReopensTheSameAuthoritativeStore()throws Exception{
-        var fixture=new DependencyHierarchyTest();fixture.root=root;fixture.nestedDependencyHierarchyHonorsDirectionAndDepth();assertThat(root.resolve("state/index.db")).doesNotExist();
+        var fixture=new DependencyHierarchyTest();fixture.root=root;fixture.nestedDependencyHierarchyHonorsDirectionAndDepth();
     }
     @Test void lazyBytecodeCallsFieldsAllocationsAndReferencesKeepTheirScope()throws Exception{
         var fixture=new LazyCodeReferencesTest();fixture.root=root;fixture.callsFieldsAllocationCastsAndDynamicMethodReferencesAreLazyAndScoped();assertThat(root.resolve("index.db")).doesNotExist();
@@ -82,9 +82,9 @@ class RocksStoreIntegrationTest {
     }
     @Test void signatureClosureEnrichesJdkDocumentationAndPaginates()throws Exception{
         Path jar=IndexFixtures.jar(root.resolve("repo"),"fixture",IndexFixtures.generic(),true);
-        try(var index=TestMachine.index(root.resolve("index.db"),root.resolve("repo"))){
+        try(var index=TestMachine.indexWithJdk(root.resolve("index.db"),root.resolve("repo"))){
             index.indexJar(jar,"fixture:api:1","jar");index.indexSources(jar.resolveSibling("fixture-sources.jar"));
-            var symbol=index.find("transform",null,false,10,0).getFirst();var docs=new Documentation(index);
+            var symbol=index.find("transform",null,false,10,0).stream().filter(s->s.get("scip").toString().contains("fixture/Sample#")).findFirst().orElseThrow();var docs=new Documentation(index);
             var identities=new LinkedHashSet<String>();int cursor=0,pages=0;
             while(true){
                 var page=docs.describe(symbol,null,"summary",3,2,cursor);var result=Json.MAPPER.valueToTree(page.result());

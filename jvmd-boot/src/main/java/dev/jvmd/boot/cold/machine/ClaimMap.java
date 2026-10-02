@@ -10,18 +10,35 @@ import java.util.concurrent.ConcurrentHashMap;
  * never stored.
  */
 final class ClaimMap {
-    private final ConcurrentHashMap<String,List<MachinePath>> claims=new ConcurrentHashMap<>();
+    /** One input's claim: where it was found and the SHA-256 of its paired sources, or null. */
+    record Claim(MachineInput input,String sourcesSha256) { }
 
-    /** Record {@code path} against {@code cacheKey}; true when this is the first claim on it. */
-    boolean claim(String cacheKey,MachinePath path){
+    private final ConcurrentHashMap<String,List<Claim>> claims=new ConcurrentHashMap<>();
+
+    /** Record {@code claim} against {@code cacheKey}; true when this is the first claim on it. */
+    boolean claim(String cacheKey,Claim claim){
         var first=new boolean[1];
-        claims.compute(cacheKey,(_,paths)->{
-            if(paths==null){first[0]=true;paths=new ArrayList<>();}
-            paths.add(path);return paths;
+        claims.compute(cacheKey,(_,list)->{
+            if(list==null){first[0]=true;list=new ArrayList<>();}
+            list.add(claim);return list;
         });
         return first[0];
     }
 
     /** Every path claimed for {@code cacheKey}. */
-    List<MachinePath> paths(String cacheKey){return List.copyOf(claims.getOrDefault(cacheKey,List.of()));}
+    List<MachinePath> paths(String cacheKey){return claims(cacheKey).stream().map(claim->claim.input().path()).toList();}
+
+    /**
+     * The claim whose sources document {@code cacheKey}: the first location, in path order, that has
+     * paired sources, or the first location when none has. This is independent of which job built it.
+     */
+    Claim documenting(String cacheKey){
+        var ordered=claims(cacheKey);
+        return ordered.stream().filter(claim->claim.sourcesSha256()!=null).findFirst().orElse(ordered.getFirst());
+    }
+
+    private List<Claim> claims(String cacheKey){
+        return claims.getOrDefault(cacheKey,List.of()).stream()
+                .sorted(Comparator.comparing((Claim claim)->claim.input().path().location())).toList();
+    }
 }

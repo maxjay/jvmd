@@ -12,21 +12,26 @@ import static org.assertj.core.api.Assertions.*;
 class SignatureClosureTest {
     @TempDir Path root;
     @Test void followsSignaturesWithJdkDocsAndResumesWithoutDuplicates()throws Exception{
-        Path jar=IndexFixtures.jar(root,"sample",IndexFixtures.generic(),true);
-        try(var index=new IndexService(new ReferenceIndexStorage(root.resolve("index.db")),root)){
-            index.indexJar(jar,"fixture:sample:1","jar");index.indexSources(root.resolve("sample-sources.jar"));
-            var symbol=index.find("transform",null,false,10,0).getFirst();long id=((Number)symbol.get("id")).longValue();
-            // A self-cycle must not duplicate the root or prevent pagination.
-            ((SqliteIndexStore)index.store()).database().write(c->{try(var q=c.prepareStatement("INSERT OR IGNORE INTO edges VALUES(?,?,'return_type')")){q.setLong(1,id);q.setLong(2,id);q.executeUpdate();}return null;});
-            var docs=new Documentation(index);var identities=new LinkedHashSet<String>();int cursor=0,pages=0;
-            while(true){
-                var page=docs.describe(symbol,null,"summary",3,2,cursor);var result=dev.jvmd.core.Json.MAPPER.valueToTree(page.result());var closure=result.path("closure");assertThat(closure.size()).isLessThanOrEqualTo(2);
-                for(var member:closure){assertThat(identities.add(member.path("scip").asText())).isTrue();assertThat(member.path("signature").asText()).isNotBlank();}
-                if(!page.truncated())break;cursor=Integer.parseInt(page.cursor());assertThat(++pages).isLessThan(30);
+        String source=IndexFixtures.generic().replace("public static class Nested","public Sample<T> same(Sample<T> other) { return this; }\n  public static class Nested");
+        Path jar=IndexFixtures.jar(root.resolve("repository"),"sample",source,true);
+        try(var index=TestMachine.indexWithJdk(root.resolve("index.db"),root.resolve("repository"))){
+            index.indexJar(jar,"fixture:sample:1","jar");index.indexSources(jar.resolveSibling("sample-sources.jar"));
+            var docs=new Documentation(index);
+            for(String name:List.of("transform","same")){
+                var symbol=index.find(name,null,false,10,0).stream().filter(s->s.get("scip").toString().contains("fixture/Sample#")).findFirst().orElseThrow();var identities=new LinkedHashSet<String>();int cursor=0,pages=0;
+                while(true){
+                    var page=docs.describe(symbol,null,"summary",3,2,cursor);var closure=dev.jvmd.core.Json.MAPPER.valueToTree(page.result()).path("closure");
+                    assertThat(closure.size()).isLessThanOrEqualTo(2);
+                    for(var member:closure){assertThat(identities.add(member.path("scip").asText())).isTrue();assertThat(member.path("signature").asText()).isNotBlank();}
+                    if(!page.truncated())break;cursor=Integer.parseInt(page.cursor());assertThat(++pages).isLessThan(30);
+                }
+                // A signature that refers to its own owner must not duplicate the root or prevent pagination.
+                assertThat(identities).doesNotContain(symbol.get("scip").toString());
+                if(name.equals("transform"))assertThat(identities).anyMatch(s->s.contains("java/util/List#")).anyMatch(s->s.contains("java/lang/CharSequence#")).anyMatch(s->s.contains("java/lang/Number#"));
+                else assertThat(identities).anyMatch(s->s.endsWith("fixture/Sample#"));
+                assertThat(dev.jvmd.core.Json.MAPPER.valueToTree(docs.describe(symbol,null,"full",0,20,0).result()).path("closure").isEmpty()).isTrue();
             }
-            assertThat(identities).doesNotContain(symbol.get("scip").toString()).anyMatch(s->s.contains("java/util/List#")).anyMatch(s->s.contains("java/lang/CharSequence#")).anyMatch(s->s.contains("java/lang/Number#"));
             var list=index.find("java.util.List",null,false,10,0).stream().filter(s->s.get("kind").equals("interface")).findFirst().orElseThrow();assertThat(list.get("doc")).isNotNull();
-            assertThat(dev.jvmd.core.Json.MAPPER.valueToTree(docs.describe(symbol,null,"full",0,20,0).result()).path("closure").isEmpty()).isTrue();
         }
     }
 }

@@ -12,7 +12,10 @@ import java.util.*;
 public final class TestSupport {
     private TestSupport() { }
     public static Path repo() { return Path.of(System.getProperty("basedir")).getParent(); }
+    /** A daemon configuration over {@code temp}, with a prepared MACHINE fixture in its state. */
     public static Config config(Path temp, Duration idle) {
+        try { TestMachine.prepareDaemon(temp.resolve("state")); }
+        catch (Exception failed) { throw new IllegalStateException(failed); }
         return new Config(Path.of(System.getProperty("java.home")), null, temp.resolve("repository"), 3,
                 idle, 512, false, temp.resolve("state"), temp.resolve("daemon.sock"));
     }

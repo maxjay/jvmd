@@ -13,10 +13,11 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
 /**
- * Architecture §95: READY is session capability. A daemon with a complete persisted index serves from it
- * at once and reconciles it against the repository in the background. A daemon without one (first start,
- * an interrupted first scan, a new index format) has nothing to serve from, so READY waits for the first
- * repository scan: READY must never be reported over an empty index.
+ * READY is session capability. A daemon whose generation has a committed MACHINE root serves from it at
+ * once and reconciles it against the repository in the background. A daemon without one (first start, a
+ * cold boot interrupted before its root, a new index format) runs the MACHINE cold boot, so READY waits for
+ * it: READY is never reported over an uncommitted MACHINE. The daemon's JDK is the tiny test JDK, whose
+ * modules are MACHINE leaves like any configured JDK's.
  */
 class ReadinessGatingTest {
     @TempDir Path root;
@@ -29,7 +30,7 @@ class ReadinessGatingTest {
     }
     private Application daemon(long scanDelaySeconds)throws Exception{
         System.setProperty("jvmd.index.scan.initial_delay_seconds",Long.toString(scanDelaySeconds));
-        var config=new Config(Path.of(System.getProperty("java.home")),null,root.resolve("repository"),3,Duration.ofHours(1),512,true,state,state.resolve("d.sock"));
+        var config=new Config(TestJdk.home(),null,root.resolve("repository"),3,Duration.ofHours(1),512,true,state,state.resolve("d.sock"));
         return new Application(config);
     }
     private static JsonNode status(Application app)throws Exception{
@@ -42,16 +43,21 @@ class ReadinessGatingTest {
         else System.setProperty("jvmd.index.scan.initial_delay_seconds",previous);
     }
 
-    @Test void aFirstStartIsReadyOnlyAfterTheFirstRepositoryScan()throws Exception{
+    @Test void aFirstStartIsReadyOnlyAfterTheMachineColdBoot()throws Exception{
         String previous=System.getProperty("jvmd.index.scan.initial_delay_seconds");
         try(var app=daemon(0)){
             app.awaitSessionCapable();
             var status=status(app);
-            assertThat(status.path("readiness").path("persisted_index_complete").asBoolean()).as("no index on disk yet").isFalse();
-            assertThat(status.path("readiness").path("repository_reconciled").asBoolean()).as("READY waited for the scan").isTrue();
-            assertThat(status.path("index").path("phase").asText()).isEqualTo("ready");
-            assertThat(status.path("index").path("artifacts").asLong()).as("the repository's artifact is indexed at READY").isGreaterThanOrEqualTo(1);
+            assertThat(status.path("readiness").path("persisted_index_complete").asBoolean()).as("the MACHINE root is committed").isTrue();
+            assertThat(status.path("readiness").path("repository_reconciled").asBoolean()).as("the cold boot enumerated the repository").isTrue();
+            assertThat(status.path("index").path("artifacts").asLong()).as("the repository's artifact is indexed at READY").isGreaterThanOrEqualTo(2);
+            assertThat(committedRoot()).isPresent();
         }finally{restoreDelay(previous);}
+    }
+
+    private java.util.Optional<dev.jvmd.core.tree.Root> committedRoot(){
+        return dev.jvmd.index.rocks.layer.RocksMachineStore.committedRoot(dev.jvmd.index.rocks.RocksIndexStorage.machineDirectory(
+                dev.jvmd.index.rocks.RocksIndexStorage.generation(state.resolve("index-v2"))));
     }
 
     @Test void aRestartWithACompletePersistedIndexIsReadyBeforeTheRepositoryScan()throws Exception{
@@ -72,17 +78,21 @@ class ReadinessGatingTest {
         }finally{restoreDelay(previous);}
     }
 
-    @Test void aFirstScanThatNeverCompletedDoesNotMakeTheNextStartWarm()throws Exception{
+    @Test void aColdBootInterruptedBeforeItsRootMakesTheNextStartCold()throws Exception{
         String previous=System.getProperty("jvmd.index.scan.initial_delay_seconds");
         try{
-            // The first daemon is closed before its delayed scan starts: storage exists, but no scan completed.
-            try(var first=daemon(30)){Thread.sleep(500);}
-            try(var app=daemon(0)){
+            // Stop after every leaf is built and before the commit: the generation holds data but no root.
+            var boot=new dev.jvmd.boot.cold.machine.MachineColdBoot(dev.jvmd.index.rocks.RocksIndexStorage.generation(state.resolve("index-v2")),
+                    root.resolve("repository"),TestJdk.home(),8L*1024*1024);
+            try(var storage=boot.create()){boot.buildArtifacts(storage,boot.enumerate());}
+            assertThat(committedRoot()).isEmpty();
+            try(var app=daemon(30)){
                 app.awaitSessionCapable();
                 var status=status(app);
-                assertThat(status.path("readiness").path("persisted_index_complete").asBoolean()).isFalse();
-                assertThat(status.path("readiness").path("repository_reconciled").asBoolean()).as("READY waited for the scan").isTrue();
-                assertThat(status.path("index").path("artifacts").asLong()).isGreaterThanOrEqualTo(1);
+                assertThat(status.path("readiness").path("repository_scan_requested").asBoolean()).as("a cold boot, not the warm scan").isFalse();
+                assertThat(status.path("readiness").path("repository_reconciled").asBoolean()).isTrue();
+                assertThat(status.path("index").path("artifacts").asLong()).isGreaterThanOrEqualTo(2);
+                assertThat(committedRoot()).isPresent();
             }
         }finally{restoreDelay(previous);}
     }
@@ -94,8 +104,8 @@ class ReadinessGatingTest {
         return status;
     }
 
-    /** R2: a scan that could not read every artifact leaves the inventory incomplete; it is reported, not called reconciled. */
-    @Test void aScanWithAFaultedArtifactIsReportedIncompleteNotReconciled()throws Exception{
+    /** R2: a cold boot that could not read every artifact is reported incomplete, not called reconciled. */
+    @Test void aColdBootWithAFaultedArtifactIsReportedIncompleteNotReconciled()throws Exception{
         String previous=System.getProperty("jvmd.index.scan.initial_delay_seconds");
         Path corrupt=Files.createDirectories(root.resolve("repository/g/broken/1")).resolve("broken-1.jar");
         Files.write(corrupt,new byte[]{'n','o','t',' ','a',' ','j','a','r'});

@@ -16,6 +16,7 @@ final class BindingFacts implements AutoCloseable {
     private static final Set<String> LOCALS=Set.of("local_variable","parameter","exception_parameter","binding_variable","resource_variable","type_parameter");
     private final Path root;
     private final Cache blocks=new LRUCache(4L*1024*1024);
+    // TEMPORARY(live-delta): a per-session scratch database; LIVE and LOCAL replace it with occurrence reads.
     private final Options options=new Options().setCreateIfMissing(true).setWriteBufferSize(4L*1024*1024).setMaxWriteBufferNumber(2)
             .setTableFormatConfig(new BlockBasedTableConfig().setBlockCache(blocks));
     private final RocksDB db;

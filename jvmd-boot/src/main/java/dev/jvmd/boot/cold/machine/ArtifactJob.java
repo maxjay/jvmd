@@ -31,12 +31,24 @@ final class ArtifactJob implements Callable<ArtifactJob.Outcome> {
         this.input=Objects.requireNonNull(input);this.claims=claims;this.admission=admission;this.builder=builder;
     }
 
+    /** Build this input's leaf without claiming: its content is already claimed and this input documents it. */
+    Outcome rebuild()throws Exception{
+        MachineInput.Read read;
+        try{read=input.read();}
+        catch(Exception unreadable){return fault(unreadable);}
+        return build(read);
+    }
+
     @Override public Outcome call()throws Exception{
         MachineInput.Read read;
         try{read=input.read();}
         catch(Exception unreadable){return fault(unreadable);}
         String cacheKey=ArtifactIndexFormat.key(read.binary().sha256(),read.binary().mode()).cacheKey();
-        if(!claims.claim(cacheKey,input.path()))return new Duplicate();
+        if(!claims.claim(cacheKey,new ClaimMap.Claim(input,read.sources()==null?null:read.sources().sha256())))return new Duplicate();
+        return build(read);
+    }
+
+    private Outcome build(MachineInput.Read read)throws Exception{
         try(var permit=admission.acquire(read.estimatedBytes())){
             return new Built(builder.build(read.binary(),read.sources()));
         }catch(ArtifactBuilder.PublishFailed storage){throw storage;}

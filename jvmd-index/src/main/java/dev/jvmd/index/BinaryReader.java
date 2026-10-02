@@ -47,10 +47,11 @@ public final class BinaryReader {
         var order=new LinkedHashSet<String>();var base=new HashMap<String,byte[]>();var real=new LinkedHashMap<String,byte[]>();
         var versioned=new HashMap<String,TreeMap<Integer,String>>();
         boolean multiRelease=false;int feature=Runtime.version().feature();
+        boolean any=false;
         try(var zip=new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(jar))){
             java.util.zip.ZipEntry entry;
             while((entry=zip.getNextEntry())!=null){
-                if(entry.isDirectory())continue;String name=entry.getName();
+                any=true;if(entry.isDirectory())continue;String name=entry.getName();
                 if(name.equalsIgnoreCase(JarFile.MANIFEST_NAME)){
                     var manifest=new java.util.jar.Manifest(new java.io.ByteArrayInputStream(zip.readAllBytes()));
                     multiRelease="true".equalsIgnoreCase(manifest.getMainAttributes().getValue("Multi-Release"));continue;
@@ -64,6 +65,8 @@ public final class BinaryReader {
                 }else{base.put(name,bytes);order.add(name);}
             }
         }
+        // A stream reader yields nothing for bytes that are not a zip; only an empty archive may.
+        if(!any&&!emptyArchive(jar))throw new java.util.zip.ZipException("Not a zip archive");
         if(!multiRelease)return real;
         var result=new LinkedHashMap<String,byte[]>();
         for(String name:order){
@@ -72,6 +75,9 @@ public final class BinaryReader {
             else if(base.containsKey(name))result.put(name,base.get(name));
         }
         return result;
+    }
+    private static boolean emptyArchive(byte[] jar){
+        return jar.length>=22&&jar[0]=='P'&&jar[1]=='K'&&jar[2]==5&&jar[3]==6;
     }
     private static final java.util.regex.Pattern VERSIONED=java.util.regex.Pattern.compile("META-INF/versions/([0-9]+)/(.+)");
 

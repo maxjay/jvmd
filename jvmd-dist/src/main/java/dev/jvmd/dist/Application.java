@@ -51,7 +51,7 @@ public final class Application implements AutoCloseable {
         // LOCAL semantic memo store (§68): independently validated records; loss is only a miss.
         localMemos=new dev.jvmd.index.SemanticMemoStore(config.stateDir().resolve("local-memo-v1"));
         sourceNamespaces=new dev.jvmd.analyzer.SourceNamespaces(localMemos);
-        if (config.indexOnStart()) initializeIndex();
+        if (config.indexOnStart()) initializeIndex(true);
         dispatcher.status("index", () -> {
             try { return index == null ? java.util.Map.of("phase", "disabled") : index.isDone() ? index.join().status() : java.util.Map.of("phase", "starting"); }
             catch (Exception e) { return java.util.Map.of("phase", "failed", "reason", e.toString()); }
@@ -1074,7 +1074,7 @@ public final class Application implements AutoCloseable {
 
         }
     }
-    private synchronized void initializeIndex() {
+    private synchronized void initializeIndex(boolean scan) {
         if(index!=null)return;
         var cause=RequestScope.detached();
         index=java.util.concurrent.CompletableFuture.supplyAsync(()->{
@@ -1083,14 +1083,18 @@ public final class Application implements AutoCloseable {
                 long defaultBudgetMb=Math.max(8L,Math.min(128L,config.heapCeilingMb()/8L));
                 long budgetMb=Long.getLong("jvmd.index.generation_budget_mb",defaultBudgetMb);
                 if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
-                service=dev.jvmd.boot.BootDecision.machine(config.stateDir().resolve("index-v2"),config.m2Repo(),config.jdkHome(),
+                var machine=dev.jvmd.boot.BootDecision.machine(config.stateDir().resolve("index-v2"),config.m2Repo(),config.jdkHome(),
                         Math.multiplyExact(budgetMb,1024L*1024L));
+                service=machine.index();
                 bootstrappingIndex=service;
                 if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");
-                if(service.scanStarted()){
+                // TEMPORARY(warm-boot): the existing warm path reconciles a reopened generation with today's
+                // repository scan; the warm boot task replaces it. A cold-booted MACHINE is already complete.
+                if(!machine.warm()&&service.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();
+                if(machine.warm()&&scan){
                     var started=service;
                     // Only a complete reconciliation is reconciled; a scan with faults or one that failed is reported as such.
-                    var reconciliation=service.repositoryReconciliation().whenComplete((_,failure)->{if(failure==null&&started.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();});
+                    var reconciliation=service.start().whenComplete((_,failure)->{if(failure==null&&started.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();});
                     if(awaitRepositoryScan)reconciliation.join();
                 }
                 sessionCapableNanos=System.nanoTime();
@@ -1104,13 +1108,13 @@ public final class Application implements AutoCloseable {
             catch(Exception error){throw new java.util.concurrent.CompletionException(error);}
         }));
     }
-    private IndexService index() { initializeIndex(); return index.join(); }
+    private IndexService index() { initializeIndex(false); return index.join(); }
     private Map<String,Object> readiness(){
         var result=new LinkedHashMap<String,Object>();
         boolean capable=index==null||index.isDone()&&!index.isCompletedExceptionally();
         result.put("session_capable",capable);result.put("await_repository_scan",awaitRepositoryScan);
         var service=index==null||!index.isDone()||index.isCompletedExceptionally()?null:index.join();
-        result.put("machine_committed",service!=null);
+        result.put("persisted_index_complete",service!=null);
         result.put("repository_scan_requested",service!=null&&service.scanStarted());
         result.put("repository_reconciled",service!=null&&service.repositoryReconciled());
         result.put("repository_reconciliation",service==null?(index!=null&&index.isCompletedExceptionally()?"failed":"pending"):service.reconciliationState());

@@ -91,7 +91,8 @@ public final class MachineColdBoot {
 
     /**
      * One job per input on a bounded pool. Equal contents build once; every path is attached to its
-     * content's leaf afterwards, so the leaves do not depend on which job built them.
+     * content's leaf afterwards, and documentation comes from the first location with paired sources,
+     * so the leaves do not depend on which job built them.
      */
     public List<MachineLeaf> buildArtifacts(RocksIndexStorage storage,List<MachineInput> inputs)throws Exception{
         var claims=new ClaimMap();var builder=new ArtifactBuilder(storage.repository());
@@ -109,7 +110,19 @@ public final class MachineColdBoot {
             }
         }
         var leaves=new ArrayList<MachineLeaf>(built.size());
-        for(var leaf:built)leaves.add(leaf.withPaths(claims.paths(leaf.cacheKey())));
+        for(var leaf:built){
+            // Equal binaries at locations paired with different sources: the documenting location is
+            // fixed by path order, so a leaf built from another location's sources is built again.
+            var documenting=claims.documenting(leaf.cacheKey());
+            if(!Objects.equals(documenting.sourcesSha256(),leaf.sourcesSha256())){
+                switch(new ArtifactJob(documenting.input(),claims,storage.admission(),builder).rebuild()){
+                    case ArtifactJob.Built value->leaf=value.leaf();
+                    case ArtifactJob.Faulted value->{faults.add(new Fault(value.location(),value.reason()));continue;}
+                    case ArtifactJob.Duplicate _->throw new IllegalStateException("A rebuild never claims");
+                }
+            }
+            leaves.add(leaf.withPaths(claims.paths(leaf.cacheKey())));
+        }
         return leaves;
     }
 

@@ -61,6 +61,13 @@ public final class IndexService implements AutoCloseable {
     private volatile boolean lastScanComplete;
     private volatile long lastScanFaults;
     public CompletableFuture<Void> repositoryReconciliation(){return readiness;}
+    /**
+     * The repository was enumerated in full by a MACHINE cold boot, which could not read
+     * {@code faults} of its inputs. A cold-booted index is reconciled when nothing faulted.
+     */
+    public void repositoryEnumerated(long faults){
+        lastScanComplete=faults==0;lastScanFaults=faults;phase="ready";readiness.complete(null);
+    }
     /** Whether the repository scan of the existing warm path is running. */
     public boolean scanStarted(){return started.get();}
     public long generation(){return indexed.get();}

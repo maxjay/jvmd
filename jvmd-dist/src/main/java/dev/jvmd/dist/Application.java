@@ -1133,7 +1133,7 @@ public final class Application implements AutoCloseable {
      * runs on a worker the session owns, or today's on-demand path for a committed LOCAL root.
      */
     private void bootLocal(Session session)throws Exception{
-        var machine=machineBoot;if(machine==null||session.state("resolution")==null)return;
+        var machine=machineBoot;if(machine==null||closed.get()||session.state("resolution")==null)return;
         synchronized(session){
             if(session.state("local_boot")!=null)return;
             long budget=config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size())/4;
@@ -1141,7 +1141,11 @@ public final class Application implements AutoCloseable {
                 var graph=(Resolution)session.state("resolution");return graph!=null?graph:session.execute(()->refresh(session));
             },(module,test)->createAnalyzerContext(session,module,test,(Resolution)session.state("resolution")),budget);
             session.put("local_boot",local);
-            if(!local.warm()){session.put("local_cold_boot",local.cold());local.cold().start();}
+            if(!local.warm()){
+                session.put("local_cold_boot",local.cold());local.cold().start();
+                // A daemon closing meanwhile may already have closed this session's state.
+                if(closed.get())local.cold().close();
+            }
         }
     }
     private static Map<String,Object> withBoot(String boot,Map<String,Object> status){

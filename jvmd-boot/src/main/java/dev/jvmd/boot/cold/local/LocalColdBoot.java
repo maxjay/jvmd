@@ -54,6 +54,7 @@ public final class LocalColdBoot implements AutoCloseable {
     private volatile LocalLayer layer;
     private volatile String stage="pending";
     private Thread worker;
+    private boolean closed;
 
     private RocksLocalStore store;
     private final Map<String,Resolution.Module> modules=new LinkedHashMap<>();
@@ -78,7 +79,7 @@ public final class LocalColdBoot implements AutoCloseable {
 
     /** Run the boot on its own platform worker; {@link #committed()} completes with the LOCAL root. */
     public synchronized void start(){
-        if(worker!=null)return;
+        if(worker!=null||closed)return;
         worker=Thread.ofPlatform().name("jvmd-local-cold-boot").daemon().start(()->{
             try{committed.complete(run());}catch(Throwable failure){committed.completeExceptionally(failure);}
         });
@@ -289,7 +290,7 @@ public final class LocalColdBoot implements AutoCloseable {
 
     /** Stop the worker; an unfinished boot writes no root. */
     @Override public void close()throws InterruptedException{
-        Thread current;synchronized(this){current=worker;}
+        Thread current;synchronized(this){closed=true;current=worker;}
         if(current!=null&&current!=Thread.currentThread()){current.interrupt();current.join();}
     }
 

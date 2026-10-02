@@ -97,7 +97,7 @@ public final class StoreExport {
                 categories.merge(category,size,Long::sum);
             }
         }
-        var result=new TreeMap<String,Object>();result.put("files",files);result.put("bytes",total);result.put("bytes_by_category",categories);return result;
+        var result=new TreeMap<String,Object>();result.put("files",files);result.put("total_bytes",total);result.put("by_category",categories);return result;
     }
 
     static String sha256(byte[] value)throws Exception{return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));}

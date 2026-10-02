@@ -1083,7 +1083,8 @@ public final class Application implements AutoCloseable {
             invalidateAnalysisContexts(session);
         }
         session.put("resolution", graph);
-        if(previous!=null&&!previous.fingerprint().equals(graph.fingerprint()))decideLocalAgain(session);
+        // LOCAL is built from the modules and their classpaths; another fingerprint over the same ones leaves it as it is.
+        if(previous!=null&&!(previous.modules().equals(graph.modules())&&previous.classpaths().equals(graph.classpaths())))decideLocalAgain(session);
         graph.warnings().forEach(session::warn);
         if(graph.modules().stream().anyMatch(m->m.processing().lombok()||m.testProcessing().lombok()))session.warn("lombok_reduced_fidelity: generated member bodies and positions are unavailable");
         // A cold-booted project's selection waits for its routes, so it is bound when a query needs it.

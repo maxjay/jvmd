@@ -97,6 +97,9 @@ export async function main(argv=process.argv.slice(2)){
         javaHome,image,jdtlsHome,openTimeout:Math.max(timeout,600000),timeout,warmup,samples});
       lifecycle.push(row);
       console.log(`[lifecycle] ${row.outcome==="pass"?"ok  ":"FAIL"} ${server.padEnd(5)} apache/maven ${((Date.now()-started)/1000).toFixed(1).padStart(6)}s${row.error?"  "+String(row.error).slice(0,100):""}`);
+      // A failed check without an assertion (a timeout or a protocol error) is named here, as artifacts are not always reachable.
+      for(const op of row.operations.filter((op:any)=>op.outcome!=="pass").slice(0,5))
+        console.log(`[lifecycle]   ${op.outcome} ${op.method??op.endpoint} ${op.state??""} ${JSON.stringify(op.error??op.assertionError??"").slice(0,200)}`);
     }
   }
   writeFileSync(path.join(root,"results.json"),JSON.stringify({meta,results,lifecycle},null,1)+"\n");

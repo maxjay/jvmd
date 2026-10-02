@@ -19,6 +19,7 @@ class SourceOverlayNavigationTest {
         Path b=OverlayFixtures.project(root.resolve("b"),"library","2","");
         Path provider=OverlayFixtures.source(b,"Library","public class Library { public int value(){return 1;} }");
         Path use=OverlayFixtures.source(a,"Use","class Use { int read(){return new Library().value();} }");String text=Files.readString(use);var position=new SourceText(text).position(text.indexOf("value"));
+        String computed;
         try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
             var opened=TestSupport.request(app.dispatcher(),"session.open",Map.of("root",a.toString(),"manifest",Map.of("roots",List.of(a.toString(),b.toString()))));
             assertThat(opened.has("error")).withFailMessage(opened.toPrettyString()).isFalse();String session=opened.path("result").path("result").path("session").asText();
@@ -29,6 +30,17 @@ class SourceOverlayNavigationTest {
             var timestamp=Files.getLastModifiedTime(provider);Files.writeString(provider,Files.readString(provider).replace("value","other"));Files.setLastModifiedTime(provider,timestamp);
             var diagnostics=TestSupport.request(app.dispatcher(),"diag.get",Map.of("session",session,"paths",List.of(use.toString()))).path("result");
             assertThat(diagnostics.path("tier").asInt()).isEqualTo(2);assertThat(diagnostics.path("result").path("diagnostics").toString()).contains("cant.resolve");assertThat(diagnostics.path("warnings").toString()).contains("originates: fixture:library:2");
+            computed=diagnostics.path("result").path("diagnostics").toString();
+        }
+        // The origin warning is part of the persisted result: a restart restores it without javac.
+        try(var app=new Application(TestSupport.config(root,Duration.ofHours(4)))){
+            String session=TestSupport.request(app.dispatcher(),"session.open",Map.of("root",a.toString(),"manifest",Map.of("roots",List.of(a.toString(),b.toString())))).path("result").path("result").path("session").asText();
+            var restored=TestSupport.request(app.dispatcher(),"diag.get",Map.of("session",session,"paths",List.of(use.toString()))).path("result");
+            assertThat(restored.path("warnings").toString()).contains("originates: fixture:library:2");
+            assertThat(restored.path("result").path("diagnostics").toString()).isEqualTo(computed);
+            var memo=TestSupport.request(app.dispatcher(),"session.status",Map.of("session",session,"section","persistence")).path("result").path("result").path("attributed_memo");
+            assertThat(memo.path("restores").asLong()).as(memo.toString()).isPositive();
+            assertThat(memo.path("refusal_reasons").toString()).doesNotContain("query-warning");
         }
     }
 }

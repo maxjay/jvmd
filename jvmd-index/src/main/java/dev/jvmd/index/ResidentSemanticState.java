@@ -275,6 +275,30 @@ public final class ResidentSemanticState {
                 hierarchyApis.getOrDefault(typeId,EMPTY)).hex();
     }
 
+    /**
+     * Restart-stable hierarchy identity derived beneath the runtime uncertainty fence (§34).
+     *
+     * {@link #hierarchyApi} folds in the process-local {@code uncertaintyGeneration} so a fence can
+     * invalidate every in-process hierarchy identity in O(1). That value must never be persisted.
+     * This identity is a pure function of the composed hierarchy API, and is available only while
+     * the type and every retained ancestor belong to current (unfenced, non-stale) units; otherwise
+     * it is UNKNOWN (empty).
+     */
+    public synchronized Optional<Hash256> stableHierarchyIdentity(String typeId){
+        var fact=symbols.get(typeId);if(fact==null||!fact.typeDeclaration())return Optional.empty();
+        String api=hierarchyApis.get(typeId);if(api==null)return Optional.empty();
+        var queue=new ArrayDeque<String>();queue.add(typeId);var seen=new HashSet<String>();
+        while(!queue.isEmpty()){
+            String current=queue.removeFirst();if(!seen.add(current))continue;
+            if(symbols.containsKey(current)){
+                String unit=unitForFact(current);
+                if(unit==null||!unitCurrent(unit,null))return Optional.empty();
+            }
+            queue.addAll(directSupers.getOrDefault(current,Set.of()));
+        }
+        return Optional.of(CanonicalDigestWriter.digest("hierarchy-semantic-v1",api));
+    }
+
     /** O(1) uncertainty fence generation for proof-backed cache keys. */
     public synchronized long uncertaintyGeneration(){return uncertaintyGeneration;}
 

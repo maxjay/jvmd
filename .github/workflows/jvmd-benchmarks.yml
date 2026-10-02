@@ -23,6 +23,17 @@ on:
       runs:
         description: Repeat the suite this many times for steadier numbers
         default: '1'
+      revision:
+        description: 'Measure the JVMD built from this revision (default: the dispatched ref) with this ref''s harness'
+        default: ''
+      only:
+        description: 'Only these case ids or families (run.ts --only); empty runs everything'
+        default: ''
+      memory_control:
+        description: 'Instead of the suite, the frozen apache/maven memory lifecycle with first-use references (benchmarks/memory/profile.ts --mode control): equivalent = 1 GiB heap, 64 MiB native budget; shipping = no -Xmx, default native budget'
+        type: choice
+        options: ['', equivalent, shipping, equivalent-no-references, shipping-no-references]
+        default: ''
 
 permissions:
   contents: read
@@ -31,7 +42,8 @@ permissions:
   statuses: write       # the one-line metrics in the PR checks list
 
 concurrency:
-  group: benchmarks-${{ github.event.pull_request.number || github.ref }}
+  # Dispatched runs are independent measurements: never cancel one for another.
+  group: benchmarks-${{ github.event.pull_request.number || (github.event_name == 'workflow_dispatch' && github.run_id) || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -98,6 +110,16 @@ jobs:
           mvn -B -DskipTests install
           bash jvmd-dist/assemble.sh
 
+      # A dispatched revision is built on its own; this ref's harness measures its image.
+      - name: Build the dispatched revision
+        if: inputs.revision != ''
+        run: |
+          git fetch -q origin "${{ inputs.revision }}"
+          git worktree add -q --detach "$RUNNER_TEMP/revision" FETCH_HEAD
+          (cd "$RUNNER_TEMP/revision" && mvn -B -q -DskipTests package && bash jvmd-dist/assemble.sh >/dev/null)
+          echo "MEASURED_IMAGE=$RUNNER_TEMP/revision/jvmd-dist/target/image" >> "$GITHUB_ENV"
+          echo "MEASURED_REVISION=$(git -C "$RUNNER_TEMP/revision" rev-parse HEAD)" >> "$GITHUB_ENV"
+
       # The real project for the lifecycle, built once into its own repository: ~460 dependency JARs to index.
       - name: Cache apache/maven fixture
         id: project
@@ -133,11 +155,29 @@ jobs:
       # JDTLS 1.61.0 is a fixed reference: every scenario is measured on it once. Its results come from
       # benchmarks/reference/jdtls.json and main's last summary; only scenarios missing there run on JDTLS.
       - name: Run benchmarks
+        if: inputs.memory_control == ''
         run: |
+          extra=()
+          [ -n "${{ inputs.only }}" ] && extra+=(--only "${{ inputs.only }}")
           node benchmarks/run.ts --output "$RUNNER_TEMP/benchmarks" --servers jvmd --runs "${{ inputs.runs || '1' }}" \
+            --image "${MEASURED_IMAGE:-jvmd-dist/target/image}" "${extra[@]}" \
             --jdtls-home "$RUNNER_TEMP/tools/jdtls" --repository "$RUNNER_TEMP/bench-repository" \
-            --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository" \
+            $( [ -z "${{ inputs.only }}" ] && echo --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository" ) \
             --baseline "$RUNNER_TEMP/main/summary.json"
+
+      # The apache/maven memory lifecycle (benchmarks/memory): unchanged oracles and checkpoints, with or without the
+      # first-use references phase. Its summary is printed to the log (checkpoint:, operation:, M1, M2 lines).
+      - name: Memory lifecycle control
+        if: inputs.memory_control != ''
+        timeout-minutes: 100
+        run: |
+          heap=1024; case "${{ inputs.memory_control }}" in shipping*) heap=0;; esac
+          extra=(); case "${{ inputs.memory_control }}" in *no-references) extra=(--skip-references);; esac
+          node benchmarks/memory/profile.ts --mode control --heap "$heap" "${extra[@]}" --output "$RUNNER_TEMP/memory/control" \
+            --image "${MEASURED_IMAGE:-jvmd-dist/target/image}" \
+            --project "$RUNNER_TEMP/apache-maven" --project-repository "$RUNNER_TEMP/apache-maven-repository"
+          echo "measured: ${MEASURED_REVISION:-$(git rev-parse HEAD)} config: ${{ inputs.memory_control }} heap: $heap"
+          tail -n 40 "$RUNNER_TEMP/memory/control/state/jvmd/daemon.log" 2>/dev/null || true
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
@@ -151,10 +191,12 @@ jobs:
             ${{ runner.temp }}/benchmarks/statuses.json
             ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd-threads.txt
             ${{ runner.temp }}/benchmarks/lifecycle/*/jvmd/daemon.log
+            ${{ runner.temp }}/memory/control/results.json
+            ${{ runner.temp }}/memory/control/driver.log
 
       # e.g. "jvmd / scenarios — Contract 38/41 · Roadmap 12/108 (+2) vs main". Always success: they inform, never gate.
       - name: Post metrics to the checks list
-        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: always() && inputs.revision == '' && inputs.only == '' && inputs.memory_control == '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}

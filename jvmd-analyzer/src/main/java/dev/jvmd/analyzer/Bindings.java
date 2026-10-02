@@ -32,8 +32,25 @@ public final class Bindings {
         }
     }
     /** Implements 4.2: detached declarations, references and source dependencies. */
+    /**
+     * {@code diagnosticProjection} is {@link DiagnosticProjection P_diag} of the requested unit when it
+     * was fully attributed, otherwise null.
+     */
+    /** The class file a type was read from when it lies in a class directory; null for sources and archive entries. */
+    static Path classDirectoryFile(Element type){
+        if(!(type instanceof com.sun.tools.javac.code.Symbol.ClassSymbol symbol)||symbol.classfile==null
+                ||symbol.classfile.getKind()!=javax.tools.JavaFileObject.Kind.CLASS)return null;
+        var uri=symbol.classfile.toUri();
+        return "file".equals(uri.getScheme())?Path.of(uri).toAbsolutePath().normalize():null;
+    }
     public record Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
-                           Map<String,SemanticFact> semanticFacts,List<ReferenceProof> referenceProofs,Set<String> unresolvedTypeNames) {
+                           Map<String,SemanticFact> semanticFacts,List<ReferenceProof> referenceProofs,Set<String> unresolvedTypeNames,
+                           dev.jvmd.core.Hash256 diagnosticProjection,Map<Path,dev.jvmd.core.Hash256> dependencyProjections,Set<Path> binaryDependencies,
+                           Map<String,Path> classDirectoryTypes,NamespaceResolutionProofs.Header header) {
+        public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies,
+                        Map<String,SemanticFact> semanticFacts,List<ReferenceProof> referenceProofs,Set<String> unresolvedTypeNames){
+            this(symbols,occurrences,edges,dependencies,semanticFacts,referenceProofs,unresolvedTypeNames,null,Map.of(),Set.of(),Map.of(),null);
+        }
         public Snapshot(Map<String,Map<String,Object>> symbols,List<Occurrence> occurrences,List<Edge> edges,Set<Path> dependencies){
             this(symbols,occurrences,edges,dependencies,Map.of(),List.of(),Set.of());
         }
@@ -44,7 +61,8 @@ public final class Bindings {
         public Snapshot {
             symbols=Map.copyOf(symbols);occurrences=List.copyOf(occurrences);edges=List.copyOf(edges);
             dependencies=Set.copyOf(dependencies);semanticFacts=Map.copyOf(semanticFacts);referenceProofs=List.copyOf(referenceProofs);
-            unresolvedTypeNames=Set.copyOf(unresolvedTypeNames);
+            unresolvedTypeNames=Set.copyOf(unresolvedTypeNames);dependencyProjections=Map.copyOf(dependencyProjections);binaryDependencies=Set.copyOf(binaryDependencies);
+            classDirectoryTypes=Map.copyOf(classDirectoryTypes);
         }
         public Map<String,Object> at(int offset){
             var occurrence=occurrences.stream().filter(o->o.start()<=offset&&offset<o.end()).min(Comparator.comparingInt(o->o.end()-o.start())).orElse(null);if(occurrence==null)return null;
@@ -64,6 +82,43 @@ public final class Bindings {
     }
     public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,boolean bodies,Focusing.Span focus){
         return capture(task,units,identity,requested,original,bodies,focus,_->null);
+    }
+    /**
+     * Every source unit javac entered (and therefore read and completed) in this task. This is the
+     * completion set, not the syntactic reference set: it includes supertypes reached only through
+     * subtyping and overload checks and declaring units of inherited members that the requested unit
+     * never names. JavacTaskPool removes source classes after each task, so the symbol table holds
+     * exactly this task's completions. A batch shares one completion set, so it cannot attribute
+     * completions to individual units; captured dependencies therefore use the per-unit completion
+     * model in {@code Capture.completion}, and soundness tests assert that model is a superset of
+     * this set for single-unit tasks.
+     */
+    /**
+     * Top-level binary names of every class javac completed from class files under {@code directory}
+     * in this task: the completion set for a class directory, against which soundness tests check
+     * the captured {@code classDirectoryTypes}.
+     */
+    public static Set<String> completedClassFiles(JavacTask task,Path directory){
+        if(!(task instanceof com.sun.tools.javac.api.JavacTaskImpl impl))return Set.of();
+        Path base=directory.toAbsolutePath().normalize();var result=new TreeSet<String>();
+        for(var type:com.sun.tools.javac.code.Symtab.instance(impl.getContext()).getAllClasses()){
+            if(type.completer!=com.sun.tools.javac.code.Symbol.Completer.NULL_COMPLETER)continue;
+            Path file=classDirectoryFile(type);if(file==null||!file.startsWith(base))continue;
+            String relative=base.relativize(file).toString().replace(java.io.File.separatorChar,'/');
+            result.add(relative.substring(0,relative.length()-".class".length()).replace('/','.').split("\\$",2)[0]);
+        }
+        return result;
+    }
+    public static Set<Path> completedSources(JavacTask task){
+        if(!(task instanceof com.sun.tools.javac.api.JavacTaskImpl impl))return Set.of();
+        var result=new LinkedHashSet<Path>();
+        for(var type:com.sun.tools.javac.code.Symtab.instance(impl.getContext()).getAllClasses()){
+            var source=type.sourcefile;
+            if(source==null||source.getKind()!=javax.tools.JavaFileObject.Kind.SOURCE)continue;
+            var uri=source.toUri();if(!"file".equals(uri.getScheme()))continue;
+            try{result.add(Path.of(uri).toAbsolutePath().normalize());}catch(RuntimeException ignored){}
+        }
+        return result;
     }
     public static Snapshot capture(JavacTask task,List<CompilationUnitTree> units,SymbolIdentity identity,Path requested,SourceText original,
                                    boolean bodies,Focusing.Span focus,java.util.function.Function<String,SemanticFact> reusableFacts){
@@ -88,6 +143,7 @@ public final class Bindings {
                 if(element==null||element.asType().getKind()==TypeKind.ERROR)return null;
                 final String scip;try{scip=identity.scip(element);}catch(IllegalArgumentException unresolved){return null;}
                 if(symbols.containsKey(scip))return scip;
+                completion(identity.declaring(element));if(element instanceof ExecutableElement||element instanceof VariableElement)signatureDependencies(element);
                 SemanticDeclaration declaration;
                 try{
                     declaration=identity.declaration(element,reusableFacts.apply(scip));
@@ -143,14 +199,44 @@ public final class Bindings {
                 if(!dependencyTypes.add(type instanceof TypeVariable variable?variable.asElement():type.toString()))return;
                 if(type instanceof ArrayType array)dependencyType(array.getComponentType());
                 else if(type instanceof DeclaredType declared){
-                    String file=identity.sourceFile(declared.asElement());if(file!=null){dependencies.add(Path.of(file));for(var parent:task.getTypes().directSupertypes(type))dependencyType(parent);}
+                    String file=identity.sourceFile(declared.asElement());Element top=declared.asElement();while(top.getEnclosingElement() instanceof TypeElement outer)top=outer;
+                    if(file!=null||classDirectoryFile(top)!=null){if(file!=null)dependencies.add(Path.of(file));completion(declared.asElement());for(var parent:task.getTypes().directSupertypes(type))dependencyType(parent);}
                     for(var argument:declared.getTypeArguments())dependencyType(argument);
                 }else if(type instanceof TypeVariable variable)dependencyType(variable.getUpperBound());
                 else if(type instanceof WildcardType wildcard){dependencyType(wildcard.getExtendsBound());dependencyType(wildcard.getSuperBound());}
                 else if(type instanceof IntersectionType intersection)for(var bound:intersection.getBounds())dependencyType(bound);
             }
+            final Set<Element> completedTypes=new HashSet<>();final Map<Path,TypeElement> unitTypes=new HashMap<>();
+            /**
+             * Models javac completing a source type: its file is entered, its header (supertypes,
+             * bounds, annotations) and every member signature are attributed, and each type named
+             * there is loaded and completed in turn. Binary types end the walk.
+             */
+            /** Top-level binary name to the class file of every type completed from a class directory (not an archive). */
+            final Map<String,Path> classDirectoryTypes=new HashMap<>();
+            void completion(Element element){
+                if(!(element instanceof TypeElement type)||!completedTypes.add(type))return;
+                String file=identity.sourceFile(type);Element top=type;while(top.getEnclosingElement() instanceof TypeElement outer)top=outer;
+                Path classFile=classDirectoryFile(top);
+                // Archive types end the walk (the static key binds archives by content); class-directory
+                // types are bound one by one, so the walk continues through their signatures.
+                if(file==null&&classFile==null)return;
+                if(classFile!=null)classDirectoryTypes.putIfAbsent(task.getElements().getBinaryName((TypeElement)top).toString(),classFile);
+                if(file!=null){dependencies.add(Path.of(file));unitTypes.putIfAbsent(Path.of(file).toAbsolutePath().normalize(),type);}
+                if(type.getEnclosingElement() instanceof TypeElement outer)completion(outer);
+                dependencyType(type.getSuperclass());for(var parent:type.getInterfaces())dependencyType(parent);
+                for(var permitted:type.getPermittedSubclasses())dependencyType(permitted);
+                for(var parameter:type.getTypeParameters())for(var bound:parameter.getBounds())dependencyType(bound);
+                for(var annotation:type.getAnnotationMirrors())dependencyType(annotation.getAnnotationType());
+                for(var member:type.getEnclosedElements()){
+                    if(member instanceof TypeElement nested)completion(nested);
+                    else if(member instanceof ExecutableElement)signatureDependencies(member);
+                    else{dependencyType(member.asType());for(var annotation:member.getAnnotationMirrors())dependencyType(annotation.getAnnotationType());}
+                }
+            }
             void signatureDependencies(Element element){
                 if(element instanceof ExecutableElement method){dependencyType(method.getReturnType());for(var parameter:method.getParameters())dependencyType(parameter.asType());for(var exception:method.getThrownTypes())dependencyType(exception);for(var parameter:method.getTypeParameters())for(var bound:parameter.getBounds())dependencyType(bound);}
+                else if(element instanceof VariableElement variable)dependencyType(variable.asType());
                 if(element!=null)for(var annotation:element.getAnnotationMirrors())dependencyType(annotation.getAnnotationType());
             }
             void structure(Element element){
@@ -248,6 +334,23 @@ public final class Bindings {
                 }
             }
         }.scan(unit,null);
-        return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts,List.copyOf(referenceProofs),Set.copyOf(unresolvedTypeNames));
+        dev.jvmd.core.Hash256 projection=null;NamespaceResolutionProofs.Header header=null;var dependencyProjections=new HashMap<Path,dev.jvmd.core.Hash256>();var binaryDependencies=new HashSet<Path>();
+        if(focus==null){
+            Path self=requested.toAbsolutePath().normalize();
+            for(var unit:units)try{
+                if(Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize().equals(self)){projection=DiagnosticProjection.of(task,unit);header=NamespaceResolutionProofs.Header.of(unit);break;}
+            }catch(IllegalArgumentException|java.nio.file.FileSystemNotFoundException ignored){}
+            // P_diag of every completed dependency, from the Element model this task completed.
+            for(var entry:capture.unitTypes.entrySet()){
+                if(entry.getKey().equals(self))continue;
+                var path=trees.getPath(entry.getValue());
+                if(path!=null)dependencyProjections.put(entry.getKey(),DiagnosticProjection.of(task,path.getCompilationUnit()));
+                // Completed from a class file (a Lombok-processed unit hidden from the source path): its
+                // binary P_diag comes from a clean classpath reader, the same one restore uses.
+                else binaryDependencies.add(entry.getKey());
+            }
+        }
+        return new Snapshot(symbols,List.copyOf(occurrences.values()),List.copyOf(edges),Set.copyOf(dependencies),semanticFacts,
+                List.copyOf(referenceProofs),Set.copyOf(unresolvedTypeNames),projection,dependencyProjections,binaryDependencies,capture.classDirectoryTypes,header);
     }
 }

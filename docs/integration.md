@@ -73,6 +73,27 @@ The adapter retries startup for 10 seconds. First workspace resolution can take 
 
 Coordinate document ownership: one client opens and versions each file. A second `document.open` for the same file is rejected. Sharing a session does not provide independent unsaved-buffer branches for multiple editors.
 
+### Persistent state and restart
+
+The daemon keeps restartable state in its state directory (`config.stateDir()`):
+
+| State | Location | What a hit restores | Validity |
+| --- | --- | --- | --- |
+| Machine index | `index-v2/` | Dependency artifacts' symbols and search postings | Artifact identity; reconciled against the repository in the background |
+| File observations | `file-observations-v1.bin` | File hashes, without rehashing | Exact stamp match outside the racy-timestamp window |
+| Namespace memos (`s0-namespace` v1) | `local-memo-v1/` | A file's package, type names and declarations | Content hash, javac runtime, language mode |
+| Attributed diagnostics (`attributed-diagnostics` v6) | `local-memo-v1/` | A unit's diagnostics, dependency graph and semantic contribution; dependants cut off when its diagnostic projection is unchanged | Static key (logical source, content, compile context, logical classpath slots, platform, processor binding, options) plus a certificate: dependency projections, consulted packages, reactor classes, negative resolutions, processor resources |
+| Annotation processor results | `apt/` | The external processor run's outputs and diagnostics | Fingerprint of sources, classpath, processor path, options and `lombok.config` |
+
+- Every record is validated on its own, against current inputs. A miss, a corrupt record or an older function version is recomputed, never an error. A failed observation (unreadable file or directory) is UNKNOWN: it is never stored and never matches.
+- A unit's record is written only when every unit it can reach has a known dependency set. Units whose cycle is still unproven when a workspace closes are not written (`scc-unproven` in status).
+- Definition, hover, references and completion are not persisted: they attribute the unit on first use after a restart.
+- Allowlisted processors (Lombok, MapStruct, the Spring Boot configuration processor), `-A` options, path-type options and other reactor modules' class outputs are bound into the key. Any other processor is refused with its reason.
+- `daemon.status` reports `session_capable`, `persisted_index_complete`, `repository_reconciled` and `repository_reconciliation` (`pending`, `complete`, `incomplete:n`, `failed:…`). READY waits for reconciliation only when the persisted index is incomplete, or with `-Djvmd.ready.awaitRepositoryScan=true`. Answers given before reconciliation completes carry an `index_reconciling` warning.
+- `session.status` with `section: "persistence"` reports memo restores, writes, misses and refusals by reason, early cutoffs, and the processor results' persisted hits.
+
+Known limits: the first "diagnose all" after a cold start is slower than without persistence, because every unit's result is captured. A restart of a large Lombok project restores most but not all units. First-use references on a large workspace attributes every unit and can exceed the request deadline.
+
 ## LSP client contract
 
 Use an existing LSP client library and launch `jvmd-lsp`. The adapter handles socket connection, session creation, core response envelopes, and conversion into standard LSP results.
@@ -276,6 +297,7 @@ All workspace methods require `params.session`. Paths are absolute filesystem pa
 | `symbol.semanticTokens` | `path`; optional `limit`, `cursor` | Token data and result ID |
 | `lsp.request` | LSP `method`, LSP `params`, optional client capabilities in `client` | `value`: standard LSP result |
 | `lsp.diagnostics` | File `uri` | `value`: publishDiagnostics parameters |
+| `semantic.impact` | `path`, proposed full `text` | Hypothetical delta, changed proof leaves, affected consumers, files to reconsider; nothing is applied |
 
 Other native methods are mapped in the tool catalog. Most arguments are the tool arguments plus workspace `session`. The exception is native `debug.op`: use workspace `session` and application `run_session`, while the `debug` tool takes application `session`.
 

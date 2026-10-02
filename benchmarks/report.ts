@@ -109,7 +109,7 @@ export function compare(now:Summary,base?:Summary){
 /** "Open" is launch to the first correct answer on the project, not the server's own readiness signal. */
 const LIFECYCLE:[string,string,string?][]=[
   ["Machine index (cold)","machine_index_ms"],["Open workspace (cold)","open_ms"],["Reconnect to warm daemon","reconnect_open_ms"],
-  ["Daemon restart (persisted index)","restart_index_ms"],["Open after restart","restart_open_ms"],["Resident memory after queries","rss_bytes","bytes"],
+  ["Daemon restart (persisted index)","restart_index_ms"],["Open after restart","restart_open_ms"],["Restart to first correct completion","restart_first_completion_ms"],["Resident memory after queries","rss_bytes","bytes"],
 ];
 
 /** The numbers a PR shows at a glance, with their change against main. */

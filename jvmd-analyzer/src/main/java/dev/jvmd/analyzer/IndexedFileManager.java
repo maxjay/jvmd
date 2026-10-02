@@ -286,7 +286,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         List<Path> inputs=location==StandardLocation.CLASS_PATH?classInputs():modulePaths.get(location);
         if(inputs==null||!kinds.contains(JavaFileObject.Kind.CLASS))return super.list(delegate(location),packageName,kinds,recurse);
         var result=new LinkedHashMap<String,JavaFileObject>();
-        if(inputs.stream().filter(path->!path.toString().endsWith(".jar")).anyMatch(Files::isDirectory))for(var file:super.list(delegate(location),packageName,kinds,recurse)){result.put(super.inferBinaryName(delegate(location),file),file);}
+        if(inputs.stream().filter(path->!path.toString().endsWith(".jar")).anyMatch(Files::isDirectory))for(var file:super.list(delegate(location),packageName,kinds,recurse)){result.putIfAbsent(super.inferBinaryName(delegate(location),file),file);}
         for(var path:inputs)if(path.toString().endsWith(".jar")){
             Catalog catalog;
             try{catalog=catalog(path);}catch(IOException e){throw new UncheckedIOException(e);}

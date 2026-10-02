@@ -45,6 +45,33 @@ class ExternalAnnotationProcessingTest {
             assertThat(processors.status().get("runs")).isEqualTo(2L);
         }
     }
+    /**
+     * The external processor result is a persisted, location-independent record, so a restart,
+     * a moved checkout or another worktree reuses it without running javac; a corrupt index reruns.
+     */
+    @Test void processorResultSurvivesRestartAndRelocationAndCorruptionReruns()throws Exception{
+        var request=request("PersistProcessor","if(!round.processingOver()){try(var writer=processingEnv.getFiler().createSourceFile(\"Generated\").openWriter()){writer.write(\"class Generated {}\");}catch(javax.annotation.processing.FilerException ignored){}catch(java.io.IOException e){throw new RuntimeException(e);}} return false;");
+        var config=TestSupport.config(root,Duration.ofHours(4));AnnotationProcessing.Output first;
+        try(var processors=new AnnotationProcessing(config)){first=processors.prepare(request,Duration.ofSeconds(10));assertThat(first.exitCode()).isZero();}
+        try(var restarted=new AnnotationProcessing(config)){
+            var output=restarted.prepare(request,Duration.ofSeconds(10));
+            assertThat(restarted.status()).containsEntry("runs",0L).containsEntry("persisted_hits",1L);
+            assertThat(output.fingerprint()).isEqualTo(first.fingerprint());assertThat(output.sourceRoots()).isEqualTo(first.sourceRoots());
+        }
+        Path moved=root.resolve("elsewhere/PersistProcessor");Files.createDirectories(moved.getParent());
+        new ProcessBuilder("cp","-a",request.directory().toString(),moved.toString()).start().waitFor();
+        var relocated=new AnnotationProcessing.Request(request.key(),moved,List.of(moved.resolve("src")),List.of(),List.of(moved.resolve("processor")),
+                request.processors(),request.compilerOptions(),false);
+        try(var processors=new AnnotationProcessing(config)){
+            assertThat(processors.prepare(relocated,Duration.ofSeconds(10)).fingerprint()).isEqualTo(first.fingerprint());
+            assertThat(processors.status()).as("a moved checkout reuses the result").containsEntry("runs",0L);
+        }
+        try(var walk=Files.walk(config.stateDir().resolve("apt"))){for(Path index:walk.filter(path->path.getFileName().toString().equals("index.json")).toList())Files.writeString(index,"{corrupt");}
+        try(var processors=new AnnotationProcessing(config)){
+            assertThat(processors.prepare(request,Duration.ofSeconds(10)).exitCode()).isZero();
+            assertThat(processors.status()).as("a corrupt index is a rerun").containsEntry("runs",1L);
+        }
+    }
     @Test void spinningProcessorIsKilledAtItsDeadline()throws Exception{
         var request=request("SpinProcessor","while(true){Thread.onSpinWait();}");
         try(var processors=new AnnotationProcessing(TestSupport.config(root,Duration.ofHours(4)))){

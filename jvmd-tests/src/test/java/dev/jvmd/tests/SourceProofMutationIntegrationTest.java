@@ -80,7 +80,7 @@ class SourceProofMutationIntegrationTest {
             mutate(analyzer,documents,a,4,overload);
             var proof=evidence(analyzer);
             assertThat(((Number)proof.get("last_proof_consumers_visited")).longValue()).isPositive();
-            assertThat(((Number)proof.get("last_proof_consumers_changed")).longValue()).isPositive();
+            assertThat(((Number)proof.get("last_proof_consumers_deferred")).longValue()).isPositive();
             assertThat(proof).containsEntry("last_source_consumers_invalidated",1L)
                     .containsEntry("last_coarse_fallback_files",0L);
             long beforeCaller=queries(analyzer);
@@ -132,7 +132,7 @@ class SourceProofMutationIntegrationTest {
                     .containsEntry("last_source_consumers_invalidated",1L)
                     .containsEntry("last_coarse_fallback_files",0L);
             assertThat(((Number)proof.get("last_proof_consumers_visited")).longValue()).isPositive();
-            assertThat(((Number)proof.get("last_proof_consumers_changed")).longValue()).isPositive();
+            assertThat(((Number)proof.get("last_proof_consumers_deferred")).longValue()).isPositive();
             long beforeCaller=queries(analyzer);
             assertThat(diagnostics(analyzer,b,caller)).anyMatch(problem->problem.code().startsWith("compiler.err.prob.found.req"));
             assertThat(queries(analyzer)).as("changed A.one exact fact must reconsider B").isEqualTo(beforeCaller+1);
@@ -211,7 +211,7 @@ class SourceProofMutationIntegrationTest {
             mutate(analyzer,documents,r,2,relevant);
             var proof=evidence(analyzer);
             assertThat(((Number)proof.get("last_proof_consumers_visited")).longValue()).isPositive();
-            assertThat(((Number)proof.get("last_proof_consumers_changed")).longValue()).isPositive();
+            assertThat(((Number)proof.get("last_proof_consumers_deferred")).longValue()).isPositive();
             assertThat(proof).containsEntry("last_coarse_fallback_files",0L);
             long beforeRelevant=queries(analyzer);
             completionAt(analyzer,use,useSource,"value.");

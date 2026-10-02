@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import {readFileSync,rmSync} from "node:fs";
+import {existsSync,readFileSync,rmSync} from "node:fs";
 import path from "node:path";
 import {pathToFileURL} from "node:url";
 import {ScenarioContext} from "./ScenarioContext.ts";
 import {launch,JvmdDaemon,type Launch} from "./launch.ts";
 import {settingsXml,type Pom} from "./maven.ts";
 import {type Fixture} from "./fixture.ts";
-import {position,range,exactLocations,hoverOracle,completionOracle} from "./oracles.ts";
+import {position,range,exactLocations,locations,hoverOracle,completionOracle} from "./oracles.ts";
 import {observeDiagnostics,errorAt} from "./diagnostics.ts";
 
 /**
@@ -65,11 +65,29 @@ async function queries(c:ScenarioContext){
   await step(()=>observeDiagnostics(c,c.file(HELPER).uri,changed.trigger,errorAt("benchmarkMissing"),since,"changed_diagnostic"));
 }
 
+/**
+ * The daemon log's tail, a count of threads by name, and every JVMD thread stack that is doing or
+ * waiting on work (idle file watchers excluded): enough to read a hang or a failed start from the job log.
+ */
+export function failureEvidence(log:string,dump?:string,adapter?:string){
+  const out:string[]=[];
+  if(existsSync(log))out.push("--- daemon.log (tail) ---",...readFileSync(log,"utf8").split("\n").slice(-60));
+  if(adapter&&existsSync(adapter))out.push("--- adapter stderr (tail) ---",...readFileSync(adapter,"utf8").split("\n").slice(-20));
+  if(dump&&existsSync(dump)){
+    const stacks=readFileSync(dump,"utf8").split(/\n\s*\n/u),counts=new Map<string,number>();
+    for(const stack of stacks){const name=/^"([^"]+)"/u.exec(stack.trim())?.[1];if(name){const key=name.replace(/[-#]?[0-9a-f]{6,}$|[-#]\d+$/u,"");counts.set(key,(counts.get(key)??0)+1);}}
+    out.push("--- threads by name ---",...[...counts].sort((a,b)=>b[1]-a[1]).map(([name,n])=>`${String(n).padStart(4)} ${name}`));
+    out.push("--- JVMD threads at work ---");
+    for(const stack of stacks)if(stack.includes("dev.jvmd.")&&!stack.includes("LiveSourceState.watchLoop"))out.push(...stack.split("\n").slice(0,45),"");
+  }
+  return out.join("\n");
+}
+
 export async function runLifecycle(o:LifecycleOptions){
   settingsXml(o.repository,path.join(o.repository,"settings.xml"));
   rmSync(o.state,{recursive:true,force:true});
   const fixture=projectFixture(o.project,o.repository),phases:Record<string,any>={},operations:any[]=[],errors:string[]=[];
-  let daemon:JvmdDaemon|undefined,running:Launch|undefined;
+  let daemon:JvmdDaemon|undefined,running:Launch|undefined,restartStarted:number|undefined;
   // "Open" is launch to the first correct answer on the project. A server may report itself ready
   // (JDTLS's ServiceReady) before its project import finishes; that is not a usable workspace yet.
   const open=async(reuseState:boolean,label:string)=>{
@@ -82,7 +100,7 @@ export async function runLifecycle(o:LifecycleOptions){
     const project=readFileSync(c.file(PROJECT).path,"utf8"),target=[{uri:c.file(PROJECT).uri,range:range(project,"addAttachedArtifact",project.indexOf("public void addAttachedArtifact(")+"public void ".length)}];
     for(const deadline=performance.now()+o.openTimeout;;){
       const r=await c.client.request("textDocument/definition",params,o.openTimeout);
-      try{exactLocations(r.result,target);break;}catch(error){if(performance.now()>deadline)throw new Error("workspace never answered correctly: "+String(error).split("\n")[0]);}
+      try{exactLocations(r.result,target);break;}catch(error){if(performance.now()>deadline)throw new Error("workspace never answered correctly: "+String(error).split("\n")[0]+"; answered "+JSON.stringify(locations(r.result))+", expected "+JSON.stringify(target));}
       await new Promise(resolve=>setTimeout(resolve,250));
     }
     c.close(HELPER);c.operations=operations;c.timeout=o.timeout;return {c,ms:performance.now()-started};
@@ -95,19 +113,44 @@ export async function runLifecycle(o:LifecycleOptions){
     }
     let {c,ms}=await open(false,"open");phases.open_ms=ms;
     await c.open(PROJECT);await c.open(HELPER);await queries(c);phases.rss_bytes=rssBytes(pid());
+    // The retained session keeps unsaved buffers across a reconnect, so close the edited documents (as an editor
+    // closing its tabs without saving) before disconnecting: the reconnect's oracle reads the files on disk.
+    // The adapter clears a closed document's diagnostics only after the daemon has applied the close: wait for that, so
+    // the disconnect cannot overtake the close.
+    for(const name of [PROJECT,HELPER]){
+      const since=c.client.notifications.length,uri=c.file(name).uri;c.close(name);
+      try{await c.client.notification("textDocument/publishDiagnostics",p=>decodeURI(p.uri)===decodeURI(uri)&&p.diagnostics.length===0,since,o.timeout);}
+      catch{throw new Error(`close of ${name} not applied within ${Math.round(o.timeout/1000)} s: the session is still busy with earlier requests`);}
+    }
     await running!.stop({closeSession:false});running=undefined;
     if(o.server==="jvmd"){
       // Reconnect, as when an editor window reopens: the daemon and its session are still warm.
       ({c,ms}=await open(true,"reconnect"));phases.reconnect_open_ms=ms;
       await running!.stop();running=undefined;
-      await daemon!.stop();daemon=await JvmdDaemon.start({javaHome:o.javaHome,image:o.image,state:path.join(o.state,"jvmd"),repository:o.repository});
+      await daemon!.stop();restartStarted=performance.now();daemon=await JvmdDaemon.start({javaHome:o.javaHome,image:o.image,state:path.join(o.state,"jvmd"),repository:o.repository});
       phases.restart_index_ms=daemon.readyMs;
     }
+    restartStarted??=performance.now();
     ({c,ms}=await open(true,"restart"));phases.restart_open_ms=ms;
+    // Restart to the first correct completion: daemon start (or server launch) until a member
+    // completion on the reopened project answers with the expected candidate.
+    await c.open(HELPER);c.change(HELPER,probe(c.text(HELPER),"getGr"));
+    const completionParams=()=>{const text=c.text(HELPER),line=text.lastIndexOf("        project.");
+      return {textDocument:{uri:c.file(HELPER).uri},position:position(text,text.indexOf("\n",line))};};
+    for(const deadline=performance.now()+o.openTimeout;;){
+      const r=await c.client.request("textDocument/completion",completionParams(),o.timeout);
+      try{completionOracle(r.result,["getGroupId"]);break;}catch(error){if(performance.now()>deadline)throw new Error("restart never completed correctly: "+String(error).split("\n")[0]);}
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    phases.restart_first_completion_ms=performance.now()-restartStarted;
   }catch(error){
     errors.push(String(error).split("\n")[0]);
+    // The summary line is cut short; the whole first line (for an oracle, what was answered and expected) goes to the job log.
+    console.error("[lifecycle] error: "+String(error).split("\n")[0]);
     // A JVMD that stopped answering leaves its thread dump in the run output, so the hang can be read without a rerun.
     if(daemon?.alive())try{phases.thread_dump=daemon.threadDump(o.javaHome,path.join(o.state,"jvmd-threads.txt"));}catch{/* best effort */}
+    // Artifacts are not always reachable from where a failure is read: put the evidence in the job log too.
+    try{console.error(failureEvidence(path.join(o.state,"jvmd","daemon.log"),phases.thread_dump,path.join(o.state,"server","stderr.log")));}catch{/* best effort */}
   }
   finally{
     if(running)await running.stop().catch(()=>undefined);

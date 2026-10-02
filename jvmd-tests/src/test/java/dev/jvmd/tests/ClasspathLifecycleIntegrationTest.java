@@ -96,7 +96,7 @@ class ClasspathLifecycleIntegrationTest {
             assertThat(evidence(analyzer,"last_reconsidered")).isEqualTo(1);
             assertThat(evidence(analyzer,"last_changed")).isEqualTo(1);
             assertThat(evidence(analyzer,"last_consumers_visited")).isEqualTo(1);
-            assertThat(evidence(analyzer,"last_consumers_changed")).isEqualTo(1);
+            assertThat(evidence(analyzer,"last_consumers_deferred")).isEqualTo(1);
             assertThat(statusLong(analyzer,"document_semantic_contexts")).isZero();
             assertNames(analyzer,file,aSource,"choose(value).get","getD");
             assertThat(currentQueries(analyzer)).isEqualTo(1);
@@ -141,7 +141,7 @@ class ClasspathLifecycleIntegrationTest {
             assertThat(evidence(analyzer,"last_reconsidered")).isEqualTo(1);
             assertThat(evidence(analyzer,"last_changed")).isEqualTo(1);
             assertThat(evidence(analyzer,"last_consumers_visited")).isEqualTo(1);
-            assertThat(evidence(analyzer,"last_consumers_changed")).isEqualTo(1);
+            assertThat(evidence(analyzer,"last_consumers_deferred")).isEqualTo(1);
             assertNames(analyzer,file,cSource,"choose(value).get","getC");
             assertThat(currentQueries(analyzer)).isEqualTo(1);
 

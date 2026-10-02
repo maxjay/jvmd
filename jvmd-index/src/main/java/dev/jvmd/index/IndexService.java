@@ -48,6 +48,23 @@ public final class IndexService implements AutoCloseable {
         this.storage=Objects.requireNonNull(storage);this.store=Objects.requireNonNull(storage.store());
     }
     public IndexStore store(){return store;}
+    /**
+     * Whether the repository has been reconciled completely: a scan finished with every artifact read
+     * and the inventory completed. A scan that ran but had artifact or source faults left the inventory
+     * incomplete (stale paths are not reconciled), so it does not count.
+     */
+    public boolean repositoryReconciled(){return readiness.isDone()&&!readiness.isCompletedExceptionally()&&lastScanComplete;}
+    /** {@code pending}, {@code complete}, {@code incomplete:<faulted artifacts>} or {@code failed:<reason>}. */
+    public String reconciliationState(){
+        if(!readiness.isDone())return "pending";
+        if(readiness.isCompletedExceptionally()){
+            try{readiness.join();}catch(Exception failure){return "failed:"+(failure.getCause()==null?failure:failure.getCause());}
+        }
+        return lastScanComplete?"complete":"incomplete:"+lastScanFaults;
+    }
+    private volatile boolean lastScanComplete;
+    private volatile long lastScanFaults;
+    public CompletableFuture<Void> repositoryReconciliation(){return readiness;}
     public long generation(){return indexed.get();}
     public CompletableFuture<Void> start(){
         long initialDelaySeconds=Long.getLong("jvmd.index.scan.initial_delay_seconds",2L);
@@ -82,6 +99,7 @@ public final class IndexService implements AutoCloseable {
             long inventoryGeneration=storage.inventory().beginScan();
             storage.inventory().completeScan(inventoryGeneration);
             if(store.reconcilePaths(repository,Set.of()))indexed.incrementAndGet();
+            lastScanComplete=true;lastScanFaults=0;
             phase="linking";long linkStarted=System.nanoTime();linkEdges();linkNanos.addAndGet(System.nanoTime()-linkStarted);
             phase="ready";scanNanos.addAndGet(System.nanoTime()-start);return;
         }
@@ -92,7 +110,7 @@ public final class IndexService implements AutoCloseable {
         trace.count("jar_inventory_entries",jars.size());
         total=jars.size();scanned.set(0);phase="skeletons";
         long inventoryGeneration=storage.inventory().beginScan();
-        var skeletonComplete=new AtomicBoolean(true);
+        var skeletonComplete=new AtomicBoolean(true);var scanFaults=new AtomicLong();
         var jobs=new ArrayList<Future<?>>();
         var cause=RequestScope.detached();
         for(var jar:jars)if(!jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{
@@ -100,7 +118,7 @@ public final class IndexService implements AutoCloseable {
                 if(cause==null)indexJar(jar,gav(jar),"jar",inventoryGeneration);
                 else RequestScope.with(cause,()->{try(var span=RequestScope.stage("index.binary")){span.count("jar_requests",1);indexJar(jar,gav(jar),"jar",inventoryGeneration);}return null;});
             }
-            catch(Exception|LinkageError e){skeletonComplete.set(false);warn("artifact_fault: "+jar+": "+e);}
+            catch(Exception|LinkageError e){skeletonComplete.set(false);scanFaults.incrementAndGet();warn("artifact_fault: "+jar+": "+e);}
             finally{scanned.incrementAndGet();}
         }));
         for(var job:jobs)job.get();
@@ -110,14 +128,16 @@ public final class IndexService implements AutoCloseable {
                 if(cause==null)indexSources(jar);
                 else RequestScope.with(cause,()->{try(var span=RequestScope.stage("index.sources")){span.count("source_jar_requests",1);indexSources(jar);}return null;});
             }
-            catch(Exception|LinkageError e){docsComplete.set(false);warn("source_fault: "+jar+": "+e);}
+            catch(Exception|LinkageError e){docsComplete.set(false);scanFaults.incrementAndGet();warn("source_fault: "+jar+": "+e);}
             finally{scanned.incrementAndGet();}
         }));
         for(var job:jobs)job.get();docsNanos.addAndGet(System.nanoTime()-docsStarted);
-        if(skeletonComplete.get()&&docsComplete.get()){
+        boolean complete=skeletonComplete.get()&&docsComplete.get();
+        if(complete){
             storage.inventory().completeScan(inventoryGeneration);
             if(store.reconcilePaths(repository,Set.copyOf(jars)))indexed.incrementAndGet();
         }
+        lastScanComplete=complete;lastScanFaults=scanFaults.get();
         phase="linking";long linkStarted=System.nanoTime();linkEdges();linkNanos.addAndGet(System.nanoTime()-linkStarted);phase="ready";
         long elapsed=System.nanoTime()-start;scanNanos.addAndGet(elapsed);
         System.getLogger("dev.jvmd.index").log(System.Logger.Level.INFO,"index scan: {0} artifacts in {1} ms",jars.size(),elapsed/1_000_000);
@@ -127,7 +147,7 @@ public final class IndexService implements AutoCloseable {
     public Map<String,Object> status() throws Exception {
         var result=new LinkedHashMap<String,Object>();result.putAll(store.counts());result.put("source_publisher",sourcePublisher.status());
         result.put("phase",phase);result.put("total",total);result.put("scanned",scanned.get());result.put("indexed",indexed.get());
-        result.put("reused",reused.get());result.put("hashes",hashed.get());result.put("faults",faults.get());result.put("warnings",List.copyOf(warnings));
+        result.put("reused",reused.get());result.put("hashes",hashed.get());result.put("faults",faults.get());result.put("reconciliation",reconciliationState());result.put("warnings",List.copyOf(warnings));
         result.put("active_artifacts",Map.copyOf(activeArtifacts));result.put("store",store.status());result.put("storage",storage.status());
         result.put("read_backend",store.backend());
         var timings=new LinkedHashMap<String,Object>();

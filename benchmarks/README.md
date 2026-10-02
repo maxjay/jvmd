@@ -69,6 +69,24 @@ The output directory holds `report.md` (the PR comment), `report.txt` (the termi
   lifecycle, not-implemented endpoints and latency are folded underneath. Regressions are also
   raised as warnings on the run.
 
+### Restart and persistence runs (manual)
+
+`persistence.ts` runs each session as a fresh daemon on the same state, then records READY, open, first correct
+answer (process start to the answer), diagnose-all time (one `diag.get` for every unit), compiler runs, the
+persisted-result counters, peak RSS, allocation and a digest of every file's diagnostics.
+
+```sh
+# A1–A6 on generated hub, layered and DAG projects (deterministic seed)
+node benchmarks/persistence.ts --suite synthetic --units 5000 --image <image> --repository <repo> --output <dir>
+# A9, A7, A8, A10 on ruoyi-vue-pro at the commit pinned in real-project.json (Lombok + MapStruct)
+node benchmarks/persistence.ts --suite real --heap 4g --project <checkout> --repository <its repo> --image <image> --output <dir>
+```
+
+To compare two builds, build an image for each revision (`mvn -DskipTests install && bash jvmd-dist/assemble.sh`)
+and run the same command, from the same harness checkout, once per image on the same machine. Compare the
+per-session lines and the diagnostics digests; a compiler-run count is only comparable between builds that
+compile the same way.
+
 ## Scope
 
 A case is `supported` when its endpoint is in JVMD's documented contract (`harness/contract.ts`),

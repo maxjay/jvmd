@@ -23,15 +23,39 @@ public final class Application implements AutoCloseable {
     private final Dispatcher dispatcher = new Dispatcher(sessions, new Metrics());
     private final Config config;
     private final FileStateRegistry classpathFiles=FileStateRegistry.shared();
+    private final dev.jvmd.index.SemanticMemoStore localMemos;
+    private final dev.jvmd.analyzer.SourceNamespaces sourceNamespaces;
     private volatile MavenResolver resolver;
     private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
     private volatile IndexService bootstrappingIndex;
+    // §95 READY gating: the daemon is session-capable once a complete persisted index is restored;
+    // reconciling it against the repository then proceeds in the background unless explicitly awaited.
+    // Without a complete persisted index (first start, an interrupted or faulted first scan, a new index
+    // format) there is nothing to serve from, so READY waits for the first scan.
+    private final boolean awaitRepositoryScan=Boolean.getBoolean("jvmd.ready.awaitRepositoryScan");
+    private final long constructedNanos=System.nanoTime();
+    private volatile long sessionCapableNanos=-1,repositoryReconciledNanos=-1;
+    private volatile boolean persistedIndexComplete;
+    private volatile boolean repositoryScanRequested;
     private final java.util.concurrent.atomic.AtomicBoolean closed=new java.util.concurrent.atomic.AtomicBoolean();
     private static final Set<String> COMPLETION_TYPE_KINDS=Set.of("class","interface","enum","record","annotation");
+    private static void deleteQuietly(Path directory){
+        if(!Files.exists(directory))return;
+        try(var walk=Files.walk(directory)){walk.sorted(Comparator.reverseOrder()).forEach(path->{try{Files.deleteIfExists(path);}catch(Exception ignored){}});}
+        catch(Exception ignored){}
+    }
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
     public Application(Config config) {
         this.config = config;
+        // Restart reuse of unchanged content hashes (§90). Restored observations are validated
+        // against current file stamps before use; the journal is never semantic authority.
+        classpathFiles.persistence(config.stateDir().resolve("file-observations-v1.bin"));
+        // Attributed LOCAL memos are the only persisted diagnostics; old snapshot state is deleted, never migrated.
+        deleteQuietly(config.stateDir().resolve("diagnostics-v2"));
+        // LOCAL semantic memo store (§68): independently validated records; loss is only a miss.
+        localMemos=new dev.jvmd.index.SemanticMemoStore(config.stateDir().resolve("local-memo-v1"));
+        sourceNamespaces=new dev.jvmd.analyzer.SourceNamespaces(localMemos);
         if (config.indexOnStart()) initializeIndex(true);
         dispatcher.status("index", () -> {
             try { return index == null ? java.util.Map.of("phase", "disabled") : index.isDone() ? index.join().status() : java.util.Map.of("phase", "starting"); }
@@ -40,6 +64,15 @@ public final class Application implements AutoCloseable {
         dispatcher.status("aot_cache", () -> AotStatus.runtime(Path.of(System.getProperty("jvmd.aot.log", config.stateDir().resolve("aot.log").toString()))));
         dispatcher.status("resolver", () -> resolver == null ? java.util.Map.of("maven_major", config.mavenMajor(), "initialized", false) : resolver.status());
         dispatcher.status("classpath_files",classpathFiles::status);
+        dispatcher.status("readiness",this::readiness);
+        dispatcher.decorate((method,envelope)->{
+            // A partially reconciled machine universe must not read as established absence (§5).
+            if(!envelope.source().equals("index")||method.startsWith("daemon.")||!repositoryScanRequested)return envelope;
+            var service=index==null||!index.isDone()||index.isCompletedExceptionally()?null:index.join();
+            return service==null||service.repositoryReconciled()?envelope
+                    :envelope.warn("index_reconciling: machine-wide repository inventory is still reconciling; results outside this session's resolved dependencies may be incomplete");
+        });
+        dispatcher.status("source_namespaces",sourceNamespaces::status);
         dispatcher.register("session.open", (_, p) -> {
             awaitReady();
             var session = sessions.open(Path.of(Dispatcher.required(p, "root")));
@@ -112,6 +145,10 @@ public final class Application implements AutoCloseable {
                     :interactiveAnalyzer==null?Map.of("initialized",false):interactiveAnalyzer.status();
             if(statusSection.equals("analyzer"))
                 return new Envelope(0,"live",false,null,s.warnings(),Map.of("session",s.id(),"root",s.root().toString(),"analyzer",analyzerStatus));
+            if(statusSection.equals("persistence"))
+                return new Envelope(0,"live",false,null,s.warnings(),Map.of("session",s.id(),"root",s.root().toString(),
+                        "attributed_memo",actorRegistry==null?Map.of():actorRegistry.persistenceStatus(),
+                        "annotation_processing",s.state("processors") instanceof AnnotationProcessing processors?processors.counters():Map.of()));
             if(statusSection.equals("module_actors"))
                 return new Envelope(0,"live",false,null,s.warnings(),Map.of(
                         "session",s.id(),"root",s.root().toString(),
@@ -125,6 +162,11 @@ public final class Application implements AutoCloseable {
             return new Envelope(0,"live",false,null,s.warnings(),result);
         });
         dispatcher.register("symbol.overview",this::overview);
+        // §109: speculative impact of a proposed edit; nothing is admitted or invalidated.
+        dispatcher.register("semantic.impact",(s,p)->{
+            Path path=sourcePath(s,Dispatcher.required(p,"path"));
+            return analyzer(s,path).impact(path,Dispatcher.required(p,"text"));
+        });
         dispatcher.register("diag.get",(s,p)->{
             if(p.path("verified").asBoolean()){
                 if(dirty(s))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","verified","reason","Save editor changes before verifying the on-disk build"));
@@ -262,15 +304,14 @@ public final class Application implements AutoCloseable {
         var actors=diagnosticActors(session);
         return session.state("diagnostics",()->new WorkspaceAnalysisCoordinator(documents(session),file->diagnosticAnalyzer(session,file),session::yieldInteractive,file->externalDiagnostics(session,file),actors.parallelism()));
     }
-    private ModuleAnalyzerRegistry diagnosticActors(Session session){return session.state("diagnostic_actors",()->new ModuleAnalyzerRegistry(classpathFiles));}
+    private ModuleAnalyzerRegistry diagnosticActors(Session session){return session.state("diagnostic_actors",()->new ModuleAnalyzerRegistry(classpathFiles).memos(localMemos));}
     private DiagnosticEngine diagnosticAnalyzer(Session session,Path path)throws Exception{
         var graph=maintainedResolution(session);
         var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
         var context=contexts.context(path,graph,contextCacheIdentity(session,graph,path),file->createAnalyzerContext(session,file,graph));
         var availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
         long totalBudget=config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size());
-        Path persistence=config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        return diagnosticActors(session).engine(WorkspaceContextManager.key(path,graph),context,availableIndex,totalBudget,documents(session),persistence);
+        return diagnosticActors(session).engine(WorkspaceContextManager.key(path,graph),context,availableIndex,totalBudget,documents(session));
     }
     private WorkspaceAnalysisCoordinator.ExternalResult externalDiagnostics(Session session,Path file)throws Exception{
         var graph=(Resolution)session.state("resolution");if(graph==null)return null;
@@ -431,22 +472,21 @@ public final class Application implements AutoCloseable {
         Resolution currentGraph=graph;
         WorkspaceBindings.InputSource inputSource=()->workspaceModuleInputs(session,currentGraph);
         if(!load)return cache.peek(inputSource);
-        return cache.getBatch(inputSource,documents(session),(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,files->{
-
+        // Outcomes are handed to the cache batch by batch and released; a whole-workspace build never
+        // holds every file's compiler outcome at once.
+        return cache.getStreaming(inputSource,documents(session),(long)config.heapCeilingMb()*1024*1024/Math.max(1,sessions.list().size())/4,(files,sink)->{
             var groups=new LinkedHashMap<String,LinkedHashMap<Path,String>>();
             for(var entry:files.entrySet())groups.computeIfAbsent(WorkspaceContextManager.key(entry.getKey(),currentGraph),_->new LinkedHashMap<>()).put(entry.getKey(),entry.getValue());
-            var results=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
             for(var group:groups.values()){
                 var batch=new LinkedHashMap<Path,String>();long characters=0;
                 for(var entry:group.entrySet()){
                     if(!batch.isEmpty()&&(batch.size()>=32||characters+entry.getValue().length()>1024*1024)){
-                        var worker=analyzer(session,batch.keySet().iterator().next());results.putAll(worker.bindingsBatch(batch));batch.clear();characters=0;
+                        var worker=analyzer(session,batch.keySet().iterator().next());for(var result:worker.bindingsBatch(batch).entrySet())sink.accept(result.getKey(),result.getValue());batch.clear();characters=0;
                     }
                     batch.put(entry.getKey(),entry.getValue());characters+=entry.getValue().length();
                 }
-                if(!batch.isEmpty()){var worker=analyzer(session,batch.keySet().iterator().next());results.putAll(worker.bindingsBatch(batch));}
+                if(!batch.isEmpty()){var worker=analyzer(session,batch.keySet().iterator().next());for(var result:worker.bindingsBatch(batch).entrySet())sink.accept(result.getKey(),result.getValue());}
             }
-            return results;
         });
     }
     @SuppressWarnings("unchecked")
@@ -458,8 +498,12 @@ public final class Application implements AutoCloseable {
         String wanted=byPath?"":Dispatcher.required(params,"package");
         if(!byPath){var parsed=NamePath.parse(wanted);if(parsed.identity()||parsed.parameters()!=null||wanted.contains("/"))throw RpcException.invalid("Invalid package");}
         var symbols=new ArrayList<Map<String,Object>>();var warnings=new LinkedHashSet<String>();int tier=1;
+        var mode=dev.jvmd.analyzer.SourceNamespaces.LanguageMode.of(List.of());
         for(Path file:sourceFiles(session)){
             if(path!=null&&!file.startsWith(path))continue;int page=0;
+            // S0 is a syntactic projection sufficient to exclude a unit from a package: a COMPLETE
+            // parse whose package differs declares nothing there, so it needs no attribution.
+            if(!byPath&&sourceNamespaces.namespace(documents(session).text(file),mode).provablyOutside(wanted))continue;
             do{
                 var outline=analyzer(session,file).overview(file,documents(session).text(file),depth,1000,page);tier=Math.min(tier,outline.tier());warnings.addAll(outline.warnings());
                 for(var symbol:(List<Map<String,Object>>)((Map<?,?>)outline.result()).get("symbols")){
@@ -823,7 +867,7 @@ public final class Application implements AutoCloseable {
         availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
         try(var span=RequestScope.stage("analyzer.configure")){analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));}
         analyzer.documents(documents(session));
-        analyzer.persistence(config.stateDir().resolve("diagnostics-v2").resolve(Hashing.sha256(session.root().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        analyzer.memos(localMemos);
         return analyzer;
         }
     }
@@ -881,6 +925,7 @@ public final class Application implements AutoCloseable {
     private Analyzer.Context createAnalyzerContext(Session session,Path path,Resolution graph)throws Exception{
         String gav="local:workspace:0",release="25",generation="plain";
         List<String> options=List.of("--release","25");
+        var processingBinding=dev.jvmd.analyzer.Processing.NONE;
         var classpath=new java.util.ArrayList<Path>();var sources=new java.util.ArrayList<Path>();var coordinates=new java.util.LinkedHashMap<String,String>();var binarySources=new LinkedHashSet<Path>();var processorWarnings=new LinkedHashSet<String>();var navigationSources=new LinkedHashSet<Path>();
         if(graph!=null){
             var module=WorkspaceContextManager.owner(path,graph);
@@ -897,16 +942,20 @@ public final class Application implements AutoCloseable {
                 // A built dependency uses its API; source changes (including preserved mtimes) switch to SOURCE_PATH.
                 coordinates.put(dependency.classes(),dependency.gav());
                 var generated=prepareProcessing(session,dependency,false,graph);
-                if(generated!=null){classpath.addAll(0,generated.classpath());sources.addAll(generated.sourceRoots());binarySources.addAll(generated.binarySources());processorWarnings.addAll(generated.warnings());generation+=":"+generated.fingerprint();}
+                if(generated!=null){classpath.addAll(0,generated.classpath());sources.addAll(generated.sourceRoots());binarySources.addAll(generated.binarySources());processorWarnings.addAll(generated.warnings());generation+=":"+generated.fingerprint();processorRoles(coordinates,generated,dependency.gav(),"main");}
             }
             var processing=prepareProcessing(session,module,false,graph);
-            if(processing!=null){classpath.addAll(0,processing.classpath());sources.addAll(0,processing.sourceRoots());binarySources.addAll(processing.binarySources());processorWarnings.addAll(processing.warnings());generation+=":"+processing.fingerprint();coordinates.put(processing.sourceRoots().getFirst().toString(),gav);}
-            if(test){var testOutput=prepareProcessing(session,module,true,graph);if(testOutput!=null){classpath.addAll(0,testOutput.classpath());sources.addAll(0,testOutput.sourceRoots());binarySources.addAll(testOutput.binarySources());processorWarnings.addAll(testOutput.warnings());generation+=":"+testOutput.fingerprint();coordinates.put(testOutput.sourceRoots().getFirst().toString(),gav);}}
+            if(processing!=null){classpath.addAll(0,processing.classpath());sources.addAll(0,processing.sourceRoots());binarySources.addAll(processing.binarySources());processorWarnings.addAll(processing.warnings());generation+=":"+processing.fingerprint();coordinates.put(processing.sourceRoots().getFirst().toString(),gav);processorRoles(coordinates,processing,gav,"main");}
+            if(test){var testOutput=prepareProcessing(session,module,true,graph);if(testOutput!=null){classpath.addAll(0,testOutput.classpath());sources.addAll(0,testOutput.sourceRoots());binarySources.addAll(testOutput.binarySources());processorWarnings.addAll(testOutput.warnings());generation+=":"+testOutput.fingerprint();coordinates.put(testOutput.sourceRoots().getFirst().toString(),gav);processorRoles(coordinates,testOutput,gav,"test");}}
+            var settings=test?module.testProcessing():module.processing();
+            processingBinding=new dev.jvmd.analyzer.Processing(settings.enabled(),settings.path().stream().map(Path::of).toList(),settings.names(),settings.lombok()?"full":"only");
             for(var m:graph.modules()){
                 for(String source:java.util.stream.Stream.concat(m.sources().stream(),m.testSources().stream()).toList()){
                     navigationSources.add(Path.of(source));coordinates.putIfAbsent(source,m.gav());coordinates.putIfAbsent(Path.of(source).toUri().toString(),m.gav());
                 }
                 coordinates.put(m.directory(),m.gav());coordinates.put(Path.of(m.directory()).toUri().toString(),m.gav());
+                // Reactor class outputs (including the module's own, first on its classpath) are logical reactor slots.
+                if(m.classes()!=null)coordinates.putIfAbsent(m.classes(),m.gav());if(m.testClasses()!=null)coordinates.putIfAbsent(m.testClasses(),m.gav());
             }
             // Shared build-helper roots take the identity of the module whose compiler context owns this query.
             for(String source:java.util.stream.Stream.concat(module.sources().stream(),module.testSources().stream()).toList()){
@@ -916,7 +965,19 @@ public final class Application implements AutoCloseable {
         }else{sources.addAll(workspace(session).roots());for(Path root:workspace(session).roots()){coordinates.put(root.toString(),gav);coordinates.put(root.toUri().toString(),gav);}}
         if(dirty(session)&&graph!=null&&graph.modules().stream().anyMatch(m->m.processing().enabled()||m.testProcessing().enabled()))processorWarnings.add("unsaved_processor_inputs: generated APIs reflect the last saved processor inputs");
         navigationSources.addAll(sources);
-        return new Analyzer.Context(gav,release,List.copyOf(classpath),List.copyOf(sources),generation,Map.copyOf(coordinates),options,Set.copyOf(binarySources),List.copyOf(processorWarnings),List.copyOf(navigationSources),graph!=null,session.id());
+        return new Analyzer.Context(gav,release,List.copyOf(classpath),List.copyOf(sources),generation,Map.copyOf(coordinates),options,Set.copyOf(binarySources),List.copyOf(processorWarnings),List.copyOf(navigationSources),graph!=null,session.id(),processingBinding);
+    }
+    /**
+     * Processor outputs live under the state directory, outside every module. Give each a logical
+     * role so generated units and processor class outputs have restart-stable identities.
+     */
+    private static void processorRoles(Map<String,String> coordinates,AnnotationProcessing.Output output,String gav,String scope){
+        for(Path root:output.sourceRoots()){
+            coordinates.put(root.toAbsolutePath().normalize().toString(),gav);coordinates.put("role:"+root.toAbsolutePath().normalize(),"generated-sources-"+scope);
+        }
+        for(Path classes:output.classpath()){
+            coordinates.put(classes.toAbsolutePath().normalize().toString(),gav);coordinates.put("role:"+classes.toAbsolutePath().normalize(),"processor-classes-"+scope);
+        }
     }
 
     private AnnotationProcessing.Output prepareProcessing(Session session,Resolution.Module module,boolean test,Resolution graph)throws Exception{
@@ -1032,7 +1093,14 @@ public final class Application implements AutoCloseable {
                 service=new IndexService(storage,config.m2Repo());
                 bootstrappingIndex=service;
                 if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");
-                if(scan)service.start().join();
+                if(scan){
+                    repositoryScanRequested=true;persistedIndexComplete=storage.scanCompleted();
+                    var started=service;
+                    // Only a complete reconciliation is reconciled; a scan with faults or one that failed is reported as such.
+                    var reconciliation=service.start().whenComplete((_,failure)->{if(failure==null&&started.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();});
+                    if(awaitRepositoryScan||!persistedIndexComplete)reconciliation.join();
+                }
+                sessionCapableNanos=System.nanoTime();
                 return service;
             } catch(Exception|LinkageError e){
                 if(service!=null)try{service.close();}catch(Exception close){e.addSuppressed(close);}
@@ -1045,7 +1113,22 @@ public final class Application implements AutoCloseable {
         }));
     }
     private IndexService index() { initializeIndex(false); return index.join(); }
+    private Map<String,Object> readiness(){
+        var result=new LinkedHashMap<String,Object>();
+        boolean capable=index==null||index.isDone()&&!index.isCompletedExceptionally();
+        result.put("session_capable",capable);result.put("await_repository_scan",awaitRepositoryScan);
+        result.put("repository_scan_requested",repositoryScanRequested);
+        result.put("persisted_index_complete",persistedIndexComplete);
+        var service=index==null||!index.isDone()||index.isCompletedExceptionally()?null:index.join();
+        result.put("repository_reconciled",service!=null&&service.repositoryReconciled());
+        result.put("repository_reconciliation",service==null?(index!=null&&index.isCompletedExceptionally()?"failed":"pending"):service.reconciliationState());
+        if(sessionCapableNanos>=0)result.put("session_capable_ms",(sessionCapableNanos-constructedNanos)/1_000_000.0);
+        if(repositoryReconciledNanos>=0)result.put("repository_reconciled_ms",(repositoryReconciledNanos-constructedNanos)/1_000_000.0);
+        return result;
+    }
     private void awaitReady(){if(config.indexOnStart())index();}
+    /** Block until the daemon can serve sessions (storage open, persisted inventory restored). */
+    public void awaitSessionCapable(){awaitReady();}
     private void bindIndex(Session session,IndexService database)throws Exception {
         var graph=(Resolution)session.state("resolution");if(graph==null)return;
         String generation=graph.fingerprint()+":"+database.generation();
@@ -1132,6 +1215,7 @@ public final class Application implements AutoCloseable {
     @Override public void close() throws Exception {
         if(!closed.compareAndSet(false,true))return;
         try { sessions.close(); } finally {
+            classpathFiles.flushObservations();
             try { if (resolver != null) resolver.close(); }
             finally {
                 var service=bootstrappingIndex;

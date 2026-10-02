@@ -21,7 +21,10 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
     private final Map<Path,FileSemanticContribution> contributions=new HashMap<>();
     private final int parallelism;
     private final FileStateRegistry classpathFiles;
+    private volatile dev.jvmd.index.SemanticMemoStore memos;
     private boolean closed;
+    /** LOCAL memo store shared by every module actor; records are independently validated. */
+    public ModuleAnalyzerRegistry memos(dev.jvmd.index.SemanticMemoStore store){memos=store;return this;}
 
     public ModuleAnalyzerRegistry(){this(configuredParallelism(),new FileStateRegistry());}
     public ModuleAnalyzerRegistry(int parallelism){this(parallelism,new FileStateRegistry());}
@@ -37,12 +40,12 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
     public synchronized long actorCalls(){long calls=0;for(var actor:actors.values())calls+=actor.calls.sum();return calls;}
 
     public synchronized DiagnosticEngine engine(String key,Analyzer.Context context,IndexService index,long totalBudget,
-                                                Documents documents,Path persistenceRoot)throws Exception{
+                                                Documents documents)throws Exception{
         if(closed)throw new IllegalStateException("Module analyzer registry is closed");
         var actor=actors.get(key);
         if(actor==null){actor=new Actor(key);actors.put(key,actor);}
         long actorBudget=Math.max(1,totalBudget/parallelism);
-        actor.ensureConfigured(context,index,actorBudget,documents,persistenceRoot.resolve(Hashing.sha256(key.getBytes(StandardCharsets.UTF_8))));
+        actor.ensureConfigured(context,index,actorBudget,documents);
         return actor.handle;
     }
 
@@ -75,6 +78,38 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         long cpu=0;for(var entry:actors.entrySet()){detail.put(entry.getKey(),entry.getValue().status());cpu+=entry.getValue().cpuNanos();}
         return Map.of("initialized",true,"parallelism",parallelism,"actor_count",actors.size(),
                 "cpu_ms",Math.round(cpu/1000.0)/1000.0,"known_api_contributions",contributions.size(),"actors",detail);
+    }
+    /**
+     * Attributed LOCAL memo totals across module actors: javac queries, restores, writes, misses and
+     * refusals per reason code (every reason code is in status output).
+     */
+    public synchronized Map<String,Object> persistenceStatus()throws Exception{
+        long queries=0,restores=0,writes=0,misses=0,earlyCutoff=0;var reasons=new TreeMap<String,Long>();var purposes=new TreeMap<String,Long>();String lastFailure="";
+        for(var actor:actors.values()){
+            var state=actor.status();
+            if(state.get("queries") instanceof Number number)queries+=number.longValue();
+            for(String key:List.of("diagnostic_files_analysed","diagnostic_files_reused","binding_computations","batch_queries","completion_requests"))
+                if(state.get(key) instanceof Number number)purposes.merge(key,number.longValue(),Long::sum);
+            if(state.get("attributed_memo") instanceof Map<?,?> memo){
+                if(memo.get("restores") instanceof Number number)restores+=number.longValue();
+                if(memo.get("writes") instanceof Number number)writes+=number.longValue();
+                if(memo.get("misses") instanceof Number number)misses+=number.longValue();
+                if(memo.get("early_cutoff_attributions") instanceof Number number)earlyCutoff+=number.longValue();
+                for(String key:List.of("failures","pending_scc","pending_writes"))if(memo.get(key) instanceof Number number)purposes.merge("memo_"+key,number.longValue(),Long::sum);
+                if(memo.get("source_namespaces") instanceof Map<?,?> s0){
+                    if(s0.get("memo_hits") instanceof Number number)purposes.merge("s0_memo_hits",number.longValue(),Long::sum);
+                    if(s0.get("parses") instanceof Number number)purposes.merge("s0_parses",number.longValue(),Long::sum);
+                }
+                if(memo.get("last_failure") instanceof String failure&&!failure.isEmpty())lastFailure=failure;
+                if(memo.get("last_miss") instanceof String miss&&miss.startsWith("stale"))purposes.put("last_stale:"+miss,1L);
+                if(memo.get("scc_unknown_sample") instanceof String unknown&&!unknown.isEmpty())purposes.put("scc_unknown:"+unknown,1L);
+                if(memo.get("miss_reasons") instanceof Map<?,?> missed)missed.forEach((reason,count)->{if(count instanceof Number number)purposes.merge("miss:"+reason,number.longValue(),Long::sum);});
+                if(memo.get("refusal_reasons") instanceof Map<?,?> refusals)
+                    refusals.forEach((reason,count)->{if(count instanceof Number number)reasons.merge(String.valueOf(reason),number.longValue(),Long::sum);});
+            }
+        }
+        return Map.of("actors",actors.size(),"queries",queries,"restores",restores,"writes",writes,"misses",misses,
+                "early_cutoff_attributions",earlyCutoff,"refusal_reasons",reasons,"by_purpose",purposes,"last_failure",lastFailure);
     }
     /** Compact proof surface: cumulative javac query count for each instantiated module actor. */
     public synchronized Map<String,Long> queryCounts()throws Exception{
@@ -198,7 +233,6 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         private volatile String generation;
         private volatile long documentsGeneration=-1,budget=-1;
         private volatile IndexService index;
-        private volatile Path persistence;
         private volatile Thread owner;
         private volatile boolean actorClosed;
 
@@ -211,12 +245,13 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
             analyzer=call(()->new Analyzer(classpathFiles));handle=new Handle(this);
         }
         private String contextKey(){return generation==null?key:generation;}
-        private void ensureConfigured(Analyzer.Context context,IndexService index,long budget,Documents documents,Path persistence)throws Exception{
+        private void ensureConfigured(Analyzer.Context context,IndexService index,long budget,Documents documents)throws Exception{
             long documentGeneration=documents.generation();
             if(Objects.equals(generation,context.generation())&&this.index==index&&this.budget==budget
-                    &&documentsGeneration==documentGeneration&&Objects.equals(this.persistence,persistence))return;
-            call(()->{analyzer.configure(context,index,budget);analyzer.documents(documents);analyzer.persistence(persistence);return null;});
-            generation=context.generation();this.index=index;this.budget=budget;documentsGeneration=documentGeneration;this.persistence=persistence;
+                    &&documentsGeneration==documentGeneration)return;
+            var store=memos;
+            call(()->{analyzer.configure(context,index,budget);analyzer.documents(documents);if(store!=null)analyzer.memos(store);return null;});
+            generation=context.generation();this.index=index;this.budget=budget;documentsGeneration=documentGeneration;
         }
         private <T> T call(Callable<T> work)throws Exception{
             if(actorClosed)throw new IllegalStateException("Module analyzer actor is closed");

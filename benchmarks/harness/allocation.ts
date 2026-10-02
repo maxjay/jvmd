@@ -22,7 +22,7 @@ export function agentJar(javaHome:string){
 
 /** Reads a JVM's cumulative allocated bytes through the agent socket. null = unavailable. */
 export class AllocationProbe {
-  private socket?:net.Socket;private waiting:((value:number|null)=>void)[]=[];private buffer="";
+  private socket?:net.Socket;private waiting:((value:any)=>void)[]=[];private buffer="";
   static async connect(socketPath:string,timeoutMs=30000){
     const probe=new AllocationProbe(),deadline=Date.now()+timeoutMs;
     while(Date.now()<deadline){
@@ -30,14 +30,20 @@ export class AllocationProbe {
       catch{await new Promise(r=>setTimeout(r,25));}
     }
     if(!probe.socket)return probe;
-    probe.socket.setEncoding("ascii");
-    probe.socket.on("data",chunk=>{probe.buffer+=chunk;let i;while((i=probe.buffer.indexOf("\n"))>=0){const v=Number(probe.buffer.slice(0,i));probe.buffer=probe.buffer.slice(i+1);probe.waiting.shift()?.(v>=0?v:null);}});
+    probe.socket.setEncoding("utf8");
+    probe.socket.on("data",chunk=>{probe.buffer+=chunk;let i;while((i=probe.buffer.indexOf("\n"))>=0){const line=probe.buffer.slice(0,i);probe.buffer=probe.buffer.slice(i+1);
+      const v=line.startsWith("{")?JSON.parse(line):Number(line);probe.waiting.shift()?.(typeof v==="number"?(v>=0?v:null):v);}});
     probe.socket.on("close",()=>{for(const w of probe.waiting.splice(0))w(null);probe.socket=undefined;});
     return probe;
   }
   read():Promise<number|null>{
     if(!this.socket)return Promise.resolve(null);
     return new Promise(resolve=>{this.waiting.push(resolve);this.socket!.write("?");});
+  }
+  /** Memory investigations only: heap, pools (with peaks since the last reset), buffer pools and GC counters. */
+  snapshot(resetPeaks=false):Promise<any|null>{
+    if(!this.socket)return Promise.resolve(null);
+    return new Promise(resolve=>{this.waiting.push(resolve);this.socket!.write(resetPeaks?"p":"s");});
   }
   close(){this.socket?.destroy();}
 }

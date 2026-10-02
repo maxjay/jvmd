@@ -27,7 +27,7 @@ import {summarize,withReference,jdtlsReference,writeReport} from "./report.ts";
 export const cases:CaseDefinition[]=[...coreCases,...diagnosticCases,...structureCases,...symbolCases,...symbolFilterCases,...generationCases,
   ...projectCases,...editingCases,...importScopeCases,...dependencyCases,...mavenCases,...fileCases,...refactoringCases];
 const REFERENCE=fileURLToPath(new URL("./reference/jdtls.json",import.meta.url));
-const OPTIONS=["servers","only","runs","warmup","samples","timeout-ms","output","java-home","jdtls-home","image","repository","mvn","project","project-repository","command-json","baseline","reference","write-reference"];
+const OPTIONS=["servers","only","runs","warmup","samples","timeout-ms","output","java-home","jdtls-home","image","repository","mvn","project","project-repository","command-json","baseline","reference","write-reference","heap"];
 
 export async function main(argv=process.argv.slice(2)){
   const a:Record<string,string>={};
@@ -53,7 +53,7 @@ export async function main(argv=process.argv.slice(2)){
   const ensureDaemon=async()=>{
     if(customCommand||daemon?.alive())return daemon;
     if(daemon)daemonStarts.push({event:"restart after crash",exitCode:daemon.process.exitCode});
-    daemon=await JvmdDaemon.start({javaHome,image,state:path.join(root,"jvmd"),repository});
+    daemon=await JvmdDaemon.start({javaHome,image,state:path.join(root,"jvmd"),repository,heap:a.heap});
     daemonStarts.push({readyMs:daemon.readyMs,index:(await daemon.status()).index});return daemon;
   };
   // JDTLS 1.61.0 is a fixed reference: every scenario is measured on it once. The reference is the checked-in

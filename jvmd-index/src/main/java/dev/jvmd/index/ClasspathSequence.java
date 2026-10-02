@@ -24,12 +24,18 @@ import java.util.*;
 public final class ClasspathSequence {
     private static final Hash256 EMPTY=CanonicalDigestWriter.digest("classpath-sequence-empty-v1");
 
-    public record Entry(String key,Hash256 resolutionIdentity) {
+    /**
+     * One ordered slot. {@code key} is the logical slot identity; {@code location} is optional
+     * physical location metadata and deliberately excluded from every Merkle/sequence identity, so
+     * moving a checkout or worktree leaves the sequence identity unchanged.
+     */
+    public record Entry(String key,Hash256 resolutionIdentity,String location) {
         public Entry {
             Objects.requireNonNull(key);
             Objects.requireNonNull(resolutionIdentity);
             if(key.isBlank())throw new IllegalArgumentException("Classpath entry key must not be blank");
         }
+        public Entry(String key,Hash256 resolutionIdentity){this(key,resolutionIdentity,null);}
     }
 
     /** Half-open changed interval in the previous and current ordered sequence. */

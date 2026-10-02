@@ -16,7 +16,46 @@ public final class CompilerPool implements AutoCloseable {
     /** Implements 4.2: task-scoped callback; return detached values, never compiler objects. */
     @FunctionalInterface public interface Query<T> { T read(JavacTask task,List<CompilationUnitTree> units,int tier)throws Exception; }
     /** Implements 4.2 and 5: detached diagnostic data with javac's own code and live provenance. */
-    public record Problem(String source,int tier,String code,String kind,String file,long line,long character,long start,long end,String message) { }
+    /**
+     * {@code names}: for an unresolved-name error, the names javac failed to resolve, from the
+     * diagnostic's structured arguments (never parsed from its message): the simple name and, when
+     * javac searched a package location, the qualified name; the package of {@code doesnt.exist}.
+     * Evidence for certificates only: not serialised and not part of equality.
+     */
+    public record Problem(String source,int tier,String code,String kind,String file,long line,long character,long start,long end,String message,
+                          @com.fasterxml.jackson.annotation.JsonIgnore List<String> names) {
+        public Problem { names=names==null?List.of():List.copyOf(names); }
+        public Problem(String source,int tier,String code,String kind,String file,long line,long character,long start,long end,String message){
+            this(source,tier,code,kind,file,line,character,start,end,message,List.of());
+        }
+        @Override public boolean equals(Object other){
+            return other instanceof Problem value&&tier==value.tier&&line==value.line&&character==value.character&&start==value.start&&end==value.end
+                    &&Objects.equals(source,value.source)&&Objects.equals(code,value.code)&&Objects.equals(kind,value.kind)
+                    &&Objects.equals(file,value.file)&&Objects.equals(message,value.message);
+        }
+        @Override public int hashCode(){return Objects.hash(source,tier,code,kind,file,line,character,start,end,message);}
+        @Override public String toString(){
+            return "Problem[source="+source+", tier="+tier+", code="+code+", kind="+kind+", file="+file+", line="+line+", character="+character
+                    +", start="+start+", end="+end+", message="+message+"]";
+        }
+    }
+    /** {@link Problem#names} from javac's structured diagnostic arguments; empty when there are none. */
+    static List<String> resolutionNames(javax.tools.Diagnostic<?> diagnostic){
+        Object unwrapped=diagnostic instanceof com.sun.tools.javac.api.ClientCodeWrapper.DiagnosticSourceUnwrapper wrapper?wrapper.d:diagnostic;
+        if(!(unwrapped instanceof com.sun.tools.javac.util.JCDiagnostic value))return List.of();
+        String code=value.getCode();Object[] args=value.getArgs();var result=new ArrayList<String>();
+        if(code.contains("doesnt.exist")){if(args.length>0&&args[0]!=null)result.add(args[0].toString());return List.copyOf(result);}
+        if(!code.contains("cant.resolve")||args.length<2||args[1]==null)return List.of();
+        String kind=String.valueOf(args[0]);
+        if(!(kind.endsWith(".class")||kind.endsWith(".interface")||kind.endsWith(".variable")||kind.endsWith(".package")))return List.of();
+        String name=args[1].toString();result.add(name);
+        // cant.resolve.location*: args[4] is a compiler.misc.location diagnostic (kind, symbol or type, ...).
+        if(code.contains(".location")&&args.length>4&&args[4] instanceof com.sun.tools.javac.util.JCDiagnostic location&&name.indexOf('.')<0){
+            Object[] where=location.getArgs();
+            if(where.length>1&&String.valueOf(where[0]).endsWith(".package")&&where[1]!=null)result.add(where[1]+"."+name);
+        }
+        return List.copyOf(result);
+    }
     /** Implements 4.2: detached phase result and explicit degradation warnings. */
     public record Outcome<T>(int tier,T result,List<Problem> diagnostics,List<String> warnings) { }
     private final Thread owner=Thread.currentThread();
@@ -162,7 +201,7 @@ public final class CompilerPool implements AutoCloseable {
                 catch(RuntimeException|Error e){throw e;}catch(Exception e){throw new QueryFailure(e);}
                 finally{resetSourcePackages(task,parsed);}
             });
-            int level=actual[0];var problems=diagnostics.getDiagnostics().stream().map(d->new Problem("live",level,d.getCode(),d.getKind().name(),d.getSource()==null?path.toString():d.getSource().toUri().toString(),d.getLineNumber(),Math.max(0,d.getColumnNumber()-1),d.getStartPosition(),d.getEndPosition(),d.getMessage(Locale.ROOT))).toList();
+            int level=actual[0];var problems=diagnostics.getDiagnostics().stream().map(d->new Problem("live",level,d.getCode(),d.getKind().name(),d.getSource()==null?path.toString():d.getSource().toUri().toString(),d.getLineNumber(),Math.max(0,d.getColumnNumber()-1),d.getStartPosition(),d.getEndPosition(),d.getMessage(Locale.ROOT),resolutionNames(d))).toList();
             // Explicit compilation units are a bounded transaction boundary. Re-observe only
             // those paths before commit so edits during javac cannot depend on watcher latency.
             liveDocuments.liveState(configuredSources).observe(sources.stream().map(SourceInput::file).toList());

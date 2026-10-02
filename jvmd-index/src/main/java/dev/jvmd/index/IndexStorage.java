@@ -10,6 +10,12 @@ public interface IndexStorage extends AutoCloseable {
     IndexSemanticState semanticState();
     ArtifactAdmission admission();
     Map<String,Object> status();
+    /**
+     * Whether this storage already holds a complete repository scan for its index format: a scan
+     * that finished, validated and was activated, by this process or an earlier one. False on a
+     * first start, after a scan that was interrupted or faulted, and when the format changed.
+     */
+    boolean scanCompleted();
 
     static IndexStorage open(Path root,long maxEstimatedBytes)throws Exception{
         Objects.requireNonNull(root);

@@ -72,7 +72,9 @@ class ClasspathSearchProofIntegrationTest {
             var base=index.store().semanticClasspathSearch("w","p.Target").orElseThrow();
             assertThat(base.resolved()).isTrue();
             assertThat(base.searchedEntries()).isEqualTo(2);
-            assertThat(base.winnerArtifactKey()).isEqualTo(b.toAbsolutePath().normalize().toString());
+            assertThat(base.winnerLocation()).isEqualTo(b.toAbsolutePath().normalize().toString());
+            // §61: the semantic winner is a logical slot, never the physical path.
+            assertThat(base.winnerArtifactKey()).startsWith("artifact:").doesNotContain(b.getParent().toString());
 
             // Inserting an artifact before the winner must be reconsidered, but proven absence is a fixed point.
             load(index,"w",a,absent,b,c);
@@ -99,7 +101,7 @@ class ClasspathSearchProofIntegrationTest {
                     binary->index.store().semanticClasspathSearch("w",binary));
             assertThat(presentInsert.changed()).containsOnlyKeys(base.key());
             var presentWinner=index.store().semanticClasspathSearch("w","p.Target").orElseThrow();
-            assertThat(presentWinner.winnerArtifactKey()).isEqualTo(present.toAbsolutePath().normalize().toString());
+            assertThat(presentWinner.winnerLocation()).isEqualTo(present.toAbsolutePath().normalize().toString());
 
             // Removing the current winner changes resolution to B.
             load(index,"w",a,b,c);
@@ -114,7 +116,7 @@ class ClasspathSearchProofIntegrationTest {
             var reorder=ClasspathSearchProofs.update(winnerRemovedSequence,reorderedSequence,List.of(base),
                     binary->index.store().semanticClasspathSearch("w",binary));
             assertThat(reorder.changed()).containsOnlyKeys(base.key());
-            assertThat(index.store().semanticClasspathSearch("w","p.Target").orElseThrow().winnerArtifactKey())
+            assertThat(index.store().semanticClasspathSearch("w","p.Target").orElseThrow().winnerLocation())
                     .isEqualTo(c.toAbsolutePath().normalize().toString());
 
             // Structural changes wholly after an established first-slot winner are not reconsidered.

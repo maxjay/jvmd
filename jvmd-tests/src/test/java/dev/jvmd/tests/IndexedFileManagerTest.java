@@ -43,6 +43,24 @@ class IndexedFileManagerTest {
   }
  }
 
+ /** A class in two class directories resolves from the first, as on javac's own classpath (processor output shadows target/classes). */
+ @Test void firstClassDirectoryWinsInListingsAndLookups()throws Exception{
+  var compiler=ToolProvider.getSystemJavaCompiler();var outputs=new ArrayList<Path>();
+  for(String method:List.of("first","second")){
+   Path source=Files.createDirectories(temp.resolve(method+"-src/p")).resolve("T.java");Files.writeString(source,"package p; public class T { public int "+method+"(){return 1;} }");
+   Path output=Files.createDirectories(temp.resolve(method+"-classes"));outputs.add(output);
+   assertThat(compiler.getTask(null,null,null,List.of("-d",output.toString()),null,compiler.getStandardFileManager(null,null,null).getJavaFileObjects(source)).call()).isTrue();
+  }
+  try(var manager=new IndexedFileManager(compiler.getStandardFileManager(null,null,null),outputs,List.of(),null,1024*1024)){
+   var listed=new ArrayList<JavaFileObject>();manager.list(StandardLocation.CLASS_PATH,"p",Set.of(JavaFileObject.Kind.CLASS),false).forEach(listed::add);
+   assertThat(listed).hasSize(1);assertThat(listed.get(0).toUri().getPath()).contains("first-classes");
+   assertThat(manager.getJavaFileForInput(StandardLocation.CLASS_PATH,"p.T",JavaFileObject.Kind.CLASS).toUri().getPath()).contains("first-classes");
+   var diagnostics=new DiagnosticCollector<JavaFileObject>();
+   var task=(com.sun.source.util.JavacTask)compiler.getTask(null,manager,diagnostics,List.of("-proc:none"),null,List.of(Parser.source(temp.resolve("Use.java").toUri(),"class Use { int n=new p.T().first(); }")));
+   task.analyze();assertThat(diagnostics.getDiagnostics()).as("javac completes p.T from the first directory").noneMatch(d->d.getKind()==Diagnostic.Kind.ERROR);
+  }
+ }
+
  @Test void coarseSourceRootsStillOverlayUnsavedAndNewDocuments()throws Exception{
   Path root=Files.createDirectories(temp.resolve("sources")),a=Files.writeString(root.resolve("A.java"),"class A { static int value(){return 1;} }"),created=root.resolve("Created.java");
   var compiler=ToolProvider.getSystemJavaCompiler();

@@ -27,13 +27,13 @@ export class JvmdDaemon {
   readyMs:number;
   private dir:string;private stderr:number;
   private constructor(fields:Record<string,any>){Object.assign(this,fields);}
-  static async start(o:{javaHome:string;image:string;state:string;repository:string}){
+  static async start(o:{javaHome:string;image:string;state:string;repository:string;heap?:string}){
     mkdirSync(o.state,{recursive:true});
     const dir=mkdtempSync(path.join(os.tmpdir(),"jvmd-bench-")),socket=path.join(dir,"daemon.sock"),probe=path.join(dir,"alloc.sock");
     const config=path.join(o.state,"config.json");
     writeFileSync(config,JSON.stringify({jdk_home:o.javaHome,m2_repo:o.repository,index_on_start:true,heap_ceiling_mb:1024}));
     const stderr=openSync(path.join(o.state,"daemon.log"),"a"),started=performance.now();
-    const child=spawn(path.join(o.javaHome,"bin/java"),[HEAP,"-javaagent:"+agentJar(o.javaHome)+"="+probe,...JVMD_EXPORTS,"--enable-native-access=ALL-UNNAMED",
+    const child=spawn(path.join(o.javaHome,"bin/java"),[o.heap?"-Xmx"+o.heap:HEAP,"-javaagent:"+agentJar(o.javaHome)+"="+probe,...JVMD_EXPORTS,"--enable-native-access=ALL-UNNAMED",
       "-Djvmd.config="+config,"-Djvmd.socket="+socket,"-Djvmd.state="+path.join(o.state,"store"),"-Djvmd.resolvers="+path.join(o.image,"lib/jvmd/resolvers"),
       "-Djvmd.index.scan.initial_delay_seconds=0","-cp",path.join(o.image,"lib/jvmd/*"),"dev.jvmd.dist.Application"],{stdio:["ignore","pipe",stderr],env:{...process.env,...UTF8}});
     await new Promise<void>((resolve,reject)=>{
@@ -66,8 +66,11 @@ export class JvmdDaemon {
   async stop(){
     try{await this.call("daemon.shutdown");}catch{/* exiting or hung */}
     this.control.close();this.allocation.close();
-    await Promise.race([new Promise(r=>this.process.once("exit",r)),new Promise(r=>setTimeout(r,10000))]);
-    if(this.alive())this.process.kill("SIGKILL");
+    const exited=new Promise(r=>{if(!this.alive())r(undefined);else this.process.once("exit",r);});
+    await Promise.race([exited,new Promise(r=>setTimeout(r,10000))]);
+    // A killed daemon still holds its store until the process is gone: the next daemon on the same
+    // state (a restart) must not start before then.
+    if(this.alive()){this.process.kill("SIGKILL");await exited;}
     closeSync(this.stderr);rmSync(this.dir,{recursive:true,force:true});
   }
 }

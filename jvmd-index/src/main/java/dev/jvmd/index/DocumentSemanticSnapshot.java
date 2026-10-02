@@ -54,6 +54,17 @@ public record DocumentSemanticSnapshot(
             accessibilityKey=Objects.requireNonNullElse(accessibilityKey,"");
             proof=Objects.requireNonNull(proof);
         }
+        /**
+         * Canonical identity of the resolved query context itself (receiver, scope and candidates).
+         * The proof certificate explains why the context was valid; it is deliberately excluded.
+         */
+        public dev.jvmd.core.Hash256 resultIdentity(){
+            return dev.jvmd.core.CanonicalDigestWriter.digest("document-query-result-v1",selectorOffset,
+                    receiverType.identity(),Objects.toString(receiverSymbolId,""),staticReceiver,packageName,
+                    Objects.toString(enclosingTypeId,""),staticContext,
+                    scopedCandidates.stream().map(candidate->new Object[]{candidate.id(),candidate.kind(),
+                            candidate.structuralSignature(),candidate.resolutionIdentity()}).toList());
+        }
         public QueryContext withAccessibilityKey(String key){
             return new QueryContext(selectorOffset,receiverType,receiverSymbolId,staticReceiver,packageName,enclosingTypeId,
                     staticContext,scopedCandidates,key,proof);

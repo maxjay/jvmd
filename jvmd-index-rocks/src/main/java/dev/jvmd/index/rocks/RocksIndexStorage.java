@@ -25,14 +25,27 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
         memory=new RocksMemory(Math.multiplyExact(Long.getLong("jvmd.index.native_budget_mb",64L),1024L*1024L));
         var opened=new ArrayList<AutoCloseable>();opened.add(memory);
         try{
+            long started=dev.jvmd.core.BootEvents.nanos();
             repository=new RocksArtifactRepository(root,memory);opened.add(repository);
+            dev.jvmd.core.BootEvents.timed("open.repository_db",started);started=dev.jvmd.core.BootEvents.nanos();
             inventory=new RocksArtifactInventory(root.resolve("inventory"),memory);opened.add(inventory);
+            dev.jvmd.core.BootEvents.timed("open.inventory_db",started);started=dev.jvmd.core.BootEvents.nanos();
             semanticState=new RocksIndexSemanticState(root,memory);opened.add(semanticState);
+            dev.jvmd.core.BootEvents.timed("open.semantic_state_dbs",started);started=dev.jvmd.core.BootEvents.nanos();
             store=new RocksIndexStore(root.resolve("store"),repository,memory,admission);opened.add(store);
+            dev.jvmd.core.BootEvents.timed("open.metadata_store",started);
         }catch(Exception|LinkageError error){
             Collections.reverse(opened);for(var item:opened)try{item.close();}catch(Exception close){error.addSuppressed(close);}throw error;
         }
         this.migration=migration;this.candidateGeneration=candidateGeneration;
+        dev.jvmd.core.BootEvents.provider("inventory.entries",()->inventory.entries().stream().map(entry->java.util.Arrays.asList(entry.path(),entry.gav(),entry.kind(),
+                entry.cacheKey(),entry.binarySha256(),entry.stamp().size(),entry.stamp().modifiedNanos())).toList());
+        dev.jvmd.core.BootEvents.provider("migration",()->{
+            try{var manifest=migration==null?null:migration.manifest();
+                return Map.of("candidate",String.valueOf(candidateGeneration),"active",manifest==null?"":manifest.active(),
+                        "validated",migration!=null&&candidateGeneration!=null&&migration.validated(candidateGeneration));}
+            catch(Exception e){return Map.of("error",e.toString());}
+        });
     }
     @Override public IndexStore store(){return store;}
     @Override public ArtifactInventory inventory(){return this;}
@@ -45,20 +58,28 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
         if(scanGeneration<=0||!input.context().kind().equals("jar"))return;
         Path path=Path.of(input.context().path());
         if(!Files.isRegularFile(path))return;
+        long started=dev.jvmd.core.BootEvents.nanos();
         inventory.observe(scanGeneration,path,input.context().gav(),input.context().kind(),
                 input.key().cacheKey(),input.key().binarySha256(),RocksArtifactInventory.Stamp.read(path));
+        dev.jvmd.core.BootEvents.timed("inventory.observe",started);
     }
 
     @Override public Set<String> completeScan(long scanGeneration)throws Exception{
         if(scanGeneration<=0)return Set.of();
+        long started=dev.jvmd.core.BootEvents.nanos();
         Set<String> unreferenced=inventory.completeScan(scanGeneration);
+        dev.jvmd.core.BootEvents.timed("inventory.complete_scan",started);
         if(migration!=null&&candidateGeneration!=null){
             if(!migration.validated(candidateGeneration)){
+                started=dev.jvmd.core.BootEvents.nanos();
                 validateCandidate();
+                dev.jvmd.core.BootEvents.timed("activation.validate_candidate",started);
                 migration.markValidated(candidateGeneration);
             }
+            started=dev.jvmd.core.BootEvents.nanos();
             migration.activate(candidateGeneration);
             migration.pruneObsolete();
+            dev.jvmd.core.BootEvents.timed("activation.activate_and_prune",started);
         }
         return unreferenced;
     }

@@ -24,20 +24,24 @@ final class RocksArtifactAdmission implements ArtifactAdmission {
     @Override public AutoCloseable acquireArtifact(Path path)throws Exception{
         if(artifactPermit.get())return ()->{};
         long estimate=8L*UNIT;
+        long estimateStarted=dev.jvmd.core.BootEvents.nanos();
         if(Files.isRegularFile(path)&&path.toString().endsWith(".jar")){
+            long enumerated=0;
             try(var jar=new java.util.jar.JarFile(path.toFile())){
                 var entries=jar.entries();
                 while(entries.hasMoreElements()){
-                    var entry=entries.nextElement();
+                    var entry=entries.nextElement();enumerated++;
                     if(entry.getName().endsWith(".class")||entry.getName().endsWith(".java"))
                         estimate=Math.min((long)totalUnits*UNIT,estimate+Math.max(0,entry.getSize())*12L+1024L);
                 }
             }
+            dev.jvmd.core.BootEvents.timed("admission.estimate_jar_open",estimateStarted);dev.jvmd.core.BootEvents.count("admission.estimate_entries",enumerated);
         }
         int units=(int)Math.min(totalUnits,Math.max(1,(estimate+UNIT-1)/UNIT));
         long waiting=System.nanoTime();budget.acquire(units);waitNanos.addAndGet(System.nanoTime()-waiting);
+        dev.jvmd.core.BootEvents.timed("admission.artifact_wait",waiting);dev.jvmd.core.BootEvents.count("admission.units_in_flight",units);
         int active=unitsInFlight.addAndGet(units);peakUnits.accumulateAndGet(active,Math::max);artifactPermit.set(true);
-        return ()->{artifactPermit.remove();unitsInFlight.addAndGet(-units);budget.release(units);};
+        return ()->{artifactPermit.remove();unitsInFlight.addAndGet(-units);budget.release(units);dev.jvmd.core.BootEvents.count("admission.units_in_flight",-units);};
     }
 
     AutoCloseable acquirePublication(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{

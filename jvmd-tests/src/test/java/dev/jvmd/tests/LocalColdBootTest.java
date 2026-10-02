@@ -178,7 +178,7 @@ class LocalColdBootTest {
             // A repository scan of the generation is in progress and has observed the sample jar.
             long scan=storage.beginScan();
             var sample=storage.machine().leafAt(jar.toString());
-            storage.observe(scan,new IndexStore.ArtifactInput(new IndexStore.ArtifactContext("fixture:sample:1","jar",jar.toString()),sample.key(),
+            storage.observe(scan,new IndexStore.ArtifactInput(new ArtifactContext("fixture:sample:1","jar",jar.toString()),sample.key(),
                     Files.size(jar),Files.getLastModifiedTime(jar).toMillis()));
             local(storage,resolution(outside)).run();
             assertThat(storage.completeScan(scan)).isEmpty();

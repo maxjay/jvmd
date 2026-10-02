@@ -2,6 +2,7 @@ package dev.jvmd.boot;
 
 import dev.jvmd.boot.cold.local.LocalColdBoot;
 import dev.jvmd.boot.cold.machine.MachineColdBoot;
+import dev.jvmd.boot.warm.LocalWarmBoot;
 import dev.jvmd.boot.warm.MachineWarmBoot;
 import dev.jvmd.index.IndexService;
 import dev.jvmd.index.rocks.RocksIndexStorage;
@@ -22,13 +23,12 @@ public final class BootDecision {
     /** The booted MACHINE: its storage, the index serving it, and whether it came from the warm boot. */
     public record Machine(RocksIndexStorage storage,IndexService index,boolean warm) { }
 
-    /**
-     * A project's LOCAL: the cold boot to run, or none when the project's LOCAL root is committed.
-     * TEMPORARY(warm-boot): a committed LOCAL root keeps today's on-demand project path, unchanged;
-     * the warm boot task replaces it with restoring the committed LOCAL layer.
-     */
-    public record Local(LocalColdBoot cold) {
-        public boolean warm(){return cold==null;}
+    /** A project's LOCAL: exactly one of the cold boot to run and the warm boot. */
+    public record Local(LocalColdBoot cold,LocalWarmBoot warmBoot) {
+        public Local {
+            if((cold==null)==(warmBoot==null))throw new IllegalArgumentException("A project's LOCAL is either cold or warm");
+        }
+        public boolean warm(){return warmBoot!=null;}
     }
 
     /**
@@ -52,10 +52,12 @@ public final class BootDecision {
      * LOCAL at project open, once MACHINE is committed: a cold boot of the project at
      * {@code projectRoot} when it has no committed LOCAL root, otherwise the warm boot.
      */
-    public static Local local(Machine machine,Path projectRoot,Callable<Resolution> resolve,long compilerBudget)throws Exception{
+    public static Local local(Machine machine,Path projectRoot,Callable<Resolution> resolve,LocalColdBoot.Processors processors,
+                              long compilerBudget)throws Exception{
         Path generation=machine.storage().generation();
-        if(RocksLocalStore.committedRoot(RocksLocalStore.directory(generation,projectRoot)).isPresent())return new Local(null);
-        return new Local(new LocalColdBoot(generation,projectRoot,resolve,machine.storage().machine(),machine.storage(),compilerBudget));
+        if(RocksLocalStore.committedRoot(RocksLocalStore.directory(generation,projectRoot)).isPresent())
+            return new Local(null,new LocalWarmBoot(machine.index()));
+        return new Local(new LocalColdBoot(generation,projectRoot,resolve,processors,machine.storage().machine(),machine.storage(),compilerBudget),null);
     }
 
     private static IndexService index(RocksIndexStorage storage,Path repository)throws Exception{

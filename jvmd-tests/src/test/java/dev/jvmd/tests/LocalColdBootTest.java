@@ -64,7 +64,7 @@ class LocalColdBootTest {
     }
 
     private LocalColdBoot local(RocksIndexStorage storage,Resolution resolution)throws Exception{
-        return new LocalColdBoot(storage.generation(),project,()->resolution,storage.machine(),storage,BUDGET);
+        return new LocalColdBoot(storage.generation(),project,()->resolution,(module,test)->null,storage.machine(),storage,BUDGET);
     }
 
     private Path localDirectory(RocksIndexStorage storage)throws Exception{return RocksLocalStore.directory(storage.generation(),project);}
@@ -145,15 +145,15 @@ class LocalColdBootTest {
     @Test void aBootStoppedBeforeItsRootLeavesTheProjectCold()throws Exception{
         try(var storage=machine(temp.resolve("generation"))){
             var machine=new BootDecision.Machine(storage,null,false);
-            var failing=new LocalColdBoot(storage.generation(),project,()->{throw new IllegalStateException("resolution failed");},storage.machine(),storage,BUDGET);
+            var failing=new LocalColdBoot(storage.generation(),project,()->{throw new IllegalStateException("resolution failed");},(module,test)->null,storage.machine(),storage,BUDGET);
             assertThatThrownBy(failing::run).hasMessageContaining("resolution failed");
             assertThat(Files.isDirectory(localDirectory(storage))).isTrue();
             assertThat(RocksLocalStore.committedRoot(localDirectory(storage))).isEmpty();
-            var decided=BootDecision.local(machine,project,()->resolution(),BUDGET);
+            var decided=BootDecision.local(machine,project,()->resolution(),(module,test)->null,BUDGET);
             assertThat(decided.warm()).isFalse();
             var root=decided.cold().run();
             assertThat(RocksLocalStore.committedRoot(localDirectory(storage)).orElseThrow().identity()).isEqualTo(root.identity());
-            assertThat(BootDecision.local(machine,project,()->resolution(),BUDGET).warm()).isTrue();
+            assertThat(BootDecision.local(machine,project,()->resolution(),(module,test)->null,BUDGET).warm()).isTrue();
         }
     }
 

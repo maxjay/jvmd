@@ -7,12 +7,13 @@ import java.util.*;
  * The compiler context of one module scope: what javac compiles that scope's units against. Sibling
  * modules are on the source path, so their declarations come from project source, not from MACHINE.
  *
- * @param coordinates longest-prefix location to module coordinates, as the analyzer names declarations
+ * @param binarySources sources whose annotation-processed classes stand in for them
+ * @param coordinates   longest-prefix location to module coordinates, as the analyzer names declarations
  */
-record Context(String module,String scope,String release,List<Path> classpath,List<Path> sources,List<String> options,
+record Context(String module,String scope,String release,List<Path> classpath,List<Path> sources,Set<Path> binarySources,List<String> options,
                Map<String,String> coordinates,List<Path> navigationSources,String generation) {
     Context {
-        classpath=List.copyOf(classpath);sources=List.copyOf(sources);options=List.copyOf(options);
+        classpath=List.copyOf(classpath);sources=List.copyOf(sources);binarySources=Set.copyOf(binarySources);options=List.copyOf(options);
         coordinates=Map.copyOf(coordinates);navigationSources=List.copyOf(navigationSources);
     }
 

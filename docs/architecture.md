@@ -43,6 +43,18 @@ A read goes LIVE, then LOCAL, then MACHINE; the first layer that has the answer 
 3. If project source declares a binary name, no lower layer answers for it, including while the file that declares it is not yet built.
 4. Overlay identities are digests of (layer, completeness, value) down to the first COMPLETE layer.
 
+Two projects over one MACHINE: both route to the shared leaf, which is stored once.
+
+```
+ project P                         project Q
+ LIVE  (open buffers that differ)  LIVE
+ LOCAL (files, declarations,       LOCAL
+        module graph, routes)
+   route p:main ──┐          ┌── route q:main
+                  ▼          ▼
+ MACHINE  [ guava-33 ] [ jackson-2.22 ] [ java.base ] ...   one per daemon
+```
+
 **Write direction.** MACHINE is written by its cold boot, by the repository scan of a reopened generation, and by a LOCAL cold boot adding an artifact a route needs. LOCAL is written by its cold boot. LIVE is written by editor events and the attribution of unsaved content. No layer writes into a layer above it.
 
 ## Identities and trees
@@ -60,6 +72,81 @@ A read goes LIVE, then LOCAL, then MACHINE; the first layer that has the answer 
 
 Two cold boots over the same inputs produce the same root, whatever the enumeration order or the order jobs complete in. Tests check this by comparing roots.
 
+Rules that follow from these structures:
+
+1. A consumer that needs "has X changed" compares one identity read from a tree.
+2. Equal inputs give equal roots, so equality of two states is checked by comparing roots.
+3. A layer's root is the only completeness signal.
+4. Each projection has one producer.
+
+### Proofs
+
+A result is invalidated only when one of the exact identities it read changed, and the change stops travelling at the first result that comes out equal.
+
+**Leaves** are the identities a result can read (`QueryProof.Domain`):
+
+| Domain | Key | Identity | Changes when |
+| --- | --- | --- | --- |
+| EXACT_SYMBOL | one declaration id | its resolution identity (kind, name, descriptor, modifiers, type, type parameters, supertypes) | that declaration's signature changes; not on body, Javadoc, parameter name or position changes |
+| MEMBER_RANGE | owner + name prefix | range sum over the owner's members whose name starts with the prefix | a member in that range is added, removed or changes signature |
+| OVERLOAD_GROUP | owner + exact name | range sum over the overloads with that name | an overload with that name is added, removed or changed |
+| HIERARCHY | type id | the type's API composed with its supertypes' | the type or a supertype changes API |
+| NAMESPACE | package or type | the top-level names visible there | a type is added, removed or renamed in that package |
+| NEGATIVE_RESOLUTION | name @ scope | proven absence of a name | a type with that name appears |
+| CLASSPATH_SEARCH | binary name in a classpath | the first entry that defines it | an entry before the winner changes |
+| RESOLUTION_PATH | source or type path | where a name resolved to | that source or type moves or changes |
+
+For a project with a LOCAL layer, classpath searches are taken over the module scope's route into MACHINE; project output directories are LOCAL, and project source owns their binary names.
+
+**Proof.** A `QueryProof` is the sorted set of (domain, key, identity) a result read; its certificate identity is one digest of that set; it is valid while every identity in it is equal to the current one.
+
+**Consumers** are the reusable results: a file's source attribution (`registerSourceProof`; its result identity is the file's api fingerprint and exported names, so a body change does not change it), a completion range (`registerCompletionRangeProof`; the member ranges it listed) and a document context (`registerDocumentProof`).
+
+**ProofDag** (`SemanticUpdatePolicy.ProofDag`) maps each leaf key to the consumers that read it (`reverse`), lets results depend on results (`producers`), and orders consumers above every producer they read (`heights`). A propagation wave (`propagateObserved`) takes the consumers of each changed leaf whose captured identity differs, recomputes the lowest first, and stops where a result identity comes out equal. An UNKNOWN leaf retires its consumers without comparing. A completion range is recomputed inside the wave; a source attribution or document context needs javac, so it is retired and recomputed when next read.
+
+**File-level fallback** (`SemanticUpdatePolicy.decide`) applies to files without full proof coverage: changed exported names, or an added or deleted file, are an API and namespace change; otherwise a changed api fingerprint is an API change; otherwise the edit is body-only and nothing downstream is touched. API changes walk reverse dependants, plus files whose unresolved names match an export, skipping dependants with full proof coverage.
+
+The trees are hash-priority treaps, not prolly trees: a tree's shape is fixed by its contents, so equal contents give equal hashes in any build order, and two trees are compared by skipping every subtree whose hash is equal.
+
+### Worked example: editing library A while working in library B
+
+One project, two modules; `lib-b` depends on `lib-a`.
+
+| File | Module | What it reads from A | Leaves in its proof |
+| --- | --- | --- | --- |
+| `Money.java` | lib-a | (declares `add(Money)`, `currency()`) | |
+| `Invoice.java` | lib-b | calls `total.add(line)` | EXACT_SYMBOL `Money#add(Money)`, OVERLOAD_GROUP `Money#add` |
+| `Report.java` | lib-b | calls `money.currency()` | EXACT_SYMBOL `Money#currency()`, OVERLOAD_GROUP `Money#currency` |
+| `Ledger.java` | lib-b | uses `Money` as a field type | RESOLUTION_PATH and NAMESPACE for `Money` |
+| completion at `total.` in `Invoice.java` | lib-b | lists Money's members | MEMBER_RANGE `Money`, prefix "" |
+
+- **Change the body of `add`.** The content leaf of `Money.java` changes; the resolution identity of `add` does not, so the semantic delta has no changed facts, no leaf changed and the api fingerprint is equal. No B file is re-attributed, and the completion list is kept.
+- **Change `add(Money)` to `add(Money, Rounding)`.** The delta removes and adds one fact; its tree paths and range sums update in O(log n). The changed leaves are EXACT_SYMBOL `Money#add(Money)`, OVERLOAD_GROUP `Money#add`, the MEMBER_RANGE ranges matching `add`, and HIERARCHY of `Money`'s subtypes. The ProofDag returns `Invoice.java` and the completion at `total.`: the completion is recomputed from range sums without javac, and `Invoice.java` is retired and re-attributed on its next read. `Report.java` and `Ledger.java` are not touched.
+- **Add `subtract(Money)`.** The delta adds one fact. The completion is recomputed and lists `subtract`; B files whose recorded unresolved names match the new export are rechecked.
+
+Where B's compiler reads A's declarations from is unchanged: A's classes when A is built and clean, A's sources otherwise. B's semantic reads take A's declarations from the project's LOCAL layer.
+
+### Cost per edit
+
+n is the number of leaves in a tree, k the number of facts an edit changes.
+
+| Step | Cost |
+| --- | --- |
+| Record a file's new content | O(1) per aggregate, plus one Merkle path |
+| Apply a file's semantic delta | O(k log n), including range sums |
+| Identity of an owner's members, a prefix or an overload group | O(log n) from range sums |
+| Find who read a changed leaf | one lookup in `reverse` per changed key |
+| Decide whether a consumer must recompute | compare one captured identity |
+| Classpath change | interval diff over `ClasspathSequence`, O(log n); only proofs whose winner is after the interval start are affected |
+
+Where the code does not yet reach these costs:
+
+1. `Analyzer.affectedLeafKeys` scans every key registered in the ProofDag on each mutation.
+2. `registerSourceProof` records leaves only for dependencies inside the analyzer's live source set, so a module reading a built, clean sibling from its classes holds no proof on it; the sibling's changes reach it through `ModuleAnalyzerRegistry` and the file-level rule.
+3. Every analyzer has its own in-memory ProofDag.
+4. HIERARCHY identity includes `ResidentSemanticState.uncertaintyGeneration`, so it cannot be compared across a restart.
+5. MACHINE member ranges read through the index store are computed by listing.
+
 ## Boot
 
 `BootDecision` is the only class that asks whether a layer has prior state. It reads the layer's root and picks the cold boot when the root is absent or unreadable, and the warm boot when it is present.
@@ -74,21 +161,25 @@ Two cold boots over the same inputs produce the same root, whatever the enumerat
 4. **Build the tree.** Bulk-build the artifact tree, the aggregates and the path table.
 5. **Commit.** `RocksMachineStore` stages leaves, nodes and paths in bounded batches, syncs once, then writes the root.
 
-The daemon prints `READY` after the root is committed.
+MACHINE boots at daemon start. The daemon prints `READY` after its root is committed or found, and sessions open only after that.
 
 ### LOCAL cold boot
 
 `LocalColdBoot`, after `session.open` for a resolved Maven project, once MACHINE is committed, on a platform worker the session owns:
 
 1. **Create.** Create the project's LOCAL storage (`RocksLocalStore.create`), keyed by canonical root within the generation.
-2. **Module graph.** Resolve with `MavenResolver`: modules in reactor order, the edges between them, and one compiler context per module scope, including that scope's annotation processing output. A sibling module's sources are on its dependants' source path.
+2. **Module graph.** Resolve with `MavenResolver`: modules in reactor order, the edges between them, and one compiler context per module scope, including that scope's annotation processing output.
 3. **Routes.** Map each module scope's classpath entries to MACHINE leaf keys or sibling modules. An artifact MACHINE lacks is built by the MACHINE `ArtifactJob`, added to the MACHINE tree, and the MACHINE root is recommitted once.
 4. **Files.** Read each source file once; its hash and its attribution use the same bytes.
-5. **Declarations.** One job per (unit, compiler context) in `UnitQueue`, batched by context. `UnitCapture` compiles and captures; nothing is admitted into analyzer state, proved, cached or published. A request that needs a file moves its job to the front and waits for it (`require`).
+5. **Declarations.** One job per (unit, compiler context), in reactor order. Each unit's compiler context is the one analysis builds for its module scope, so javac's inputs are those of analysis. `UnitGraph` groups a context's units by dependency cycle, found from a parse of the text already read, into batches in dependency order (at most 128 units and 4 MiB of source unless one cycle is larger). `UnitCapture` compiles and captures; nothing is admitted into analyzer state, proved, cached or published. A request that needs a file moves its batch to the front and waits for it (`require`).
 6. **Build the trees.** Bulk-build the file tree and the semantic tree.
 7. **Commit.** Stage file leaves, nodes, the module graph and routes in bounded batches, sync once, then write the LOCAL root.
 
 While it runs, analysis reads LOCAL from `LocalLayer`: the files built so far, with the types of unbuilt files owned by project source and unknown. The session's dependency selection comes from its routes.
+
+### LIVE
+
+LIVE has no boot: it is created empty when a session opens and discarded when it closes.
 
 ### Warm boot
 
@@ -109,7 +200,7 @@ The folder a class sits in says whether it is a cold boot, a warm boot, or a lay
 | `jvmd-analyzer/.../analyzer/capture/` | `UnitCapture` | The javac-and-capture part of batch attribution, used by the LOCAL cold boot and by `Analyzer.bindingsBatch` |
 | `jvmd-boot/.../boot/` | `BootDecision` | Reads roots and picks cold or warm |
 | `jvmd-boot/.../boot/cold/machine/` | `MachineColdBoot`, `MachineInput`, `ArtifactJob`, `ClaimMap` | The MACHINE cold boot, one method per stage |
-| `jvmd-boot/.../boot/cold/local/` | `LocalColdBoot`, `Context`, `UnitQueue`, `UnitJob` | The LOCAL cold boot, one method per stage; the (unit, context) queue |
+| `jvmd-boot/.../boot/cold/local/` | `LocalColdBoot`, `Context`, `UnitGraph`, `UnitQueue`, `UnitJob` | The LOCAL cold boot, one method per stage; batches that keep dependency cycles together; the (unit, context) queue |
 | `jvmd-boot/.../boot/warm/` | `MachineWarmBoot`, `LocalWarmBoot` | Reopening a committed MACHINE generation; serving a project whose LOCAL root is committed on demand |
 
 Code that exists only so a reopened generation or a committed LOCAL root keeps working until the warm boot reads the committed layers directly is marked `TEMPORARY(warm-boot)`.

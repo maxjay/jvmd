@@ -66,6 +66,23 @@ class MachineColdBootTest {
         }
     }
 
+    /** C2: shuffled inputs, built concurrently in whatever order jobs complete, give one root. */
+    @Test void shuffledInputsGiveTheSameRoot()throws Exception{
+        Path repository=repository();
+        for(int i=0;i<12;i++)IndexFixtures.jar(repository.resolve("fixture/more"+i+"/1"),"more"+i+"-1","M.java","package more"+i+"; public class M { public int v(){return "+i+";} }",i%2==0);
+        var roots=new HashSet<dev.jvmd.core.Hash256>();
+        for(long seed:List.of(1L,7L,42L)){
+            var boot=new MachineColdBoot(temp.resolve("shuffled-"+seed),repository,temp.resolve("no-jdk"),BUDGET);
+            try(var storage=boot.create()){
+                var inputs=new ArrayList<>(boot.enumerate());Collections.shuffle(inputs,new Random(seed));
+                var leaves=new ArrayList<>(boot.buildArtifacts(storage,inputs));Collections.shuffle(leaves,new Random(seed+1));
+                boot.commit(storage,boot.buildTree(leaves));
+                roots.add(storage.machine().root().orElseThrow().identity());
+            }
+        }
+        assertThat(roots).hasSize(1);
+    }
+
     @Test void theRootIsWrittenLastAndIsTheOnlyCompletenessSignal()throws Exception{
         Path repository=repository();Path generation=temp.resolve("interrupted");
         var boot=new MachineColdBoot(generation,repository,temp.resolve("no-jdk"),BUDGET);

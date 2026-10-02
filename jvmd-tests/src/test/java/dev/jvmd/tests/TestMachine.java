@@ -40,6 +40,15 @@ final class TestMachine {
     static IndexService daemon(Path stateDir,Path repository)throws Exception{
         return new IndexService(storageAt(RocksIndexStorage.generation(stateDir.resolve("index-v2")),null),repository);
     }
+    /** Replace a daemon's MACHINE with a cold boot of {@code repository} (and no JDK), and close it. */
+    static void prepareDaemon(Path stateDir,Path repository)throws Exception{
+        Path generation=RocksIndexStorage.generation(stateDir.resolve("index-v2"));
+        if(Files.exists(generation))try(var paths=Files.walk(generation)){
+            for(Path path:paths.sorted(java.util.Comparator.reverseOrder()).toList())Files.delete(path);
+        }
+        Path empty=Files.createDirectories(generation.resolveSibling(generation.getFileName()+".empty"));
+        try(var storage=new MachineColdBoot(generation,repository,empty,BUDGET).run()){}
+    }
     /** Prepare a daemon's MACHINE fixture and close it. */
     static void prepareDaemon(Path stateDir)throws Exception{
         try(var storage=storageAt(RocksIndexStorage.generation(stateDir.resolve("index-v2")),null)){}

@@ -17,10 +17,12 @@ class DependencyFindPaginationTest {
         var config=TestSupport.config(root,Duration.ofHours(4));
         Path first=IndexFixtures.jar(config.m2Repo().resolve("fixture/first/1"),"first-1","package first; public class Sample { public int value; }",true);
         Files.writeString(first.resolveSibling("first-1.pom"),pom("fixture","first",""));
-        try(var index=TestMachine.daemon(config.stateDir(),config.m2Repo())){index.indexJar(first,"fixture:first:1","jar");}
+        // The daemon's MACHINE holds the repository as it was: the first artifact only.
+        TestMachine.prepareDaemon(config.stateDir(),config.m2Repo());
         Path initial=Files.createDirectories(root.resolve("initial"));Files.writeString(initial.resolve("pom.xml"),pom("workspace","initial","first"));
         try(var app=new Application(config)){
             String session=TestSupport.open(app,initial);assertThat(query(app,Map.of("session",session,"scope","deps","name_path","first.Sample")).path("result").path("matches")).hasSize(1);
+            long leaves=machineLeaves(app,session);
             Path added=IndexFixtures.jar(config.m2Repo().resolve("fixture/added/1"),"added-1","package added; public class Sample { public int added; }",true);
             Files.writeString(added.resolveSibling("added-1.pom"),pom("fixture","added",""));
             Path next=Files.createDirectories(root.resolve("next"));Files.writeString(next.resolve("pom.xml"),pom("workspace","next","first","added"));
@@ -28,8 +30,13 @@ class DependencyFindPaginationTest {
             assertThat(query(app,Map.of("session",nextSession,"scope","deps","name_path","added.Sample")).path("result").path("matches")).hasSize(1);
             var status=TestSupport.complete(app.dispatcher(),"session.status",Map.of("session",nextSession)).path("result").path("result").path("index");
             assertThat(status.path("timings").path("scans").asLong()).isZero();
-            assertThat(status.path("hashes").asLong()).isEqualTo(1);
+            // Only the missing dependency was added to MACHINE.
+            assertThat(machineLeaves(app,nextSession)).isEqualTo(leaves+1);
         }
+    }
+    private static long machineLeaves(Application app,String session)throws Exception{
+        return TestSupport.complete(app.dispatcher(),"session.status",Map.of("session",session)).path("result").path("result")
+                .path("index").path("storage").path("machine_leaves").asLong(-1);
     }
     @Test void referencedDependencyRemainsInCombinedSearchAfterBindingsWarmup()throws Exception {
         var config=TestSupport.config(root,Duration.ofHours(4));

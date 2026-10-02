@@ -44,6 +44,11 @@ public final class RocksArtifactInventory implements AutoCloseable {
         db.put(GENERATION,longBytes(generation));return generation;
     }
 
+    /** The scan generation in progress or last completed; the first one when there has been none. */
+    public synchronized long currentScan()throws Exception{
+        long generation=readLong(db.get(GENERATION));return generation>0?generation:beginScan();
+    }
+
     public synchronized void observe(long generation,Path path,String gav,String kind,String cacheKey,String binarySha256,Stamp stamp)throws Exception{
         if(generation<=0)throw new IllegalArgumentException("generation");
         String location=normalize(path);byte[] key=pathKey(path),oldBytes=db.get(key);

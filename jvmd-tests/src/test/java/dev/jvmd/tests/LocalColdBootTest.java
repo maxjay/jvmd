@@ -172,6 +172,19 @@ class LocalColdBootTest {
         }
     }
 
+    @Test void addingARouteArtifactDuringARepositoryScanKeepsTheScansInventory()throws Exception{
+        Path outside=IndexFixtures.jar(temp.resolve("downloaded"),"other-2","Other.java","package other; public class Other { public void run(){} }",false);
+        try(var storage=machine(temp.resolve("generation"))){
+            // A repository scan of the generation is in progress and has observed the sample jar.
+            long scan=storage.beginScan();
+            var sample=storage.machine().leafAt(jar.toString());
+            storage.observe(scan,new IndexStore.ArtifactInput(new IndexStore.ArtifactContext("fixture:sample:1","jar",jar.toString()),sample.key(),
+                    Files.size(jar),Files.getLastModifiedTime(jar).toMillis()));
+            local(storage,resolution(outside)).run();
+            assertThat(storage.completeScan(scan)).isEmpty();
+        }
+    }
+
     @Test void identitiesReadFromTheCommittedTreeEqualIndependentlyComputedOnes()throws Exception{
         try(var storage=machine(temp.resolve("generation"))){
             var boot=local(storage,resolution());boot.run();

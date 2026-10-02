@@ -115,10 +115,16 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
         // TEMPORARY(warm-boot): the MACHINE leaves and path table replace the A| records and the
         // inventory P| entries, which only the existing warm path reads.
         store.installMachine(previous,tree);
-        long scan=inventory.beginScan();
-        for(var leaf:tree.leaves())for(var path:leaf.paths())if(!path.location().startsWith("jrt:"))
+        // Paths whose leaf changed are observed in the current scan generation, so a repository scan
+        // of a reopened generation that is running keeps them.
+        long scan=inventory.currentScan();
+        for(var location:tree.paths().entrySet()){
+            var leaf=tree.leaf(location.getValue());
+            if(location.getKey().startsWith("jrt:")||leaf.equals(previous.leafAt(location.getKey())))continue;
+            var path=leaf.paths().stream().filter(candidate->candidate.location().equals(location.getKey())).findFirst().orElseThrow();
             inventory.observe(scan,Path.of(path.location()),path.gav(),"jar",leaf.cacheKey(),leaf.binarySha256(),
                     new RocksArtifactInventory.Stamp(path.stamp().size(),path.stamp().modifiedNanos(),path.stamp().modifiedNanos(),path.stamp().fileKey()));
+        }
         machineStore.commit(tree);
         machine.committed(tree);
     }

@@ -9,9 +9,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * every later job with equal content only records its path. The map lives for one cold boot and is
  * never stored.
  */
-final class ClaimMap {
+public final class ClaimMap {
     /** One input's claim: where it was found and the SHA-256 of its paired sources, or null. */
-    record Claim(MachineInput input,String sourcesSha256) { }
+    public record Claim(MachineInput input,String sourcesSha256) { }
 
     private final ConcurrentHashMap<String,List<Claim>> claims=new ConcurrentHashMap<>();
 
@@ -26,7 +26,7 @@ final class ClaimMap {
     }
 
     /** Every path claimed for {@code cacheKey}. */
-    List<MachinePath> paths(String cacheKey){return claims(cacheKey).stream().map(claim->claim.input().path()).toList();}
+    public List<MachinePath> paths(String cacheKey){return claims(cacheKey).stream().map(claim->claim.input().path()).toList();}
 
     /**
      * The claim whose sources document {@code cacheKey}: the first location, in path order, that has

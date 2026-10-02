@@ -6,6 +6,7 @@ module dev.jvmd.boot {
     requires dev.jvmd.analyzer;
     requires dev.jvmd.resolver;
     exports dev.jvmd.boot;
+    exports dev.jvmd.boot.cold.local;
     exports dev.jvmd.boot.cold.machine;
     exports dev.jvmd.boot.warm;
 }

@@ -29,6 +29,9 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
     public ModuleAnalyzerRegistry(){this(configuredParallelism(),new FileStateRegistry());}
     public ModuleAnalyzerRegistry(int parallelism){this(parallelism,new FileStateRegistry());}
     public ModuleAnalyzerRegistry(FileStateRegistry classpathFiles){this(configuredParallelism(),classpathFiles);}
+    private java.util.function.Supplier<dev.jvmd.index.layer.local.LocalLayer> local=()->null;
+    /** Where the project's LOCAL layer is read from once its cold boot has enumerated the files. */
+    public ModuleAnalyzerRegistry local(java.util.function.Supplier<dev.jvmd.index.layer.local.LocalLayer> layer){local=Objects.requireNonNull(layer);return this;}
     public ModuleAnalyzerRegistry(int parallelism,FileStateRegistry classpathFiles){this.parallelism=Math.max(1,Math.min(4,parallelism));this.classpathFiles=Objects.requireNonNull(classpathFiles);}
     private static int configuredParallelism(){
         String configured=System.getProperty("jvmd.diagnostics.moduleActors",System.getenv("JVMD_DIAGNOSTIC_MODULE_ACTORS"));
@@ -246,6 +249,7 @@ public final class ModuleAnalyzerRegistry implements AutoCloseable {
         }
         private String contextKey(){return generation==null?key:generation;}
         private void ensureConfigured(Analyzer.Context context,IndexService index,long budget,Documents documents)throws Exception{
+            analyzer.local(local.get());
             long documentGeneration=documents.generation();
             if(Objects.equals(generation,context.generation())&&this.index==index&&this.budget==budget
                     &&documentsGeneration==documentGeneration)return;

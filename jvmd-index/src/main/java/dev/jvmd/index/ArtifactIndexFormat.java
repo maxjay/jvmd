@@ -176,6 +176,56 @@ public final class ArtifactIndexFormat {
         input.position(input.position()+size);
     }
 
+    /** A declaration fact as tree node bytes; {@link #decodeFact} reads back an equal fact. */
+    public static byte[] encodeFact(SemanticFact fact)throws IOException{
+        var bytes=new ByteArrayOutputStream(256);
+        try(var out=new DataOutputStream(bytes)){
+            writeString(out,fact.id());writeNullable(out,fact.ownerId());writeString(out,fact.name());writeString(out,fact.kind());
+            writeString(out,fact.structuralSignature());writeNullable(out,fact.erasedDescriptor());
+            out.writeInt(fact.modifiers().size());for(String modifier:fact.modifiers().stream().sorted().toList())writeString(out,modifier);
+            writeNullable(out,fact.sourceFile());writeString(out,fact.packageName());writeString(out,fact.namePath());writeNullable(out,fact.fqn());
+            writeType(out,fact.type());
+            out.writeInt(fact.typeParameters().size());
+            for(int i=0;i<fact.typeParameters().size();i++){
+                writeString(out,fact.typeParameters().get(i));var bounds=fact.typeParameterBounds().get(i);
+                out.writeInt(bounds.size());for(var bound:bounds)writeType(out,bound);
+            }
+            out.writeInt(fact.directSupertypes().size());for(var parent:fact.directSupertypes())writeType(out,parent);
+            out.writeInt(fact.parameterNames().size());for(String name:fact.parameterNames())writeString(out,name);
+            out.writeBoolean(fact.varargs());
+            writeString(out,fact.apiIdentity());writeString(out,fact.namespaceIdentity());writeString(out,fact.documentationIdentity());
+            out.write(fact.factIdentity().bytes());writeResolution(out,fact.resolutionFact());
+        }
+        return bytes.toByteArray();
+    }
+
+    public static SemanticFact decodeFact(byte[] bytes)throws IOException{
+        try(var in=new DataInputStream(new ByteArrayInputStream(bytes))){
+            String id=readString(in),owner=readNullable(in),name=readString(in),kind=readString(in),signature=readString(in),descriptor=readNullable(in);
+            int modifierCount=bounded(in.readInt(),64,"fact modifier count");var modifiers=new LinkedHashSet<String>();
+            for(int i=0;i<modifierCount;i++)modifiers.add(readString(in));
+            String source=readNullable(in),pkg=readString(in),namePath=readString(in),fqn=readNullable(in);
+            SemanticType type=readType(in);
+            int parameterCount=bounded(in.readInt(),1024,"fact type parameter count");
+            var parameters=new ArrayList<String>(parameterCount);var bounds=new ArrayList<List<SemanticType>>(parameterCount);
+            for(int i=0;i<parameterCount;i++){
+                parameters.add(readString(in));int boundCount=bounded(in.readInt(),1024,"fact bound count");var values=new ArrayList<SemanticType>(boundCount);
+                for(int j=0;j<boundCount;j++)values.add(readType(in));bounds.add(values);
+            }
+            int parentCount=bounded(in.readInt(),4096,"fact supertype count");var parents=new ArrayList<SemanticType>(parentCount);
+            for(int i=0;i<parentCount;i++)parents.add(readType(in));
+            int nameCount=bounded(in.readInt(),4096,"fact parameter name count");var names=new ArrayList<String>(nameCount);
+            for(int i=0;i<nameCount;i++)names.add(readString(in));
+            boolean varargs=in.readBoolean();
+            String api=readString(in),namespace=readString(in),documentation=readString(in);
+            byte[] identity=in.readNBytes(Hash256.BYTES);if(identity.length!=Hash256.BYTES)throw new EOFException("Truncated fact identity");
+            return new SemanticFact(id,owner,name,kind,signature,descriptor,modifiers,source,pkg,namePath,fqn,type,parameters,bounds,parents,names,varargs,
+                    api,namespace,documentation,new Hash256(identity),readResolution(in));
+        }
+    }
+    private static void writeNullable(DataOutputStream out,String value)throws IOException{out.writeBoolean(value!=null);if(value!=null)writeString(out,value);}
+    private static String readNullable(DataInputStream in)throws IOException{return in.readBoolean()?readString(in):null;}
+
     private static void writeResolution(DataOutputStream out,ResolutionFact value)throws IOException{
         writeString(out,value.symbolKey());
         out.writeBoolean(value.ownerKey()!=null);if(value.ownerKey()!=null)writeString(out,value.ownerKey());

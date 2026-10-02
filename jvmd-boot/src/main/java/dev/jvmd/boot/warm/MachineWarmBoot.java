@@ -1,6 +1,5 @@
 package dev.jvmd.boot.warm;
 
-import dev.jvmd.index.IndexService;
 import dev.jvmd.index.rocks.RocksIndexStorage;
 import java.nio.file.Path;
 
@@ -11,20 +10,14 @@ import java.nio.file.Path;
  * updating what changed.
  */
 public final class MachineWarmBoot {
-    private final Path generation,repository;
+    private final Path generation;
     private final long admissionBytes;
 
-    public MachineWarmBoot(Path generation,Path repository,long admissionBytes){
-        this.generation=generation;this.repository=repository;this.admissionBytes=admissionBytes;
+    public MachineWarmBoot(Path generation,long admissionBytes){
+        this.generation=generation;this.admissionBytes=admissionBytes;
     }
 
-    public IndexService run()throws Exception{
-        var storage=RocksIndexStorage.open(generation,admissionBytes);
-        try{
-            return new IndexService(storage,repository);
-        }catch(Exception|Error failure){
-            try{storage.close();}catch(Exception close){failure.addSuppressed(close);}
-            throw failure;
-        }
+    public RocksIndexStorage run()throws Exception{
+        return RocksIndexStorage.open(generation,admissionBytes);
     }
 }

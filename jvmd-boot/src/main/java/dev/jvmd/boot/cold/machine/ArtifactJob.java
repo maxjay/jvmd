@@ -12,22 +12,22 @@ import java.util.concurrent.Callable;
  * content, and, only if this job holds the claim, take admission and build its leaf from the same
  * bytes. A job whose content was already claimed has recorded its path and builds nothing.
  */
-final class ArtifactJob implements Callable<ArtifactJob.Outcome> {
+public final class ArtifactJob implements Callable<ArtifactJob.Outcome> {
     /** What one job produced. */
-    sealed interface Outcome permits Built,Duplicate,Faulted { }
+    public sealed interface Outcome permits Built,Duplicate,Faulted { }
     /** This job built the leaf for its content. */
-    record Built(MachineLeaf leaf) implements Outcome { }
+    public record Built(MachineLeaf leaf) implements Outcome { }
     /** Another job builds this content; this job's path was recorded against it. */
-    record Duplicate() implements Outcome { }
+    public record Duplicate() implements Outcome { }
     /** The input could not be read or parsed; it contributes no leaf. */
-    record Faulted(String location,String reason) implements Outcome { }
+    public record Faulted(String location,String reason) implements Outcome { }
 
     private final MachineInput input;
     private final ClaimMap claims;
     private final ArtifactAdmission admission;
     private final ArtifactBuilder builder;
 
-    ArtifactJob(MachineInput input,ClaimMap claims,ArtifactAdmission admission,ArtifactBuilder builder){
+    public ArtifactJob(MachineInput input,ClaimMap claims,ArtifactAdmission admission,ArtifactBuilder builder){
         this.input=Objects.requireNonNull(input);this.claims=claims;this.admission=admission;this.builder=builder;
     }
 

@@ -56,7 +56,16 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
      */
     public static RocksIndexStorage open(Path generation,long maxEstimatedBytes)throws Exception{
         rejectRetiredSettings();
-        return new RocksIndexStorage(generation,maxEstimatedBytes,RocksMemory::options);
+        var storage=new RocksIndexStorage(generation,maxEstimatedBytes,RocksMemory::options);
+        try{
+            // TEMPORARY(warm-boot): serve the committed MACHINE tree as it was committed, so a LOCAL
+            // cold boot can route to its leaves. The warm boot task restores and updates it.
+            storage.machine.committed(storage.machineStore.committedTree());
+            return storage;
+        }catch(Exception|Error failure){
+            try{storage.close();}catch(Exception close){failure.addSuppressed(close);}
+            throw failure;
+        }
     }
 
     /** Old settings must fail visibly, never silently select a different data store. */
@@ -101,7 +110,7 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
      * Commit a MACHINE tree built by a cold boot: write what the existing warm path reads, then the
      * MACHINE leaves, nodes and path table, then the root, then serve it.
      */
-    public void commitMachine(MachineTree tree)throws Exception{
+    public synchronized void commitMachine(MachineTree tree)throws Exception{
         var previous=machine.tree();
         // TEMPORARY(warm-boot): the MACHINE leaves and path table replace the A| records and the
         // inventory P| entries, which only the existing warm path reads.

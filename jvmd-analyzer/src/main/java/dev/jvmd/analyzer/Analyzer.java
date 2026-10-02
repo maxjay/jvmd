@@ -570,10 +570,28 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
     }
     public void documents(Documents documents){this.documents=documents;compiler.documents(documents);dependencies.documentHash(documents::hash);dependencies.fileStates(documents.fileStates());if(context!=null)liveSourceState=documents.liveState(context.sources());}
     private ResidentSemanticState semanticState(){return modules.get(context.generation()).semantic;}
+    private volatile dev.jvmd.index.layer.local.LocalLayer local;
+    /**
+     * The project's LOCAL layer, or null to read LOCAL from the index store. TEMPORARY(warm-boot): the
+     * store is LOCAL only for a project opened over a committed LOCAL root, on today's on-demand path.
+     */
+    public void local(dev.jvmd.index.layer.local.LocalLayer layer){local=layer;}
     private SemanticReadView semanticReadView(){return semanticReadView(true);}
     private SemanticReadView semanticReadView(boolean admit){
         var live=SemanticReadViews.resident(semanticState());
         if(index==null||context.workspace().isBlank()){return live;}
+        var layer=local;
+        if(layer!=null){
+            var localView=layer.view();
+            return SemanticReadViews.precedence(live,localView,
+                    admit?SemanticReadViews.machine(index.store(),context.workspace())
+                            :SemanticReadViews.observed(index.store(),context.workspace(),IndexStore.SemanticLayer.MACHINE),
+                    // Project source owns its binary names: until LOCAL holds a type its source declares, no lower layer answers for it.
+                    binaryName->{
+                        try{if(localView.type(binaryName)!=null)return false;}catch(Exception unreadable){return true;}
+                        return workspaceSourceOwnsBinary(binaryName)||layer.ownsBinary(binaryName);
+                    });
+        }
 
         return SemanticReadViews.precedence(
                 live,
@@ -1291,43 +1309,35 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var inputs=new ArrayList<CompilerPool.SourceInput>();
         for(var entry:sources.entrySet()){reconcileSemanticRevision(entry.getKey());touch(entry.getKey(),entry.getValue());inputs.add(new CompilerPool.SourceInput(entry.getKey(),entry.getValue()));}
         var observed=validatedInputs();String stamp=observed.environment().value()+":"+observed.membership().value();for(var input:inputs)attributedMemos.beforeTransaction(input.file(),observed);
-        var semanticSnapshots=new LinkedHashMap<Path,SemanticSnapshot>();
-        var result=compiler.batchQuery(inputs,2,observed,(task,units,tier)->{
-            var snapshots=new LinkedHashMap<Path,Bindings.Snapshot>();var identity=new SymbolIdentity(task,context.gav(),context.release(),this::coordinates,context.navigationSources());
-            for(var unit:units){
-                Path file=Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize();String text=sources.get(file);
-                if(text!=null){
-                    var captured=Bindings.capture(task,List.of(unit),identity,file,new SourceText(text),true,null,semanticState()::symbol);snapshots.put(file,captured);
-                    if(tier==2)semanticSnapshots.put(file,SemanticFacts.sourceSnapshot(unit,captured.semanticFacts().values()));
-                }
-            }
-            return snapshots;
-        });
+        var captured=dev.jvmd.analyzer.capture.UnitCapture.capture(compiler,observed,
+                new dev.jvmd.analyzer.capture.UnitCapture.Naming(context.gav(),context.release(),this::coordinates,context.navigationSources()),
+                sources,semanticState()::symbol);
         bindingComputations+=sources.size();
         var values=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
         // Resolve every API first: invalidation from a later file must not erase an earlier fresh result.
-        if(result.result()!=null&&result.tier()==2&&result.warnings().isEmpty())for(var entry:result.result().entrySet()){
-            dependencies.recordFocused(entry.getKey(),entry.getValue().dependencies());
-            var contribution=SemanticContributions.from(entry.getKey(),Hashing.sha256(sources.get(entry.getKey()).getBytes(java.nio.charset.StandardCharsets.UTF_8)),entry.getValue(),result.diagnostics().stream().filter(p->sameFile(p.file(),entry.getKey())).toList());
-            var admission=admitSemanticMutation(semanticSnapshots.get(entry.getKey()),contribution);
+        if(captured.complete())for(var unit:captured.units().values()){
+            if(unit.contribution()==null)continue;
+            dependencies.recordFocused(unit.file(),unit.snapshot().dependencies());
+            var contribution=unit.contribution();
+            var admission=admitSemanticMutation(unit.semantic(),contribution);
             resolveContribution(contribution,admission);
-            if(admission!=null)registerSourceProof(entry.getKey(),sources.get(entry.getKey()),entry.getValue(),contribution);
-            else{dependencies.semantic().proofs().remove(sourceProofConsumer(entry.getKey()));dependencies.semantic().proofCoverage(entry.getKey(),false);}
+            if(admission!=null)registerSourceProof(unit.file(),sources.get(unit.file()),unit.snapshot(),contribution);
+            else{dependencies.semantic().proofs().remove(sourceProofConsumer(unit.file()));dependencies.semantic().proofCoverage(unit.file(),false);}
         }
         for(var input:inputs){
             Path file=input.file();String hash=Hashing.sha256(input.text().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            var problems=result.diagnostics().stream().filter(p->sameFile(p.file(),file)).toList();
-            var envelope=new Envelope(result.tier(),"live",false,null,warnings(result.warnings()),Map.of("diagnostics",problems));
-            var snapshot=result.result()==null?null:result.result().get(file);
-            var outcome=new CompilerPool.Outcome<>(result.tier(),snapshot,problems,result.warnings());values.put(file,outcome);
-            if(snapshot!=null&&result.tier()==2&&result.warnings().isEmpty()){
+            var unit=captured.units().get(file);var problems=unit.problems();
+            var envelope=new Envelope(captured.tier(),"live",false,null,warnings(captured.warnings()),Map.of("diagnostics",problems));
+            var snapshot=unit.snapshot();
+            var outcome=new CompilerPool.Outcome<>(captured.tier(),snapshot,problems,captured.warnings());values.put(file,outcome);
+            if(snapshot!=null&&captured.complete()){
                 // A workspace build retains only its last BATCH_RETAINED full outcomes per cache (the rest live as detached facts).
                 String key=file+":"+hash+":"+stamp+":full";focused.put(key,new Cached(file,hash,stamp,0,input.text().length(),List.of(),outcome));batchFocused.addLast(key);
                 while(batchFocused.size()>BATCH_RETAINED)focused.remove(batchFocused.removeFirst());while(focused.size()>32)focused.remove(focused.keySet().iterator().next());
                 diagnosticStore.put(file,hash,context.generation(),diagnosticStamp(file,observed),envelope,
                         apiFingerprint(file),snapshot.dependencies(),contribution(file));
                 attributedMemos.memoize(file,hash,envelope,contribution(file),snapshot,observed);
-                publishSource(file,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),snapshot,result.tier());
+                publishSource(file,hash,stamp,semanticPublisherContextFingerprint(observed,stamp),snapshot,captured.tier());
             }
         }
         return values;

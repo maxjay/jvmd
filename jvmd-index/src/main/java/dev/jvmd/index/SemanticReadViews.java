@@ -8,21 +8,24 @@ import java.util.*;
 public final class SemanticReadViews {
     private SemanticReadViews(){}
 
-    public static SemanticReadView resident(ResidentSemanticState state){
-        Objects.requireNonNull(state);
+    public static SemanticReadView resident(ResidentSemanticState state){return resident(state,SemanticReadView.Origin.LIVE);}
+
+    /** Facts held in a resident semantic state, reported as coming from {@code origin}. */
+    public static SemanticReadView resident(ResidentSemanticState state,SemanticReadView.Origin origin){
+        Objects.requireNonNull(state);Objects.requireNonNull(origin);
         return new SemanticReadView(){
             @Override public Symbol symbol(String id){
-                SemanticFact fact=state.symbol(id);return fact==null?null:fromResident(fact);
+                SemanticFact fact=state.symbol(id);return fact==null?null:fromResident(fact,origin);
             }
             @Override public Symbol type(String binaryName){
-                SemanticFact fact=state.type(binaryName);return fact==null?null:fromResident(fact);
+                SemanticFact fact=state.type(binaryName);return fact==null?null:fromResident(fact,origin);
             }
             @Override public SemanticCompleteness completeness(String ownerId){return state.completeness(ownerId);}
             @Override public MemberPage members(String ownerId,String prefix,int limit,String cursor){
                 if(limit<=0)return new MemberPage(List.of(),null);
                 var values=new ArrayList<SemanticReadView.Symbol>(Math.min(limit+1,64));
                 var range=state.memberCursor(ownerId,prefix,cursor);
-                SemanticFact fact;while(values.size()<=limit&&(fact=range.next())!=null)values.add(fromResident(fact));
+                SemanticFact fact;while(values.size()<=limit&&(fact=range.next())!=null)values.add(fromResident(fact,origin));
                 boolean more=values.size()>limit;
                 if(more)values.removeLast();
                 String next=more?state.symbol(values.getLast().id()).orderedKey():null;
@@ -248,10 +251,10 @@ public final class SemanticReadViews {
         };
     }
 
-    private static SemanticReadView.Symbol fromResident(SemanticFact fact){
+    private static SemanticReadView.Symbol fromResident(SemanticFact fact,SemanticReadView.Origin origin){
         var resolution=fact.resolutionFact();
         return new SemanticReadView.Symbol(fact.id(),fact.name(),fact.kind(),fact.fqn(),resolution.symbolKey(),fact.structuralSignature(),
-                fact.erasedDescriptor(),fact.modifiers(),resolution,fact.parameterNames(),fact.sourceFile(),SemanticReadView.Origin.LIVE);
+                fact.erasedDescriptor(),fact.modifiers(),resolution,fact.parameterNames(),fact.sourceFile(),origin);
     }
 
     /** Convert one typed persisted semantic record without JSON decode or canonical re-hashing. */

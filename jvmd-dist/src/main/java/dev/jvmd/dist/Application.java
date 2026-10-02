@@ -88,12 +88,14 @@ public final class Application implements AutoCloseable {
                 session.put("workspace_manifest_path",manifestPath);
                 session.put("workspace_manifest_optional",optionalManifest);
             }
-            return session.execute(() -> {
+            var opened=session.execute(() -> {
                 Resolution graph = workspace(session).roots().stream().anyMatch(root->Files.isRegularFile(root.resolve("pom.xml"))) ? refresh(session) : null;
                 return new Envelope(0, "live", false, null, session.warnings(), java.util.Map.of("session", session.id(),
                         "root", session.root().toString(), "classpath_entries", graph == null ? 0 : graph.classpath().size(),
                         "modules", graph == null ? 0 : graph.modules().size()));
             });
+            bootLocal(session);
+            return opened;
         });
         dispatcher.register("mcp.tools",(_,_) -> Envelope.of(2,"index",Map.of("catalog",dev.jvmd.mcp.McpTools.catalog())));
         dispatcher.register("mcp.invoke",(s,p)->dev.jvmd.mcp.McpTools.invoke(dispatcher,s.id(),p));
@@ -299,7 +301,7 @@ public final class Application implements AutoCloseable {
         var actors=diagnosticActors(session);
         return session.state("diagnostics",()->new WorkspaceAnalysisCoordinator(documents(session),file->diagnosticAnalyzer(session,file),session::yieldInteractive,file->externalDiagnostics(session,file),actors.parallelism()));
     }
-    private ModuleAnalyzerRegistry diagnosticActors(Session session){return session.state("diagnostic_actors",()->new ModuleAnalyzerRegistry(classpathFiles).memos(localMemos));}
+    private ModuleAnalyzerRegistry diagnosticActors(Session session){return session.state("diagnostic_actors",()->new ModuleAnalyzerRegistry(classpathFiles).memos(localMemos).local(()->localLayer(session)));}
     private DiagnosticEngine diagnosticAnalyzer(Session session,Path path)throws Exception{
         var graph=maintainedResolution(session);
         var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
@@ -861,6 +863,7 @@ public final class Application implements AutoCloseable {
         IndexService availableIndex;
         availableIndex=index!=null&&index.isDone()&&!index.isCompletedExceptionally()?index.join():null;
         try(var span=RequestScope.stage("analyzer.configure")){analyzer.configure(context,availableIndex,config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size()));}
+        analyzer.local(localLayer(session));
         analyzer.documents(documents(session));
         analyzer.memos(localMemos);
         return analyzer;
@@ -1086,7 +1089,7 @@ public final class Application implements AutoCloseable {
                 var machine=dev.jvmd.boot.BootDecision.machine(config.stateDir().resolve("index-v2"),config.m2Repo(),config.jdkHome(),
                         Math.multiplyExact(budgetMb,1024L*1024L));
                 service=machine.index();
-                bootstrappingIndex=service;
+                bootstrappingIndex=service;machineBoot=machine;
                 if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");
                 // TEMPORARY(warm-boot): the existing warm path reconciles a reopened generation with today's
                 // repository scan; the warm boot task replaces it. A cold-booted MACHINE is already complete.
@@ -1098,6 +1101,7 @@ public final class Application implements AutoCloseable {
                     if(awaitRepositoryScan)reconciliation.join();
                 }
                 sessionCapableNanos=System.nanoTime();
+                for(var session:sessions.list())bootLocal(session);
                 return service;
             } catch(Exception|LinkageError e){
                 if(service!=null)try{service.close();}catch(Exception close){e.addSuppressed(close);}
@@ -1109,6 +1113,32 @@ public final class Application implements AutoCloseable {
         }));
     }
     private IndexService index() { initializeIndex(false); return index.join(); }
+    private volatile dev.jvmd.boot.BootDecision.Machine machineBoot;
+    /**
+     * LOCAL for a resolved project, once MACHINE is committed: BootDecision picks the cold boot, which
+     * runs on a worker the session owns, or today's on-demand path for a committed LOCAL root.
+     */
+    private void bootLocal(Session session){
+        var machine=machineBoot;if(machine==null||session.state("resolution")==null)return;
+        synchronized(session){
+            if(session.state("local_boot")!=null)return;
+            try{
+                long budget=config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size())/4;
+                var local=dev.jvmd.boot.BootDecision.local(machine,session.root(),()->{
+                    var graph=(Resolution)session.state("resolution");return graph!=null?graph:session.execute(()->refresh(session));
+                },budget);
+                session.put("local_boot",local.warm()?"warm":local.cold());
+                if(!local.warm())local.cold().start();
+            }catch(Exception failure){session.put("local_boot","failed");session.warn("local_boot_failed: "+failure);}
+        }
+    }
+    private dev.jvmd.boot.cold.local.LocalColdBoot localColdBoot(Session session){
+        return session.state("local_boot") instanceof dev.jvmd.boot.cold.local.LocalColdBoot cold?cold:null;
+    }
+    /** The project's LOCAL layer while and after its cold boot, or null for today's store-backed LOCAL. */
+    private dev.jvmd.index.layer.local.LocalLayer localLayer(Session session){
+        var cold=localColdBoot(session);return cold==null?null:cold.layer().orElse(null);
+    }
     private Map<String,Object> readiness(){
         var result=new LinkedHashMap<String,Object>();
         boolean capable=index==null||index.isDone()&&!index.isCompletedExceptionally();
@@ -1129,6 +1159,9 @@ public final class Application implements AutoCloseable {
         var graph=(Resolution)session.state("resolution");if(graph==null)return;
         String generation=graph.fingerprint()+":"+database.generation();
         if(generation.equals(session.state("index_generation")))return;
+        // TEMPORARY(warm-boot): today's on-demand project path. Store-backed symbol.find, describe and the
+        // session's artifact selection read these records; for a cold-booted project, analysis reads
+        // LOCAL from its LocalLayer and routes. The warm boot task deletes this path.
         for(var module:graph.modules()){
             var roots=new ArrayList<Path>();module.sources().forEach(p->roots.add(Path.of(p)));module.testSources().forEach(p->roots.add(Path.of(p)));
             database.registerLocal(new IndexService.LocalModule(Path.of(module.directory()),module.gav(),roots,List.of(Path.of(module.classes()),Path.of(module.testClasses()))));

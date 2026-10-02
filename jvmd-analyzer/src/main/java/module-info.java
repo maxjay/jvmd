@@ -6,5 +6,6 @@ module dev.jvmd.analyzer {
     requires transitive jdk.compiler;
     requires java.management;
     exports dev.jvmd.analyzer;
+    exports dev.jvmd.analyzer.capture;
     opens dev.jvmd.analyzer to com.fasterxml.jackson.databind;
 }

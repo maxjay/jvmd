@@ -18,8 +18,8 @@ public final class ResidentSemanticState {
     private static final String EMPTY=Hashing.sha256(new byte[0]);
     /** Facts ordered by {@link SemanticFact#orderedKey()}; ranges sum resolution identities. */
     public static final KeyedTree.Spec<String,SemanticFact> FACTS=new KeyedTree.StringKeys<>("semantic-facts-v1"){
-        @Override public byte[] encodeValue(SemanticFact value)throws IOException{return FactCodec.encode(value);}
-        @Override public SemanticFact decodeValue(byte[] bytes)throws IOException{return FactCodec.decode(bytes,SemanticFact.class);}
+        @Override public byte[] encodeValue(SemanticFact value)throws IOException{return ArtifactIndexFormat.encodeFact(value);}
+        @Override public SemanticFact decodeValue(byte[] bytes)throws IOException{return ArtifactIndexFormat.decodeFact(bytes);}
         @Override public Hash256 identity(SemanticFact value){return value.factIdentity();}
         @Override public Hash256 rangeIdentity(SemanticFact value){return value.resolutionIdentity();}
     };

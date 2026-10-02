@@ -30,8 +30,8 @@ public final class RocksMemory implements AutoCloseable {
                         .setCacheIndexAndFilterBlocksWithHighPriority(true).setPinTopLevelIndexAndFilter(true));
     }
     /**
-     * Options that create a missing database. Only a cold boot's create stage uses them, through
-     * {@link RocksIndexStorage#create} and {@link dev.jvmd.index.rocks.layer.RocksLocalStore#create}.
+     * Options that create a missing database. Only the MACHINE cold boot's create stage uses them,
+     * through {@link RocksIndexStorage#create}.
      */
     Options creating(int openFiles){return options(openFiles).setCreateIfMissing(true);}
     Map<String,Object> status(){return Map.of("cache_and_memtable_budget_bytes",budget,

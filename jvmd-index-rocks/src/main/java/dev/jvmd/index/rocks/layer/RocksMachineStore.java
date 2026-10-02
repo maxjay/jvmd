@@ -68,6 +68,20 @@ public final class RocksMachineStore implements AutoCloseable {
         });
     }
 
+    /** The committed MACHINE tree: every stored leaf, bulk-built. */
+    public MachineTree committedTree()throws IOException{
+        var leaves=new ArrayList<MachineLeaf>();byte[] prefix=bytes("L|");
+        try(var iterator=db.newIterator()){
+            for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next())leaves.add(MachineLeaf.decode(iterator.value()));
+        }
+        return MachineTree.build(leaves);
+    }
+    private static boolean startsWith(byte[] value,byte[] prefix){
+        if(value.length<prefix.length)return false;
+        for(int i=0;i<prefix.length;i++)if(value[i]!=prefix[i])return false;
+        return true;
+    }
+
     public synchronized Map<String,Object> status(){
         return Map.of("commits",commits,"commit_batches",batches,"commit_records",records,"peak_staged_bytes",peakStagedBytes);
     }

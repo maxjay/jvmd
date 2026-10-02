@@ -24,12 +24,19 @@ class BootStructureTest {
     }
 
     @Test void coldBootsCallNoStoreLookup()throws Exception{
-        // A cold boot creates and writes its layer; reading prior state is the warm boot's job.
-        var lookup=Pattern.compile("\\.(contains|committedRoot|open|store|inventory|machine|tree|semanticTree|artifacts?|find)\\(");
+        // A cold boot calls only create and write methods on the storage it builds: reading prior state
+        // back is the warm boot's job. (A LOCAL cold boot reads the committed MACHINE layer, not a store.)
+        var call=Pattern.compile("\\b(store|storage|machineStorage|machineStore|inventory)\\.(\\w+)\\(");
+        var writes=Set.of("commit","commitMachine","close","admission","repository");
+        var calls=new TreeSet<String>();
         for(var source:sources(BOOT.resolve("cold")).entrySet()){
-            var matcher=lookup.matcher(source.getValue());
-            assertThat(matcher.find()).as(()->source.getKey()+" calls "+matcher.group()).isFalse();
+            var matcher=call.matcher(source.getValue());
+            while(matcher.find()){
+                calls.add(matcher.group(2));
+                assertThat(writes).as(source.getKey()+" calls "+matcher.group()).contains(matcher.group(2));
+            }
         }
+        assertThat(calls).contains("commit","commitMachine");
     }
 
     @Test void onlyTheColdBootCreateStageCreatesStorage()throws Exception{
@@ -38,8 +45,9 @@ class BootStructureTest {
             sources(TestSupport.repo().resolve(module).resolve("src/main/java")).forEach((file,text)->{
                 if(text.contains("setCreateIfMissing(true)"))creators.add(Path.of(file).getFileName().toString());
             });
-        // RocksMemory.creating is the create stage's option set; BindingFacts is replaced by the LIVE task.
-        assertThat(creators).containsExactly("BindingFacts.java","RocksMemory.java");
+        // RocksMemory.creating is the MACHINE create stage's option set and RocksLocalStore.create the
+        // LOCAL one's; BindingFacts is replaced by the LIVE task.
+        assertThat(creators).containsExactly("BindingFacts.java","RocksLocalStore.java","RocksMemory.java");
         assertThat(Files.readString(TestSupport.repo().resolve("jvmd-dist/src/main/java/dev/jvmd/dist/BindingFacts.java"))).contains("TEMPORARY(live-delta)");
         var callers=new TreeSet<String>();
         for(String module:List.of("jvmd-index-rocks","jvmd-boot","jvmd-dist"))
@@ -55,6 +63,12 @@ class BootStructureTest {
                 if(text.contains("RocksIndexStorage.create("))createCallers.add(Path.of(file).getFileName().toString());
             });
         assertThat(createCallers).containsExactly("MachineColdBoot.java");
+        var localCreators=new TreeSet<String>();
+        for(String module:List.of("jvmd-index-rocks","jvmd-boot","jvmd-dist"))
+            sources(TestSupport.repo().resolve(module).resolve("src/main/java")).forEach((file,text)->{
+                if(text.contains("RocksLocalStore.create("))localCreators.add(Path.of(file).getFileName().toString());
+            });
+        assertThat(localCreators).containsExactly("LocalColdBoot.java");
     }
 
     private static Map<String,String> sources(Path root)throws Exception{

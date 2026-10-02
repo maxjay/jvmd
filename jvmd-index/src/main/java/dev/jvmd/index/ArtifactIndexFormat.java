@@ -348,7 +348,8 @@ public final class ArtifactIndexFormat {
         int length=bounded(in.readInt(),MAX_STRING_BYTES,"string length");byte[] bytes=in.readNBytes(length);
         if(bytes.length!=length)throw new EOFException("Truncated string");return new String(bytes,StandardCharsets.UTF_8);
     }
-    private static String canonicalJson(Object value)throws Exception{return Json.MAPPER.writeValueAsString(canonical(value));}
+    /** JSON of {@code value} with every map's keys in sorted order, so equal values have equal text. */
+    public static String canonicalJson(Object value)throws Exception{return Json.MAPPER.writeValueAsString(canonical(value));}
     private static Object canonical(Object value){
         if(value instanceof Map<?,?> map){var result=new TreeMap<String,Object>();map.forEach((key,item)->result.put(String.valueOf(key),canonical(item)));return result;}
         if(value instanceof Collection<?> list)return list.stream().map(ArtifactIndexFormat::canonical).toList();

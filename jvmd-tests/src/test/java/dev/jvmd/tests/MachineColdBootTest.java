@@ -43,6 +43,24 @@ class MachineColdBootTest {
         return storage;
     }
 
+    @Test void coldBootsInSeparateProcessesGiveEqualRoots()throws Exception{
+        // A process fixes the iteration order of hashed collections, so only separate processes show that
+        // nothing such an order decides reaches the root.
+        Path repository=repository();var roots=new TreeSet<String>();
+        var flags=java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments().stream()
+                .filter(flag->flag.startsWith("--add-exports")||flag.startsWith("--enable-native-access")).toList();
+        for(int run=0;run<3;run++){
+            var command=new ArrayList<String>(List.of(Path.of(System.getProperty("java.home"),"bin","java").toString()));command.addAll(flags);
+            command.addAll(List.of("-cp",System.getProperty("java.class.path"),MachineRootProcess.class.getName(),
+                    temp.resolve("process-"+run).toString(),repository.toString(),temp.resolve("no-jdk").toString()));
+            var process=new ProcessBuilder(command).redirectErrorStream(true).start();
+            String output=new String(process.getInputStream().readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(process.waitFor()).as(output).isZero();
+            roots.add(output.lines().filter(line->line.startsWith("ROOT ")).findFirst().orElseThrow(()->new AssertionError(output)));
+        }
+        assertThat(roots).hasSize(1);
+    }
+
     @Test void equalInputsGiveEqualRootsInAnyEnumerationOrder()throws Exception{
         Path repository=repository();
         try(var forward=boot(temp.resolve("forward"),repository,false);var reversed=boot(temp.resolve("reversed"),repository,true)){

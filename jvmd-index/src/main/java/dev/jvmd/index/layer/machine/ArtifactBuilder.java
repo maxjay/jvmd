@@ -3,7 +3,6 @@ package dev.jvmd.index.layer.machine;
 import dev.jvmd.core.CanonicalDigestWriter;
 import dev.jvmd.core.Documents;
 import dev.jvmd.core.Hash256;
-import dev.jvmd.core.Json;
 import dev.jvmd.index.*;
 import java.util.*;
 
@@ -60,15 +59,17 @@ public final class ArtifactBuilder {
 
     /** Documentation records by member key. Locations are entry names inside the sources, never paths. */
     private static Map<String,Map<String,Object>> documentation(SourceJoin.Result join,Map<String,String> text){
-        var members=new TreeMap<String,Map<String,Object>>();
+        var members=new TreeMap<String,Map<String,Object>>();var lines=new HashMap<String,Documents.Lines>();
         for(var member:join.members()){
             String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")
                     ?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
             var data=new LinkedHashMap<String,Object>();
             data.put("doc",member.doc());data.put("source_entry",member.file());
             data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());
-            if(member.nameStart()>=0)data.put("name_range",Map.of("start",Documents.position(text.get(member.file()),member.nameStart()),
-                    "end",Documents.position(text.get(member.file()),member.nameEnd())));
+            if(member.nameStart()>=0){
+                var file=lines.computeIfAbsent(member.file(),entry->new Documents.Lines(text.get(entry)));
+                data.put("name_range",Map.of("start",file.position(member.nameStart()),"end",file.position(member.nameEnd())));
+            }
             data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());
             members.put(key,Collections.unmodifiableMap(data));
         }
@@ -76,6 +77,6 @@ public final class ArtifactBuilder {
     }
 
     private static Hash256 documentationIdentity(Map<String,Map<String,Object>> members)throws Exception{
-        return CanonicalDigestWriter.digest("machine-documentation-v1",Json.MAPPER.writeValueAsBytes(members));
+        return CanonicalDigestWriter.digest("machine-documentation-v1",ArtifactIndexFormat.canonicalJson(members).getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 }

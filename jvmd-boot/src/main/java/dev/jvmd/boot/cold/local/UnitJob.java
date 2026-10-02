@@ -33,8 +33,8 @@ final class UnitJob {
         var sources=new LinkedHashMap<Path,String>();
         for(var unit:units)sources.put(unit.file(),files.get(unit.file()).text());
         var captured=UnitCapture.capture(compiler,compiler.inputSnapshot(),
-                new UnitCapture.Naming(context.module(),context.release(),context::coordinates,context.navigationSources()),
-                sources,id->null);
+                new UnitCapture.Naming(context.compiler().gav(),context.compiler().release(),context::coordinates,context.compiler().navigationSources()),
+                sources);
         var result=new ArrayList<Built>(units.size());
         for(var unit:units){
             var capture=captured.units().get(unit.file());

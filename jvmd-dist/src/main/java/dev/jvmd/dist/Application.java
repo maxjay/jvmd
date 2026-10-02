@@ -927,14 +927,18 @@ public final class Application implements AutoCloseable {
     }
 
     private Analyzer.Context createAnalyzerContext(Session session,Path path,Resolution graph)throws Exception{
+        if(graph==null)return createAnalyzerContext(session,null,false,null);
+        var module=WorkspaceContextManager.owner(path,graph);
+        return createAnalyzerContext(session,module,module.testSources().stream().anyMatch(root->path.startsWith(Path.of(root))),graph);
+    }
+    /** The compiler context of one module scope, or of the plain workspace when there is no graph. */
+    private Analyzer.Context createAnalyzerContext(Session session,Resolution.Module module,boolean test,Resolution graph)throws Exception{
         String gav="local:workspace:0",release="25",generation="plain";
         List<String> options=List.of("--release","25");
         var processingBinding=dev.jvmd.analyzer.Processing.NONE;
         var classpath=new java.util.ArrayList<Path>();var sources=new java.util.ArrayList<Path>();var coordinates=new java.util.LinkedHashMap<String,String>();var binarySources=new LinkedHashSet<Path>();var processorWarnings=new LinkedHashSet<String>();var navigationSources=new LinkedHashSet<Path>();
         if(graph!=null){
-            var module=WorkspaceContextManager.owner(path,graph);
             gav=module.gav();release=module.release()==null||module.release().isBlank()?"25":module.release();generation=graph.fingerprint()+":"+gav;
-            boolean test=module.testSources().stream().anyMatch(root->path.startsWith(Path.of(root)));
             options=test?module.testCompilerOptions():module.compilerOptions();generation+=test?":test":":main";
             graph.classpaths().getOrDefault(gav+(test?":test":":main"),java.util.List.of()).forEach(p->classpath.add(Path.of(p)));
             module.sources().forEach(p->sources.add(Path.of(p)));if(test)module.testSources().forEach(p->sources.add(Path.of(p)));
@@ -1134,10 +1138,7 @@ public final class Application implements AutoCloseable {
             long budget=config.heapCeilingMb()*1024L*1024/Math.max(1,sessions.list().size())/4;
             var local=dev.jvmd.boot.BootDecision.local(machine,session.root(),()->{
                 var graph=(Resolution)session.state("resolution");return graph!=null?graph:session.execute(()->refresh(session));
-            },(module,test)->{
-                var output=prepareProcessing(session,module,test,(Resolution)session.state("resolution"));
-                return output==null?null:new dev.jvmd.boot.cold.local.LocalColdBoot.Generated(output.classpath(),output.sourceRoots(),output.binarySources(),output.fingerprint());
-            },budget);
+            },(module,test)->createAnalyzerContext(session,module,test,(Resolution)session.state("resolution")),budget);
             session.put("local_boot",local);
             if(!local.warm()){session.put("local_cold_boot",local.cold());local.cold().start();}
         }

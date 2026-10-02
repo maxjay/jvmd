@@ -9,7 +9,6 @@ import dev.jvmd.analyzer.SymbolIdentity;
 import dev.jvmd.core.CompilerInputs;
 import dev.jvmd.core.Hashing;
 import dev.jvmd.index.FileSemanticContribution;
-import dev.jvmd.index.SemanticFact;
 import dev.jvmd.index.SemanticSnapshot;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -44,12 +43,8 @@ public final class UnitCapture {
         public boolean complete(){return tier==2&&warnings.isEmpty();}
     }
 
-    /**
-     * Compile {@code sources} (absolute path to text) with {@code compiler} and capture each of them.
-     * {@code reusableFacts} names facts the caller already holds, so equal declarations are shared.
-     */
-    public static Result capture(CompilerPool compiler,CompilerInputs.Snapshot observed,Naming naming,Map<Path,String> sources,
-                                 Function<String,SemanticFact> reusableFacts)throws Exception{
+    /** Compile {@code sources} (absolute path to text) with {@code compiler} and capture each of them. */
+    public static Result capture(CompilerPool compiler,CompilerInputs.Snapshot observed,Naming naming,Map<Path,String> sources)throws Exception{
         var inputs=new ArrayList<CompilerPool.SourceInput>(sources.size());
         for(var entry:sources.entrySet())inputs.add(new CompilerPool.SourceInput(entry.getKey(),entry.getValue()));
         var semanticSnapshots=new LinkedHashMap<Path,SemanticSnapshot>();
@@ -59,7 +54,7 @@ public final class UnitCapture {
             for(var unit:units){
                 Path file=Path.of(unit.getSourceFile().toUri()).toAbsolutePath().normalize();String text=sources.get(file);
                 if(text==null)continue;
-                var captured=Bindings.capture(task,List.of(unit),identity,file,new SourceText(text),true,null,reusableFacts);
+                var captured=Bindings.capture(task,List.of(unit),identity,file,new SourceText(text),true,null,_->null);
                 snapshots.put(file,captured);
                 if(tier==2)semanticSnapshots.put(file,SemanticFacts.sourceSnapshot(unit,captured.semanticFacts().values()));
             }

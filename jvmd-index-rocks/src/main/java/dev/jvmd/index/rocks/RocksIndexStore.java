@@ -32,7 +32,6 @@ public final class RocksIndexStore implements IndexStore {
             this(id,input,docsKey,codeKey,resolutionIdentity,symbols,edges,classReferences,sourceRevision,simpleNames,null);
         }
     }
-    private record LegacySourceFile(String file,String hash,List<Map<String,Object>> symbols,List<SourceRelationship> edges) { }
     private final RocksArtifactRepository repository;
     private final RocksArtifactAdmission admission;
     private final Options options;
@@ -73,13 +72,10 @@ public final class RocksIndexStore implements IndexStore {
         try{
             for(byte[] value:values("A|")){
                 var artifact=Json.MAPPER.readValue(value,StoredArtifact.class);
-                if(!repository.contains(artifact.input().key().cacheKey())&&!artifact.input().context().kind().equals("sources"))
-                    throw new IllegalStateException("Artifact manifest references absent generation: "+artifact.id());
                 artifacts.put(artifact.id(),artifact);paths.put(artifact.input().context().path(),artifact.id());
                 nextArtifact=Math.max(nextArtifact,artifact.id()+1);
                 byte[] count=state.get(bytes("U|"+key(artifact.id())));if(count!=null)unmatched.put(artifact.id(),Long.parseLong(new String(count,StandardCharsets.UTF_8)));
             }
-            migrateSources();
             byte[] sequence=state.get(bytes("next-source"));if(sequence!=null)nextSource=Long.parseLong(new String(sequence,StandardCharsets.UTF_8));
             sequence=state.get(bytes("next-artifact"));if(sequence!=null)nextArtifact=Math.max(nextArtifact,Long.parseLong(new String(sequence,StandardCharsets.UTF_8)));
         }catch(Exception error){sourceOverlay.close();state.close();options.close();durable.close();throw error;}
@@ -261,18 +257,6 @@ public final class RocksIndexStore implements IndexStore {
         }installed(value);
     }
     /** Migrate each legacy owner with its postings in one durable batch; interruption is restartable. */
-    private void migrateSources()throws Exception{
-        try(var iterator=state.newIterator()){
-            for(iterator.seek(bytes("S|"));iterator.isValid()&&new String(iterator.key(),StandardCharsets.UTF_8).startsWith("S|");iterator.next()){
-                String key=new String(iterator.key(),StandardCharsets.UTF_8);long id=Long.parseUnsignedLong(key.substring(2,18),16);
-                var file=Json.MAPPER.readValue(iterator.value(),LegacySourceFile.class);
-                try(var batch=new WriteBatch()){
-                    sourceOverlay.replace(batch,id,new SourceOverlay.FileStamp(file.file(),file.hash()),file.symbols(),file.edges());
-                    batch.delete(iterator.key());state.write(durable,batch);
-                }
-            }iterator.status();
-        }
-    }
     private static String binaryKey(Map<String,Object> symbol){
         if(symbol.get("binary_key")!=null)return symbol.get("binary_key").toString();
         String fqn=Objects.toString(symbol.get("fqn"),Objects.toString(symbol.get("name_path"),""));

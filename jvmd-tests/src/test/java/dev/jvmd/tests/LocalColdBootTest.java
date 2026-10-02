@@ -1,5 +1,6 @@
 package dev.jvmd.tests;
 
+import dev.jvmd.analyzer.Analyzer;
 import dev.jvmd.boot.BootDecision;
 import dev.jvmd.boot.cold.local.LocalColdBoot;
 import dev.jvmd.boot.cold.machine.MachineColdBoot;
@@ -59,12 +60,30 @@ class LocalColdBootTest {
                 Map.of("g:lib:1:main",List.of(libClasses),"g:app:1:main",appMain,"g:app:1:test",appTestPath),List.of(),"fixture",true,false);
     }
 
+    /**
+     * The analyzer's compiler context for a module scope of {@link #resolution}: the fixture's sibling
+     * classes are not built, so javac reads siblings from their sources, as analysis does.
+     */
+    private Analyzer.Context context(Resolution.Module module,boolean test){
+        var graph=resolution();String scope=test?"test":"main";
+        var classpath=new ArrayList<Path>();graph.classpaths().get(module.gav()+":"+scope).forEach(location->classpath.add(Path.of(location)));
+        var sources=new ArrayList<Path>();module.sources().forEach(root->sources.add(Path.of(root)));if(test)module.testSources().forEach(root->sources.add(Path.of(root)));
+        var coordinates=new LinkedHashMap<String,String>();
+        for(var other:graph.modules()){
+            for(String root:other.sources())coordinates.put(root,other.gav());for(String root:other.testSources())coordinates.put(root,other.gav());
+            if(module.dependencies().contains(other.gav())){other.sources().forEach(root->sources.add(Path.of(root)));classpath.add(Path.of(other.classes()));}
+        }
+        coordinates.put(jar.toString(),"fixture:sample:1");
+        return new Analyzer.Context(module.gav(),"25",classpath,sources,"fixture:"+module.gav()+":"+scope,coordinates,List.of("--release","25"),
+                Set.of(),List.of(),List.copyOf(sources),true,"");
+    }
+
     private RocksIndexStorage machine(Path generation)throws Exception{
         return new MachineColdBoot(generation,repository,temp.resolve("no-jdk"),BUDGET).run();
     }
 
     private LocalColdBoot local(RocksIndexStorage storage,Resolution resolution)throws Exception{
-        return new LocalColdBoot(storage.generation(),project,()->resolution,(module,test)->null,storage.machine(),storage,BUDGET);
+        return new LocalColdBoot(storage.generation(),project,()->resolution,this::context,storage.machine(),storage,BUDGET);
     }
 
     private Path localDirectory(RocksIndexStorage storage)throws Exception{return RocksLocalStore.directory(storage.generation(),project);}
@@ -145,15 +164,15 @@ class LocalColdBootTest {
     @Test void aBootStoppedBeforeItsRootLeavesTheProjectCold()throws Exception{
         try(var storage=machine(temp.resolve("generation"))){
             var machine=new BootDecision.Machine(storage,null,false);
-            var failing=new LocalColdBoot(storage.generation(),project,()->{throw new IllegalStateException("resolution failed");},(module,test)->null,storage.machine(),storage,BUDGET);
+            var failing=new LocalColdBoot(storage.generation(),project,()->{throw new IllegalStateException("resolution failed");},this::context,storage.machine(),storage,BUDGET);
             assertThatThrownBy(failing::run).hasMessageContaining("resolution failed");
             assertThat(Files.isDirectory(localDirectory(storage))).isTrue();
             assertThat(RocksLocalStore.committedRoot(localDirectory(storage))).isEmpty();
-            var decided=BootDecision.local(machine,project,()->resolution(),(module,test)->null,BUDGET);
+            var decided=BootDecision.local(machine,project,()->resolution(),this::context,BUDGET);
             assertThat(decided.warm()).isFalse();
             var root=decided.cold().run();
             assertThat(RocksLocalStore.committedRoot(localDirectory(storage)).orElseThrow().identity()).isEqualTo(root.identity());
-            assertThat(BootDecision.local(machine,project,()->resolution(),(module,test)->null,BUDGET).warm()).isTrue();
+            assertThat(BootDecision.local(machine,project,()->resolution(),this::context,BUDGET).warm()).isTrue();
         }
     }
 
@@ -185,23 +204,26 @@ class LocalColdBootTest {
         }
     }
 
-    @Test void aModuleScopesAnnotationProcessingOutputIsPartOfItsCompilerContext()throws Exception{
+    @Test void eachModuleScopeCompilesWithTheContextAnalysisUses()throws Exception{
+        // A context with an annotation processor's generated sources: the boot compiles with it as given.
         Path generated=Files.createDirectories(temp.resolve("generated/gen"));
         Files.writeString(generated.resolve("Made.java"),"package gen; public class Made { public int size(){ return 1; } }");
         source("app/src/main/java/app/Factory.java","package app; public class Factory { public gen.Made made(){ return new gen.Made(); } }");
-        var calls=new ArrayList<String>();
-        LocalColdBoot.Processors processors=(module,test)->{
-            calls.add(module.gav()+":"+test);
-            return module.gav().equals("g:app:1")&&!test?new LocalColdBoot.Generated(List.of(),List.of(temp.resolve("generated")),Set.of(),"made-v1"):null;
+        var asked=new ArrayList<String>();
+        LocalColdBoot.Contexts contexts=(module,test)->{
+            asked.add(module.gav()+":"+test);var context=context(module,test);
+            if(!module.gav().equals("g:app:1")||test)return context;
+            var sources=new ArrayList<>(context.sources());sources.add(temp.resolve("generated"));
+            return new Analyzer.Context(context.gav(),context.release(),context.classpath(),sources,context.generation()+":generated",context.coordinates(),
+                    context.compilerOptions(),context.binarySources(),context.warnings(),context.navigationSources(),true,"");
         };
         try(var storage=machine(temp.resolve("generation"))){
-            var boot=new LocalColdBoot(storage.generation(),project,()->resolution(),processors,storage.machine(),storage,BUDGET);boot.run();
+            var boot=new LocalColdBoot(storage.generation(),project,()->resolution(),contexts,storage.machine(),storage,BUDGET);boot.run();
             assertThat(boot.faults()).isEmpty();
-            assertThat(calls).contains("g:app:1:false","g:app:1:true","g:lib:1:false");
+            assertThat(asked).containsExactlyInAnyOrder("g:app:1:false","g:app:1:true","g:lib:1:false");
             var made=boot.layer().orElseThrow().tree().orElseThrow().semantic().entries().stream().map(Map.Entry::getValue)
                     .filter(fact->fact.name().equals("made")).findFirst().orElseThrow();
-            assertThat(made.type().toString()).contains("gen.Made");
-            assertThat(made.type().toString()).doesNotContain("Unknown");
+            assertThat(made.type().toString()).contains("gen.Made").doesNotContain("Unknown");
         }
     }
 

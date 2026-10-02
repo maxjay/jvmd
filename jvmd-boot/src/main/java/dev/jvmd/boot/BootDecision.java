@@ -52,12 +52,12 @@ public final class BootDecision {
      * LOCAL at project open, once MACHINE is committed: a cold boot of the project at
      * {@code projectRoot} when it has no committed LOCAL root, otherwise the warm boot.
      */
-    public static Local local(Machine machine,Path projectRoot,Callable<Resolution> resolve,LocalColdBoot.Processors processors,
+    public static Local local(Machine machine,Path projectRoot,Callable<Resolution> resolve,LocalColdBoot.Contexts contexts,
                               long compilerBudget)throws Exception{
         Path generation=machine.storage().generation();
         if(RocksLocalStore.committedRoot(RocksLocalStore.directory(generation,projectRoot)).isPresent())
             return new Local(null,new LocalWarmBoot(machine.index()));
-        return new Local(new LocalColdBoot(generation,projectRoot,resolve,processors,machine.storage().machine(),machine.storage(),compilerBudget),null);
+        return new Local(new LocalColdBoot(generation,projectRoot,resolve,contexts,machine.storage().machine(),machine.storage(),compilerBudget),null);
     }
 
     private static IndexService index(RocksIndexStorage storage,Path repository)throws Exception{

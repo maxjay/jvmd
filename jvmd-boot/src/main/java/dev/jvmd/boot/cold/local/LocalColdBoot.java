@@ -1,5 +1,6 @@
 package dev.jvmd.boot.cold.local;
 
+import dev.jvmd.analyzer.Analyzer;
 import dev.jvmd.analyzer.CompilerPool;
 import dev.jvmd.boot.cold.machine.ArtifactJob;
 import dev.jvmd.boot.cold.machine.ClaimMap;
@@ -34,21 +35,14 @@ public final class LocalColdBoot implements AutoCloseable {
     /** An input that contributes nothing to LOCAL, and why. */
     public record Fault(String location,String reason) { }
 
-    /**
-     * What annotation processing adds to a module scope's compiler context: processed classes first on
-     * the classpath, generated source roots, and the sources those classes stand in for.
-     */
-    public record Generated(List<Path> classpath,List<Path> sourceRoots,Set<Path> binarySources,String fingerprint) {
-        public Generated { classpath=List.copyOf(classpath);sourceRoots=List.copyOf(sourceRoots);binarySources=Set.copyOf(binarySources); }
-    }
-    /** Runs a module scope's annotation processors; null when the scope has none. */
-    @FunctionalInterface public interface Processors { Generated prepare(Resolution.Module module,boolean test)throws Exception; }
+    /** The compiler context analysis uses for a module scope; the cold boot compiles that scope with it. */
+    @FunctionalInterface public interface Contexts { Analyzer.Context context(Resolution.Module module,boolean test)throws Exception; }
 
     private static final int BATCH=32;
 
     private final Path generation,projectRoot;
     private final Callable<Resolution> resolve;
-    private final Processors processors;
+    private final Contexts compilerContexts;
     private final MachineLayer machine;
     private final RocksIndexStorage machineStorage;
     private final long compilerBudget;
@@ -76,10 +70,10 @@ public final class LocalColdBoot implements AutoCloseable {
      * @param machine        the committed MACHINE layer
      * @param machineStorage where an artifact a route needs is added to MACHINE
      */
-    public LocalColdBoot(Path generation,Path projectRoot,Callable<Resolution> resolve,Processors processors,MachineLayer machine,
+    public LocalColdBoot(Path generation,Path projectRoot,Callable<Resolution> resolve,Contexts compilerContexts,MachineLayer machine,
                          RocksIndexStorage machineStorage,long compilerBudget)throws IOException{
         this.generation=generation;this.projectRoot=projectRoot.toRealPath();this.resolve=Objects.requireNonNull(resolve);
-        this.processors=Objects.requireNonNull(processors);
+        this.compilerContexts=Objects.requireNonNull(compilerContexts);
         this.machine=Objects.requireNonNull(machine);this.machineStorage=Objects.requireNonNull(machineStorage);this.compilerBudget=compilerBudget;
     }
 
@@ -134,8 +128,8 @@ public final class LocalColdBoot implements AutoCloseable {
         }
         for(var module:reactorOrder(byGav,dependencies))modules.put(module.gav(),module);
         for(var module:modules.values()){
-            contexts.add(context(module,false,byGav));
-            if(!module.testSources().isEmpty())contexts.add(context(module,true,byGav));
+            contexts.add(new Context(module.gav(),"main",compilerContexts.context(module,false)));
+            if(!module.testSources().isEmpty())contexts.add(new Context(module.gav(),"test",compilerContexts.context(module,true)));
         }
     }
 
@@ -237,8 +231,9 @@ public final class LocalColdBoot implements AutoCloseable {
                 var batch=queue.next(BATCH);if(batch.isEmpty())break;
                 var context=batch.getFirst().context();
                 if(!context.key().equals(configured)){
-                    compiler.configure(context.generation(),context.release(),context.classpath(),context.sources(),null,compilerBudget,context.options(),true);
-                    compiler.binarySources(context.binarySources());
+                    var c=context.compiler();
+                    compiler.configure(c.generation(),c.release(),c.classpath(),c.sources(),null,compilerBudget,c.compilerOptions(),c.preciseSourceRoots());
+                    compiler.binarySources(c.binarySources());
                     configured=context.key();
                 }
                 for(var unit:batch)attributions.merge(unit.file(),1,Integer::sum);
@@ -300,56 +295,6 @@ public final class LocalColdBoot implements AutoCloseable {
         return projectRoot.relativize(file).toString().replace(File.separatorChar,'/');
     }
 
-    /** The compiler context of one module scope, named as the analyzer names that scope's declarations. */
-    private Context context(Resolution.Module module,boolean test,Map<String,Resolution.Module> byGav)throws Exception{
-        String gav=module.gav(),scope=test?"test":"main";
-        String release=module.release()==null||module.release().isBlank()?"25":module.release();
-        String generation="local-cold:"+graph.fingerprint()+":"+gav+":"+scope;
-        var classpath=new ArrayList<Path>();var sources=new ArrayList<Path>();var binarySources=new LinkedHashSet<Path>();var coordinates=new LinkedHashMap<String,String>();
-        graph.classpaths().getOrDefault(gav+":"+scope,List.of()).forEach(location->classpath.add(Path.of(location)));
-        module.sources().forEach(root->sources.add(Path.of(root)));if(test)module.testSources().forEach(root->sources.add(Path.of(root)));
-        for(var dependency:reactorDependencies(module,test,byGav)){
-            dependency.sources().forEach(root->sources.add(Path.of(root)));classpath.add(Path.of(dependency.classes()));
-            coordinates.put(dependency.classes(),dependency.gav());
-            var generated=processors.prepare(dependency,false);
-            if(generated!=null){
-                classpath.addAll(0,generated.classpath());sources.addAll(generated.sourceRoots());binarySources.addAll(generated.binarySources());
-                generation+=":"+generated.fingerprint();roles(coordinates,generated,dependency.gav(),"main");
-            }
-        }
-        for(boolean processedTest:test?List.of(false,true):List.of(false)){
-            var generated=processors.prepare(module,processedTest);
-            if(generated!=null){
-                classpath.addAll(0,generated.classpath());sources.addAll(0,generated.sourceRoots());binarySources.addAll(generated.binarySources());
-                generation+=":"+generated.fingerprint();roles(coordinates,generated,gav,processedTest?"test":"main");
-            }
-        }
-        var navigation=new LinkedHashSet<Path>();
-        for(var other:graph.modules()){
-            for(String root:concat(other.sources(),other.testSources())){
-                navigation.add(Path.of(root));coordinates.putIfAbsent(root,other.gav());coordinates.putIfAbsent(Path.of(root).toUri().toString(),other.gav());
-            }
-            coordinates.put(other.directory(),other.gav());coordinates.put(Path.of(other.directory()).toUri().toString(),other.gav());
-            if(other.classes()!=null)coordinates.putIfAbsent(other.classes(),other.gav());
-            if(other.testClasses()!=null)coordinates.putIfAbsent(other.testClasses(),other.gav());
-        }
-        for(String root:concat(module.sources(),module.testSources())){coordinates.put(root,gav);coordinates.put(Path.of(root).toUri().toString(),gav);}
-        for(var node:graph.nodes())if(node.path()!=null&&node.winner()==null)coordinates.put(node.path(),node.gav());
-        navigation.addAll(sources);
-        return new Context(gav,scope,release,classpath,sources,binarySources,test?module.testCompilerOptions():module.compilerOptions(),coordinates,
-                List.copyOf(navigation),generation);
-    }
-
-    /** Processor outputs take the coordinates and a restart-stable role of the module scope that generated them. */
-    private static void roles(Map<String,String> coordinates,Generated generated,String gav,String scope){
-        for(Path root:generated.sourceRoots()){
-            coordinates.put(root.toAbsolutePath().normalize().toString(),gav);coordinates.put("role:"+root.toAbsolutePath().normalize(),"generated-sources-"+scope);
-        }
-        for(Path classes:generated.classpath()){
-            coordinates.put(classes.toAbsolutePath().normalize().toString(),gav);coordinates.put("role:"+classes.toAbsolutePath().normalize(),"processor-classes-"+scope);
-        }
-    }
-
     /** The reactor modules {@code module} depends on in its main (or test) scope. */
     private List<Resolution.Module> reactorDependencies(Resolution.Module module,boolean test,Map<String,Resolution.Module> byGav){
         var result=new LinkedHashMap<String,Resolution.Module>();
@@ -376,6 +321,5 @@ public final class LocalColdBoot implements AutoCloseable {
         return List.copyOf(ordered.values());
     }
 
-    private static List<String> concat(List<String> first,List<String> second){var all=new ArrayList<>(first);all.addAll(second);return all;}
     private static Path normalize(String location){return Path.of(location).toAbsolutePath().normalize();}
 }

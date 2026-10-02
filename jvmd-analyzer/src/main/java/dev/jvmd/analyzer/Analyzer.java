@@ -1311,7 +1311,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         var observed=validatedInputs();String stamp=observed.environment().value()+":"+observed.membership().value();for(var input:inputs)attributedMemos.beforeTransaction(input.file(),observed);
         var captured=dev.jvmd.analyzer.capture.UnitCapture.capture(compiler,observed,
                 new dev.jvmd.analyzer.capture.UnitCapture.Naming(context.gav(),context.release(),this::coordinates,context.navigationSources()),
-                sources,semanticState()::symbol);
+                sources);
         bindingComputations+=sources.size();
         var values=new LinkedHashMap<Path,CompilerPool.Outcome<Bindings.Snapshot>>();
         // Resolve every API first: invalidation from a later file must not erase an earlier fresh result.

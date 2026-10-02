@@ -10310,5 +10310,157 @@
  "build": "{\n\"instrumentation_and_harness_sha\": \"ac56c71deaeb38e07c6892e1c70671925b061c67\",\n\"subject_sha\": \"0f7c825d7b49fe7ba24d26606517bb8208b72e72\", \"subject_is_ancestor\": true,\n\"production_diff_vs_subject\": \"\",\n\"workflow_run\": \"https://github.com/maxjay/jvmd/actions/runs/37004267057/attempts/1\",\n\"build_command\": \"mvn -B -q -DskipTests install && bash jvmd-dist/assemble.sh && bash jvmd-dist/train-aot.sh\",\n\"jdk\": \"openjdk version \\\"25.0.4.1\\\" 2026-08-18 LTS OpenJDK Runtime Environment Temurin-25.0.4.1+1 (build 25.0.4.1+1-LTS) OpenJDK 64-Bit Server VM Temurin-25.0.4.1+1 (build 25.0.4.1+1-LTS, mixed mode, sharing) \",\n\"image_java\": \"[0.004s][error][aot] An error has occurred while processing the AOT cache. Run with -Xlog:aot for details. [0.004s][error][aot] Loading static archive failed. [0.004s][error][aot] Unable to map shared spaces openjdk version \\\"25.0.4.1\\\" 2026-08-18 LTS OpenJDK Runtime Environment Temurin-25.0.4.1+1 (build 25.0.4.1+1-LTS) OpenJDK 64-Bit Server VM Temurin-25.0.4.1+1 (build 25.0.4.1+1-LTS, mixed mode) \",\n\"rocksdbjni\": \"rocksdbjni-10.10.1.1.\",\n\"image_lib_sha256\": \"3055936b414c1196e4c124674cafbba4f5928bdc8af83ac2a1ab8ddc45adb6d6\",\n\"aot_cache_sha256\": \"8f0f8782c90fa4c5a9bb280babf88741b1bacc9a91604d381e640647d1b0afb2\"\n}\n",
  "environment": [
   "scenario=alloc\nLinux runnervm8df0l 6.17.0-1022-azure #22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux\n4\n               total        used        free      shared  buff/cache   available\nMem:     16765378560  1683685376 11275698176    49586176  4217393152 15081693184\nSwap:     3221221376           0  3221221376\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/root       145G   60G   85G  42% /\nArchitecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 57 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  4\nOn-line CPU(s) list:                     0-3\nVendor ID:                               GenuineIntel\nModel name:                              Intel(R) Xeon(R) 6973P-C\nCPU family:                              6\nModel:                                   173\nThread(s) per core:                      2\nCore(s) per socket:                      2\nSocket(s):                               1\nStepping:                                1\nCPU(s) scaling MHz:                      158%\nCPU max MHz:                             2600.0000\nCPU min MHz:                             800.0000\nBogoMIPS:                                5199.99\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology tsc_reliable nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq vmx ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch tpr_shadow ept vpid ept_ad fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves user_shstk avx_vnni avx512_bf16 vnmi avx512vbmi umip waitpkg avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq la57 rdpid cldemote movdiri movdir64b fsrm serialize tsxldtrk ibt amx_bf16 avx512_fp16 amx_tile amx_int8 arch_capabilities\nVirtualization:                          VT-x\npage cache policy: no cache drop in either scenario\n60\n"
- ]
+ ],
+ "verification_run": {
+  "run": "https://github.com/maxjay/jvmd/actions/runs/37006026335 (attempt 1, revision 33ed106, different runner)",
+  "control_pairs": {
+   "cold": {
+    "t_DOMAIN_READY": [
+     46373.83048,
+     45972.041725,
+     45540.390229,
+     46272.105895,
+     45783.296642
+    ],
+    "t_PRODUCT_READY": [
+     46385.664973,
+     45981.271147,
+     45551.075118,
+     46283.075898,
+     45794.738835
+    ],
+    "cpu_user_ms": [
+     108620,
+     107530,
+     108020,
+     109860,
+     110150
+    ],
+    "vm_hwm_bytes": [
+     2008440832,
+     1943826432,
+     1999400960,
+     2046189568,
+     1929211904
+    ],
+    "write_bytes": [
+     690470912,
+     690442240,
+     690442240,
+     690798592,
+     690798592
+    ]
+   },
+   "warm": {
+    "t_DOMAIN_READY": [
+     2968.999731,
+     2904.398495,
+     2957.548791,
+     2921.892939,
+     2926.449337
+    ],
+    "t_PRODUCT_READY": [
+     671.585866,
+     635.655248,
+     653.84992,
+     634.434882,
+     632.231812
+    ],
+    "cpu_user_ms": [
+     2210,
+     2140,
+     2230,
+     2210,
+     2230
+    ],
+    "vm_hwm_bytes": [
+     207958016,
+     206303232,
+     208887808,
+     205520896,
+     215171072
+    ],
+    "write_bytes": [
+     16523264,
+     16875520,
+     16519168,
+     16523264,
+     16875520
+    ]
+   }
+  },
+  "outcomes": {
+   "alloc-1": "EQUIVALENT_BY_REUSE",
+   "alloc-2": "EQUIVALENT_BY_REUSE",
+   "controls/c1-no-change": "EQUIVALENT_BY_REUSE",
+   "counters-1": "EQUIVALENT_BY_REUSE",
+   "counters-2": "EQUIVALENT_BY_REUSE",
+   "cpu-1": "EQUIVALENT_BY_REUSE",
+   "cpu-2": "EQUIVALENT_BY_REUSE",
+   "native-1": "EQUIVALENT_BY_REUSE",
+   "pair-1": "EQUIVALENT_BY_REUSE",
+   "pair-2": "EQUIVALENT_BY_REUSE",
+   "pair-3": "EQUIVALENT_BY_REUSE",
+   "pair-4": "EQUIVALENT_BY_REUSE",
+   "pair-5": "EQUIVALENT_BY_REUSE",
+   "retention-1": "EQUIVALENT_BY_REUSE",
+   "scale-100": "EQUIVALENT_BY_REUSE",
+   "scale-25": "EQUIVALENT_BY_REUSE",
+   "scale-50": "EQUIVALENT_BY_REUSE",
+   "wall-1": "EQUIVALENT_BY_REUSE",
+   "wall-2": "EQUIVALENT_BY_REUSE"
+  },
+  "aot_cache": {
+   "boot-counters/counters/counters-1/cold": "rejected: no cache configured for this JVM",
+   "boot-counters/counters/counters-1/warm": "rejected: no cache configured for this JVM",
+   "boot-pairs/pairs/pair-1/cold": "used",
+   "boot-pairs/pairs/pair-1/warm": "used"
+  },
+  "experiments": {
+   "cold-default-repeat": {
+    "DOMAIN_READY": 40805.349356,
+    "PRODUCT_READY": 40816.006638,
+    "vm_hwm_bytes": 2087473152
+   },
+   "cold-default": {
+    "DOMAIN_READY": 50400.309081,
+    "PRODUCT_READY": 50412.237419,
+    "vm_hwm_bytes": 2236956672
+   },
+   "cold-generation-budget-32mb": {
+    "DOMAIN_READY": 53955.575005,
+    "PRODUCT_READY": 53967.007916,
+    "vm_hwm_bytes": 1717747712
+   },
+   "cold-generation-budget-512mb": {
+    "DOMAIN_READY": 33970.253066,
+    "PRODUCT_READY": 33981.945868,
+    "vm_hwm_bytes": 2596548608
+   },
+   "warm-await-repository-scan": {
+    "DOMAIN_READY": 3189.092282,
+    "PRODUCT_READY": 3212.409088,
+    "vm_hwm_bytes": 202645504
+   },
+   "warm-default": {
+    "DOMAIN_READY": 3206.442962,
+    "PRODUCT_READY": 848.947283,
+    "vm_hwm_bytes": 211050496
+   },
+   "warm-initial-delay-0": {
+    "DOMAIN_READY": 1068.789562,
+    "PRODUCT_READY": 824.995242,
+    "vm_hwm_bytes": 207966208
+   }
+  },
+  "controls": {
+   "c2_warm_vs_clean": "EQUAL",
+   "c3_metadata_store_deleted": {
+    "product_ready_ms": 389.404385,
+    "domain_ready_ms": 2532.775699,
+    "persisted_index_complete_at_open": true
+   },
+   "c4": "EQUAL"
+  }
+ }
 }

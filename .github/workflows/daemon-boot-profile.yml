@@ -91,7 +91,7 @@ jobs:
             echo "{"
             echo "\"instrumentation_and_harness_sha\": \"$(git rev-parse HEAD)\","
             echo "\"subject_sha\": \"$SUBJECT_SHA\", \"subject_is_ancestor\": $(git merge-base --is-ancestor "$SUBJECT_SHA" HEAD && echo true || echo false),"
-            echo "\"production_diff_vs_subject\": \"$(git diff --stat "$SUBJECT_SHA" HEAD -- 'jvmd-*/src/main' | tail -1)\","
+            echo "\"production_diff_vs_subject\": \"$(git diff --stat "$SUBJECT_SHA" HEAD -- ':(glob)jvmd-*/src/main/**' | tail -1)\","
             echo "\"workflow_run\": \"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT\","
             echo "\"build_command\": \"mvn -B -q -DskipTests install && bash jvmd-dist/assemble.sh && bash jvmd-dist/train-aot.sh\","
             echo "\"jdk\": \"$("$JAVA_HOME/bin/java" -version 2>&1 | tr '\n' ' ' | sed 's/"/\\"/g')\","

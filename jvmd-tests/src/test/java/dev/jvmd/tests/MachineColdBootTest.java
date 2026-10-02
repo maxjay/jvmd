@@ -54,6 +54,20 @@ class MachineColdBootTest {
         }
     }
 
+    @Test void aColdBootLooksUpNothingParsesEachContentOnceAndCommitsOnce()throws Exception{
+        Path repository=repository();
+        try(var storage=new MachineColdBoot(temp.resolve("counted"),repository,temp.resolve("no-jdk"),BUDGET).run()){
+            @SuppressWarnings("unchecked") var published=(Map<String,Object>)storage.repository().status();
+            // M2: no publication reuses prior state. M3: three jars hold two contents; each is parsed and published once.
+            assertThat(((Number)published.get("reused")).longValue()).isZero();
+            assertThat(((Number)published.get("published")).longValue()).isEqualTo(storage.machine().tree().size()).isEqualTo(2);
+            // M4: one commit of leaves, nodes and paths, then the root.
+            assertThat(storage.machineStore().status()).containsEntry("commits",1L);
+            assertThat(RocksMachineStore.committedRoot(RocksIndexStorage.machineDirectory(storage.generation())).orElseThrow().identity())
+                    .isEqualTo(storage.machine().root().orElseThrow().identity());
+        }
+    }
+
     @Test void theRootIsWrittenLastAndIsTheOnlyCompletenessSignal()throws Exception{
         Path repository=repository();Path generation=temp.resolve("interrupted");
         var boot=new MachineColdBoot(generation,repository,temp.resolve("no-jdk"),BUDGET);

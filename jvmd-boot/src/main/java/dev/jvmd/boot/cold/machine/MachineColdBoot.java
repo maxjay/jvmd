@@ -98,14 +98,20 @@ public final class MachineColdBoot {
         var claims=new ClaimMap();var builder=new ArtifactBuilder(storage.repository());
         int threads=Math.max(1,Math.min(4,Runtime.getRuntime().availableProcessors()));
         var built=new ArrayList<MachineLeaf>();
+        // Inputs with paired sources are claimed first, so a content found both with and without sources
+        // is built, once, from a location that documents it.
+        var paired=new ArrayList<MachineInput>();var unpaired=new ArrayList<MachineInput>();
+        for(var input:inputs)(input instanceof MachineInput.Jar jar&&jar.sources()==null?unpaired:paired).add(input);
         try(var pool=Executors.newFixedThreadPool(threads,Thread.ofVirtual().name("jvmd-machine-cold-boot-",0).factory())){
-            var jobs=new ArrayList<Future<ArtifactJob.Outcome>>(inputs.size());
-            for(var input:inputs)jobs.add(pool.submit(new ArtifactJob(input,claims,storage.admission(),builder)));
-            for(var job:jobs){
-                switch(get(job)){
-                    case ArtifactJob.Built value->built.add(value.leaf());
-                    case ArtifactJob.Faulted value->faults.add(new Fault(value.location(),value.reason()));
-                    case ArtifactJob.Duplicate _->{}
+            for(var wave:List.of(paired,unpaired)){
+                var jobs=new ArrayList<Future<ArtifactJob.Outcome>>(wave.size());
+                for(var input:wave)jobs.add(pool.submit(new ArtifactJob(input,claims,storage.admission(),builder)));
+                for(var job:jobs){
+                    switch(get(job)){
+                        case ArtifactJob.Built value->built.add(value.leaf());
+                        case ArtifactJob.Faulted value->faults.add(new Fault(value.location(),value.reason()));
+                        case ArtifactJob.Duplicate _->{}
+                    }
                 }
             }
         }
@@ -113,6 +119,7 @@ public final class MachineColdBoot {
         for(var leaf:built){
             // Equal binaries at locations paired with different sources: the documenting location is
             // fixed by path order, so a leaf built from another location's sources is built again.
+            // This is the only content parsed twice.
             var documenting=claims.documenting(leaf.cacheKey());
             if(!Objects.equals(documenting.sourcesSha256(),leaf.sourcesSha256())){
                 switch(new ArtifactJob(documenting.input(),claims,storage.admission(),builder).rebuild()){

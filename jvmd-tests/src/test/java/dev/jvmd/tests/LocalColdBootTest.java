@@ -185,6 +185,26 @@ class LocalColdBootTest {
         }
     }
 
+    @Test void aModuleScopesAnnotationProcessingOutputIsPartOfItsCompilerContext()throws Exception{
+        Path generated=Files.createDirectories(temp.resolve("generated/gen"));
+        Files.writeString(generated.resolve("Made.java"),"package gen; public class Made { public int size(){ return 1; } }");
+        source("app/src/main/java/app/Factory.java","package app; public class Factory { public gen.Made made(){ return new gen.Made(); } }");
+        var calls=new ArrayList<String>();
+        LocalColdBoot.Processors processors=(module,test)->{
+            calls.add(module.gav()+":"+test);
+            return module.gav().equals("g:app:1")&&!test?new LocalColdBoot.Generated(List.of(),List.of(temp.resolve("generated")),Set.of(),"made-v1"):null;
+        };
+        try(var storage=machine(temp.resolve("generation"))){
+            var boot=new LocalColdBoot(storage.generation(),project,()->resolution(),processors,storage.machine(),storage,BUDGET);boot.run();
+            assertThat(boot.faults()).isEmpty();
+            assertThat(calls).contains("g:app:1:false","g:app:1:true","g:lib:1:false");
+            var made=boot.layer().orElseThrow().tree().orElseThrow().semantic().entries().stream().map(Map.Entry::getValue)
+                    .filter(fact->fact.name().equals("made")).findFirst().orElseThrow();
+            assertThat(made.type().toString()).contains("gen.Made");
+            assertThat(made.type().toString()).doesNotContain("Unknown");
+        }
+    }
+
     @Test void identitiesReadFromTheCommittedTreeEqualIndependentlyComputedOnes()throws Exception{
         try(var storage=machine(temp.resolve("generation"))){
             var boot=local(storage,resolution());boot.run();

@@ -11,7 +11,7 @@ class RepositoryIndexExitTest {
  @TempDir Path temp;
  @Test void indexesTheEntireWarmRepositoryAndSpringSources()throws Exception{
   Path repository=Path.of(System.getProperty("user.home"),".m2/repository");
-  try(var index=new IndexService(temp.resolve("index.db"),repository)){
+  try(var index=TestMachine.index(temp.resolve("index.db"),repository)){
    long start=System.nanoTime();index.scan();var status=index.status();
    System.out.println("phase-3-index "+Json.MAPPER.writeValueAsString(status));
    Json.MAPPER.writerWithDefaultPrettyPrinter().writeValue(Path.of("target/phase-3-perf.json").toFile(),java.util.Map.of("elapsed_ms",(System.nanoTime()-start)/1e6,"status",status));

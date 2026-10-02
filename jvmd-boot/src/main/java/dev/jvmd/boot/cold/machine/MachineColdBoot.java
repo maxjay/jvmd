@@ -72,7 +72,7 @@ public final class MachineColdBoot {
                 Path binary=Path.of(jar.getKey());String name=binary.getFileName().toString();if(name.endsWith("-sources.jar"))continue;
                 Path sources=binary.resolveSibling(name.substring(0,name.length()-".jar".length())+"-sources.jar");
                 boolean paired=jars.containsKey(sources.toString());
-                var path=new MachinePath(binary.toString(),gav(binary),paired?sources.toString():null,jar.getValue());
+                var path=new MachinePath(binary.toString(),gav(binary),jar.getValue(),paired?sources.toString():null,paired?jars.get(sources.toString()):null);
                 inputs.add(new MachineInput.Jar(path,binary,paired?sources:null));
             }
         }
@@ -80,9 +80,10 @@ public final class MachineColdBoot {
         if(Files.isRegularFile(modules)){
             var stamp=MachinePath.Stamp.read(modules);String feature=feature(jdkHome);
             Path zip=jdkHome.resolve("lib/src.zip");String sources=Files.isRegularFile(zip)?zip.toString():null;
+            var sourcesStamp=sources==null?null:MachinePath.Stamp.read(zip);
             try(var image=MachineInput.image(jdkHome);var names=Files.list(image.getPath("/modules"))){
                 for(String module:names.map(path->path.getFileName().toString()).sorted().toList())
-                    inputs.add(new MachineInput.JdkModule(new MachinePath("jrt:/"+module,"jdk:"+module+":"+feature,sources,stamp),jdkHome,module));
+                    inputs.add(new MachineInput.JdkModule(new MachinePath("jrt:/"+module,"jdk:"+module+":"+feature,stamp,sources,sourcesStamp),jdkHome,module));
             }
         }
         return List.copyOf(inputs);
@@ -115,10 +116,9 @@ public final class MachineColdBoot {
     /** Bulk-build the MACHINE tree, its aggregates and its path table from the leaves. */
     public MachineTree buildTree(List<MachineLeaf> leaves){return MachineTree.build(leaves);}
 
-    /** Write leaves, nodes and the path table, then the root, and publish the committed tree. */
+    /** Write leaves, nodes and the path table, then the root, and serve the committed tree. */
     public void commit(RocksIndexStorage storage,MachineTree tree)throws Exception{
-        storage.machineStore().commit(tree);
-        storage.machine().committed(tree);
+        storage.commitMachine(tree);
     }
 
     /** Inputs this boot could not read or parse. */

@@ -22,7 +22,7 @@ class MaintainedSemanticObservationTest {
         String text="package p; class Use { MavenProject choose(MavenProject p){return p;} Object f(MavenProject project){return choose(project).;} }";
         Path file=Files.writeString(sources.resolve("Use.java"),text);
         var documents=new Documents();documents.open(file,text,1);
-        try(var index=new IndexService(root.resolve("index.db"),repo);var analyzer=new Analyzer()){
+        try(var index=TestMachine.index(root.resolve("index.db"),repo);var analyzer=new Analyzer()){
             index.indexJar(jar,"fixture:api:1","jar");
             index.loadWorkspace("w",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
             var context=new Analyzer.Context("fixture:app:1","25",List.of(jar),List.of(root.resolve("src")),
@@ -60,7 +60,7 @@ class MaintainedSemanticObservationTest {
         Path repo=Files.createDirectories(root.resolve("repo"));
         Path a=IndexFixtures.jar(repo.resolve("a"),"a","Target.java","package p; public class Target {}",false);
         Path b=IndexFixtures.jar(repo.resolve("b"),"b","Target.java","package p; public final class Target {}",false);
-        try(var index=new IndexService(root.resolve("index.db"),repo)){
+        try(var index=TestMachine.index(root.resolve("index.db"),repo)){
             index.indexJar(a,"fixture:a:1","jar");index.indexJar(b,"fixture:b:1","jar");
             load(index,a,b);
             var store=index.store();var layer=IndexStore.SemanticLayer.MACHINE;
@@ -109,7 +109,7 @@ class MaintainedSemanticObservationTest {
                     .isInstanceOf(IndexStore.UnobservedSemanticQuery.class);
             assertThat(store.semanticWork()).isEqualTo(bounded);
         }
-        try(var reopened=new IndexService(root.resolve("index.db"),repo)){
+        try(var reopened=TestMachine.index(root.resolve("index.db"),repo)){
             load(reopened,a,b);
             assertThat(reopened.store().semanticType("p.Missing","w",IndexStore.SemanticLayer.MACHINE))
                     .as("source artifact membership is reconstructed on reopen").isNotNull();
@@ -120,7 +120,7 @@ class MaintainedSemanticObservationTest {
         Path repo=Files.createDirectories(root.resolve("repo"));
         Path module=Files.createDirectories(root.resolve("module"));
         Path source=Files.writeString(module.resolve("Gone.java"),"package p; class Gone {}");
-        try(var index=new IndexService(root.resolve("index.db"),repo)){
+        try(var index=TestMachine.index(root.resolve("index.db"),repo)){
             var store=index.store();var layer=IndexStore.SemanticLayer.LOCAL;
             var key=ArtifactIndexFormat.key("1".repeat(64),"local-signatures");
             var input=new IndexStore.ArtifactInput(new ArtifactContext("fixture:app:1","local",module.toString()),key,0,0);

@@ -17,7 +17,7 @@ class SemanticClasspathIdentityTest {
         Path repo=Files.createDirectories(root.resolve("repo"));
         String first="package fixture; public class Sample { public int value(){ return 1; } }";
         Path jar=IndexFixtures.jar(repo,"sample",first,true);
-        try(var index=new IndexService(root.resolve("index.db"),repo)){
+        try(var index=TestMachine.index(root.resolve("index.db"),repo)){
             index.indexJar(jar,"fixture:sample:1","jar");
             index.loadWorkspace("w",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
             var before=index.store().semanticClasspathIdentity("w").orElseThrow();

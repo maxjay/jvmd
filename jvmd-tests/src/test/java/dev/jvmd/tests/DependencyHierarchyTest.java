@@ -17,7 +17,7 @@ class DependencyHierarchyTest {
     @Test void nestedDependencyHierarchyHonorsDirectionAndDepth()throws Exception{
         Path repo=Files.createDirectories(root.resolve("repository")),state=Files.createDirectories(root.resolve("state")),workspace=Files.createDirectories(root.resolve("workspace"));
         Path jar=IndexFixtures.jar(repo,"sample","package fixture; public class Sample { public static class Base {} public static class Middle extends Base {} public static class Leaf extends Middle {} }",false);
-        try(var index=new IndexService(state.resolve("index.db"),repo)){index.indexJar(jar,"fixture:sample:1","jar");}
+        try(var index=TestMachine.index(state.resolve("index.db"),repo)){index.indexJar(jar,"fixture:sample:1","jar");}
         var config=new Config(Path.of(System.getProperty("java.home")),null,repo,3,Duration.ofHours(4),512,false,state,root.resolve("daemon.sock"));
         try(var app=new Application(config)){
             String session=TestSupport.open(app,workspace);

@@ -14,11 +14,11 @@ class RocksStorageIntegrationTest {
     @Test void unchangedRestartDoesNotLinkAndDeletedJarDisappearsFromTheStore()throws Exception{
         Path repository=temp.resolve("incremental-repository"),rocks=temp.resolve("incremental-rocks");
         Path jar=IndexFixtures.jar(repository.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
-        try(var index=new IndexService(new RocksIndexStorage(rocks,8L*1024*1024),repository)){
+        try(var index=new IndexService(TestMachine.storage(rocks),repository)){
             index.scan();assertThat(index.store().status()).containsEntry("link_passes",0L);
             index.scan();assertThat(index.store().status()).containsEntry("link_passes",0L);
         }
-        try(var index=new IndexService(new RocksIndexStorage(rocks,8L*1024*1024),repository)){
+        try(var index=new IndexService(TestMachine.storage(rocks),repository)){
             index.scan();assertThat(index.store().status()).containsEntry("link_passes",0L);
             assertThat(index.find("transform",null,false,10,0)).hasSize(1);
             Files.delete(jar);Files.deleteIfExists(jar.resolveSibling("sample-1-sources.jar"));
@@ -32,7 +32,7 @@ class RocksStorageIntegrationTest {
         Path jar=IndexFixtures.jar(repository,"legacy",IndexFixtures.generic(),false);
         byte[] original="legacy cache must not be opened or rewritten".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         Files.write(database,original);
-        try(var index=new IndexService(database,repository)){
+        try(var index=TestMachine.index(database,repository)){
             index.indexJar(jar,"fixture:legacy:1","jar");
             assertThat(index.find("transform",null,false,10,0)).hasSize(1);
             assertThat(index.status()).doesNotContainKeys("generation_sink","shadow_validation");
@@ -44,7 +44,7 @@ class RocksStorageIntegrationTest {
     @Test void repositoryPublicationHasOneOwner()throws Exception{
         Path repository=temp.resolve("repository");
         Path jar=IndexFixtures.jar(repository.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
-        var storage=new RocksIndexStorage(temp.resolve("rocks"),8L*1024*1024);
+        var storage=TestMachine.storage(temp.resolve("rocks"));
         try(var index=new IndexService(storage,repository)){
             index.indexJar(jar,"fixture:sample:1","jar");
             assertThat(index.find("transform",null,false,10,0)).hasSize(1);
@@ -61,7 +61,7 @@ class RocksStorageIntegrationTest {
     @Test void repositoryScanMaintainsInventoryWithoutRewritingUnchangedArtifacts()throws Exception{
         Path repository=temp.resolve("scan-repository");
         Path jar=IndexFixtures.jar(repository.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
-        try(var storage=new RocksIndexStorage(temp.resolve("scan-rocks"),8L*1024*1024);
+        try(var storage=TestMachine.storage(temp.resolve("scan-rocks"));
             var index=new IndexService(storage,repository)){
             index.scan();
             @SuppressWarnings("unchecked") var first=(java.util.Map<String,Object>)index.status().get("storage");
@@ -83,7 +83,7 @@ class RocksStorageIntegrationTest {
     @Test void failedSkeletonScanDoesNotReconcileAwayPriorInventory()throws Exception{
         Path repository=temp.resolve("failed-repository");
         Path jar=IndexFixtures.jar(repository.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
-        try(var storage=new RocksIndexStorage(temp.resolve("failed-rocks"),8L*1024*1024);
+        try(var storage=TestMachine.storage(temp.resolve("failed-rocks"));
             var index=new IndexService(storage,repository)){
             index.scan();
             @SuppressWarnings("unchecked") var first=(java.util.Map<String,Object>)index.status().get("storage");

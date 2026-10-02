@@ -1,6 +1,8 @@
 package dev.jvmd.boot;
 
 import dev.jvmd.boot.cold.machine.MachineColdBoot;
+import dev.jvmd.boot.warm.MachineWarmBoot;
+import dev.jvmd.index.IndexService;
 import dev.jvmd.index.rocks.RocksIndexStorage;
 import dev.jvmd.index.rocks.layer.RocksMachineStore;
 import java.nio.file.Path;
@@ -11,19 +13,17 @@ import java.nio.file.Path;
  * Nothing below this class checks again.
  */
 public final class BootDecision {
-    /** Thrown when a layer has a committed root, until the warm boot exists. */
-    public static final String WARM_BOOT_MISSING="committed root found; warm boot is not implemented";
-
     private BootDecision(){}
 
     /**
-     * MACHINE at daemon start: a cold boot of the current generation under {@code indexRoot} from
-     * {@code repository} and {@code jdkHome} when no MACHINE root is committed.
+     * MACHINE at daemon start, in the current generation under {@code indexRoot}: a cold boot from
+     * {@code repository} and {@code jdkHome} when no MACHINE root is committed, otherwise the warm boot.
      */
-    public static RocksIndexStorage machine(Path indexRoot,Path repository,Path jdkHome,long admissionBytes)throws Exception{
+    public static IndexService machine(Path indexRoot,Path repository,Path jdkHome,long admissionBytes)throws Exception{
         Path generation=RocksIndexStorage.generation(indexRoot);
         if(RocksMachineStore.committedRoot(RocksIndexStorage.machineDirectory(generation)).isPresent())
-            throw new IllegalStateException(WARM_BOOT_MISSING);
-        return new MachineColdBoot(generation,repository,jdkHome,admissionBytes).run();
+            return new MachineWarmBoot(generation,repository,admissionBytes).run();
+        var storage=new MachineColdBoot(generation,repository,jdkHome,admissionBytes).run();
+        return new IndexService(storage,repository);
     }
 }

@@ -35,7 +35,7 @@ class MaintainedCompletionContextTest {
                 }
                 """,true);
         Path sources=Files.createDirectories(root.resolve("src/lib"));
-        try(var index=new IndexService(root.resolve("index.db"),repo);
+        try(var index=TestMachine.index(root.resolve("index.db"),repo);
             var analyzer=new Analyzer()){
             index.indexJar(jar,"fixture:api:1","jar");
             index.loadWorkspace("w",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
@@ -114,7 +114,7 @@ class MaintainedCompletionContextTest {
                 }
                 """;
         Path file=Files.writeString(sources.resolve("Use.java"),source);
-        try(var index=new IndexService(root.resolve("maven-index.db"),repo);
+        try(var index=TestMachine.index(root.resolve("maven-index.db"),repo);
             var analyzer=new Analyzer()){
             index.indexJar(jar,"org.apache.maven:maven-core:fixture","jar");
             index.loadWorkspace("maven-workspace",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
@@ -156,7 +156,7 @@ class MaintainedCompletionContextTest {
         String useText="package p; class Use { Object f(Foo value){ return value.; } }";
         Path use=Files.writeString(sourceRoot.resolve("Use.java"),useText);
 
-        try(var index=new IndexService(root.resolve("shadow-index.db"),repo);
+        try(var index=TestMachine.index(root.resolve("shadow-index.db"),repo);
             var analyzer=new Analyzer()){
             index.indexJar(jar,"fixture:shadow-api:1","jar");
             index.loadWorkspace("shadow-w",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());

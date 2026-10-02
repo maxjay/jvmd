@@ -11,10 +11,11 @@ import java.util.*;
  * path where that content was found, its projected resolution and documentation identities, the
  * root of its semantic tree, and the keys of its immutable stores (facts and documentation).
  *
- * @param docsKey the documentation store key, or null when no sources were paired with the content
+ * @param sourcesSha256 the SHA-256 of the paired sources, or null when no sources were paired with the content
+ * @param docsKey       the documentation store key, or null when no sources were paired with the content
  */
 public record MachineLeaf(String binarySha256,String mode,List<MachinePath> paths,Hash256 resolution,Hash256 documentation,
-                          String docsKey,Hash256 semanticRoot,long symbols,long relationships,long types) {
+                          String sourcesSha256,String docsKey,Hash256 semanticRoot,long symbols,long relationships,long types) {
     public MachineLeaf {
         Objects.requireNonNull(binarySha256);Objects.requireNonNull(mode);Objects.requireNonNull(resolution);
         Objects.requireNonNull(documentation);Objects.requireNonNull(semanticRoot);
@@ -31,18 +32,21 @@ public record MachineLeaf(String binarySha256,String mode,List<MachinePath> path
         var next=new ArrayList<MachinePath>(paths.size()+1);
         for(var existing:paths)if(!existing.location().equals(path.location()))next.add(existing);
         next.add(path);
-        return new MachineLeaf(binarySha256,mode,next,resolution,documentation,docsKey,semanticRoot,symbols,relationships,types);
+        return new MachineLeaf(binarySha256,mode,next,resolution,documentation,sourcesSha256,docsKey,semanticRoot,symbols,relationships,types);
     }
     public MachineLeaf withPaths(Collection<MachinePath> values){
-        return new MachineLeaf(binarySha256,mode,List.copyOf(values),resolution,documentation,docsKey,semanticRoot,symbols,relationships,types);
+        return new MachineLeaf(binarySha256,mode,List.copyOf(values),resolution,documentation,sourcesSha256,docsKey,semanticRoot,symbols,relationships,types);
     }
 
     /** Identity hashed into the MACHINE tree: covers the content, its projections, its paths and its semantic tree. */
     public Hash256 identity(){
         var locations=new ArrayList<Object>();
-        for(var path:paths)locations.add(new Object[]{path.location(),path.gav(),Objects.toString(path.sources(),""),
-                path.stamp().size(),path.stamp().modifiedNanos(),path.stamp().fileKey()});
-        return CanonicalDigestWriter.digest("machine-leaf-v1",cacheKey(),resolution,documentation,Objects.toString(docsKey,""),
+        for(var path:paths){
+            var sources=path.sourcesStamp();
+            locations.add(new Object[]{path.location(),path.gav(),path.stamp().size(),path.stamp().modifiedNanos(),path.stamp().fileKey(),
+                    Objects.toString(path.sources(),""),sources==null?"":sources.size(),sources==null?"":sources.modifiedNanos(),sources==null?"":sources.fileKey()});
+        }
+        return CanonicalDigestWriter.digest("machine-leaf-v1",cacheKey(),resolution,documentation,Objects.toString(sourcesSha256,""),Objects.toString(docsKey,""),
                 semanticRoot,symbols,relationships,types,locations);
     }
 
@@ -50,6 +54,7 @@ public record MachineLeaf(String binarySha256,String mode,List<MachinePath> path
         var bytes=new ByteArrayOutputStream();
         try(var out=new DataOutputStream(bytes)){
             out.writeUTF(binarySha256);out.writeUTF(mode);out.write(resolution.bytes());out.write(documentation.bytes());
+            out.writeBoolean(sourcesSha256!=null);if(sourcesSha256!=null)out.writeUTF(sourcesSha256);
             out.writeBoolean(docsKey!=null);if(docsKey!=null)out.writeUTF(docsKey);out.write(semanticRoot.bytes());
             out.writeLong(symbols);out.writeLong(relationships);out.writeLong(types);
             out.writeInt(paths.size());for(var path:paths)path.write(out);
@@ -60,12 +65,12 @@ public record MachineLeaf(String binarySha256,String mode,List<MachinePath> path
     public static MachineLeaf decode(byte[] bytes)throws IOException{
         try(var in=new DataInputStream(new ByteArrayInputStream(bytes))){
             String sha=in.readUTF(),mode=in.readUTF();Hash256 resolution=hash(in),documentation=hash(in);
-            String docsKey=in.readBoolean()?in.readUTF():null;Hash256 semanticRoot=hash(in);
+            String sourcesSha=in.readBoolean()?in.readUTF():null;String docsKey=in.readBoolean()?in.readUTF():null;Hash256 semanticRoot=hash(in);
             long symbols=in.readLong(),relationships=in.readLong(),types=in.readLong();
             int count=in.readInt();if(count<0)throw new IOException("Negative MACHINE path count");
             var paths=new ArrayList<MachinePath>(count);for(int i=0;i<count;i++)paths.add(MachinePath.read(in));
             if(in.available()!=0)throw new IOException("Trailing MACHINE leaf bytes");
-            return new MachineLeaf(sha,mode,paths,resolution,documentation,docsKey,semanticRoot,symbols,relationships,types);
+            return new MachineLeaf(sha,mode,paths,resolution,documentation,sourcesSha,docsKey,semanticRoot,symbols,relationships,types);
         }
     }
     private static Hash256 hash(DataInputStream in)throws IOException{

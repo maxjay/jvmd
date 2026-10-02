@@ -28,7 +28,7 @@ class IndexedFileManagerTest {
  @Test void completesPrivateSupportTypesAndDoesNotHideDeletedJars()throws Exception{
   Path jar=IndexFixtures.jar(temp,"support","package fixture; class Parent { public int inherited; } public class Sample extends Parent { public int value; }",true);
   var compiler=ToolProvider.getSystemJavaCompiler();
-  try(var index=new IndexService(temp.resolve("index.db"),temp)){
+  try(var index=TestMachine.index(temp.resolve("index.db"),temp)){
    index.indexJar(jar,"fixture:support:1","jar");
    try(var manager=new IndexedFileManager(compiler.getStandardFileManager(null,null,null),List.of(jar),List.of(),index,1024*1024)){
     var diagnostics=new DiagnosticCollector<JavaFileObject>();var task=(com.sun.source.util.JavacTask)compiler.getTask(null,manager,diagnostics,List.of("-proc:none","--should-stop=ifError=FLOW"),null,List.of(Parser.source(temp.resolve("Use.java").toUri(),"class Use { int get(fixture.Sample s){return s.inherited+s.value;} }")));

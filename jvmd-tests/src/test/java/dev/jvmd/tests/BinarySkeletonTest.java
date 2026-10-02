@@ -24,7 +24,7 @@ class BinarySkeletonTest {
    .withMethodBody("value",java.lang.constant.MethodTypeDesc.ofDescriptor("()Ljava/lang/Object;"),9,c->c.aconst_null().areturn())
    .withMethodBody("value",java.lang.constant.MethodTypeDesc.ofDescriptor("()V"),9,c->c.return_()));
   Path jar=temp.resolve("returns.jar");try(var output=new java.util.jar.JarOutputStream(Files.newOutputStream(jar))){output.putNextEntry(new java.util.jar.JarEntry("fixture/ReturnOverload.class"));output.write(bytes);output.closeEntry();}
-  try(var index=new IndexService(temp.resolve("index.db"),temp);
+  try(var index=TestMachine.index(temp.resolve("index.db"),temp);
       var control=new IndexService(new ReferenceIndexStorage(temp.resolve("control.db")),temp)){
    index.indexJar(jar,"fixture:returns:1","jar");control.indexJar(jar,"fixture:returns:1","jar");
    var methods=index.find("value",null,false,10,0);assertThat(methods).hasSize(2);assertThat(methods.stream().map(m->m.get("scip"))).doesNotHaveDuplicates();

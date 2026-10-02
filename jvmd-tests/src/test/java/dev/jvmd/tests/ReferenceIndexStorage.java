@@ -15,13 +15,14 @@ final class ReferenceIndexStorage implements IndexStorage,ArtifactInventory,Inde
     public IndexStore store(){return store;}
     public ArtifactInventory inventory(){return this;}
     public IndexSemanticState semanticState(){return this;}
-    public ArtifactAdmission admission(){return path->()->{};}
+    public ArtifactAdmission admission(){return new ArtifactAdmission(){
+        public AutoCloseable acquire(long estimatedBytes){return ()->{};}
+        public AutoCloseable acquireArtifact(Path path){return ()->{};}
+    };}
     public Map<String,Object> status(){return Map.of("backend","test-sqlite");}
     public long beginScan(){return 0;}
     public void observe(long generation,IndexStore.ArtifactInput input){}
-    private volatile boolean scanCompleted;
-    public Set<String> completeScan(long generation){scanCompleted=true;return Set.of();}
-    @Override public boolean scanCompleted(){return scanCompleted;}
+    public Set<String> completeScan(long generation){return Set.of();}
     public long semanticRevision(Path file){return revision.applyAsLong(file);}
     public String moduleStateFingerprint(String moduleId){return null;}
     public void publishSourceState(FileSemanticContribution contribution,String moduleId,String contextFingerprint){}

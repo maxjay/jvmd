@@ -25,7 +25,7 @@ class ClasspathLifecycleIntegrationTest {
         Path sources=Files.createDirectories(root.resolve("src"));
         Path file=sources.resolve("Use.java");
 
-        try(var index=new IndexService(root.resolve("index.db"),repo);
+        try(var index=TestMachine.index(root.resolve("index.db"),repo);
             var analyzer=new Analyzer()){
             index(index,a,"fixture:a:1");index(index,b,"fixture:b:1");index(index,c,"fixture:c:1");
             load(index,List.of(a,b,c));

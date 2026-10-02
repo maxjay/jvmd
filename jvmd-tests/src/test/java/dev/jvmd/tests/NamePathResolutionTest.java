@@ -39,7 +39,7 @@ class NamePathResolutionTest {
     }
     @Test void dependencyOverloadsUseTheSameGrammar()throws Exception{
         Path jar=IndexFixtures.jar(root.resolve("repository"),"sample","package fixture; public class Sample { public void accept(java.util.Date[] value){} public void accept(java.sql.Date[] value){} public void accept(int[][] value){} }",false);
-        try(var index=new IndexService(root.resolve("index.db"),root.resolve("repository"))){
+        try(var index=TestMachine.index(root.resolve("index.db"),root.resolve("repository"))){
             index.indexJar(jar,"fixture:sample:1","jar");
             assertThat(index.find("Sample/accept(Date[])",null,false,10,0)).hasSize(2);
             assertThat(index.find("Sample/accept",null,false,10,0)).hasSize(3);

@@ -25,7 +25,7 @@ class RocksArtifactRepositoryTest {
                     "void "+name+"()","()V",1,(owner?"fixture/Owner.class":"fixture/Other.class"),List.of(),"{}"));
         }
         var data=new ArtifactIndexFormat.ArtifactData(key,List.copyOf(symbols),List.of());
-        try(var store=new RocksArtifactRepository(temp.resolve("owner-prefix"))){
+        try(var store=new RocksArtifactRepository(temp.resolve("owner-prefix"),TestOptions.creating())){
             store.publish(data,Set.of());
             long reads=((Number)store.status().get("query_symbol_reads")).longValue();
             var first=store.ownerMembers(key.cacheKey(),"fixture.Owner","get",4,null);
@@ -44,7 +44,7 @@ class RocksArtifactRepositoryTest {
 
     @Test void boundedPagesRejectUnusableIdsBeforeDecodingButPreserveCustomRanks()throws Exception{
         var data=facts(5000,0);String key=data.key().cacheKey();
-        try(var store=new RocksArtifactRepository(temp.resolve("bounded-page"))){
+        try(var store=new RocksArtifactRepository(temp.resolve("bounded-page"),TestOptions.creating())){
             store.publish(data,Set.of());
             for(String prefix:List.of("8|gram|met|","1|symbol|")){
                 long before=((Number)store.status().get("query_symbol_reads")).longValue();
@@ -65,7 +65,7 @@ class RocksArtifactRepositoryTest {
 
     @Test void postingCountsChooseSelectiveListsWithoutMaterializingSymbols()throws Exception{
         var data=facts(1100,0);String key=data.key().cacheKey();
-        try(var store=new RocksArtifactRepository(temp.resolve("posting-counts"))){
+        try(var store=new RocksArtifactRepository(temp.resolve("posting-counts"),TestOptions.creating())){
             store.publish(data,Set.of());
             assertThat(store.postingCountExceeds(key,"8|gram|met|",1099)).isTrue();
             assertThat(store.postingCountExceeds(key,"8|gram|met|",1100)).isFalse();
@@ -95,7 +95,7 @@ class RocksArtifactRepositoryTest {
 
     @Test void admittedPublisherDoesNotQueueBehindAWorkerWaitingForItsCapacity()throws Exception{
         var acquired=new java.util.concurrent.CountDownLatch(1);var publish=new java.util.concurrent.CountDownLatch(1);
-        try(var storage=new RocksIndexStorage(temp.resolve("fair-admission"),1024*1024)){
+        try(var storage=RocksIndexStorage.create(temp.resolve("fair-admission"),1024*1024)){
             var executor=java.util.concurrent.Executors.newFixedThreadPool(2);
             try{
                 var owner=executor.submit(()->{
@@ -131,7 +131,7 @@ class RocksArtifactRepositoryTest {
             for(String gram:grams)expected.computeIfAbsent(gram,ignored->new ArrayList<>()).add(symbol.id());
         }
         var data=new ArtifactIndexFormat.ArtifactData(facts(0,0).key(),symbols,List.of());
-        try(var store=new RocksArtifactRepository(temp.resolve("gram-boundaries"))){
+        try(var store=new RocksArtifactRepository(temp.resolve("gram-boundaries"),TestOptions.creating())){
             store.publish(data,Set.of());
             for(var entry:expected.entrySet())assertThat(gramIds(store,data.key().cacheKey(),entry.getKey(),100))
                     .as("gram %s",entry.getKey()).containsExactlyElementsOf(entry.getValue());
@@ -160,7 +160,7 @@ class RocksArtifactRepositoryTest {
                 symbol.signature(),symbol.descriptor(),symbol.flags(),symbol.entry(),symbol.parameters(),null);
         var badSchema=new ArtifactIndexFormat.ArtifactData(original.key(),List.of(malformed),List.of());
         var badEdge=new ArtifactIndexFormat.ArtifactData(original.key(),original.symbols(),List.of(new ArtifactIndexFormat.Relationship(1,"dep.Type","calls")));
-        try(var store=new RocksArtifactRepository(temp.resolve("invalid-records"))){
+        try(var store=new RocksArtifactRepository(temp.resolve("invalid-records"),TestOptions.creating())){
             for(var invalid:List.of(badSchema,badEdge)){
                 assertThatThrownBy(()->store.publish(invalid,Set.of())).isInstanceOf(java.io.IOException.class);
                 assertThat(store.contains(original.key().cacheKey())).isFalse();
@@ -176,8 +176,8 @@ class RocksArtifactRepositoryTest {
         for(int i=0;i<1100;i++)edges.add(new ArtifactIndexFormat.Relationship(i,"dep.Shared","calls"));
         var data=new ArtifactIndexFormat.ArtifactData(original.key(),original.symbols(),List.copyOf(edges));
         Path root=temp.resolve("packed");String key=data.key().cacheKey();
-        try(var store=new RocksArtifactRepository(root)){store.publish(data,Set.of("dep.Shared"));}
-        try(var store=new RocksArtifactRepository(root)){
+        try(var store=new RocksArtifactRepository(root,TestOptions.creating())){store.publish(data,Set.of("dep.Shared"));}
+        try(var store=new RocksArtifactRepository(root,TestOptions.creating())){
             assertThat(store.verify(key)).isTrue();assertThat(store.artifact(key)).isEqualTo(data);
             assertThat(gramIds(store,key,"method",2000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,1100).boxed().toList());
             assertThat(store.incoming(key,"dep.Shared",Set.of("calls"),2000).stream().map(ArtifactIndexFormat.Relationship::sourceId).toList()).containsExactlyElementsOf(java.util.stream.IntStream.range(0,1100).boxed().toList());
@@ -193,7 +193,7 @@ class RocksArtifactRepositoryTest {
         try{
             var original=facts(5000,0);var shuffled=new ArrayList<>(original.symbols());Collections.shuffle(shuffled,new Random(17));
             var data=new ArtifactIndexFormat.ArtifactData(original.key(),shuffled,List.of());String key=data.key().cacheKey();
-            try(var store=new RocksArtifactRepository(temp.resolve("interleaved"))){
+            try(var store=new RocksArtifactRepository(temp.resolve("interleaved"),TestOptions.creating())){
                 store.publish(data,Set.of());assertThat(store.verify(key)).isTrue();
                 assertThat(gramIds(store,key,"method",6000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,5000).boxed().toList());
                 assertThat(store.select(key,"8|gram|met|",254,4,s->s.id()%2==0)).extracting(ArtifactIndexFormat.SymbolRecord::id).containsExactly(256,258,260,262);
@@ -205,7 +205,7 @@ class RocksArtifactRepositoryTest {
     @Test void atomicallyPublishesAndReusesImmutableGeneration()throws Exception{
         var data=facts(5000,10000);
         String cacheKey=data.key().cacheKey();
-        try(var store=new RocksArtifactRepository(temp.resolve("rocks"))){
+        try(var store=new RocksArtifactRepository(temp.resolve("rocks"),TestOptions.creating())){
             long before=storageBytes(store);
             var first=store.publish(data,Set.of("dep.Type12","dep.Type77"));
             assertThat(first.reused()).isFalse();
@@ -227,7 +227,7 @@ class RocksArtifactRepositoryTest {
         Path root=temp.resolve("rocks"),staging=Files.createDirectories(root.resolve("staging"));
         Files.writeString(staging.resolve("orphan.sst.tmp"),"partial");
         var data=facts(10,20);
-        try(var store=new RocksArtifactRepository(root)){
+        try(var store=new RocksArtifactRepository(root,TestOptions.creating())){
             assertThat(Files.list(staging).toList()).isEmpty();
             assertThat(store.contains(data.key().cacheKey())).isFalse();
         }
@@ -239,7 +239,7 @@ class RocksArtifactRepositoryTest {
 
     @Test void distinctArtifactsBuildInParallelWithinBoundedStorageBudget()throws Exception{
         long budget=4L*1024*1024;
-        try(var storage=new RocksIndexStorage(temp.resolve("bounded"),budget);
+        try(var storage=RocksIndexStorage.create(temp.resolve("bounded"),budget);
             var executor=java.util.concurrent.Executors.newFixedThreadPool(4)){
             var futures=new ArrayList<java.util.concurrent.Future<?>>();
             for(int i=0;i<4;i++){
@@ -258,10 +258,10 @@ class RocksArtifactRepositoryTest {
 
     @Test void generationSurvivesReopenAndReusesWithoutArtifactRewrite()throws Exception{
         Path root=temp.resolve("reopen");var data=facts(1000,2000);String cacheKey=data.key().cacheKey();
-        try(var first=new RocksArtifactRepository(root)){
+        try(var first=new RocksArtifactRepository(root,TestOptions.creating())){
             first.publish(data,Set.of("dep.Type12"));assertThat(first.verify(cacheKey)).isTrue();
         }
-        try(var reopened=new RocksArtifactRepository(root)){
+        try(var reopened=new RocksArtifactRepository(root,TestOptions.creating())){
             assertThat(reopened.verify(cacheKey)).isTrue();
             assertThat(reopened.artifact(cacheKey)).isEqualTo(data);
             assertThat(reopened.publish(data,Set.of("dep.Type12")).reused()).isTrue();
@@ -271,7 +271,7 @@ class RocksArtifactRepositoryTest {
 
     @Test void concurrentSameGenerationPublishesExactlyOnce()throws Exception{
         Path root=temp.resolve("same-key");var data=facts(2000,4000);
-        try(var store=new RocksArtifactRepository(root);var executor=java.util.concurrent.Executors.newFixedThreadPool(4)){
+        try(var store=new RocksArtifactRepository(root,TestOptions.creating());var executor=java.util.concurrent.Executors.newFixedThreadPool(4)){
             var futures=new ArrayList<java.util.concurrent.Future<RocksArtifactRepository.Publication>>();
             for(int i=0;i<4;i++)futures.add(executor.submit(()->store.publish(data,Set.of("dep.Type12"))));
             var values=new ArrayList<RocksArtifactRepository.Publication>();for(var future:futures)values.add(future.get());
@@ -287,7 +287,7 @@ class RocksArtifactRepositoryTest {
         System.setProperty("jvmd.index.sort_buffer_bytes","65536");
         Path root=temp.resolve("spilled");var data=facts(1000,2000);String key=data.key().cacheKey();
         try{
-            try(var store=new RocksArtifactRepository(root)){
+            try(var store=new RocksArtifactRepository(root,TestOptions.creating())){
                 store.publish(data,Set.of("dep.Type12"));
                 assertThat(store.verify(key)).isTrue();assertThat(store.artifact(key)).isEqualTo(data);
                 assertThat(((Number)store.status().get("sort_peak_bytes")).longValue()).isLessThanOrEqualTo(65536L);
@@ -297,7 +297,7 @@ class RocksArtifactRepositoryTest {
             try(var options=new org.rocksdb.Options();var db=org.rocksdb.RocksDB.open(options,root.resolve("db").toString())){
                 db.delete((key+"|3|name|method0|00000000").getBytes(java.nio.charset.StandardCharsets.UTF_8));
             }
-            try(var reopened=new RocksArtifactRepository(root)){assertThat(reopened.verify(key)).isFalse();}
+            try(var reopened=new RocksArtifactRepository(root,TestOptions.creating())){assertThat(reopened.verify(key)).isFalse();}
         }finally{if(prior==null)System.clearProperty("jvmd.index.sort_buffer_bytes");else System.setProperty("jvmd.index.sort_buffer_bytes",prior);}
     }
 
@@ -305,7 +305,7 @@ class RocksArtifactRepositoryTest {
         var data=facts(30,60);var duplicates=new ArrayList<>(data.relationships());duplicates.add(duplicates.getFirst());
         var invalid=new ArtifactIndexFormat.ArtifactData(data.key(),data.symbols(),duplicates);
         Path root=temp.resolve("failed-build");
-        try(var store=new RocksArtifactRepository(root)){
+        try(var store=new RocksArtifactRepository(root,TestOptions.creating())){
             assertThatThrownBy(()->store.publish(invalid,Set.of())).isInstanceOf(java.io.IOException.class);
             assertThat(store.contains(data.key().cacheKey())).isFalse();
             try(var files=Files.list(root.resolve("staging"))){assertThat(files.toList()).isEmpty();}
@@ -333,7 +333,7 @@ class RocksArtifactRepositoryTest {
     }
     @Test void documentationOverlayIsContentAddressedSeparatelyFromBinaryFacts()throws Exception{
         var data=facts(20,40);
-        try(var store=new RocksArtifactRepository(temp.resolve("docs"))){
+        try(var store=new RocksArtifactRepository(temp.resolve("docs"),TestOptions.creating())){
             store.publish(data,Set.of());
             var sourceKey=new ArtifactIndexFormat.Key("f".repeat(64),ArtifactIndexFormat.FORMAT_VERSION,
                     ArtifactIndexFormat.INDEXER_VERSION,Runtime.version().feature(),"sources");

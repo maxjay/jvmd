@@ -16,7 +16,7 @@ class SourceFactsMigrationTest {
     @Test void sourceReplacementMasksOldBinaryRelationshipsInBothDirections()throws Exception {
         Path jar=IndexFixtures.jar(root.resolve("jar"),"sample","package fixture; public class Sample { public static class Base {} public static class Child extends Base {} }",false);
         Path source=root.resolve("Child.java");Files.writeString(source,"class Child {}");
-        try(var index=new IndexService(root.resolve("edges.db"),root.resolve("repository"))){
+        try(var index=TestMachine.index(root.resolve("edges.db"),root.resolve("repository"))){
             long artifact=index.indexJar(jar,"fixture:sample:1","jar");var store=index.store();
             var parent=store.find("Base",null,false,10,0,Set.of("class")).getFirst();var child=store.find("Child",null,false,10,0,Set.of("class")).getFirst();
             String target=parent.get("scip").toString(),identity=child.get("scip").toString();
@@ -32,7 +32,7 @@ class SourceFactsMigrationTest {
     @Test void legacyJsonBecomesIndexedFactsWithoutChangingHandlesAndMigrationIsIdempotent()throws Exception {
         Path module=Files.createDirectories(root.resolve("module")),source=module.resolve("A.java"),database=root.resolve("index.db");Files.writeString(source,"class A {}");
         long artifact;
-        try(var index=new IndexService(database,root.resolve("repository"))){
+        try(var index=TestMachine.index(database,root.resolve("repository"))){
             var key=ArtifactIndexFormat.key("1".repeat(64),"local-signatures");
             artifact=index.store().publishArtifact(new IndexStore.ArtifactInput(new ArtifactContext("fixture:app:1","local",module.toString()),key,0,0),new ArtifactIndexFormat.ArtifactData(key,List.of(),List.of()),Set.of(),Map.of());
         }
@@ -44,7 +44,7 @@ class SourceFactsMigrationTest {
             rocks.put(legacyKey,Json.MAPPER.writeValueAsBytes(Map.of("file",source.toString(),"hash",Hashing.sha256(source),"symbols",List.of(symbol),"edges",List.of())));
             rocks.put("next-source".getBytes(StandardCharsets.UTF_8),"2147483649".getBytes(StandardCharsets.UTF_8));
         }
-        for(int restart=0;restart<2;restart++)try(var index=new IndexService(database,root.resolve("repository"))){
+        for(int restart=0;restart<2;restart++)try(var index=TestMachine.index(database,root.resolve("repository"))){
             var value=index.store().byScip(scip,null);assertThat(value).containsEntry("id",handle).containsEntry("source_file",source.toString());
             assertThat(index.store().byId(handle,null)).containsEntry("scip",scip);
             assertThat(index.store().findNamePrefix("A",null,10,Set.of("class"))).hasSize(1);

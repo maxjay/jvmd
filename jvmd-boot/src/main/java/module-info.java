@@ -5,4 +5,5 @@ module dev.jvmd.boot {
     requires dev.jvmd.resolver;
     exports dev.jvmd.boot;
     exports dev.jvmd.boot.cold.machine;
+    exports dev.jvmd.boot.warm;
 }

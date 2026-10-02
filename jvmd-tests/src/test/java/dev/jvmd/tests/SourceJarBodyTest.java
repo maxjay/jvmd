@@ -17,7 +17,7 @@ class SourceJarBodyTest {
     @Test void findRoundTripsTheExactBodyFromASourcesJar()throws Exception{
         Path repo=Files.createDirectories(root.resolve("repository")),workspace=Files.createDirectories(root.resolve("workspace")),state=Files.createDirectories(root.resolve("state"));
         Path jar=IndexFixtures.jar(repo,"sample",IndexFixtures.generic(),false);
-        try(var index=new IndexService(state.resolve("index.db"),repo)){index.indexJar(jar,"fixture:sample:1","jar");index.indexSources(repo.resolve("sample-sources.jar"));}
+        try(var index=TestMachine.index(state.resolve("index.db"),repo)){index.indexJar(jar,"fixture:sample:1","jar");index.indexSources(repo.resolve("sample-sources.jar"));}
         var config=new Config(Path.of(System.getProperty("java.home")),null,repo,3,Duration.ofHours(4),512,false,state,root.resolve("daemon.sock"));
         try(var app=new Application(config)){
             String session=TestSupport.open(app,workspace);

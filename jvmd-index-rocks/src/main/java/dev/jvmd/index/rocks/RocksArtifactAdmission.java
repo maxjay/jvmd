@@ -1,6 +1,7 @@
 package dev.jvmd.index.rocks;
 
 import dev.jvmd.index.*;
+import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.*;
@@ -23,6 +24,25 @@ final class RocksArtifactAdmission implements ArtifactAdmission {
     @Override public AutoCloseable acquire(long estimatedBytes)throws Exception{
         if(artifactPermit.get())return ()->{};
         int units=(int)Math.min(totalUnits,Math.max(1,(Math.min((long)totalUnits*UNIT,estimatedBytes)+UNIT-1)/UNIT));
+        long waiting=System.nanoTime();budget.acquire(units);waitNanos.addAndGet(System.nanoTime()-waiting);
+        int active=unitsInFlight.addAndGet(units);peakUnits.accumulateAndGet(active,Math::max);artifactPermit.set(true);
+        return ()->{artifactPermit.remove();unitsInFlight.addAndGet(-units);budget.release(units);};
+    }
+
+    @Override public AutoCloseable acquireArtifact(Path path)throws Exception{
+        if(artifactPermit.get())return ()->{};
+        long estimate=8L*UNIT;
+        if(Files.isRegularFile(path)&&path.toString().endsWith(".jar")){
+            try(var jar=new java.util.jar.JarFile(path.toFile())){
+                var entries=jar.entries();
+                while(entries.hasMoreElements()){
+                    var entry=entries.nextElement();
+                    if(entry.getName().endsWith(".class")||entry.getName().endsWith(".java"))
+                        estimate=Math.min((long)totalUnits*UNIT,estimate+Math.max(0,entry.getSize())*12L+1024L);
+                }
+            }
+        }
+        int units=(int)Math.min(totalUnits,Math.max(1,(estimate+UNIT-1)/UNIT));
         long waiting=System.nanoTime();budget.acquire(units);waitNanos.addAndGet(System.nanoTime()-waiting);
         int active=unitsInFlight.addAndGet(units);peakUnits.accumulateAndGet(active,Math::max);artifactPermit.set(true);
         return ()->{artifactPermit.remove();unitsInFlight.addAndGet(-units);budget.release(units);};

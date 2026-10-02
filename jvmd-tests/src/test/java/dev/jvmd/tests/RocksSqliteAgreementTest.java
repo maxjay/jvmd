@@ -22,7 +22,7 @@ class RocksSqliteAgreementTest {
                 IndexFixtures.generic().replace("private String hidden;","private String hidden; public int markerB;"),false);
 
         try(var sqlite=new IndexService(new ReferenceIndexStorage(temp.resolve("control.db")),repo);
-            var rocks=new IndexService(temp.resolve("index.db"),repo)){
+            var rocks=TestMachine.index(temp.resolve("index.db"),repo)){
             for(var index:List.of(sqlite,rocks)){
                 index.indexJar(a,"fixture:a:1","jar");index.indexJar(b,"fixture:b:1","jar");
                 index.loadWorkspace("w",List.of(new IndexService.WorkspaceArtifact(a.toString(),"compile"),

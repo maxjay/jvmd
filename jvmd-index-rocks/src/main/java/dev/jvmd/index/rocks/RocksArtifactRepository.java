@@ -20,12 +20,13 @@ import org.rocksdb.*;
 /**
  * Immutable, content-addressed artifact stores backed by externally built RocksDB SST files.
  *
- * Different cache keys build SSTs concurrently. Ingestion is serialized, and the manifest, every
- * artifact-local index and the nodes of the artifact's semantic tree are published in the same SST.
- * Each staged SST is verified once, before ingestion; nothing verifies it again.
+ * Different cache keys build SSTs concurrently. Ingestion is serialized, and the manifest plus every
+ * artifact-local index is published in the same SST. A cold boot publishes through
+ * {@link ArtifactPublisher}, which also writes the nodes of the artifact's semantic tree and never
+ * looks for an existing publication: each staged SST is verified once, before ingestion.
  */
 public final class RocksArtifactRepository implements ArtifactPublisher,AutoCloseable {
-    public record Publication(String cacheKey,long symbols,long relationships,long classReferences) { }
+    public record Publication(String cacheKey,boolean reused,long symbols,long relationships,long classReferences,long storageBytes) { }
 
     private static final byte[] EMPTY=new byte[0];
     private static final Set<String> TYPES=Set.of("class","interface","enum","record","annotation");
@@ -36,9 +37,10 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
     private final Path staging;
     private final Options options;
     private final RocksDB db;
+    private final ConcurrentHashMap<String,Object> artifactLocks=new ConcurrentHashMap<>();
     private final AtomicLong verificationPasses=new AtomicLong(),nativePublicationVerifications=new AtomicLong(),oracleMaterializations=new AtomicLong();
     private final Object ingestLock=new Object();
-    private final AtomicLong published=new AtomicLong();
+    private final AtomicLong published=new AtomicLong(),reused=new AtomicLong();
     private final AtomicLong sortPeakBytes=new AtomicLong(),sortSpillBytes=new AtomicLong();
     private final AtomicLong queryPostingCandidates=new AtomicLong(),querySymbolReads=new AtomicLong(),ownerPrefixQueries=new AtomicLong();
     private final AtomicLong prepareNanos=new AtomicLong(),spillNanos=new AtomicLong(),sstNanos=new AtomicLong(),
@@ -60,41 +62,88 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
 
     @Override public void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,
                                   KeyedTree<String,MachineTree.ArtifactSymbol> semanticTree)throws Exception{
-        write(facts,classReferences,Objects.requireNonNull(semanticTree));
-    }
-
-    /** Publish facts without a semantic tree: the lazily derived code-edge store of an artifact. */
-    public Publication publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
-        return write(facts,classReferences,null);
-    }
-
-    private Publication write(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,
-                              KeyedTree<String,MachineTree.ArtifactSymbol> semanticTree)throws Exception{
         String cacheKey=facts.key().cacheKey();
         Path sst=staging.resolve(cacheKey+"-"+UUID.randomUUID()+".sst.tmp");
         int active=buildsInFlight.incrementAndGet();peakBuilds.accumulateAndGet(active,Math::max);
         try{
-            long expectedEntries=writeSst(sst,cacheKey,facts,classReferences,semanticTree);
+            long expectedEntries=writeSst(sst,cacheKey,facts,classReferences,Objects.requireNonNull(semanticTree));
             long started=System.nanoTime();
             try(var file=FileChannel.open(sst,StandardOpenOption.WRITE)){file.force(true);}
             syncNanos.addAndGet(System.nanoTime()-started);
-            // Validate the finished file while it is still invisible. The builder checked
-            // record schemas and hashed every sorted row; native verification reads every
-            // SST block and compares its checksum without returning all rows through JNI.
             started=System.nanoTime();verifyStagedSst(sst,expectedEntries,options);
             nativePublicationVerifications.incrementAndGet();verifyNanos.addAndGet(System.nanoTime()-started);
-            synchronized(ingestLock){
-                try(var ingest=new IngestExternalFileOptions().setMoveFiles(true)){
-                    started=System.nanoTime();
-                    db.ingestExternalFile(List.of(sst.toString()),ingest);
-                    ingestNanos.addAndGet(System.nanoTime()-started);
-                }
-                published.incrementAndGet();
-            }
-            return new Publication(cacheKey,facts.symbols().size(),facts.relationships().size(),classReferences.size());
+            ingest(sst);published.incrementAndGet();
         }finally{
             buildsInFlight.decrementAndGet();
             Files.deleteIfExists(sst);
+        }
+    }
+
+    @Override public String publishDocumentation(ArtifactIndexFormat.Key binary,String sourceSha256,
+                                                 Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{
+        String docsKey=ArtifactIndexFormat.documentationKey(binary,sourceSha256);
+        Path sst=staging.resolve(docsKey+"-"+UUID.randomUUID()+".docs.sst.tmp");
+        try{
+            long expectedEntries=writeDocumentationSst(sst,docsKey,binary.cacheKey(),sourceSha256,members,unmatchedMembers);
+            try(var file=FileChannel.open(sst,StandardOpenOption.WRITE)){file.force(true);}
+            verifyStagedSst(sst,expectedEntries,options);nativePublicationVerifications.incrementAndGet();
+            ingest(sst);
+            return docsKey;
+        }finally{Files.deleteIfExists(sst);}
+    }
+
+    private void ingest(Path sst)throws Exception{
+        synchronized(ingestLock){
+            try(var ingest=new IngestExternalFileOptions().setMoveFiles(true)){
+                long started=System.nanoTime();
+                db.ingestExternalFile(List.of(sst.toString()),ingest);
+                ingestNanos.addAndGet(System.nanoTime()-started);
+            }
+        }
+    }
+
+    /** The semantic tree published with an artifact; its nodes are read as traversals reach them. */
+    public KeyedTree<String,MachineTree.ArtifactSymbol> semanticTree(String cacheKey,Hash256 root)throws IOException{
+        return KeyedTree.read(MachineTree.SYMBOLS,root,hash->{
+            try{return db.get(key(cacheKey,"t|"+hash.hex()));}catch(RocksDBException e){throw new IOException(e);}
+        });
+    }
+
+    public Publication publish(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
+        String cacheKey=facts.key().cacheKey();
+        Object artifactLock=artifactLocks.computeIfAbsent(cacheKey,ignored->new Object());
+        try{
+            synchronized(artifactLock){
+                if(contains(cacheKey)){reused.incrementAndGet();return result(cacheKey,true,facts,classReferences);}
+                Path sst=staging.resolve(cacheKey+"-"+UUID.randomUUID()+".sst.tmp");
+                int active=buildsInFlight.incrementAndGet();peakBuilds.accumulateAndGet(active,Math::max);
+                try{
+                    long expectedEntries=writeSst(sst,cacheKey,facts,classReferences,null);
+                    long started=System.nanoTime();
+                    try(var file=FileChannel.open(sst,StandardOpenOption.WRITE)){file.force(true);}
+                    syncNanos.addAndGet(System.nanoTime()-started);
+                    // Validate the finished file while it is still invisible. The builder checked
+                    // record schemas and hashed every sorted row; native verification reads every
+                    // SST block and compares its checksum without returning all rows through JNI.
+                    started=System.nanoTime();verifyStagedSst(sst,expectedEntries,options);
+                    nativePublicationVerifications.incrementAndGet();verifyNanos.addAndGet(System.nanoTime()-started);
+                    synchronized(ingestLock){
+                        if(contains(cacheKey)){reused.incrementAndGet();return result(cacheKey,true,facts,classReferences);}
+                        try(var ingest=new IngestExternalFileOptions().setMoveFiles(true)){
+                            started=System.nanoTime();
+                            db.ingestExternalFile(List.of(sst.toString()),ingest);
+                            ingestNanos.addAndGet(System.nanoTime()-started);
+                        }
+                        published.incrementAndGet();
+                    }
+                    return result(cacheKey,false,facts,classReferences);
+                }finally{
+                    buildsInFlight.decrementAndGet();
+                    Files.deleteIfExists(sst);
+                }
+            }
+        }finally{
+            artifactLocks.remove(cacheKey,artifactLock);
         }
     }
 
@@ -106,32 +155,64 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
         }
     }
 
+    private Publication result(String cacheKey,boolean wasReused,ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences)throws Exception{
+        return new Publication(cacheKey,wasReused,facts.symbols().size(),facts.relationships().size(),classReferences.size(),db.getLongProperty("rocksdb.total-sst-files-size"));
+    }
 
-    @Override public String publishDocumentation(ArtifactIndexFormat.Key binary,String sourceSha256,
-                                                 Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{
-        String docsKey=ArtifactIndexFormat.documentationKey(binary,sourceSha256);
-        Path sst=staging.resolve(docsKey+"-"+UUID.randomUUID()+".docs.sst.tmp");
+
+    public String publishDocumentation(String binaryCacheKey,ArtifactIndexFormat.Key sourceKey,
+                                       Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{
+        var binary=artifactKey(binaryCacheKey);if(binary==null)throw new IOException("Missing binary generation for documentation: "+binaryCacheKey);
+        String docsKey=ArtifactIndexFormat.documentationKey(binary,sourceKey.binarySha256());
+        Object artifactLock=artifactLocks.computeIfAbsent(docsKey,ignored->new Object());
         try{
-            long expectedEntries;
-            try(var entries=new SstSorter(staging,sortBufferBytes,docsKey)){
-                String manifest="kind=documentation\nbinary="+binary.cacheKey()+"\nsource_sha="+sourceSha256+
-                        "\nmembers="+members.size()+"\nunmatched="+unmatchedMembers+"\n";
-                for(var entry:new TreeMap<>(members).entrySet())
-                    entries.add(relativeKey("9|member|"+entry.getKey()),Json.MAPPER.writeValueAsBytes(entry.getValue()));
-                try(var env=new EnvOptions();var writer=new SstFileWriter(env,options)){
-                    writer.open(sst.toString());String checksum=entries.writeTo(writer);
-                    writer.put(key(docsKey,"z|manifest"),(manifest+"sha256="+checksum+"\n").getBytes(StandardCharsets.UTF_8));writer.finish();
-                }
-                expectedEntries=entries.writtenRecords()+1;
-                sortPeakBytes.accumulateAndGet(entries.peakBytes(),Math::max);sortSpillBytes.addAndGet(entries.spillBytes());
+            synchronized(artifactLock){
+                if(verifyDocumentation(docsKey,binaryCacheKey,sourceKey.binarySha256()))return docsKey;
+                Path sst=staging.resolve(docsKey+"-"+UUID.randomUUID()+".docs.sst.tmp");
+                try{
+                    writeDocumentationSst(sst,docsKey,binaryCacheKey,sourceKey.binarySha256(),members,unmatchedMembers);
+                    try(var file=FileChannel.open(sst,StandardOpenOption.WRITE)){file.force(true);}
+                    synchronized(ingestLock){
+                        if(!verifyDocumentation(docsKey,binaryCacheKey,sourceKey.binarySha256())){
+                            try(var ingest=new IngestExternalFileOptions().setMoveFiles(true)){db.ingestExternalFile(List.of(sst.toString()),ingest);}
+                        }
+                    }
+                    if(!verifyDocumentation(docsKey,binaryCacheKey,sourceKey.binarySha256()))
+                        throw new IOException("Documentation publication verification failed: "+docsKey);
+                    return docsKey;
+                }finally{Files.deleteIfExists(sst);}
             }
-            try(var file=FileChannel.open(sst,StandardOpenOption.WRITE)){file.force(true);}
-            verifyStagedSst(sst,expectedEntries,options);nativePublicationVerifications.incrementAndGet();
-            synchronized(ingestLock){
-                try(var ingest=new IngestExternalFileOptions().setMoveFiles(true)){db.ingestExternalFile(List.of(sst.toString()),ingest);}
+        }finally{artifactLocks.remove(docsKey,artifactLock);}
+    }
+
+    private long writeDocumentationSst(Path sst,String docsKey,String binaryCacheKey,String sourceSha256,
+                                       Map<String,Map<String,Object>> members,int unmatchedMembers)throws Exception{
+        try(var entries=new SstSorter(staging,sortBufferBytes,docsKey)){
+            String manifest="kind=documentation\nbinary="+binaryCacheKey+"\nsource_sha="+sourceSha256+
+                    "\nmembers="+members.size()+"\nunmatched="+unmatchedMembers+"\n";
+            for(var entry:new TreeMap<>(members).entrySet())
+                entries.add(relativeKey("9|member|"+entry.getKey()),Json.MAPPER.writeValueAsBytes(entry.getValue()));
+            try(var env=new EnvOptions();var writer=new SstFileWriter(env,options)){
+                writer.open(sst.toString());String checksum=entries.writeTo(writer);
+                writer.put(key(docsKey,"z|manifest"),(manifest+"sha256="+checksum+"\n").getBytes(StandardCharsets.UTF_8));writer.finish();
             }
-            return docsKey;
-        }finally{Files.deleteIfExists(sst);}
+            sortPeakBytes.accumulateAndGet(entries.peakBytes(),Math::max);sortSpillBytes.addAndGet(entries.spillBytes());
+            return entries.writtenRecords()+1;
+        }
+    }
+
+    public boolean verifyDocumentation(String docsKey,String binaryCacheKey,String sourceSha)throws Exception{
+        byte[] value=db.get(key(docsKey,"z|manifest"));if(value==null)return false;
+        var manifest=parseManifest(value);
+        if(!"documentation".equals(manifest.get("kind"))||!binaryCacheKey.equals(manifest.get("binary"))||!sourceSha.equals(manifest.get("source_sha")))return false;
+        var digest=java.security.MessageDigest.getInstance("SHA-256");byte[] prefix=key(docsKey,"9|member|");long count=0;
+        try(var read=new ReadOptions().setFillCache(false);var iterator=db.newIterator(read)){
+            for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next()){
+                SstSorter.hash(digest,iterator.key(),iterator.value());count++;
+            }
+            iterator.status();
+        }
+        return Objects.equals(manifest.get("members"),Long.toString(count))&&Objects.equals(manifest.get("sha256"),HexFormat.of().formatHex(digest.digest()));
     }
 
     public Map<String,Object> documentation(String docsKey,String binaryKey)throws Exception{
@@ -142,7 +223,6 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
 
     public boolean contains(String cacheKey)throws Exception{return db.get(key(cacheKey,"z|manifest"))!=null;}
 
-    /** Full scan of a published artifact against its manifest; a test oracle, not part of any read path. */
     public boolean verify(String cacheKey)throws Exception{
         verificationPasses.incrementAndGet();
         byte[] manifestBytes=db.get(key(cacheKey,"z|manifest"));if(manifestBytes==null)return false;
@@ -203,13 +283,6 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
         var fields=parseManifest(value);
         return new ArtifactIndexFormat.Key(fields.get("binary_sha"),Integer.parseInt(fields.get("format")),
                 fields.get("indexer"),Integer.parseInt(fields.get("runtime")),fields.get("mode"));
-    }
-
-    /** The semantic tree published with an artifact; its nodes are read as traversals reach them. */
-    public KeyedTree<String,MachineTree.ArtifactSymbol> semanticTree(String cacheKey,Hash256 root)throws IOException{
-        return KeyedTree.read(MachineTree.SYMBOLS,root,hash->{
-            try{return db.get(key(cacheKey,"t|"+hash.hex()));}catch(RocksDBException e){throw new IOException(e);}
-        });
     }
 
     public ArtifactIndexFormat.SymbolRecord symbol(String cacheKey,int id)throws Exception{
@@ -365,9 +438,9 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
 
     public Map<String,Object> status()throws Exception{
         var result=new LinkedHashMap<String,Object>();
-        result.put("published",published.get());
+        result.put("published",published.get());result.put("reused",reused.get());
         result.put("builds_in_flight",buildsInFlight.get());result.put("peak_parallel_builds",peakBuilds.get());
-        result.put("storage_bytes",db.getLongProperty("rocksdb.total-sst-files-size"));
+        result.put("artifact_locks",artifactLocks.size());result.put("storage_bytes",db.getLongProperty("rocksdb.total-sst-files-size"));
         result.put("sort_buffer_bytes",sortBufferBytes);result.put("sort_peak_bytes",sortPeakBytes.get());result.put("sort_spill_bytes",sortSpillBytes.get());
         result.put("record_prepare_ms",prepareNanos.get()/1e6);result.put("sort_spill_ms",spillNanos.get()/1e6);
         result.put("sort_merge_and_sst_ms",sstNanos.get()/1e6);result.put("file_sync_ms",syncNanos.get()/1e6);

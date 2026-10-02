@@ -19,7 +19,7 @@ class ClasspathSearchProofIntegrationTest {
         Path b=jar(repo.resolve("b"),"b","Other","package p; public class Other {}");
         Path c=jar(repo.resolve("c"),"c","FromC","package p; public class FromC {}");
 
-        try(var index=new IndexService(root.resolve("index.db"),repo)){
+        try(var index=TestMachine.index(root.resolve("index.db"),repo)){
             index(index,a,"fixture:a:1");index(index,b,"fixture:b:1");index(index,c,"fixture:c:1");
             load(index,"w",a,b,c);
 
@@ -63,7 +63,7 @@ class ClasspathSearchProofIntegrationTest {
         Path absent=jar(repo.resolve("d"),"d","Irrelevant","package p; public class Irrelevant {}");
         Path present=jar(repo.resolve("e"),"e","Target","package p; public final class Target { public int e(){return 3;} }");
 
-        try(var index=new IndexService(root.resolve("precedence.db"),repo)){
+        try(var index=TestMachine.index(root.resolve("precedence.db"),repo)){
             index(index,a,"fixture:a:1");index(index,b,"fixture:b:1");index(index,c,"fixture:c:1");
             index(index,absent,"fixture:d:1");index(index,present,"fixture:e:1");
 

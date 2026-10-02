@@ -15,7 +15,7 @@ class IndexStoreContractTest {
     @Test void rocksImplementsArtifactWorkspaceAndQueryContract()throws Exception{
         Path a=IndexFixtures.jar(temp.resolve("a"),"a",IndexFixtures.generic().replace("private String hidden;","private String hidden; public int markerA;"),false);
         Path b=IndexFixtures.jar(temp.resolve("b"),"b",IndexFixtures.generic().replace("private String hidden;","private String hidden; public int markerB;"),false);
-        try(var index=new IndexService(temp.resolve("index.db"),temp)){
+        try(var index=TestMachine.index(temp.resolve("index.db"),temp)){
             index.indexJar(a,"fixture:a:1","jar");
             index.indexJar(b,"fixture:b:1","jar");
             var store=index.store();
@@ -48,7 +48,7 @@ class IndexStoreContractTest {
             String previous=System.getProperty(entry.getKey());
             try{
                 System.setProperty(entry.getKey(),entry.getValue());
-                assertThatThrownBy(()->new IndexService(temp.resolve("legacy.db"),temp))
+                assertThatThrownBy(()->TestMachine.index(temp.resolve("legacy.db"),temp))
                         .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("sole production backend");
                 assertThat(temp.resolve("legacy.db")).doesNotExist();
                 assertThat(temp.resolve("legacy.db.rocks")).doesNotExist();

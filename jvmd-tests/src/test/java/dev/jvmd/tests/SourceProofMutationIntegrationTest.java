@@ -21,7 +21,7 @@ class SourceProofMutationIntegrationTest {
         Files.writeString(source.resolve("A.java"),"class A { int one(){return 1;} }");
         String caller="class B { int use(A a){return a.one();} }";
         Path b=Files.writeString(source.resolve("B.java"),caller);
-        var storage=dev.jvmd.index.IndexStorage.open(root.resolve("index"),64L*1024*1024);
+        var storage=TestMachine.storage(root.resolve("index"));
         var lookups=new java.util.concurrent.atomic.AtomicInteger();
         var store=(dev.jvmd.index.IndexStore)java.lang.reflect.Proxy.newProxyInstance(
                 getClass().getClassLoader(),new Class<?>[]{dev.jvmd.index.IndexStore.class},(proxy,method,args)->{

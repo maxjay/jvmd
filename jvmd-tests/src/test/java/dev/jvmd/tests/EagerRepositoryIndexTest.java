@@ -14,7 +14,7 @@ class EagerRepositoryIndexTest {
  @TempDir Path temp;
  @Test void scansEveryBinaryAndSourcesJarWithoutWaitingForWorkspaceOpen()throws Exception{
   Path repository=temp.resolve("repository");IndexFixtures.jar(repository.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
-  try(var index=new IndexService(temp.resolve("index.db"),repository)){index.scan();assertThat(index.status()).containsEntry("phase","ready").containsEntry("total",2L).containsEntry("scanned",2L).containsEntry("faults",0L);
+  try(var index=TestMachine.index(temp.resolve("index.db"),repository)){index.scan();assertThat(index.status()).containsEntry("phase","ready").containsEntry("total",2L).containsEntry("scanned",2L).containsEntry("faults",0L);
    assertThat(index.find("transform",null,false,10,0).getFirst().get("doc")).isNotNull();long indexed=(long)index.status().get("indexed");index.scan();assertThat(index.status()).containsEntry("indexed",indexed);
   }
  }
@@ -22,7 +22,7 @@ class EagerRepositoryIndexTest {
   String key="jvmd.index.scan.initial_delay_seconds",previous=System.getProperty(key);System.setProperty(key,"0");
   try{
    Path repository=temp.resolve("missing");
-   try(var index=new IndexService(temp.resolve("missing.db"),repository)){
+   try(var index=TestMachine.index(temp.resolve("missing.db"),repository)){
     index.start().get(5,java.util.concurrent.TimeUnit.SECONDS);
     assertThat(index.status()).containsEntry("phase","ready");
     assertThat(((Map<?,?>)index.status().get("timings")).get("scans")).isEqualTo(1L);
@@ -32,7 +32,7 @@ class EagerRepositoryIndexTest {
  @Test void closeSettlesReadinessBeforeDelayedInitialScan()throws Exception{
   String key="jvmd.index.scan.initial_delay_seconds",previous=System.getProperty(key);System.setProperty(key,"60");
   try{
-   var index=new IndexService(temp.resolve("closing.db"),temp.resolve("repository"));
+   var index=TestMachine.index(temp.resolve("closing.db"),temp.resolve("repository"));
    var readiness=index.start();
    index.close();
    assertThat(readiness).isCompletedExceptionally();
@@ -42,7 +42,7 @@ class EagerRepositoryIndexTest {
  @Test void deletingRepositoryRemovesPreviouslyIndexedArtifacts()throws Exception{
   Path repository=temp.resolve("deleted-repository");
   IndexFixtures.jar(repository.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
-  try(var index=new IndexService(temp.resolve("deleted.db"),repository)){
+  try(var index=TestMachine.index(temp.resolve("deleted.db"),repository)){
    index.scan();
    assertThat(index.find("transform",null,false,10,0)).isNotEmpty();
    try(var files=Files.walk(repository)){for(var path:files.sorted(java.util.Comparator.reverseOrder()).toList())Files.delete(path);}
@@ -54,7 +54,7 @@ class EagerRepositoryIndexTest {
 
  @Test void failedCloseCanBeRetriedUntilStorageIsReleased()throws Exception{
   Path database=temp.resolve("retry-close.db"),repository=temp.resolve("retry-repository");
-  var index=new IndexService(database,repository);
+  var index=TestMachine.index(database,repository);
   var waits=new AtomicInteger();
   var replacement=new AbstractExecutorService(){
    private volatile boolean shutdown;
@@ -69,7 +69,7 @@ class EagerRepositoryIndexTest {
   ((ExecutorService)field.get(index)).shutdownNow();field.set(index,replacement);
   assertThatThrownBy(index::close).isInstanceOf(IllegalStateException.class);
   assertThatCode(index::close).doesNotThrowAnyException();
-  try(var reopened=new IndexService(database,repository)){
+  try(var reopened=TestMachine.index(database,repository)){
    assertThat(reopened.status()).containsEntry("phase","idle");
   }
  }

@@ -18,7 +18,7 @@ class SignatureClosureTest {
             var symbol=index.find("transform",null,false,10,0).getFirst();long id=((Number)symbol.get("id")).longValue();
             // A self-cycle must not duplicate the root or prevent pagination.
             ((SqliteIndexStore)index.store()).database().write(c->{try(var q=c.prepareStatement("INSERT OR IGNORE INTO edges VALUES(?,?,'return_type')")){q.setLong(1,id);q.setLong(2,id);q.executeUpdate();}return null;});
-            var docs=new Documentation(index,Path.of(System.getProperty("java.home")));var identities=new LinkedHashSet<String>();int cursor=0,pages=0;
+            var docs=new Documentation(index);var identities=new LinkedHashSet<String>();int cursor=0,pages=0;
             while(true){
                 var page=docs.describe(symbol,null,"summary",3,2,cursor);var result=dev.jvmd.core.Json.MAPPER.valueToTree(page.result());var closure=result.path("closure");assertThat(closure.size()).isLessThanOrEqualTo(2);
                 for(var member:closure){assertThat(identities.add(member.path("scip").asText())).isTrue();assertThat(member.path("signature").asText()).isNotBlank();}

@@ -21,7 +21,7 @@ class LocalModuleIndexTest {
         Files.writeString(source,original.replace("Installed API.","Checkout API."));
         Path classes=Files.createDirectories(module.resolve("target/classes"));assertThat(ToolProvider.getSystemJavaCompiler().run(null,null,null,"-g","-parameters","-d",classes.toString(),source.toString())).isZero();
         String gav="fixture:sample:1";
-        try(var index=new IndexService(root.resolve("index.db"),root.resolve("repository"))){
+        try(var index=TestMachine.index(root.resolve("index.db"),root.resolve("repository"))){
             index.indexJar(jar,gav,"jar");index.indexSources(jar.resolveSibling("sample-sources.jar"));
             index.registerLocal(new IndexService.LocalModule(module,gav,List.of(module.resolve("src/main/java")),List.of(classes)));index.refreshLocal(module);
             index.loadWorkspace("checkout",List.of(new IndexService.WorkspaceArtifact(module.toString(),"local")),List.of());
@@ -48,7 +48,7 @@ class LocalModuleIndexTest {
     }
     @Test void unchangedContentReusesIdentityAndDeletingAFileRemovesItsSymbols()throws Exception{
         Path module=Files.createDirectories(root.resolve("plain")),source=module.resolve("A.java");String text="class A { int value(){return 7;} }";Files.writeString(source,text);
-        try(var index=new IndexService(root.resolve("plain.db"),root.resolve("empty"))){
+        try(var index=TestMachine.index(root.resolve("plain.db"),root.resolve("empty"))){
             index.registerLocal(new IndexService.LocalModule(module,"fixture:plain:1",List.of(module),List.of()));long id=index.refreshLocal(module);
             index.loadWorkspace("plain",List.of(new IndexService.WorkspaceArtifact(module.toString(),"local")),List.of());
             try(var analyzer=new Analyzer()){analyzer.configure(new Analyzer.Context("fixture:plain:1","25",List.of(),List.of(module),"plain",Map.of(module.toString(),"fixture:plain:1")),index,256L*1024*1024);analyzer.bindings(source,text,null);}

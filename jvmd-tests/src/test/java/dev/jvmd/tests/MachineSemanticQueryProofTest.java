@@ -23,7 +23,7 @@ class MachineSemanticQueryProofTest {
                     public int setOne(){return 1;}
                 }
                 """,true);
-        try(var index=new IndexService(root.resolve("index.db"),repo)){
+        try(var index=TestMachine.index(root.resolve("index.db"),repo)){
             index.indexJar(jar,"fixture:api:1","jar");
             index.loadWorkspace("w",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
             var view=SemanticReadViews.machine(index.store(),"w");

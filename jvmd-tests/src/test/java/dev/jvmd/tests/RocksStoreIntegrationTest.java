@@ -33,7 +33,7 @@ class RocksStoreIntegrationTest {
     }
     @Test void codeEnrichmentPreservesPublicIdsAndAddsPrivateCallers()throws Exception{
         Path jar=IndexFixtures.jar(root.resolve("repo"),"fixture","package fixture; public class Sample { public static class Target { public static int answer(){return 3;} } private int hidden(){return Target.answer();} public int value(){return Target.answer();} }",false);
-        try(var index=new IndexService(root.resolve("index.db"),root.resolve("repo"))){
+        try(var index=TestMachine.index(root.resolve("index.db"),root.resolve("repo"))){
             index.indexJar(jar,"fixture:api:1","jar");var value=index.find("value",null,false,10,0).getFirst();long before=((Number)value.get("id")).longValue();
             var expansion=new CodePass(index).expand(List.of(value),true,Set.of("calls"),null);
             assertThat(expansion.symbols()).extracting(s->s.get("name")).contains("answer");
@@ -56,7 +56,7 @@ class RocksStoreIntegrationTest {
     @Test void canonicalSearchPagesAgreeWithSqliteAndReopenWithoutRebuilding()throws Exception{
         Path repo=root.resolve("repository"),jar=IndexFixtures.jar(repo,"fixture",IndexFixtures.generic(),false);
         try(var sqlite=new IndexService(new ReferenceIndexStorage(root.resolve("control.db")),repo);
-            var rocks=new IndexService(root.resolve("index.db"),repo)){
+            var rocks=TestMachine.index(root.resolve("index.db"),repo)){
             for(var index:List.of(sqlite,rocks)){
                 index.indexJar(jar,"fixture:api:1","jar");index.indexSources(jar.resolveSibling("fixture-sources.jar"));
                 index.loadWorkspace("w",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());
@@ -74,7 +74,7 @@ class RocksStoreIntegrationTest {
             }
         }
         assertThat(root.resolve("index.db")).doesNotExist();
-        try(var index=new IndexService(root.resolve("index.db"),repo)){
+        try(var index=TestMachine.index(root.resolve("index.db"),repo)){
             index.indexJar(jar,"fixture:api:1","jar");assertThat(index.status()).containsEntry("indexed",0L);
             assertThat(index.find("transform",null,false,10,0)).hasSize(1);
             assertThat(index.store().status()).containsEntry("backend","rocksdb-sst").containsEntry("link_passes",0L);
@@ -82,9 +82,9 @@ class RocksStoreIntegrationTest {
     }
     @Test void signatureClosureEnrichesJdkDocumentationAndPaginates()throws Exception{
         Path jar=IndexFixtures.jar(root.resolve("repo"),"fixture",IndexFixtures.generic(),true);
-        try(var index=new IndexService(root.resolve("index.db"),root.resolve("repo"))){
+        try(var index=TestMachine.index(root.resolve("index.db"),root.resolve("repo"))){
             index.indexJar(jar,"fixture:api:1","jar");index.indexSources(jar.resolveSibling("fixture-sources.jar"));
-            var symbol=index.find("transform",null,false,10,0).getFirst();var docs=new Documentation(index,Path.of(System.getProperty("java.home")));
+            var symbol=index.find("transform",null,false,10,0).getFirst();var docs=new Documentation(index);
             var identities=new LinkedHashSet<String>();int cursor=0,pages=0;
             while(true){
                 var page=docs.describe(symbol,null,"summary",3,2,cursor);var result=Json.MAPPER.valueToTree(page.result());
@@ -99,7 +99,7 @@ class RocksStoreIntegrationTest {
     @Test void aliasesDoNotDuplicateLaterPagesAndKeepIndependentCoordinates()throws Exception{
         Path repo=Files.createDirectories(root.resolve("repo"));Path a=IndexFixtures.jar(repo,"first",IndexFixtures.generic(),false);
         Path b=Files.copy(a,repo.resolve("second.jar")),c=Files.copy(a,repo.resolve("third.jar"));
-        try(var index=new IndexService(root.resolve("index.db"),repo)){
+        try(var index=TestMachine.index(root.resolve("index.db"),repo)){
             index.indexJar(a,"fixture:api:1","jar");index.indexJar(b,"fixture:api:1","jar");index.indexJar(c,"fixture:alias:1","jar");
             var identities=new LinkedHashSet<String>();long after=0;
             for(int page=0;page<20;page++){

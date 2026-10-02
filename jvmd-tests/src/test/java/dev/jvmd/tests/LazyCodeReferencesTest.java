@@ -15,7 +15,7 @@ class LazyCodeReferencesTest {
     @TempDir Path root;
     @Test void staticInitializersAndBridgesDoNotBreakDependencyReferencePublication()throws Exception{
         Path classes=compile(),api=jar(classes,"a"),caller=jar(classes,"b");
-        try(var index=new IndexService(root.resolve("index.db"),root.resolve("repository"))){
+        try(var index=TestMachine.index(root.resolve("index.db"),root.resolve("repository"))){
             index.indexJar(api,"fixture:api:1","jar");index.indexJar(caller,"fixture:caller:1","jar");
             var content=new BinaryReader().read(caller,true);
             var edges=CodeReader.read(content.models().values());
@@ -32,7 +32,7 @@ class LazyCodeReferencesTest {
     @Test void callsFieldsAllocationCastsAndDynamicMethodReferencesAreLazyAndScoped()throws Exception{
         Path classes=compile();
         Path api=jar(classes,"a"),caller=jar(classes,"b"),top=jar(classes,"c"),unrelated=jar(classes,"d");
-        try(var index=new IndexService(root.resolve("index.db"),root.resolve("repository"))){
+        try(var index=TestMachine.index(root.resolve("index.db"),root.resolve("repository"))){
             for(var entry:Map.of(api,"fixture:api:1",caller,"fixture:caller:1",top,"fixture:top:1",unrelated,"fixture:unrelated:1").entrySet())index.indexJar(entry.getKey(),entry.getValue(),"jar");
             index.loadWorkspace("active",List.of(new IndexService.WorkspaceArtifact(api.toString(),"compile"),new IndexService.WorkspaceArtifact(caller.toString(),"compile"),new IndexService.WorkspaceArtifact(top.toString(),"compile"),new IndexService.WorkspaceArtifact(unrelated.toString(),"compile")),List.of());
             index.loadWorkspace("isolated",List.of(new IndexService.WorkspaceArtifact(api.toString(),"compile")),List.of());

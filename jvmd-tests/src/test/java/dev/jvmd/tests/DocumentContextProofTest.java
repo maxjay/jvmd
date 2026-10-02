@@ -40,7 +40,7 @@ class DocumentContextProofTest {
                 """;
         Files.writeString(file,original);
 
-        try(var index=new IndexService(root.resolve("index.db"),repo);
+        try(var index=TestMachine.index(root.resolve("index.db"),repo);
             var analyzer=new Analyzer()){
             index.indexJar(jar,"fixture:api:1","jar");
             index.loadWorkspace("w",List.of(new IndexService.WorkspaceArtifact(jar.toString(),"compile")),List.of());

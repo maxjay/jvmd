@@ -34,12 +34,12 @@ class ArtifactSignatureVariantTest {
 
     @Test void sameScipUsesOnlyTheSelectedContentVariantsRelationships() throws Exception {
         Path first=variant("first","First","Left"),second=variant("second","Second","Right");
-        try(var index=new IndexService(root.resolve("index.db"),root)) {
+        try(var index=TestMachine.index(root.resolve("index.db"),root)) {
             index.indexJar(first,"fixture:api:1","jar");index.indexSources(first.resolveSibling("first-sources.jar"));
             index.indexJar(second,"fixture:api:1","jar");index.indexSources(second.resolveSibling("second-sources.jar"));
             index.loadWorkspace("one",List.of(new IndexService.WorkspaceArtifact(first.toString(),"compile")),List.of());
             index.loadWorkspace("two",List.of(new IndexService.WorkspaceArtifact(second.toString(),"compile")),List.of());
-            var docs=new Documentation(index,Path.of(System.getProperty("java.home")));var code=new CodePass(index);
+            var docs=new Documentation(index);var code=new CodePass(index);
             for(String workspace:List.of("one","two","one")) {
                 String selected=workspace.equals("one")?"Left":"Right",other=workspace.equals("one")?"Right":"Left",parent=workspace.equals("one")?"First":"Second";
                 var type=index.find("Sample",workspace,false,10,0).getFirst();

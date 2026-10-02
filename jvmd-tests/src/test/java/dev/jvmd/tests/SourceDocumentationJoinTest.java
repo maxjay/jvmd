@@ -10,7 +10,7 @@ class SourceDocumentationJoinTest {
  @TempDir Path temp;
  @Test void joinsBoundedTypeVariablesAndRendersDocs()throws Exception{
   Path jar=IndexFixtures.jar(temp,"sample",IndexFixtures.generic(),false);
-  try(var index=new IndexService(temp.resolve("index.db"),temp)){
+  try(var index=TestMachine.index(temp.resolve("index.db"),temp)){
    index.indexJar(jar,"fixture:sample:1","jar");index.indexSources(jar.resolveSibling("sample-sources.jar"));
    var result=index.find("transform",null,false,10,0).getFirst();assertThat(result.get("signature").toString()).contains("T input","U text");
    assertThat(result.get("doc").toString()).contains("Transform the value.","**input:**","**Returns:**");assertThat(result.get("source_file").toString()).contains("sample-sources.jar!/fixture/Sample.java");

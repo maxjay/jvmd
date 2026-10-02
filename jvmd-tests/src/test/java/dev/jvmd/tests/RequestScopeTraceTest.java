@@ -132,7 +132,7 @@ class RequestScopeTraceTest {
                     }
                 }
                 Path repository=Files.createDirectory(Path.of(args[0]).resolveSibling("repository"));
-                try(var index=new dev.jvmd.index.IndexService(repository.resolveSibling("trace-index.db"),repository)){
+                try(var index=TestMachine.index(repository.resolveSibling("trace-index.db"),repository)){
                     var initial=new java.util.concurrent.atomic.AtomicReference<Runnable>();
                     var periodic=new java.util.concurrent.atomic.AtomicReference<Runnable>();
                     var replacement=new ScheduledThreadPoolExecutor(1){

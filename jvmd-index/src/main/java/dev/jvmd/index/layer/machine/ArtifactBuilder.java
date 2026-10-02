@@ -55,7 +55,7 @@ public final class ArtifactBuilder {
         }catch(Exception storage){throw new PublishFailed(storage);}
         long types=facts.symbols().stream().filter(symbol->TYPES.contains(symbol.kind())).count();
         return new MachineLeaf(binary.sha256(),binary.mode(),List.of(),ArtifactIndexFormat.resolutionIdentity(facts),
-                documentationIdentity(members),docsKey,semanticTree.rootHash(),facts.symbols().size(),facts.relationships().size(),types);
+                documentationIdentity(members),sources==null?null:sources.sha256(),docsKey,semanticTree.rootHash(),facts.symbols().size(),facts.relationships().size(),types);
     }
 
     /** Documentation records by member key. Locations are entry names inside the sources, never paths. */

@@ -23,6 +23,8 @@ public final class MachineColdBoot {
     private final Path generation,repository,jdkHome;
     private final long admissionBytes;
     private final List<Fault> faults=new CopyOnWriteArrayList<>();
+    /** The configured JDK's image while this boot reads its modules: opened by enumeration, closed once they are built. */
+    private MachineInput.JdkImage jdkImage;
 
     /**
      * @param generation     the generation directory this boot creates
@@ -45,6 +47,7 @@ public final class MachineColdBoot {
             commit(storage,tree);
             return storage;
         }catch(Exception|Error failure){
+            try{closeJdkImage();}catch(Exception close){failure.addSuppressed(close);}
             try{storage.close();}catch(Exception close){failure.addSuppressed(close);}
             throw failure;
         }
@@ -81,9 +84,10 @@ public final class MachineColdBoot {
             var stamp=MachinePath.Stamp.read(modules);String feature=feature(jdkHome);
             Path zip=jdkHome.resolve("lib/src.zip");String sources=Files.isRegularFile(zip)?zip.toString():null;
             var sourcesStamp=sources==null?null:MachinePath.Stamp.read(zip);
-            try(var image=MachineInput.image(jdkHome);var names=Files.list(image.getPath("/modules"))){
+            closeJdkImage();jdkImage=new MachineInput.JdkImage(jdkHome);
+            try(var names=Files.list(jdkImage.modules().getPath("/modules"))){
                 for(String module:names.map(path->path.getFileName().toString()).sorted().toList())
-                    inputs.add(new MachineInput.JdkModule(new MachinePath("jrt:/"+module,"jdk:"+module+":"+feature,stamp,sources,sourcesStamp),jdkHome,module));
+                    inputs.add(new MachineInput.JdkModule(new MachinePath("jrt:/"+module,"jdk:"+module+":"+feature,stamp,sources,sourcesStamp),jdkImage,module));
             }
         }
         return List.copyOf(inputs);
@@ -95,6 +99,10 @@ public final class MachineColdBoot {
      * so the leaves do not depend on which job built them.
      */
     public List<MachineLeaf> buildArtifacts(RocksIndexStorage storage,List<MachineInput> inputs)throws Exception{
+        try{return build(storage,inputs);}finally{closeJdkImage();}
+    }
+
+    private List<MachineLeaf> build(RocksIndexStorage storage,List<MachineInput> inputs)throws Exception{
         var claims=new ClaimMap();var builder=new ArtifactBuilder(storage.repository());
         int threads=Math.max(1,Math.min(4,Runtime.getRuntime().availableProcessors()));
         var built=new ArrayList<MachineLeaf>();
@@ -139,6 +147,10 @@ public final class MachineColdBoot {
     /** Write leaves, nodes and the path table, then the root, and serve the committed tree. */
     public void commit(RocksIndexStorage storage,MachineTree tree)throws Exception{
         storage.commitMachine(tree);
+    }
+
+    private void closeJdkImage()throws java.io.IOException{
+        var image=jdkImage;jdkImage=null;if(image!=null)image.close();
     }
 
     /** Inputs this boot could not read or parse. */

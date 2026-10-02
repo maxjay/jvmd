@@ -71,6 +71,11 @@ public final class IndexService implements AutoCloseable {
     /** Whether the repository scan of the existing warm path is running. */
     public boolean scanStarted(){return started.get();}
     public long generation(){return indexed.get();}
+    /**
+     * Start the existing warm path's repository scan. TEMPORARY(warm-boot): {@code start}, {@code scan},
+     * the 60 s rescan, {@code indexJar} and {@code indexSources} reconcile a reopened generation with the
+     * repository; the warm boot task replaces them. A MACHINE cold boot never calls them.
+     */
     public CompletableFuture<Void> start(){
         long initialDelaySeconds=Long.getLong("jvmd.index.scan.initial_delay_seconds",2L);
         if(initialDelaySeconds<0)throw new IllegalArgumentException("jvmd.index.scan.initial_delay_seconds must be non-negative");
@@ -193,6 +198,7 @@ public final class IndexService implements AutoCloseable {
         var value=store.artifact(path);return value==null?null:new Artifact(value.id(),value.gav(),value.kind(),value.sha256(),value.path(),
                 value.size(),value.mtime(),value.hasDocs(),value.hasCodeEdges(),value.hasSignatureEdges());
     }
+    /** TEMPORARY(warm-boot): indexes one artifact for the existing warm path and on-demand projects; see {@link #start}. */
     public long indexJar(Path path,String gav,String kind) throws Exception{return indexJar(path,gav,kind,0L);}
     private long indexJar(Path path,String gav,String kind,long inventoryGeneration) throws Exception {
         path=path.toAbsolutePath().normalize();Path tracked=path;active(path,"stat");
@@ -280,6 +286,7 @@ public final class IndexService implements AutoCloseable {
         if(!java.util.HexFormat.of().formatHex(digest.digest()).equals(expected))throw new java.io.IOException("Checksum mismatch: "+path);
     }
     public static String directoryHash(Path root)throws Exception{var digest=java.security.MessageDigest.getInstance("SHA-256");try(var files=Files.walk(root)){for(var p:files.filter(Files::isRegularFile).sorted().toList()){digest.update(root.relativize(p).toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));digest.update(Hashing.sha256(p).getBytes(java.nio.charset.StandardCharsets.US_ASCII));}}return java.util.HexFormat.of().formatHex(digest.digest());}
+    /** TEMPORARY(warm-boot): joins a sources JAR for the existing warm path; see {@link #start}. */
     public long indexSources(Path sources)throws Exception {
         sources=sources.toAbsolutePath().normalize();Path tracked=sources;
         try(var permit=storage.admission().acquireArtifact(sources)){

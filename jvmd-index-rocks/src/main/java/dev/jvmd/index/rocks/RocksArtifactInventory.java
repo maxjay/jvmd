@@ -7,7 +7,11 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import org.rocksdb.*;
 
-/** Persistent path/stamp inventory referencing immutable content-addressed artifact generations. */
+/**
+ * Persistent path/stamp inventory referencing immutable content-addressed artifact generations.
+ * TEMPORARY(warm-boot): only the existing warm path's repository scan records and completes scans here;
+ * the warm boot task replaces it with its own observation of the MACHINE path table.
+ */
 public final class RocksArtifactInventory implements AutoCloseable {
     public record Stamp(long size,long modifiedNanos,long changedNanos,String fileKey) {
         public Stamp { fileKey=fileKey==null?"":fileKey; }

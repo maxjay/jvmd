@@ -304,6 +304,8 @@ public final class Application implements AutoCloseable {
     }
     private ModuleAnalyzerRegistry diagnosticActors(Session session){return session.state("diagnostic_actors",()->new ModuleAnalyzerRegistry(classpathFiles).memos(localMemos).local(()->localLayer(session)));}
     private DiagnosticEngine diagnosticAnalyzer(Session session,Path path)throws Exception{
+        var cold=localColdBoot(session);
+        if(cold!=null)try(var span=RequestScope.stage("local.require")){cold.require(path);}
         var graph=maintainedResolution(session);
         var contexts=session.state("analysis_contexts",WorkspaceContextManager::new);
         var context=contexts.context(path,graph,contextCacheIdentity(session,graph,path),file->createAnalyzerContext(session,file,graph));

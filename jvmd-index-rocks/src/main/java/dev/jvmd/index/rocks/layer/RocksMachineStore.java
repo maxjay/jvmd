@@ -40,6 +40,12 @@ public final class RocksMachineStore implements AutoCloseable {
         }catch(RocksDBException|IOException|RuntimeException unreadable){return Optional.empty();}
     }
 
+    /** This store's committed root, or empty before its first commit. */
+    public Optional<Root> committedRoot()throws IOException{
+        try{byte[] value=db.get(ROOT);return value==null?Optional.empty():Optional.of(Root.decode(value));}
+        catch(RocksDBException unreadable){throw new IOException(unreadable);}
+    }
+
     /** Commit a tree: its leaves, every node not yet written, its path table, then its root. */
     public synchronized void commit(MachineTree tree)throws Exception{
         var newlyWritten=new ArrayList<Hash256>();

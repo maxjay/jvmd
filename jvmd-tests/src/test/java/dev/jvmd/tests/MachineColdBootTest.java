@@ -5,6 +5,7 @@ import dev.jvmd.boot.cold.machine.MachineColdBoot;
 import dev.jvmd.boot.cold.machine.MachineInput;
 import dev.jvmd.core.AlgebraicAccumulator;
 import dev.jvmd.core.tree.KeyedTree;
+import dev.jvmd.core.tree.Root;
 import dev.jvmd.index.*;
 import dev.jvmd.index.layer.machine.MachineTree;
 import dev.jvmd.index.rocks.RocksIndexStorage;
@@ -59,6 +60,17 @@ class MachineColdBootTest {
             roots.add(output.lines().filter(line->line.startsWith("ROOT ")).findFirst().orElseThrow(()->new AssertionError(output)));
         }
         assertThat(roots).hasSize(1);
+    }
+
+    @Test void aReopenedGenerationServesItsCommittedRootAndReadsItsTreeWhenNeeded()throws Exception{
+        Path repository=repository(),generation=temp.resolve("generation");Root committed;
+        try(var storage=new MachineColdBoot(generation,repository,temp.resolve("no-jdk"),BUDGET).run()){committed=storage.machine().root().orElseThrow();}
+        try(var storage=RocksIndexStorage.open(generation,BUDGET)){
+            assertThat(storage.machine().root().orElseThrow().identity()).isEqualTo(committed.identity());
+            assertThat(storage.status().get("machine_leaves")).isEqualTo(committed.leaves());
+            assertThat(storage.machine().tree().root().identity()).isEqualTo(committed.identity());
+            assertThat(storage.machine().leafAt(repository.resolve("fixture/sample/1/sample-1.jar").toString())).isNotNull();
+        }
     }
 
     @Test void documentationIdentityFollowsDocCommentsNotPositions()throws Exception{

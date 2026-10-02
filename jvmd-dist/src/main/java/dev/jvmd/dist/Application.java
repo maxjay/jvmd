@@ -1110,7 +1110,6 @@ public final class Application implements AutoCloseable {
                 if(BootEvents.ENABLED)BootEvents.markWithCounters("STORAGE_OPEN_END","boot",machine.warm()?"warm":"cold");
                 var machineLayer=machine.storage().machine();
                 BootEvents.provider("machine.root",()->machineLayer.root().<Object>map(root->Map.of("identity",root.identity().toString(),"leaves",root.leaves())).orElse(Map.of()));
-                BootEvents.provider("machine.paths",()->new TreeMap<>(machineLayer.tree().paths()));
                 service=machine.index();
                 bootstrappingIndex=service;machineBoot=machine;
                 if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");

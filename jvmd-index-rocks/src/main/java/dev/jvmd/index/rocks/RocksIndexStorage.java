@@ -1,5 +1,7 @@
 package dev.jvmd.index.rocks;
 
+import dev.jvmd.core.tree.Root;
+
 import dev.jvmd.index.*;
 import dev.jvmd.index.layer.machine.MachineLayer;
 import dev.jvmd.index.layer.machine.MachineTree;
@@ -59,8 +61,10 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
         var storage=new RocksIndexStorage(generation,maxEstimatedBytes,RocksMemory::options);
         try{
             // TEMPORARY(warm-boot): serve the committed MACHINE tree as it was committed, so a LOCAL
-            // cold boot can route to its leaves. The warm boot task restores and updates it.
-            storage.machine.committed(storage.machineStore.committedTree());
+            // cold boot can route to its leaves; it is read when first needed, so the existing warm
+            // path opens as before. The warm boot task restores and updates it.
+            var root=storage.machineStore.committedRoot().orElseThrow(()->new IllegalStateException("No committed MACHINE root: "+generation));
+            storage.machine.committed(root,storage.machineStore::committedTree);
             return storage;
         }catch(Exception|Error failure){
             try{storage.close();}catch(Exception close){failure.addSuppressed(close);}
@@ -148,7 +152,7 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
         var result=new LinkedHashMap<String,Object>();
         result.put("backend","rocksdb-sst");result.put("generation",generation.getFileName().toString());
         result.put("machine_root",machine.root().map(root->root.identity().hex()).orElse(""));
-        result.put("machine_leaves",machine.tree().size());
+        result.put("machine_leaves",machine.root().map(Root::leaves).orElse(0L));
         result.put("native_memory",memory.status());result.putAll(admission.status());result.putAll(semanticState.status());
         try{
             result.put("repository",repository.status());

@@ -272,22 +272,12 @@ public final class IndexService implements AutoCloseable {
             var join=new SourceJoin().join(content.models(),text);
             parseNanos.addAndGet(System.nanoTime()-parseStarted);
 
-            var members=new LinkedHashMap<String,Map<String,Object>>();
-            for(var member:join.members()){
-                String key=member.descriptor()==null?member.owner():member.descriptor().equals("field")
-                        ?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
-                var data=new LinkedHashMap<String,Object>();
-                data.put("doc",member.doc());data.put("source_file","jar:"+sources.toUri()+"!/"+member.file());
-                data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());
-                if(member.nameStart()>=0)data.put("name_range",Map.of("start",Documents.position(text.get(member.file()),member.nameStart()),"end",Documents.position(text.get(member.file()),member.nameEnd())));
-                data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());
-                members.put(key,Collections.unmodifiableMap(data));
-            }
+            var members=SourceJoin.documentation(join,text,sources.toUri().toString());
 
             var key=ArtifactIndexFormat.key(hash,"sources");
             var sourceInput=new IndexStore.ArtifactInput(new ArtifactContext(gav(sources),"sources",location(sources)),key,size,mtime);
             active(sources,"source-storage");long storageStarted=System.nanoTime();
-            long id=store.publishDocumentation(artifact.id(),sourceInput,Map.copyOf(members),join.unmatched().size());
+            long id=store.publishDocumentation(artifact.id(),sourceInput,members,join.unmatched().size());
             storageNanos.addAndGet(System.nanoTime()-storageStarted);return id;
         }finally{activeArtifacts.remove(location(tracked));}
     }
@@ -343,16 +333,8 @@ public final class IndexService implements AutoCloseable {
                 var source=zip.getEntry(entry);
                 if(source!=null){
                     String text;try(var input=zip.getInputStream(source)){text=new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);}
-                    for(var member:new SourceJoin().join(content.models(),Map.of(entry,text)).members()){
-                        String memberKey=member.descriptor()==null?member.owner():member.descriptor().equals("field")
-                                ?member.owner()+"#"+member.name():member.owner()+"#"+member.name()+member.descriptor();
-                        var data=new LinkedHashMap<String,Object>();
-                        data.put("doc",member.doc());data.put("source_file","jar:"+sourceZip.toUri()+"!/"+entry);
-                        data.put("line",member.line());data.put("source_start",member.start());data.put("source_end",member.end());
-                        if(member.nameStart()>=0)data.put("name_range",Map.of("start",Documents.position(text,member.nameStart()),"end",Documents.position(text,member.nameEnd())));
-                        data.put("body_start",member.bodyStart());data.put("body_end",member.bodyEnd());data.put("parameters",member.parameters());
-                        sourceData.put(memberKey,Collections.unmodifiableMap(data));
-                    }
+                    var texts=Map.of(entry,text);
+                    sourceData.putAll(SourceJoin.documentation(new SourceJoin().join(content.models(),texts),texts,sourceZip.toUri().toString()));
                 }
             }
         }

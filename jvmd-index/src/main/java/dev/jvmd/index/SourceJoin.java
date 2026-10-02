@@ -25,6 +25,25 @@ public final class SourceJoin {
         public Source(String path, String text) { super(URI.create("string:///" + path.replace(" ", "%20")), Kind.SOURCE); this.text = text; }
         @Override public CharSequence getCharContent(boolean ignoreEncodingErrors) { return text; }
     }
+    /**
+     * Documentation records of joined members, keyed by binary key (owner, owner#field or
+     * owner#method+descriptor). {@code archive} is the URI of the source archive the texts came from.
+     */
+    public static Map<String, Map<String, Object>> documentation(Result joined, Map<String, String> texts, String archive) {
+        var members = new LinkedHashMap<String, Map<String, Object>>();
+        for (var member : joined.members()) {
+            String key = member.descriptor() == null ? member.owner() : member.descriptor().equals("field")
+                    ? member.owner() + "#" + member.name() : member.owner() + "#" + member.name() + member.descriptor();
+            String text = texts.get(member.file());
+            var data = new LinkedHashMap<String, Object>();
+            data.put("doc", member.doc()); data.put("source_file", "jar:" + archive + "!/" + member.file());
+            data.put("line", member.line()); data.put("source_start", member.start()); data.put("source_end", member.end());
+            if (member.nameStart() >= 0) data.put("name_range", Map.of("start", dev.jvmd.core.Documents.position(text, member.nameStart()), "end", dev.jvmd.core.Documents.position(text, member.nameEnd())));
+            data.put("body_start", member.bodyStart()); data.put("body_end", member.bodyEnd()); data.put("parameters", member.parameters());
+            members.put(key, Collections.unmodifiableMap(data));
+        }
+        return Collections.unmodifiableMap(members);
+    }
     public Result join(Map<String, ClassModel> binaries, Map<String, String> sources) throws Exception {
         var matched = new ArrayList<Member>(); var missed = new ArrayList<String>(); int[] eligible = {0};
         var compiler = ToolProvider.getSystemJavaCompiler();

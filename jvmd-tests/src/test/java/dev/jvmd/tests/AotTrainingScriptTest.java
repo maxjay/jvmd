@@ -17,7 +17,8 @@ class AotTrainingScriptTest {
                 "-cp", image.resolve("lib/jvmd/*").toString(), "dev.jvmd.dist.Application", "--train")
                 .redirectErrorStream(true).redirectOutput(log.toFile()).start();
         try {
-            assertThat(process.waitFor(30, TimeUnit.SECONDS)).isTrue();
+            // The training workload includes a production MACHINE cold boot of the repository and the JDK.
+            assertThat(process.waitFor(300, TimeUnit.SECONDS)).withFailMessage(()->{try{return Files.readString(log);}catch(Exception e){return e.toString();}}).isTrue();
             assertThat(process.exitValue()).withFailMessage(Files.readString(log)).isZero();
         } finally { process.destroyForcibly(); Files.deleteIfExists(log); }
     }

@@ -17,7 +17,7 @@ class DependencyFindPaginationTest {
         var config=TestSupport.config(root,Duration.ofHours(4));
         Path first=IndexFixtures.jar(config.m2Repo().resolve("fixture/first/1"),"first-1","package first; public class Sample { public int value; }",true);
         Files.writeString(first.resolveSibling("first-1.pom"),pom("fixture","first",""));
-        try(var index=TestMachine.index(config.stateDir().resolve("index.db"),config.m2Repo())){index.indexJar(first,"fixture:first:1","jar");}
+        try(var index=TestMachine.daemon(config.stateDir(),config.m2Repo())){index.indexJar(first,"fixture:first:1","jar");}
         Path initial=Files.createDirectories(root.resolve("initial"));Files.writeString(initial.resolve("pom.xml"),pom("workspace","initial","first"));
         try(var app=new Application(config)){
             String session=TestSupport.open(app,initial);assertThat(query(app,Map.of("session",session,"scope","deps","name_path","first.Sample")).path("result").path("matches")).hasSize(1);
@@ -35,7 +35,7 @@ class DependencyFindPaginationTest {
         var config=TestSupport.config(root,Duration.ofHours(4));
         Path jar=IndexFixtures.jar(config.m2Repo().resolve("fixture/library/1"),"library-1","package fixture; public class Sample { public int value(){return 1;} }",true);
         Files.writeString(jar.resolveSibling("library-1.pom"),pom("fixture","library",""));
-        try(var index=TestMachine.index(config.stateDir().resolve("index.db"),config.m2Repo())){index.indexJar(jar,"fixture:library:1","jar");}
+        try(var index=TestMachine.daemon(config.stateDir(),config.m2Repo())){index.indexJar(jar,"fixture:library:1","jar");}
         Path workspace=Files.createDirectories(root.resolve("workspace"));Files.writeString(workspace.resolve("pom.xml"),pom("workspace","app","library"));
         Path sources=Files.createDirectories(workspace.resolve("src/main/java"));
         Files.writeString(sources.resolve("Caller.java"),"class Caller { int call(){return new fixture.Sample().value();} }");
@@ -61,7 +61,7 @@ class DependencyFindPaginationTest {
         source.append(" public int other; }");
         var config=TestSupport.config(root,Duration.ofHours(4));
         Path jar=IndexFixtures.jar(config.m2Repo(),"sample",source.toString(),true);
-        try(var index=TestMachine.index(config.stateDir().resolve("index.db"),config.m2Repo())){index.indexJar(jar,"fixture:sample:1","jar");}
+        try(var index=TestMachine.daemon(config.stateDir(),config.m2Repo())){index.indexJar(jar,"fixture:sample:1","jar");}
         Path workspace=Files.createDirectories(root.resolve("workspace"));
         try(var app=new Application(config)){
             String session=TestSupport.open(app,workspace);

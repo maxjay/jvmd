@@ -20,7 +20,7 @@ class FindDepthPaginationTest {
         source.append("} public void alpha(){} public void beta(){} public void gamma(){} }");
         Path jar=IndexFixtures.jar(repo,"sample",source.toString(),false);
         var config=TestSupport.config(temp,Duration.ofHours(4));
-        try(var index=TestMachine.index(config.stateDir().resolve("index.db"),repo)) { index.indexJar(jar,"fixture:sample:1","jar"); }
+        try(var index=TestMachine.daemon(config.stateDir(),repo)) { index.indexJar(jar,"fixture:sample:1","jar"); }
         Path root=Files.createDirectories(temp.resolve("empty"));
         try(var app=new Application(config)) {
             String session=TestSupport.open(app,root);var names=new ArrayList<String>();String cursor=null;

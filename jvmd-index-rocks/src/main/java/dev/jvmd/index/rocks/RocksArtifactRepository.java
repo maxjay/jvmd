@@ -221,7 +221,7 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
         return Json.MAPPER.readValue(value,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){});
     }
 
-    public boolean contains(String cacheKey)throws Exception{return db.get(key(cacheKey,"z|manifest"))!=null;}
+    public boolean contains(String cacheKey)throws Exception{dev.jvmd.core.BootEvents.count("repository.contains",1);return db.get(key(cacheKey,"z|manifest"))!=null;}
 
     public boolean verify(String cacheKey)throws Exception{
         verificationPasses.incrementAndGet();

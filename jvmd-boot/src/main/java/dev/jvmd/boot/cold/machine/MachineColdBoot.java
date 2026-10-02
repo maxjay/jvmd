@@ -1,5 +1,6 @@
 package dev.jvmd.boot.cold.machine;
 
+import dev.jvmd.core.BootEvents;
 import dev.jvmd.index.layer.machine.ArtifactBuilder;
 import dev.jvmd.index.layer.machine.MachineLeaf;
 import dev.jvmd.index.layer.machine.MachinePath;
@@ -39,10 +40,15 @@ public final class MachineColdBoot {
     public RocksIndexStorage run()throws Exception{
         var storage=create();
         try{
+            if(BootEvents.ENABLED)BootEvents.mark("MACHINE_CREATED");
             var inputs=enumerate();
+            if(BootEvents.ENABLED)BootEvents.mark("MACHINE_ENUMERATED","inputs",inputs.size());
             var leaves=buildArtifacts(storage,inputs);
+            if(BootEvents.ENABLED)BootEvents.markWithCounters("MACHINE_ARTIFACTS_BUILT","leaves",leaves.size(),"faults",faults.size());
             var tree=buildTree(leaves);
+            if(BootEvents.ENABLED)BootEvents.mark("MACHINE_TREE_BUILT","leaves",tree.size());
             commit(storage,tree);
+            if(BootEvents.ENABLED)BootEvents.markWithCounters("MACHINE_COMMITTED","root",tree.root().identity().toString());
             return storage;
         }catch(Exception|Error failure){
             try{storage.close();}catch(Exception close){failure.addSuppressed(close);}

@@ -76,6 +76,7 @@ public final class IndexService implements AutoCloseable {
         if(initialDelaySeconds<0)throw new IllegalArgumentException("jvmd.index.scan.initial_delay_seconds must be non-negative");
         if(!started.compareAndSet(false,true))return readiness;
         var initialCause=RequestScope.detached();
+        if(BootEvents.ENABLED)BootEvents.mark("INITIAL_SCAN_SCHEDULED","initial_delay_seconds",initialDelaySeconds);
         scanner.schedule(()->{
             if(closed){
                 readiness.completeExceptionally(new CancellationException("Index closed before initial scan"));
@@ -83,6 +84,7 @@ public final class IndexService implements AutoCloseable {
             }
             try{
                 if(initialCause==null)scan();else RequestScope.with(initialCause,()->{scan();return null;});
+                if(BootEvents.ENABLED)BootEvents.markWithCounters("INITIAL_SCAN_RETURNED","complete",lastScanComplete,"faults",lastScanFaults,"in_flight",inFlight());
                 readiness.complete(null);
                 if(!closed)scanner.scheduleWithFixedDelay(()->{
                     try{scan();}
@@ -98,7 +100,8 @@ public final class IndexService implements AutoCloseable {
     public synchronized void scan() throws Exception {
         if(closed)return;
         try(var trace=RequestScope.stage("index.scan")){
-        long start=System.nanoTime();scans.incrementAndGet();
+        long start=System.nanoTime();long scanNumber=scans.incrementAndGet();
+        if(BootEvents.ENABLED)BootEvents.mark("SCAN_STARTED","scan",scanNumber);
         if(!Files.isDirectory(repository)){
             total=0;scanned.set(0);phase="reconciling";
             long inventoryGeneration=storage.inventory().beginScan();
@@ -112,6 +115,8 @@ public final class IndexService implements AutoCloseable {
         List<Path> jars;try(var files=Files.walk(repository)){jars=files.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".jar")&&!p.getFileName().toString().endsWith("-javadoc.jar")).sorted().toList();}
         discoveryNanos.addAndGet(System.nanoTime()-discoveryStarted);
         trace.count("jar_inventory_entries",jars.size());
+        if(BootEvents.ENABLED)BootEvents.markWithCounters("DISCOVERY_COMPLETE","scan",scanNumber,"jars",jars.size(),
+                "sources_jars",jars.stream().filter(jar->jar.getFileName().toString().endsWith("-sources.jar")).count());
         total=jars.size();scanned.set(0);phase="skeletons";
         long inventoryGeneration=storage.inventory().beginScan();
         var skeletonComplete=new AtomicBoolean(true);var scanFaults=new AtomicLong();
@@ -126,6 +131,7 @@ public final class IndexService implements AutoCloseable {
             finally{scanned.incrementAndGet();}
         }));
         for(var job:jobs)job.get();
+        if(BootEvents.ENABLED)BootEvents.markWithCounters("SKELETONS_COMPLETE","scan",scanNumber,"complete",skeletonComplete.get(),"faults",scanFaults.get());
         jobs.clear();phase="docs";long docsStarted=System.nanoTime();var docsComplete=new AtomicBoolean(true);
         for(var jar:jars)if(jar.getFileName().toString().endsWith("-sources.jar"))jobs.add(readers.submit(()->{
             try{
@@ -136,16 +142,28 @@ public final class IndexService implements AutoCloseable {
             finally{scanned.incrementAndGet();}
         }));
         for(var job:jobs)job.get();docsNanos.addAndGet(System.nanoTime()-docsStarted);
+        if(BootEvents.ENABLED)BootEvents.markWithCounters("DOCS_COMPLETE","scan",scanNumber,"complete",docsComplete.get(),"faults",scanFaults.get());
         boolean complete=skeletonComplete.get()&&docsComplete.get();
         if(complete){
             storage.inventory().completeScan(inventoryGeneration);
-            if(store.reconcilePaths(repository,Set.copyOf(jars)))indexed.incrementAndGet();
+            if(BootEvents.ENABLED)BootEvents.markWithCounters("INVENTORY_COMPLETED","scan",scanNumber);
+            boolean removed=store.reconcilePaths(repository,Set.copyOf(jars));
+            if(removed)indexed.incrementAndGet();
+            if(BootEvents.ENABLED)BootEvents.mark("PATHS_RECONCILED","scan",scanNumber,"removed_any",removed);
         }
         lastScanComplete=complete;lastScanFaults=scanFaults.get();
         phase="ready";
+        if(BootEvents.ENABLED)BootEvents.markWithCounters("SCAN_COMPLETE","scan",scanNumber,"complete",complete,"faults",scanFaults.get());
         long elapsed=System.nanoTime()-start;scanNanos.addAndGet(elapsed);
         System.getLogger("dev.jvmd.index").log(System.Logger.Level.INFO,"index scan: {0} artifacts in {1} ms",jars.size(),elapsed/1_000_000);
         }
+    }
+    /** In-flight work owned by this service: artifacts being read, readers and the source publisher (admission and builds are gauges in BootEvents counters). */
+    public Map<String,Object> inFlight(){
+        var result=new LinkedHashMap<String,Object>();
+        result.put("active_artifacts",activeArtifacts.size());result.put("source_publisher",sourcePublisher.status());
+        if(readers instanceof ThreadPoolExecutor pool){result.put("reader_active",pool.getActiveCount());result.put("reader_queued",pool.getQueue().size());}
+        return result;
     }
     private void warn(String warning){faults.incrementAndGet();warnings.add(warning);while(warnings.size()>50)warnings.poll();System.getLogger("dev.jvmd.index").log(System.Logger.Level.WARNING,warning);}
     public Map<String,Object> status() throws Exception {
@@ -186,11 +204,12 @@ public final class IndexService implements AutoCloseable {
                     var key=ArtifactIndexFormat.key(previous.sha256(),"signatures");
                     storage.inventory().observe(inventoryGeneration,new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime));
                 }
-                RequestScope.count("metadata_reuses",1);reused.incrementAndGet();return previous.id();
+                RequestScope.count("metadata_reuses",1);reused.incrementAndGet();BootEvents.count("jar.metadata_reuse",1);return previous.id();
             }
             active(path,"hash");long hashStarted=System.nanoTime();verifyChecksum(path);String hash=Files.isDirectory(path)?directoryHash(path):Hashing.sha256(path);hashNanos.addAndGet(System.nanoTime()-hashStarted);hashed.incrementAndGet();RequestScope.count("artifact_hash_operations",1);
+            BootEvents.timed("jar.hash",hashStarted);if(BootEvents.ENABLED&&!Files.isDirectory(path))BootEvents.count("jar.hash_sha256_bytes",size);
             if(previous!=null&&previous.hasSignatureEdges()&&previous.sha256().equals(hash)){
-                store.publishPath(path,previous.id(),size,mtime);
+                store.publishPath(path,previous.id(),size,mtime);BootEvents.count("jar.hash_reuse",1);
                 if(inventoryGeneration>0){
                     var key=ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures");
                     storage.inventory().observe(inventoryGeneration,new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime));
@@ -198,14 +217,19 @@ public final class IndexService implements AutoCloseable {
                 reused.incrementAndGet();return previous.id();
             }
             active(path,"parse");long parseStarted=System.nanoTime();var content=new BinaryReader().read(path,kind.equals("local"));parseNanos.addAndGet(System.nanoTime()-parseStarted);content.warnings().forEach(this::warn);
+            BootEvents.timed("jar.parse",parseStarted);BootEvents.count("jar.class_models",content.models().size());
             RequestScope.count("class_models_parsed",content.models().size());
             active(path,"storage");long storageStarted=System.nanoTime();
             var key=ArtifactIndexFormat.key(hash,kind.equals("local")?"local-signatures":"signatures");
             var input=new IndexStore.ArtifactInput(new ArtifactContext(gav,kind,location(path)),key,size,mtime);
+            long factsStarted=BootEvents.nanos();
             var facts=ArtifactIndexFormat.from(content,key);var classReferences=CodeReader.classReferences(content.models().values());
+            BootEvents.timed("jar.canonical_facts",factsStarted);BootEvents.count("jar.symbols",facts.symbols().size());
+            long publishStarted=BootEvents.nanos();
             long id=store.publishBinary(input,facts,classReferences);
+            BootEvents.timed("jar.publish_binary",publishStarted);
             if(inventoryGeneration>0)storage.inventory().observe(inventoryGeneration,input);
-            storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();return id;
+            storageNanos.addAndGet(System.nanoTime()-storageStarted);indexed.incrementAndGet();BootEvents.count("jar.parsed",1);return id;
         }finally{activeArtifacts.remove(location(tracked));}
     }
     synchronized void storeCode(long artifact,String gav,String hash,Path path,BinaryReader.Content content,List<BinaryReader.Edge> edges)throws Exception{
@@ -250,6 +274,7 @@ public final class IndexService implements AutoCloseable {
     }
     private static void verifyChecksum(Path path)throws Exception {
         Path checksum=path.resolveSibling(path.getFileName()+".sha1");if(!Files.isRegularFile(checksum))return;
+        if(BootEvents.ENABLED){BootEvents.count("checksum.sha1_files",1);if(Files.isRegularFile(path))BootEvents.count("checksum.sha1_bytes",Files.size(path));}
         String expected=Files.readString(checksum).trim().split("\\s+")[0].toLowerCase(Locale.ROOT);
         var digest=java.security.MessageDigest.getInstance("SHA-1");try(var stream=Files.newInputStream(path)){byte[] bytes=new byte[65536];int count;while((count=stream.read(bytes))>=0)digest.update(bytes,0,count);}
         if(!java.util.HexFormat.of().formatHex(digest.digest()).equals(expected))throw new java.io.IOException("Checksum mismatch: "+path);
@@ -264,7 +289,7 @@ public final class IndexService implements AutoCloseable {
             var old=artifact(sources);var stamp=Files.readAttributes(sources,java.nio.file.attribute.BasicFileAttributes.class);
             long size=stamp.size(),mtime=stamp.lastModifiedTime().to(TimeUnit.NANOSECONDS);
             if(old!=null&&artifact.hasDocs()&&!old.gav().contains("SNAPSHOT")&&old.size()==size&&old.mtime()==mtime){
-                reused.incrementAndGet();return old.id();
+                reused.incrementAndGet();BootEvents.count("sources.metadata_reuse",1);return old.id();
             }
 
             active(sources,"hash");long hashStarted=System.nanoTime();verifyChecksum(sources);String hash=Hashing.sha256(sources);
@@ -295,7 +320,8 @@ public final class IndexService implements AutoCloseable {
             var sourceInput=new IndexStore.ArtifactInput(new ArtifactContext(gav(sources),"sources",location(sources)),key,size,mtime);
             active(sources,"source-storage");long storageStarted=System.nanoTime();
             long id=store.publishDocumentation(artifact.id(),sourceInput,Map.copyOf(members),join.unmatched().size());
-            storageNanos.addAndGet(System.nanoTime()-storageStarted);return id;
+            storageNanos.addAndGet(System.nanoTime()-storageStarted);
+            BootEvents.timed("sources.publish",storageStarted);BootEvents.count("sources.parsed",1);BootEvents.count("sources.members",members.size());return id;
         }finally{activeArtifacts.remove(location(tracked));}
     }
     public void configureModuleState(IndexSemanticState.ModuleStateInput input)throws Exception{

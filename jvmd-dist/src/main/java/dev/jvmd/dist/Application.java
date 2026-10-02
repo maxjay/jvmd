@@ -45,7 +45,9 @@ public final class Application implements AutoCloseable {
         this.config = config;
         // Restart reuse of unchanged content hashes. Restored observations are validated
         // against current file stamps before use; the journal is never semantic authority.
+        if(BootEvents.ENABLED)BootEvents.mark("OBSERVATION_JOURNAL_LOAD_BEGIN");
         classpathFiles.persistence(config.stateDir().resolve("file-observations-v1.bin"));
+        if(BootEvents.ENABLED)BootEvents.mark("OBSERVATION_JOURNAL_LOAD_END","classpath_files",classpathFiles.status());
         // Attributed LOCAL memos are the only persisted diagnostics; old snapshot state is deleted, never migrated.
         deleteQuietly(config.stateDir().resolve("diagnostics-v2"));
         // LOCAL semantic memo store: independently validated records; loss is only a miss.
@@ -1100,21 +1102,40 @@ public final class Application implements AutoCloseable {
                 long defaultBudgetMb=Math.max(8L,Math.min(128L,config.heapCeilingMb()/8L));
                 long budgetMb=Long.getLong("jvmd.index.generation_budget_mb",defaultBudgetMb);
                 if(budgetMb<1)throw new IllegalArgumentException("jvmd.index.generation_budget_mb must be positive");
+                if(BootEvents.ENABLED)BootEvents.mark("STORAGE_OPEN_BEGIN","generation_budget_mb",budgetMb);
                 var machine=dev.jvmd.boot.BootDecision.machine(config.stateDir().resolve("index-v2"),config.m2Repo(),config.jdkHome(),
                         Math.multiplyExact(budgetMb,1024L*1024L));
+                if(BootEvents.ENABLED)BootEvents.markWithCounters("STORAGE_OPEN_END","boot",machine.warm()?"warm":"cold");
+                var machineLayer=machine.storage().machine();
+                BootEvents.provider("machine.root",()->machineLayer.root().<Object>map(root->Map.of("identity",root.identity().toString(),"leaves",root.leaves())).orElse(Map.of()));
+                BootEvents.provider("machine.paths",()->new TreeMap<>(machineLayer.tree().paths()));
                 service=machine.index();
                 bootstrappingIndex=service;machineBoot=machine;
                 if(closed.get())throw new java.util.concurrent.CancellationException("Application closed during index bootstrap");
                 // TEMPORARY(warm-boot): the existing warm path reconciles a reopened generation with today's
                 // repository scan; the warm boot task replaces it. A cold-booted MACHINE is already complete.
                 if(!machine.warm()&&service.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();
+                if(!machine.warm()&&BootEvents.ENABLED){
+                    // A MACHINE cold boot enumerated the whole repository: it is the cold path's reconciliation.
+                    BootEvents.markWithCounters("REPOSITORY_RECONCILIATION_FINISHED","reconciled",service.repositoryReconciled(),
+                            "state",service.reconciliationState(),"failure","","boot","cold");
+                    BootEvents.dump("RUNTIME_VIEWS");
+                }
                 if(machine.warm()){
                     var started=service;
                     // Only a complete reconciliation is reconciled; a scan with faults or one that failed is reported as such.
-                    var reconciliation=service.start().whenComplete((_,failure)->{if(failure==null&&started.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();});
+                    var reconciliation=service.start().whenComplete((_,failure)->{
+                        if(failure==null&&started.repositoryReconciled())repositoryReconciledNanos=System.nanoTime();
+                        if(BootEvents.ENABLED){
+                            BootEvents.markWithCounters("REPOSITORY_RECONCILIATION_FINISHED","reconciled",failure==null&&started.repositoryReconciled(),
+                                    "state",started.reconciliationState(),"failure",failure==null?"":failure.toString(),"boot","warm");
+                            BootEvents.dump("RUNTIME_VIEWS");
+                        }
+                    });
                     if(awaitRepositoryScan)reconciliation.join();
                 }
                 sessionCapableNanos=System.nanoTime();
+                if(BootEvents.ENABLED)BootEvents.mark("SESSION_CAPABLE","boot",machine.warm()?"warm":"cold");
                 for(var session:sessions.list())try{bootLocal(session);}catch(Exception failure){session.warn("local_boot_failed: "+failure);}
                 return service;
             } catch(Exception|LinkageError e){
@@ -1276,6 +1297,8 @@ public final class Application implements AutoCloseable {
     }
     public static void main(String[] args) throws Exception {
         if (Runtime.version().feature() != 25) throw new IllegalStateException("jvmd requires pinned JDK 25");
+        if (BootEvents.ENABLED) BootEvents.mark("MAIN_ENTERED","jvm_start_ms",java.lang.management.ManagementFactory.getRuntimeMXBean().getStartTime(),
+                "pid",ProcessHandle.current().pid());
         Config config = Config.load();
         boolean training=args.length>0 && args[0].equals("--train");
         if(training)config=new Config(config.jdkHome(),config.jbrHome(),config.m2Repo(),config.mavenMajor(),config.idleTimeout(),config.heapCeilingMb(),Files.createTempDirectory("jvmd-aot-state-"),config.socket());
@@ -1310,12 +1333,15 @@ public final class Application implements AutoCloseable {
             } finally { app.close(); try (var files = Files.walk(fixture)) { for (Path file : files.sorted(java.util.Comparator.reverseOrder()).toList()) Files.delete(file); } try(var files=Files.walk(config.stateDir())){for(Path path:files.sorted(java.util.Comparator.reverseOrder()).toList())Files.delete(path);} }
             return;
         }
+        if(BootEvents.ENABLED)BootEvents.mark("APPLICATION_CONSTRUCTED");
         var server = new UnixServer(config, app.dispatcher, app);
         Runtime.getRuntime().addShutdownHook(Thread.ofPlatform().unstarted(server::close));
         server.start();
+        if(BootEvents.ENABLED)BootEvents.mark("SOCKET_LISTENING");
         try {
             app.awaitReady();
             server.ready();
+            if(BootEvents.ENABLED)BootEvents.mark("PRODUCT_READY");
             System.out.println("READY " + config.socket());
             server.await();
         } catch(Exception|LinkageError e) {

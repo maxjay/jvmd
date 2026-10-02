@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.node.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-/** Implements 4.1 and phase 8: byte-bounded response fragments and replayable, scoped continuations. */
+/** Byte-bounded response fragments and replayable, scoped continuations. */
 public final class ResponseBudget {
     public static final int MAX_BYTES=64*1024;
     private static final long MAX_STORED_BYTES=64L*1024*1024;

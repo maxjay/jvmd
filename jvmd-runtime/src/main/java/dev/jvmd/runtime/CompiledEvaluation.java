@@ -5,7 +5,7 @@ import dev.jvmd.core.*;
 import java.nio.file.*;
 import java.util.*;
 
-/** Implements 4.7: bounded compiled evaluation against real frame locals with assignment copyback. */
+/** Bounded compiled evaluation against real frame locals with assignment copyback. */
 public final class CompiledEvaluation {
     private static final long TTL=java.time.Duration.ofMinutes(5).toNanos(),MAX_BYTES=32L*1024*1024;
     private record Cached(EvaluationCompiler.Plan plan,long expires,long bytes) { }

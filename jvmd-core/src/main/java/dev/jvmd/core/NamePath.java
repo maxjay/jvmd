@@ -4,7 +4,7 @@ import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
 import java.util.*;
 
-/** Implements 4.8: nested name paths with erased overloads and explicit ambiguous matches. */
+/** Nested name paths with erased overloads and explicit ambiguous matches. */
 public final class NamePath {
     private record Segment(String name,List<String> parameters) { }
     private final String path;

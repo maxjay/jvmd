@@ -4,7 +4,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Base64;
 
-/** Implements 4.7: java.base-only target helper; evaluators unload independently of application classes. */
+/** Java.base-only target helper; evaluators unload independently of application classes. */
 public final class EvaluationBridge {
     private static final class Holder { MethodHandles.Lookup lookup; }
     private static final class Lookups extends ClassValue<Holder> {

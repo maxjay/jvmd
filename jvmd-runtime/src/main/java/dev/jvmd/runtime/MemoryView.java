@@ -5,7 +5,7 @@ import dev.jvmd.core.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-/** Implements 4.7: explicit, bounded heap requests with 60-second snapshot pagination. */
+/** Explicit, bounded heap requests with 60-second snapshot pagination. */
 public final class MemoryView {
     private record Snapshot(String kind,List<?> values,long expires,int max) { }
     private final DebugSession debug;

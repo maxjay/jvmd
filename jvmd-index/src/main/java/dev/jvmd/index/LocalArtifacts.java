@@ -4,7 +4,7 @@ import dev.jvmd.core.*;
 import java.nio.file.*;
 import java.util.*;
 
-/** Implements 4.4 and 4.5: lazy content invalidation of registered module inputs. */
+/** Lazy content invalidation of registered module inputs. */
 final class LocalArtifacts {
     private final class State {
         final IndexService.LocalModule module;

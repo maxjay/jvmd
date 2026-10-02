@@ -6,11 +6,11 @@ import java.nio.file.Path;
 import java.util.*;
 import javax.tools.*;
 
-/** Implements 4.2: focused source preserving every UTF-16 offset, line and constructor invocation. */
+/** Focused source preserving every UTF-16 offset, line and constructor invocation. */
 public final class Focusing implements AutoCloseable {
-    /** Implements 4.2: detached focus output, suitable for content/member-keyed caching. */
+    /** Detached focus output, suitable for content/member-keyed caching. */
     public record Result(String source,String member,int start,int end,List<Span> replaced) { }
-    /** Implements 4.2: original body intervals, with identical offsets in focused source. */
+    /** Original body intervals, with identical offsets in focused source. */
     public record Span(int start,int end) { }
     private record Body(int start,int end,int preserve,String name,int declarationStart,int declarationEnd) { }
     private final LinkedHashMap<String,List<Body>> layouts=new LinkedHashMap<>(16,.75f,true);

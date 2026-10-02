@@ -9,13 +9,13 @@ import java.time.Duration;
 import java.util.*;
 import javax.tools.*;
 
-/** Implements 4.7: compile a synthetic expression method in the declaring source's lexical context. */
+/** Compile a synthetic expression method in the declaring source's lexical context. */
 public final class EvaluationCompiler {
-    /** Implements 4.7: detached local metadata; generic signatures preserve lambda type inference. */
+    /** Detached local metadata; generic signatures preserve lambda type inference. */
     public record Local(String name,String signature,String genericSignature) {
         public String javaType(){return JavaTypes.type(Signature.parseFrom(genericSignature==null?signature:genericSignature));}
     }
-    /** Implements 4.7: only evaluator bytecode is loaded; the declaring class is never replaced to eval. */
+    /** Only evaluator bytecode is loaded; the declaring class is never replaced to eval. */
     public record Plan(String evaluator,String bootstrap,String sourceHash,double compileMillis,List<Local> locals) { }
     private EvaluationCompiler() { }
     public static Plan compile(Path compilerHome,Path source,String declaring,String method,int line,boolean instance,List<Local> locals,String expression,List<Path> classpath,List<Path> roots,List<String> options)throws Exception{

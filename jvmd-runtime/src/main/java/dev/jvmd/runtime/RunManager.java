@@ -6,11 +6,11 @@ import java.nio.file.*;
 import java.time.Duration;
 import java.util.*;
 
-/** Implements 4.7: workspace-owned process lifecycle and the frozen debug operation surface. */
+/** Workspace-owned process lifecycle and the frozen debug operation surface. */
 public final class RunManager implements AutoCloseable {
-    /** Implements 4.7: all launch/compile state needed to repeat the same run after hot swap. */
+    /** All launch/compile state needed to repeat the same run after hot swap. */
     public record Target(Path directory,List<Path> sources,List<Path> classpath,List<String> options,Path output) { }
-    /** Implements 4.7: detached launch configuration and per-module compilation boundaries. */
+    /** Detached launch configuration and per-module compilation boundaries. */
     public record Request(DebugSession.Launch launch,SourceLookup sources,Path compilerHome,List<Path> sourceRoots,List<String> compilerOptions,Path output,List<Target> targets) { }
     private record Run(Request request,DebugSession debug,CompiledEvaluation evaluation) { }
     private final String workspace;

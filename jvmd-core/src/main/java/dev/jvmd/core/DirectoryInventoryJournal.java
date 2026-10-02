@@ -11,7 +11,7 @@ import java.util.*;
 import java.util.zip.CRC32C;
 
 /**
- * Durable, validated cache of directory observations (architecture §94), the sibling of
+ * Durable, validated cache of directory observations, the sibling of
  * {@link FileObservationJournal}.
  *
  * A record holds a directory's stamp (size, mtime, ctime, inode), when it was observed, its entry

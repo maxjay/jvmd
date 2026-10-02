@@ -6,7 +6,7 @@ import java.nio.file.*;
 import java.util.*;
 
 /**
- * Attributed LOCAL memos (architecture §68–75, §84, §87): persist and restore attributed
+ * Attributed LOCAL memos: persist and restore attributed
  * diagnostics with their detached contribution. Owned by one {@link Analyzer}; every method except
  * the background writer runs on the analyzer's owner thread.
  */
@@ -36,20 +36,20 @@ final class AttributedMemos implements AutoCloseable {
     private final Map<String,Long> attributedMemoRefusalReasons=new TreeMap<>(),missReasons=new TreeMap<>();
     private String lastAttributedMemoMiss="";
 
-    /** Bump when the attributed result, its canonical encoding or its certificate rules change (§81). */
+    /** Bump when the attributed result, its canonical encoding or its certificate rules change. */
     static final SemanticMemoStore.Function ATTRIBUTED=new SemanticMemoStore.Function("attributed-diagnostics",6);
 
     private <T> Optional<T> refuseAttributed(String reason){
         attributedMemoRefusals++;attributedMemoRefusalReasons.merge(reason,1L,Long::sum);return Optional.empty();
     }
-    /** Platform identity from content only: the JDK location is not part of semantic meaning (§103). */
+    /** Platform identity from content only: the JDK location is not part of semantic meaning. */
     private Object platformIdentity()throws Exception{
         String configured=analyzer.platformIdentity();
         if(configured==null)throw new IllegalStateException("analyzer is not configured");
         return configured;
     }
     /**
-     * Static memo key (§70, §84): everything the in-process compiler owner holds fixed. Returns empty
+     * Static memo key: everything the in-process compiler owner holds fixed. Returns empty
      * when any ambient input cannot be bound logically; that context is simply not memoised.
      */
     private Optional<SemanticMemoStore.StaticKey> attributedStaticKey(Path file,String sourceHash,LogicalSources logical)throws Exception{

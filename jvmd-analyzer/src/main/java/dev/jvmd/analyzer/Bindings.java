@@ -9,15 +9,15 @@ import java.util.*;
 import javax.lang.model.element.*;
 import javax.lang.model.type.*;
 
-/** Implements 4.2: immutable binding snapshots; no compiler-owned object escapes the query. */
+/** Immutable binding snapshots; no compiler-owned object escapes the query. */
 public final class Bindings {
-    /** Implements 4.2 and 4.9: a bound identifier in UTF-16 source coordinates. */
+    /** A bound identifier in UTF-16 source coordinates. */
     public record Occurrence(String scip,String token,String file,int start,int end,SourceText.Range range,String role,String container,ImportSite importSite) {
         public Occurrence(String scip,String token,String file,int start,int end,SourceText.Range range,String role,String container){this(scip,token,file,start,end,range,role,container,null);}
     }
-    /** Implements 4.9: a single-static-import can name multiple overloaded methods. */
+    /** A single-static-import can name multiple overloaded methods. */
     public record ImportSite(int start,int end,String qualifier) { }
-    /** Implements 4.4: resolved structural and source-code relationships. */
+    /** Resolved structural and source-code relationships. */
     public record Edge(String src,String dst,String kind) { }
     /**
      * Detached receiver evidence for one resolved source reference. The target is javac's selected
@@ -31,7 +31,7 @@ public final class Bindings {
             receiverType=receiverType==null||receiverType.isBlank()?null:receiverType;
         }
     }
-    /** Implements 4.2: detached declarations, references and source dependencies. */
+    /** Detached declarations, references and source dependencies. */
     /**
      * {@code diagnosticProjection} is {@link DiagnosticProjection P_diag} of the requested unit when it
      * was fully attributed, otherwise null.

@@ -4,7 +4,7 @@ import java.nio.file.Path;
 import java.util.*;
 
 /**
- * Logical source identities (architecture §35): {@code moduleCoordinates|sourceRootRole|relativePath}.
+ * Logical source identities: {@code moduleCoordinates|sourceRootRole|relativePath}.
  *
  * Absolute paths remain runtime addressing. Persisted memo identity uses the module's logical
  * coordinates, the source root's role relative to its module directory (for example

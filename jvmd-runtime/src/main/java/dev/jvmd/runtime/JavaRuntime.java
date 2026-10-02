@@ -5,9 +5,9 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-/** Implements 4.7 and 12.5: detect the configured JBR without bundling or changing the daemon JDK. */
+/** Detect the configured JBR without bundling or changing the daemon JDK. */
 public final class JavaRuntime {
-    /** Implements 4.7: checked debuggee VM selection and its explicit launch options. */
+    /** Checked debuggee VM selection and its explicit launch options. */
     public record Selection(Path home,List<String> options,boolean enhanced,String version,List<String> warnings) { }
     private JavaRuntime() { }
     public static Selection select(Path jdk,Path jbr,Path agent)throws Exception{

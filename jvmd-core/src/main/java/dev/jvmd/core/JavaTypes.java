@@ -3,7 +3,7 @@ import java.lang.classfile.*;
 import java.lang.constant.ClassDesc;
 import java.util.*;
 import java.util.stream.Collectors;
-/** Implements 4.4 and 4.7: readable generic signatures using the standard class-file signature model. */
+/** Readable generic signatures using the standard class-file signature model. */
 public final class JavaTypes {
     private JavaTypes() { }
     public static String type(Signature signature) {

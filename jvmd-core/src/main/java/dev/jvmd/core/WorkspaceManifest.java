@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.file.*;
 import java.util.*;
 
-/** Implements 4.6: canonical manifest roots, in the user's declared lookup order. */
+/** Canonical manifest roots, in the user's declared lookup order. */
 public record WorkspaceManifest(List<Path> roots,boolean ignoreVersions) {
     public WorkspaceManifest { roots=List.copyOf(roots); }
     public static WorkspaceManifest read(Path root,JsonNode manifest)throws Exception{

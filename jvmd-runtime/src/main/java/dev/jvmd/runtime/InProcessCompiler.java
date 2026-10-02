@@ -9,7 +9,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import javax.tools.*;
 
-/** Implements R1 and 4.7: public javac compilation without processor execution or a child-JVM startup. */
+/** Public javac compilation without processor execution or a child-JVM startup. */
 final class InProcessCompiler {
     private static final ExecutorService WORKER=Executors.newSingleThreadExecutor(Thread.ofPlatform().daemon().name("jvmd-runtime-compiler").factory());
     private static volatile boolean quarantined;

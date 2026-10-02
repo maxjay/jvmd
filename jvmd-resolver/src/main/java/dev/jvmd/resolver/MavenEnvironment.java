@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 
-/** Implements 4.3: Maven settings, major alignment and offline-first sessions. */
+/** Maven settings, major alignment and offline-first sessions. */
 public final class MavenEnvironment {
     private final Config config;
     private final Path settingsFile;

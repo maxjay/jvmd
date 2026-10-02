@@ -7,7 +7,7 @@ import java.net.URI;
 import java.nio.file.*;
 import java.util.*;
 
-/** Implements 4.9: nine editor methods translated onto the resident session's core queries. */
+/** Nine editor methods translated onto the resident session's core queries. */
 public final class LspFacade {
     public static final List<String> TOKEN_TYPES=List.of("namespace","class","interface","enum","typeParameter","parameter","variable","property","enumMember","method","decorator");
     public static final List<String> TOKEN_MODIFIERS=List.of("declaration","static","readonly","abstract","deprecated","modification");

@@ -4,7 +4,7 @@ import com.sun.jdi.*;
 import java.nio.file.*;
 import java.util.*;
 
-/** Implements 4.6 and 4.7: debug source lookup across source roots in manifest order. */
+/** Debug source lookup across source roots in manifest order. */
 public final class SourceLookup {
     private final List<Path> roots;
     private final Map<Path,String> coordinates;

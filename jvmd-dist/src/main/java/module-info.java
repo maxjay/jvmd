@@ -1,4 +1,4 @@
-/** Implements 12.6: explicit production-module dependencies and qualified JSON reflection. */
+/** Explicit production-module dependencies and qualified JSON reflection. */
 module dev.jvmd.dist {
     requires dev.jvmd.core;
     requires dev.jvmd.index;

@@ -1,6 +1,6 @@
 package dev.jvmd.core;
 
-/** Implements 12.3: structured protocol and capability failures. */
+/** Structured protocol and capability failures. */
 public final class RpcException extends RuntimeException {
     private final int code;
     private final Object data;

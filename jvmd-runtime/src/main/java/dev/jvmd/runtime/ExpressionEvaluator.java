@@ -9,7 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import javax.tools.*;
 
-/** Implements 4.7: tier-1 evaluation of expressions through public javac trees and JDI operations. */
+/** Tier-1 evaluation of expressions through public javac trees and JDI operations. */
 public final class ExpressionEvaluator {
     private record Name(String text) { }
     private final DebugSession debug;

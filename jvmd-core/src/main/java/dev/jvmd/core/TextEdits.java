@@ -4,12 +4,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 
-/** Implements 4.8 and 4.9: checked UTF-16 edit plans, atomic file replacement and rollback. */
+/** Checked UTF-16 edit plans, atomic file replacement and rollback. */
 public final class TextEdits {
-    /** Implements 4.8: a half-open edit over the original document. */
+    /** A half-open edit over the original document. */
     public record Edit(Path file,int start,int end,String text) { }
     private record Change(Path file,Path target,String before,String after,List<Edit> edits) { }
-    /** Implements 4.9: a detached edit plan which can be returned without changing files. */
+    /** A detached edit plan which can be returned without changing files. */
     public static final class Plan {
         private final List<Change> changes;
         private Plan(List<Change> changes){this.changes=List.copyOf(changes);}

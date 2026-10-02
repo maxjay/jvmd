@@ -4,13 +4,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 
-/** Implements 4.9: versioned editor documents in memory; synchronization never writes source files. */
+/** Versioned editor documents in memory; synchronization never writes source files. */
 public final class Documents implements AutoCloseable {
-    /** Implements 4.9: zero-based UTF-16 source position. */
+    /** Zero-based UTF-16 source position. */
     public record Position(int line,int character) { }
-    /** Implements 4.9: half-open editor range. */
+    /** Half-open editor range. */
     public record Range(Position start,Position end) { }
-    /** Implements 4.9: a full replacement when range is null, otherwise an incremental change. */
+    /** A full replacement when range is null, otherwise an incremental change. */
     public record Change(Range range,String text) { }
     private record Document(String text,int version,String hash) { }
     private static final long MAX_BYTES=64L*1024*1024;

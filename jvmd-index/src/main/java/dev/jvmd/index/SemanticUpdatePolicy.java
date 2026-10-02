@@ -296,7 +296,7 @@ public final class SemanticUpdatePolicy {
         }
 
         /**
-         * Hypothetical impact (§109): consumers that would be reconsidered if these leaves took the
+         * Hypothetical impact: consumers that would be reconsidered if these leaves took the
          * given identities, plus everything downstream of them, without recomputing or mutating
          * anything. A hypothetical result is unknown, so downstream consumers are included.
          */

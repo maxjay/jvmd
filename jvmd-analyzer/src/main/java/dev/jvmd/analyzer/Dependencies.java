@@ -4,7 +4,7 @@ import dev.jvmd.index.SemanticUpdatePolicy;
 import java.nio.file.*;
 import java.util.*;
 
-/** Implements 4.2: content-checked reverse source dependencies and lazy invalidation. */
+/** Content-checked reverse source dependencies and lazy invalidation. */
 public final class Dependencies {
     private final SemanticUpdatePolicy.Live semantic=new SemanticUpdatePolicy.Live();
     public SemanticUpdatePolicy.Live semantic(){return semantic;}

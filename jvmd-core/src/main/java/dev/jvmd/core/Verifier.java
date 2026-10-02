@@ -8,11 +8,11 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.Pattern;
 
-/** Implements 4.2 and 12.3: authoritative workspace verification in a separate process. */
+/** Authoritative workspace verification in a separate process. */
 public final class Verifier {
-    /** Implements 4.2: build diagnostics retain javac codes and verified provenance. */
+    /** Build diagnostics retain javac codes and verified provenance. */
     public record Problem(String source,int tier,String code,String kind,String file,long line,long character,String message) { }
-    /** Implements 12.3: a completed build, structured diagnostics and a bounded output tail. */
+    /** A completed build, structured diagnostics and a bounded output tail. */
     public record Result(int exitCode,boolean timedOut,List<Problem> diagnostics,String output,List<String> command,List<String> warnings,long elapsedMillis) { }
     private static final Pattern RAW=Pattern.compile("^(.*\\.java):(\\d+):(\\d+):\\s*(compiler\\.(?:err|warn|note)\\.[^: ]+)(?::\\s*(.*))?$");
     private static final int TAIL_LIMIT=64*1024;
@@ -86,7 +86,7 @@ public final class Verifier {
         if(command.isEmpty())throw RpcException.invalid("verify_command is empty");return command;
     }
     private static boolean onPath(String command){for(String entry:Objects.toString(System.getenv("PATH"),"").split(java.io.File.pathSeparator))if(Files.isExecutable(Path.of(entry,command)))return true;return false;}
-    /** Implements 4.1: command words support quoting; no implicit shell expansion. */
+    /** Command words support quoting; no implicit shell expansion. */
     public static List<String> split(String value){
         var result=new ArrayList<String>();var word=new StringBuilder();char quote=0;boolean escape=false,started=false;
         for(char c:value.toCharArray()){

@@ -5,7 +5,7 @@ import dev.jvmd.core.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-/** Implements 4.7: depth/breadth-limited inspection with resumable child and string pages. */
+/** Depth/breadth-limited inspection with resumable child and string pages. */
 public final class Inspection {
     private record Cursor(String handle,int offset,int depth,int breadth) { }
     private final DebugSession debug;

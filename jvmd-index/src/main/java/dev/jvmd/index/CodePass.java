@@ -4,9 +4,9 @@ import dev.jvmd.core.*;
 import java.nio.file.*;
 import java.util.*;
 
-/** Implements 4.4 and 4.8: lazy artifact code scans and workspace-filtered reference steps. */
+/** Lazy artifact code scans and workspace-filtered reference steps. */
 public final class CodePass {
-    /** Implements 4.8: one detached breadth-first expansion across dependency code. */
+    /** One detached breadth-first expansion across dependency code. */
     public record Expansion(List<Map<String,Object>> symbols,List<IndexService.SourceEdge> edges,List<String> warnings) { }
     private final IndexService index;
 

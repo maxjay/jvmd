@@ -8,7 +8,7 @@ import java.util.function.Function;
 import javax.lang.model.element.*;
 import javax.lang.model.type.*;
 import javax.lang.model.util.*;
-/** Implements 4.2: javac-resolved SCIP identity, erased descriptors and name paths. */
+/** Javac-resolved SCIP identity, erased descriptors and name paths. */
 public final class SymbolIdentity {
     private final JavacTask task;
     private final Elements elements;

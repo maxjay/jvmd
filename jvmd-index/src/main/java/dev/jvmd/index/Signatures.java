@@ -3,7 +3,7 @@ import dev.jvmd.core.JavaTypes;
 import java.lang.classfile.Signature;
 import java.lang.constant.ClassDesc;
 import java.util.*;
-/** Implements 4.4: compatibility facade over the shared public class-file signature renderer. */
+/** Compatibility facade over the shared public class-file signature renderer. */
 public final class Signatures {
     private Signatures() { }
     public static String type(Signature signature){return JavaTypes.type(signature);}

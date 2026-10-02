@@ -1,13 +1,13 @@
 package dev.jvmd.analyzer;
 import java.util.*;
 import javax.lang.model.SourceVersion;
-/** Implements 4.2 and 4.9: UTF-16 source positions; semantic identities come from javac. */
+/** UTF-16 source positions; semantic identities come from javac. */
 public final class SourceText {
-    /** Implements 4.9: zero-based position. */
+    /** Zero-based position. */
     public record Position(int line,int character) { }
-    /** Implements 4.9: half-open range. */
+    /** Half-open range. */
     public record Range(Position start,Position end) { }
-    /** Implements 5: identifier span for binding probes. */
+    /** Identifier span for binding probes. */
     public record Token(String text,int start,int end) { }
     private final String text;
     private final int[] lines;
@@ -23,7 +23,7 @@ public final class SourceText {
     public List<Token> tokens(int start,int end){var values=tokens();int from=lowerBound(start),to=lowerBound(end);if(to>from&&values.get(to-1).end()>end)to--;return values.subList(from,Math.max(from,to));}
     public int nextCode(int start){int i=start;while(i<text.length()){if(Character.isWhitespace(text.charAt(i))){i++;continue;}if(text.startsWith("/*",i)){int end=text.indexOf("*/",i+2);i=end<0?text.length():end+2;continue;}if(text.startsWith("//",i)){int end=text.indexOf('\n',i+2);i=end<0?text.length():end+1;continue;}break;}return i;}
     /**
-     * Implements 5: classify contextual keywords from a parsed unit, without using binding success.
+     * Classify contextual keywords from a parsed unit, without using binding success.
      * The raw spans remain available to tolerant editing; actual identifier uses of the same words survive.
      */
     public List<Token> identifiers(com.sun.source.tree.CompilationUnitTree unit,com.sun.source.util.SourcePositions positions){

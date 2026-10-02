@@ -8,7 +8,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.function.BiFunction;
 
-/** Implements 4.3: lazily select a shaded Maven bundle; only platform types and JSON cross the boundary. */
+/** Lazily select a shaded Maven bundle; only platform types and JSON cross the boundary. */
 public final class MavenResolver implements AutoCloseable {
     private static final int MAX_RESIDENTS=16;
     private final Config config;

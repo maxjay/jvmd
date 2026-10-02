@@ -10,7 +10,7 @@ import java.util.*;
 import java.util.zip.CRC32C;
 
 /**
- * Durable, validated cache of file content observations (architecture §90–93).
+ * Durable, validated cache of file content observations.
  *
  * The journal is not authority. A restored record only lets {@link FileStateRegistry} skip hashing
  * when the file's current reliable stamp equals the persisted stamp and the observation was not
@@ -91,8 +91,8 @@ public final class FileObservationJournal implements Closeable {
     public synchronized int pending(){return pending.size();}
 
     /**
-     * Append queued records. A journal whose suffix is corrupt or whose dead records dominate is
-     * rewritten from {@code live} with an atomic rename instead.
+     * Append queued records. A journal that is missing, too short or has an invalid header, or whose
+     * dead records dominate, is rewritten from {@code live} with an atomic rename instead.
      */
     public synchronized void flush(Map<String,Record> live)throws IOException{
         if(pending.isEmpty())return;

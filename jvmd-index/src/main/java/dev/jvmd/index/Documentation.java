@@ -6,7 +6,7 @@ import java.net.URI;
 import java.util.*;
 import java.util.zip.ZipFile;
 
-/** Implements 4.5 and phase 7: bounded signature closures, inherited comments and source round trips. */
+/** Bounded signature closures, inherited comments and source round trips. */
 public final class Documentation {
     private static final Set<String> STRUCTURAL=Set.of("param_type","return_type","throws","extends","implements");
     private final IndexService index;

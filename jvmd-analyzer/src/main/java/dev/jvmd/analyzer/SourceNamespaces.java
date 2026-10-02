@@ -12,7 +12,7 @@ import java.util.*;
 import javax.tools.*;
 
 /**
- * S0 syntactic namespace: {@code S0 = ParseNamespace(content)} (architecture §85–86).
+ * S0 syntactic namespace: {@code S0 = ParseNamespace(content)}.
  *
  * The result is a pure function of the source bytes, the parser semantics and the language mode, so
  * its LOCAL memo key is {@code H(contentIdentity, parserSemanticVersion, languageMode)} with an empty
@@ -24,7 +24,7 @@ import javax.tools.*;
  * A unit with syntax errors is recorded and restored as {@link SemanticCompleteness#PARTIAL}.
  */
 public final class SourceNamespaces {
-    /** Bump when extraction or canonical encoding changes (§81). */
+    /** Bump when extraction or canonical encoding changes. */
     public static final SemanticMemoStore.Function FUNCTION=new SemanticMemoStore.Function("s0-namespace",1);
 
     /** Parser-relevant language mode. Only source level and preview affect parsing. */
@@ -68,7 +68,7 @@ public final class SourceNamespaces {
     public static SemanticMemoStore.StaticKey key(String content,LanguageMode mode){
         String contentIdentity=Hashing.sha256(content.getBytes(StandardCharsets.UTF_8));
         // Conservative parser semantic version: the JVMD extraction version plus the exact javac
-        // runtime. It may be narrowed later only with differential evidence (§83).
+        // runtime. It may be narrowed later only with differential evidence.
         return SemanticMemoStore.StaticKey.of(FUNCTION,contentIdentity,Runtime.version().toString(),mode.release(),mode.preview());
     }
 
@@ -80,7 +80,7 @@ public final class SourceNamespaces {
                 if(store.lookup(key,ignored->Optional.empty()) instanceof SemanticMemoStore.Lookup.Hit hit
                         &&hit.record().result() instanceof SemanticMemoStore.Result.Present present){
                     var restored=Json.MAPPER.readValue(present.value(),Namespace.class);
-                    // Completeness is restored exactly as persisted; never strengthened (§7).
+                    // Completeness is restored exactly as persisted; never strengthened.
                     if(restored.completeness()==hit.record().completeness()){memoHits++;return restored;}
                 }
             }catch(Exception unreadable){memoFailures++;}

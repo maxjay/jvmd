@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Implements 4.1: a single private Unix socket daemon, virtual-thread connections and idle expiry. */
+/** A single private Unix socket daemon, virtual-thread connections and idle expiry. */
 public final class UnixServer implements AutoCloseable {
     private final Config config;
     private final Dispatcher dispatcher;

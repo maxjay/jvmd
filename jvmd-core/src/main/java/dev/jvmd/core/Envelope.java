@@ -2,7 +2,7 @@ package dev.jvmd.core;
 
 import java.util.List;
 
-/** Implements 4.1: mandatory provenance and completeness on every response. */
+/** Mandatory provenance and completeness on every response. */
 public record Envelope(int tier, String source, boolean truncated, String cursor,
                        List<String> warnings, Object result) {
     public Envelope {

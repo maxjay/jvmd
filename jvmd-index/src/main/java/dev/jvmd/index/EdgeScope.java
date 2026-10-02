@@ -1,6 +1,6 @@
 package dev.jvmd.index;
 
-/** Implements 4.4: select the same artifact variant for relationships as for symbol metadata. */
+/** Select the same artifact variant for relationships as for symbol metadata. */
 final class EdgeScope {
     static final String CONTEXT="WITH RECURSIVE edge_context(workspace) AS (VALUES (?)) ";
     private EdgeScope() { }

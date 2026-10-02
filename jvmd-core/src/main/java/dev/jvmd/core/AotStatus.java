@@ -3,7 +3,7 @@ package dev.jvmd.core;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/** Implements 4.10: report runtime auto-mode cache acceptance and rejection reasons. */
+/** Report runtime auto-mode cache acceptance and rejection reasons. */
 public final class AotStatus {
     private AotStatus() { }
     public static String runtime(Path log) {

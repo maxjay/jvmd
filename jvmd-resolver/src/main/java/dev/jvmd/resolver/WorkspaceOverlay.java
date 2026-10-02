@@ -6,7 +6,7 @@ import java.nio.file.*;
 import java.io.*;
 import java.util.*;
 
-/** Implements 4.6: built artifacts, source-only modules, version substitution and cycle reporting. */
+/** Built artifacts, source-only modules, version substitution and cycle reporting. */
 public final class WorkspaceOverlay implements WorkspaceSource,AutoCloseable {
     private static final long SETTLE_NANOS=java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(2);
     private static final class Freshness {

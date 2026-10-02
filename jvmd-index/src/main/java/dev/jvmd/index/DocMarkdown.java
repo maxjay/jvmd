@@ -1,5 +1,5 @@
 package dev.jvmd.index;
-/** Implements 4.5: render parsed Javadoc as Markdown while retaining inheritDoc for query time. */
+/** Render parsed Javadoc as Markdown while retaining inheritDoc for query time. */
 public final class DocMarkdown {
     private DocMarkdown() { }
     public static String render(String doc) {

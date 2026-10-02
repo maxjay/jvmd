@@ -3,7 +3,7 @@ package dev.jvmd.index;
 import java.util.*;
 
 /**
- * Logical classpath slot identities (architecture §58–61).
+ * Logical classpath slot identities.
  *
  * A slot key must be stable across checkout movement and compatible worktrees, unique within one
  * effective classpath and tied to the logical dependency/module slot. It is built from coordinates

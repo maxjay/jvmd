@@ -7,15 +7,15 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-/** Implements phase 5: time-boxed external processors and content-addressed generated output. */
+/** Time-boxed external processors and content-addressed generated output. */
 public final class AnnotationProcessing implements AutoCloseable {
-    /** Implements phase 5: detached processor request; no user class is loaded in this JVM. */
+    /** Detached processor request; no user class is loaded in this JVM. */
     public record Request(String key,Path directory,List<Path> sourceRoots,List<Path> classpath,
                           List<Path> processorPath,List<String> processors,List<String> compilerOptions,
                           boolean lombok) { }
     /** Detached diagnostic emitted by the process-isolated compiler. */
     public record Problem(String code,String kind,String file,long line,long character,String message) { }
-    /** Implements phase 5/diagnostics phase 9: generated APIs plus optional external semantic diagnostics. */
+    /** Generated APIs plus optional external semantic diagnostics. */
     public record Output(String fingerprint,List<Path> sourceRoots,List<Path> classpath,Set<Path> binarySources,
                          List<Problem> diagnostics,String diagnosticFidelity,List<String> warnings,
                          int exitCode,boolean timedOut,long elapsedMillis,String log) { }

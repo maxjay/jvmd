@@ -6,7 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 
-/** Implements 4.1: machine-scoped configuration and private runtime paths. */
+/** Machine-scoped configuration and private runtime paths. */
 public record Config(Path jdkHome, Path jbrHome, Path m2Repo, int mavenMajor,
                      Duration idleTimeout, int heapCeilingMb, boolean indexOnStart,
                      Path stateDir, Path socket, Path hotswapAgent) {

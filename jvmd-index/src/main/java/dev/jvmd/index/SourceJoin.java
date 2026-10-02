@@ -10,16 +10,16 @@ import java.util.function.Consumer;
 import javax.lang.model.element.Modifier;
 import javax.tools.*;
 
-/** Implements 4.4 pass 2: parse-only source signatures joined to binary descriptors. */
+/** Parse-only source signatures joined to binary descriptors. */
 public final class SourceJoin {
     private static final java.util.regex.Pattern TRIVIA=java.util.regex.Pattern.compile("(?:\\s|/\\*.*?\\*/|//[^\\r\\n]*)*",java.util.regex.Pattern.DOTALL);
-    /** Implements 4.4: immutable source metadata, keyed by owner/name/erased descriptor. */
+    /** Immutable source metadata, keyed by owner/name/erased descriptor. */
     public record Member(String owner, String name, String descriptor, List<String> parameters,
                          String doc, String file, int line, int start, int end, int bodyStart, int bodyEnd,
                          int nameStart, int nameEnd) { }
-    /** Implements 9.9: matched source declarations and explicit unmatched count. */
+    /** Matched source declarations and explicit unmatched count. */
     public record Result(List<Member> members, int eligible, List<String> unmatched) { }
-    /** Implements 4.4: in-memory source, never added to the daemon classpath. */
+    /** In-memory source, never added to the daemon classpath. */
     public static final class Source extends SimpleJavaFileObject {
         private final String text;
         public Source(String path, String text) { super(URI.create("string:///" + path.replace(" ", "%20")), Kind.SOURCE); this.text = text; }

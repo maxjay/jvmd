@@ -6,7 +6,7 @@ import java.nio.file.*;
 import java.time.Duration;
 import java.util.*;
 
-/** Implements 4.7: compiled method-body redefinition and an explicit restart-required result. */
+/** Compiled method-body redefinition and an explicit restart-required result. */
 public final class HotSwap {
     private final DebugSession debug;
     public HotSwap(DebugSession debug){this.debug=debug;}

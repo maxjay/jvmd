@@ -9,7 +9,7 @@ import java.util.*;
 import java.util.jar.JarFile;
 import javax.tools.*;
 
-/** Implements 4.2: indexed classpath paths, multi-release bytes, bounded LRU and source overlays. */
+/** Indexed classpath paths, multi-release bytes, bounded LRU and source overlays. */
 public final class IndexedFileManager extends ForwardingJavaFileManager<StandardJavaFileManager> {
     private record Stamp(long modified,String identity) { }
     private record Entry(String binary,String path) { }

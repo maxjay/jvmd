@@ -7,7 +7,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.LongSupplier;
 
-/** Implements 4.7: bounded object handles with automatic 60-second collection-pin expiry. */
+/** Bounded object handles with automatic 60-second collection-pin expiry. */
 public final class ObjectHandles implements AutoCloseable {
     private static final ScheduledExecutorService REAPER=Executors.newSingleThreadScheduledExecutor(Thread.ofVirtual().name("jvmd-handle-expiry").factory());
     private static final int CAPACITY=4096;

@@ -18,7 +18,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
 import javax.tools.ToolProvider;
 
-/** Implements 4.2 tier 0: javac parsing with declaration ranges and syntax diagnostics. */
+/** Javac parsing with declaration ranges and syntax diagnostics. */
 public final class Parser implements AutoCloseable {
     private final java.util.LinkedHashMap<String, Envelope> cache = new java.util.LinkedHashMap<>(16,0.75f,true);
     private final javax.tools.JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();

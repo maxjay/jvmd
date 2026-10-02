@@ -10,7 +10,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
-/** Implements 4.1 and 4.2: one platform executor and compiler state per canonical workspace. */
+/** One platform executor and compiler state per canonical workspace. */
 public final class Session implements AutoCloseable {
     private final String id;
     private final Path root;

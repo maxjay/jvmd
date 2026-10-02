@@ -7,9 +7,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
-/** Implements 4.1, 5 and 12.3: session dispatch, provenance, fault isolation and protocol errors. */
+/** Session dispatch, provenance, fault isolation and protocol errors. */
 public final class Dispatcher {
-    /** Implements 12.3: every registered method must produce a validated envelope. */
+    /** Every registered method must produce a validated envelope. */
     @FunctionalInterface public interface Handler { Envelope call(Session session, JsonNode params) throws Exception; }
     private final Sessions sessions;
     private final Metrics metrics;
@@ -35,7 +35,7 @@ public final class Dispatcher {
         register("session.status", (s, _) -> new Envelope(0, "live", false, null, s.warnings(),
                 Map.of("session", s.id(), "root", s.root().toString(), "metrics", metrics.snapshot())));
     }
-    /** Implements 4.9: compose core queries on the same session executor; the outer RPC owns byte paging. */
+    /** Compose core queries on the same session executor; the outer RPC owns byte paging. */
     public Envelope query(Session session,String method,JsonNode params)throws Exception{
         if(session==null||method.startsWith("daemon.")||method.startsWith("session."))throw RpcException.invalid("An in-process query requires a workspace method");
         var handler=methods.get(method);if(handler==null)throw new RpcException(-32601,"Method not found",Map.of("method",method));

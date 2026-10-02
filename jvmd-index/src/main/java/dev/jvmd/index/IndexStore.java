@@ -42,7 +42,7 @@ public interface IndexStore extends AutoCloseable {
     }
 
     /**
-     * Effective classpath context (architecture §57): one per module, scope/source set, release and
+     * Effective classpath context: one per module, scope/source set, release and
      * compiler context. There is no single workspace classpath. {@code locations} are the ordered
      * physical entries used to locate artifacts; they are runtime addressing, while the semantic
      * slot identities come from {@link ClasspathSlots#logicalKey}.
@@ -85,7 +85,7 @@ public interface IndexStore extends AutoCloseable {
      * so a changed/inserted slot that is rechecked and remains irrelevant reaches a fixed point.
      */
     /*
-     * winnerArtifactKey is the winner's logical classpath slot identity (§61): the same key the
+     * winnerArtifactKey is the winner's logical classpath slot identity: the same key the
      * ClasspathSequence uses, stable across checkout movement and worktrees. winnerLocation is the
      * winner's current physical path; it is location metadata and never part of the identity.
      */

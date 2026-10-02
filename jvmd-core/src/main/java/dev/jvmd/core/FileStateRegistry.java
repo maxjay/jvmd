@@ -266,7 +266,7 @@ public final class FileStateRegistry {
     private static String directoryKey(Path root,boolean followLinks){return (followLinks?"L:":"N:")+root;}
     /**
      * Reuse a journaled entry list instead of enumerating when the directory's stamp equals the
-     * recorded one and the observation was outside the racy window (§94).
+     * recorded one and the observation was outside the racy window.
      */
     private boolean restoreDirectory(Path root,boolean followLinks,Map<String,Object> stamp,Directory state){
         var record=restoredDirectories.remove(directoryKey(root,followLinks));if(record==null)return false;

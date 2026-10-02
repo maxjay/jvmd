@@ -8,9 +8,9 @@ import java.nio.file.*;
 import java.util.*;
 import javax.lang.model.element.*;
 
-/** Implements 4.2: session-owned semantic state and detached declaration snapshots. */
+/** Session-owned semantic state and detached declaration snapshots. */
 public final class Analyzer implements DiagnosticEngine, AutoCloseable {
-    /** Implements 4.2 and 4.3: effective module classpath and source roots. */
+    /** Effective module classpath and source roots. */
     public record Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings,List<Path> navigationSources,boolean preciseSourceRoots,String workspace,Processing processing) {
         public Context {workspace=Objects.requireNonNullElse(workspace,"");processing=Objects.requireNonNullElse(processing,Processing.NONE);}
         public Context(String gav,String release,List<Path> classpath,List<Path> sources,String generation,Map<String,String> coordinates,List<String> compilerOptions,Set<Path> binarySources,List<String> warnings,List<Path> navigationSources,boolean preciseSourceRoots,String workspace){this(gav,release,classpath,sources,generation,coordinates,compilerOptions,binarySources,warnings,navigationSources,preciseSourceRoots,workspace,Processing.NONE);}
@@ -127,7 +127,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return false;
     }
     /**
-     * Effective classpath context of one module/scope/release/compiler context (§57). Locations are
+     * Effective classpath context of one module/scope/release/compiler context. Locations are
      * runtime addressing; the store maps them to logical slot identities.
      */
     static IndexStore.ClasspathContext classpathContext(Context context){
@@ -919,7 +919,7 @@ public final class Analyzer implements DiagnosticEngine, AutoCloseable {
         return leaves;
     }
 
-    // ---- Semantic impact (architecture §109) ----
+    // ---- Semantic impact ----
 
     /**
      * Speculative impact of replacing {@code path}'s text with {@code proposedText}.

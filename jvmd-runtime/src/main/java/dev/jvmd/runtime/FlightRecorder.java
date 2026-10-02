@@ -7,7 +7,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-/** Implements 4.7: explicit jcmd allocation-recording start and dump wrappers. */
+/** Explicit jcmd allocation-recording start and dump wrappers. */
 public final class FlightRecorder {
     private final Path javaHome;
     private final long pid;

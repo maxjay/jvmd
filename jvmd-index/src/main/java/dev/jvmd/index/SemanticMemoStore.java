@@ -10,7 +10,7 @@ import java.security.MessageDigest;
 import java.util.*;
 
 /**
- * LOCAL semantic memo store (architecture §68–81, §106–107).
+ * LOCAL semantic memo store.
  *
  * Each record is an independently valid memoised computation:
  * <pre>
@@ -25,7 +25,7 @@ import java.util.*;
  * which is UNKNOWN — never ABSENT. A persisted ABSENT result is an explicit negative record.
  */
 public final class SemanticMemoStore {
-    /** Physical record format version; distinct from any function's semantic version (§81). */
+    /** Physical record format version; distinct from any function's semantic version. */
     public static final int FORMAT_VERSION=1;
     private static final byte[] MAGIC="JVMDMEMO".getBytes(StandardCharsets.US_ASCII);
 
@@ -38,8 +38,8 @@ public final class SemanticMemoStore {
     }
 
     /**
-     * Static memo key {@code K_s = H(FunctionId, FunctionVersion, StaticInputs)} (§70). Static inputs
-     * must bind everything the in-process owner holds fixed (§72): language mode, platform,
+     * Static memo key {@code K_s = H(FunctionId, FunctionVersion, StaticInputs)}. Static inputs
+     * must bind everything the in-process owner holds fixed: language mode, platform,
      * compile context, classpath context, processors. Callers pass canonical values only.
      */
     public record StaticKey(Function function,Hash256 staticInputs) {
@@ -52,7 +52,7 @@ public final class SemanticMemoStore {
         }
     }
 
-    /** How the certificate covers what the computation read (§73–75). */
+    /** How the certificate covers what the computation read. */
     public enum Coverage {
         /** Every dynamic input is a precise dependency in the certificate. Coarse certificates are not representable. */
         PRECISE
@@ -88,7 +88,7 @@ public final class SemanticMemoStore {
         public MemoRecord {
             Objects.requireNonNull(key);Objects.requireNonNull(certificate);Objects.requireNonNull(coverage);
             Objects.requireNonNull(completeness);Objects.requireNonNull(result);
-            // UNKNOWN semantic results are never memoised (§8).
+            // UNKNOWN semantic results are never memoised.
             if(completeness==SemanticCompleteness.UNKNOWN)throw new IllegalArgumentException("UNKNOWN results are not memo state");
         }
     }
@@ -110,7 +110,7 @@ public final class SemanticMemoStore {
     private long hits,misses,staleCertificates,unknownDependencies,corrupt,writes,bytesWritten,bytesRead,evictions;
 
     public SemanticMemoStore(Path root){this(root,4);}
-    /** {@code maxVariants} bounds the certificates retained per static key (§77). */
+    /** {@code maxVariants} bounds the certificates retained per static key. */
     public SemanticMemoStore(Path root,int maxVariants){
         this.root=Objects.requireNonNull(root).toAbsolutePath().normalize();
         if(maxVariants<1)throw new IllegalArgumentException("maxVariants");this.maxVariants=maxVariants;
@@ -162,7 +162,7 @@ public final class SemanticMemoStore {
         return new Lookup.Miss(reason);
     }
 
-    /** Publish one record atomically. Loss or failure only causes a later miss (§80). */
+    /** Publish one record atomically. Loss or failure only causes a later miss. */
     public synchronized void put(MemoRecord record)throws IOException{
         Objects.requireNonNull(record);
         Path directory=Files.createDirectories(directory(record.key()));
@@ -183,7 +183,7 @@ public final class SemanticMemoStore {
         deleteQuietly(directory);
     }
 
-    /** LRU disk budgeting over record access times; management metadata, not semantic authority (§79). */
+    /** LRU disk budgeting over record access times; management metadata, not semantic authority. */
     public synchronized long garbageCollect(long maxBytes)throws IOException{
         if(!Files.isDirectory(root))return 0;
         record Entry(Path path,long size,long accessed){}

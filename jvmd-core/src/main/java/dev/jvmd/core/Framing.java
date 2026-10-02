@@ -7,7 +7,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
-/** Implements 12.3: bounded Content-Length framing, including fragmented UTF-8 messages. */
+/** Bounded Content-Length framing, including fragmented UTF-8 messages. */
 public final class Framing {
     public static final int MAX_FRAME = 8 * 1024 * 1024;
     private Framing() { }

@@ -3,7 +3,7 @@ package dev.jvmd.index;
 import java.util.*;
 
 /**
- * Restart-stable proof-key audit (architecture §33–36, §76).
+ * Restart-stable proof-key audit.
  *
  * Runtime proofs may use process-local addressing (absolute paths, session ids, document offsets)
  * and runtime fences. Persisted memo certificates may not. This class is the single executable
@@ -23,7 +23,7 @@ import java.util.*;
  *       {@code logical-binary:<gav|root role|relative path>} (P_diag of the unit as completed from a class file),
  *       {@code reactor-class:<binary>} (P_diag of a class read from another reactor module's class directory),
  *       {@code config:<reactor gav>|<path from the reactor root>} (processor resource content or absence)</td><td>{@code source:<absolute path>}</td></tr>
- *   <tr><td>CLASSPATH_SEARCH</td><td>{@code binary:<name>} (winner is a logical slot, §61)</td><td>{@code workspace:<session>}, {@code compiler}</td></tr>
+ *   <tr><td>CLASSPATH_SEARCH</td><td>{@code binary:<name>} (winner is a logical slot)</td><td>{@code workspace:<session>}, {@code compiler}</td></tr>
  *   <tr><td>DOCUMENT_SCOPE, RECEIVER, ACCESSIBILITY, WORKSPACE</td><td>none</td><td>all (document/session addressed)</td></tr>
  * </table>
  *

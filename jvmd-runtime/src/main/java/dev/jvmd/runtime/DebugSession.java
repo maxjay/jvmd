@@ -11,9 +11,9 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 
-/** Implements 4.7: one launched application, JDI event loop, line breakpoints and stopped frames. */
+/** One launched application, JDI event loop, line breakpoints and stopped frames. */
 public final class DebugSession implements AutoCloseable {
-    /** Implements 4.7: launch configuration reused on restart. */
+    /** Launch configuration reused on restart. */
     public record Launch(Path javaHome,Path directory,List<Path> classpath,String main,List<String> args,boolean debug,List<String> vmOptions) {
         public Launch(Path javaHome,Path directory,List<Path> classpath,String main,List<String> args,boolean debug){this(javaHome,directory,classpath,main,args,debug,List.of());}
         public Launch {classpath=List.copyOf(classpath);args=List.copyOf(args);vmOptions=List.copyOf(vmOptions);}

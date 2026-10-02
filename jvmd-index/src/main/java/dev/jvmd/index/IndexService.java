@@ -7,11 +7,11 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import java.util.jar.JarFile;
 
-/** Implements 4.4: machine-global eager skeleton/docs indexing, content invalidation and queries. */
+/** Machine-global eager skeleton/docs indexing, content invalidation and queries. */
 public final class IndexService implements AutoCloseable {
-    /** Implements 4.4: persisted artifact identity and fast-path file stamps. */
+    /** Persisted artifact identity and fast-path file stamps. */
     public record Artifact(long id,String gav,String kind,String sha256,String path,long size,long mtime,boolean hasDocs,boolean hasCodeEdges,boolean hasSignatureEdges) { }
-    /** Implements 4.4: one workspace's filtered artifact membership. */
+    /** One workspace's filtered artifact membership. */
     public record WorkspaceArtifact(String path,String scope) { }
     private final IndexStore store;
     private final IndexStorage storage;
@@ -215,7 +215,7 @@ public final class IndexService implements AutoCloseable {
         store.publishCode(artifact,new ArtifactContext(gav,"jar",location(path)),facts,classReferences);
         indexed.incrementAndGet();
     }
-    /** Implements 4.4 and phase 6: a module's source and binary inputs, independent of Maven objects. */
+    /** A module's source and binary inputs, independent of Maven objects. */
     public record LocalModule(Path directory,String gav,List<Path> sources,List<Path> outputs) {
         public LocalModule { directory=directory.toAbsolutePath().normalize();sources=sources.stream().map(p->p.toAbsolutePath().normalize()).distinct().toList();outputs=outputs.stream().map(p->p.toAbsolutePath().normalize()).distinct().toList(); }
     }
@@ -233,7 +233,7 @@ public final class IndexService implements AutoCloseable {
                 facts,classReferences,sourceData);
         indexed.incrementAndGet();return id;
     }
-    /** Implements 4.4: detached source relationships, never compiler-owned trees. */
+    /** Detached source relationships, never compiler-owned trees. */
     public record SourceEdge(String src,String dst,String kind) { }
     private void recordSource(SourceIndexPublisher.Delta delta)throws Exception{
         locals.recordSource(delta.file(),delta.sourceHash(),delta.symbols(),delta.tier(),delta.edges());

@@ -5,7 +5,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.jar.*;
 
-/** Implements 4.7: install only the java.base evaluation bridge on the target classpath. */
+/** Install only the java.base evaluation bridge on the target classpath. */
 final class EvaluationSupport {
     private static Path bridge;
     private EvaluationSupport() { }

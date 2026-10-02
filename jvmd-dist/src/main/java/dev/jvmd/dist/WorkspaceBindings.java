@@ -6,9 +6,9 @@ import dev.jvmd.index.*;
 import java.nio.file.*;
 import java.util.*;
 
-/** Implements 4.2 and 4.8: bounded detached workspace graphs, reused only while every input identity remains current. */
+/** Bounded detached workspace graphs, reused only while every input identity remains current. */
 public final class WorkspaceBindings implements AutoCloseable {
-    /** Implements 4.2: attribution remains on the caller's session executor. */
+    /** Attribution remains on the caller's session executor. */
     @FunctionalInterface public interface Loader { CompilerPool.Outcome<Bindings.Snapshot> load(Path file,String text)throws Exception; }
     @FunctionalInterface public interface BatchLoader { Map<Path,CompilerPool.Outcome<Bindings.Snapshot>> load(Map<Path,String> sources)throws Exception; }
     /** Receives each file's outcome as soon as it is computed; the outcome is not retained after this call. */
@@ -21,7 +21,7 @@ public final class WorkspaceBindings implements AutoCloseable {
     /** Encoded facts are committed per slice of this many bytes (default 8 MiB); a build never holds the whole workspace's facts in one write batch. */
     private static long sliceBytes(){return Math.max(1,Long.getLong("jvmd.bindings.slice_bytes",8L*1024*1024));}
     private boolean slicesCommitted;private long slices,maxBatchBytes;
-    /** Implements 4.2: re-enumerate sources to detect namespace changes during attribution. */
+    /** Re-enumerate sources to detect namespace changes during attribution. */
     @FunctionalInterface public interface SourceFiles { List<Path> files()throws Exception; }
     /** A caller-owned lease on a pinned fact revision. Closing it never closes another caller's view. */
     public static final class Snapshot implements AutoCloseable,SymbolReadView {

@@ -6,7 +6,7 @@ import java.lang.classfile.instruction.*;
 import java.lang.constant.*;
 import java.util.*;
 
-/** Implements 4.4 pass 3: explicit, inter-class bytecode relationships, including dynamic handles. */
+/** Explicit, inter-class bytecode relationships, including dynamic handles. */
 public final class CodeReader {
     private CodeReader() { }
     public static Set<String> classReferences(Collection<ClassModel> classes){

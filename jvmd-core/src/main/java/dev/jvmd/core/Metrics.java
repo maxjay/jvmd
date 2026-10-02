@@ -4,7 +4,7 @@ import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Implements section 5: bounded one-hour latency history and structured request logs. */
+/** Bounded one-hour latency history and structured request logs. */
 public final class Metrics {
     private record Sample(long timestamp, long nanos, boolean fault) { }
     private final Map<String, ArrayDeque<Sample>> samples = new LinkedHashMap<>();

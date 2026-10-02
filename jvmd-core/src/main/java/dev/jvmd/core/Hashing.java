@@ -7,7 +7,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
-/** Implements 4.3 and 4.4: content identities for graphs, artifacts and local source. */
+/** Content identities for graphs, artifacts and local source. */
 public final class Hashing {
     private Hashing() { }
     public static String sha256(byte[] data) { return HexFormat.of().formatHex(digest().digest(data)); }

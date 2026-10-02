@@ -7,9 +7,9 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-/** Implements 4.7: isolated javac compilation, bounded diagnostics, and class-file publication. */
+/** Isolated javac compilation, bounded diagnostics, and class-file publication. */
 public final class RuntimeCompiler {
-    /** Implements 4.7: compiled bytecode stays private to the runtime implementation. */
+    /** Compiled bytecode stays private to the runtime implementation. */
     public record Compilation(Map<String,byte[]> classes,double elapsedMillis,String output,String mode) {
         public Compilation(Map<String,byte[]> classes,double elapsedMillis,String output){this(classes,elapsedMillis,output,"external");}
     }

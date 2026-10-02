@@ -254,7 +254,7 @@ public final class ResidentSemanticState {
     }
 
     /**
-     * Restart-stable hierarchy identity derived beneath the runtime uncertainty fence (§34).
+     * Restart-stable hierarchy identity derived beneath the runtime uncertainty fence.
      *
      * {@link #hierarchyApi} folds in the process-local {@code uncertaintyGeneration} so a fence can
      * invalidate every in-process hierarchy identity in O(1). That value must never be persisted.

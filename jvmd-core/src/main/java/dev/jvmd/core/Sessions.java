@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** Implements 4.1: canonical-root session identity and lifecycle. */
+/** Canonical-root session identity and lifecycle. */
 public final class Sessions implements AutoCloseable {
     private final ConcurrentHashMap<String, Session> sessions = new ConcurrentHashMap<>();
     private final AtomicLong ids = new AtomicLong();

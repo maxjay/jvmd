@@ -16,7 +16,7 @@ import dev.jvmd.index.IndexSemanticState;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/** Implements 4.1 and 12.1: composition root; user dependencies never enter this classpath. */
+/** Composition root; user dependencies never enter this classpath. */
 public final class Application implements AutoCloseable {
     private final Sessions sessions = new Sessions();
     private final Dispatcher dispatcher = new Dispatcher(sessions, new Metrics());
@@ -43,12 +43,12 @@ public final class Application implements AutoCloseable {
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
     public Application(Config config) {
         this.config = config;
-        // Restart reuse of unchanged content hashes (§90). Restored observations are validated
+        // Restart reuse of unchanged content hashes. Restored observations are validated
         // against current file stamps before use; the journal is never semantic authority.
         classpathFiles.persistence(config.stateDir().resolve("file-observations-v1.bin"));
         // Attributed LOCAL memos are the only persisted diagnostics; old snapshot state is deleted, never migrated.
         deleteQuietly(config.stateDir().resolve("diagnostics-v2"));
-        // LOCAL semantic memo store (§68): independently validated records; loss is only a miss.
+        // LOCAL semantic memo store: independently validated records; loss is only a miss.
         localMemos=new dev.jvmd.index.SemanticMemoStore(config.stateDir().resolve("local-memo-v1"));
         sourceNamespaces=new dev.jvmd.analyzer.SourceNamespaces(localMemos);
         if (config.indexOnStart()) initializeIndex(true);
@@ -61,7 +61,7 @@ public final class Application implements AutoCloseable {
         dispatcher.status("classpath_files",classpathFiles::status);
         dispatcher.status("readiness",this::readiness);
         dispatcher.decorate((method,envelope)->{
-            // A partially reconciled machine universe must not read as established absence (§5).
+            // A partially reconciled machine universe must not read as established absence.
             if(!envelope.source().equals("index")||method.startsWith("daemon."))return envelope;
             var service=index==null||!index.isDone()||index.isCompletedExceptionally()?null:index.join();
             return service==null||!service.scanStarted()||service.repositoryReconciled()?envelope
@@ -159,7 +159,7 @@ public final class Application implements AutoCloseable {
             return new Envelope(0,"live",false,null,s.warnings(),result);
         });
         dispatcher.register("symbol.overview",this::overview);
-        // §109: speculative impact of a proposed edit; nothing is admitted or invalidated.
+        // Speculative impact of a proposed edit; nothing is admitted or invalidated.
         dispatcher.register("semantic.impact",(s,p)->{
             Path path=sourcePath(s,Dispatcher.required(p,"path"));
             return analyzer(s,path).impact(path,Dispatcher.required(p,"text"));

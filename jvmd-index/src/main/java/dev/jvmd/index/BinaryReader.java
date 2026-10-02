@@ -7,9 +7,9 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.jar.JarFile;
 
-/** Implements 4.4 pass 1: lazy class-file skeletons, with no Code traversal. */
+/** Lazy class-file skeletons, with no Code traversal. */
 public final class BinaryReader {
-    /** Implements 4.4: symbol metadata detached from class-file buffers. */
+    /** Symbol metadata detached from class-file buffers. */
     public record Symbol(String key, String fqn, String name, String owner, String kind, String signature,
                          String descriptor, int flags, String entry, List<String> parameters, Map<String,Object> metadata,
                          SemanticType semanticType, List<String> typeParameters, List<List<SemanticType>> typeParameterBounds,
@@ -24,9 +24,9 @@ public final class BinaryReader {
     private record Generic(List<String> ids,List<List<SemanticType>> bounds) {
         Generic { ids=List.copyOf(ids);bounds=bounds.stream().map(List::copyOf).toList(); }
     }
-    /** Implements 4.4: unresolved structural edges linked after each artifact transaction. */
+    /** Unresolved structural edges linked after each artifact transaction. */
     public record Edge(String src, String target, String kind) { }
-    /** Implements 4.4: one artifact's detached skeleton, plus source-join models scoped to that read. */
+    /** One artifact's detached skeleton, plus source-join models scoped to that read. */
     public record Content(List<Symbol> symbols, List<Edge> edges, Map<String,ClassModel> models, List<String> warnings) { }
     public Content read(Path path, boolean local) throws Exception {
         var files=new LinkedHashMap<String,byte[]>();

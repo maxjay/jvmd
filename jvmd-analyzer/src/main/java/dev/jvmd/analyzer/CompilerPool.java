@@ -11,11 +11,11 @@ import java.nio.file.Path;
 import java.util.*;
 import javax.tools.*;
 
-/** Implements 4.2: one bounded javac context per session, with explicit phase and fault boundaries. */
+/** One bounded javac context per session, with explicit phase and fault boundaries. */
 public final class CompilerPool implements AutoCloseable {
-    /** Implements 4.2: task-scoped callback; return detached values, never compiler objects. */
+    /** Task-scoped callback; return detached values, never compiler objects. */
     @FunctionalInterface public interface Query<T> { T read(JavacTask task,List<CompilationUnitTree> units,int tier)throws Exception; }
-    /** Implements 4.2 and 5: detached diagnostic data with javac's own code and live provenance. */
+    /** Detached diagnostic data with javac's own code and live provenance. */
     /**
      * {@code names}: for an unresolved-name error, the names javac failed to resolve, from the
      * diagnostic's structured arguments (never parsed from its message): the simple name and, when
@@ -56,7 +56,7 @@ public final class CompilerPool implements AutoCloseable {
         }
         return List.copyOf(result);
     }
-    /** Implements 4.2: detached phase result and explicit degradation warnings. */
+    /** Detached phase result and explicit degradation warnings. */
     public record Outcome<T>(int tier,T result,List<Problem> diagnostics,List<String> warnings) { }
     private final Thread owner=Thread.currentThread();
     private final java.util.function.LongSupplier heapUsage;

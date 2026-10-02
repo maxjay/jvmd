@@ -1083,6 +1083,7 @@ public final class Application implements AutoCloseable {
             invalidateAnalysisContexts(session);
         }
         session.put("resolution", graph);
+        if(previous!=null&&!previous.fingerprint().equals(graph.fingerprint()))decideLocalAgain(session);
         graph.warnings().forEach(session::warn);
         if(graph.modules().stream().anyMatch(m->m.processing().lombok()||m.testProcessing().lombok()))session.warn("lombok_reduced_fidelity: generated member bodies and positions are unavailable");
         // A cold-booted project's selection waits for its routes, so it is bound when a query needs it.
@@ -1168,6 +1169,20 @@ public final class Application implements AutoCloseable {
                 if(closed.get())local.cold().close();
             }
         }
+    }
+    /**
+     * A project-model change decides LOCAL again. A cold boot that committed has left a committed root,
+     * which today's on-demand path serves from now on; one that did not stops without a root, and the
+     * project cold-boots from the new model.
+     */
+    private void decideLocalAgain(Session session)throws Exception{
+        dev.jvmd.boot.cold.local.LocalColdBoot cold;
+        synchronized(session){
+            var local=local(session);if(local==null||local.warm())return;
+            session.remove("local_boot");cold=(dev.jvmd.boot.cold.local.LocalColdBoot)session.remove("local_cold_boot");
+            session.remove("index_generation");
+        }
+        if(cold!=null)cold.close();
     }
     private static Map<String,Object> withBoot(String boot,Map<String,Object> status){
         var result=new LinkedHashMap<String,Object>();result.put("boot",boot);result.putAll(status);return result;

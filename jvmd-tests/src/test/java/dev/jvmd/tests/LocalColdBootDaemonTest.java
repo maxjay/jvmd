@@ -57,6 +57,29 @@ class LocalColdBootDaemonTest {
         }
     }
 
+    @Test void aDependencyDeclaredAfterTheColdBootCommittedResolves()throws Exception{
+        var base=TestSupport.config(root,Duration.ofHours(4));
+        var config=new Config(TestJdk.home(),null,base.m2Repo(),base.mavenMajor(),base.idleTimeout(),base.heapCeilingMb(),base.stateDir(),base.socket());
+        Path project=MavenFixtures.project(root.resolve("project"),"");
+        OverlayFixtures.source(project,"Use","public class Use { int read(){return 1;} }");
+        try(var app=new Application(config)){
+            String session=TestSupport.open(app,project);
+            assertThat(awaitCommitted(app,session).path("boot").asText()).isEqualTo("cold");
+            assertThat(find(app,session,"Later/value","deps")).isEmpty();
+            // As when Maven downloads a new dependency: it reaches the repository while the daemon runs.
+            Path jar=MavenFixtures.artifact(config.m2Repo(),"later","1","");
+            IndexFixtures.jar(jar.getParent(),"later-1","Later.java","package fixture;\npublic class Later {\n  public static int value(){return 2;}\n}\n",false);
+            Files.writeString(jar.resolveSibling(jar.getFileName()+".sha1"),HexFormat.of().formatHex(
+                    java.security.MessageDigest.getInstance("SHA-1").digest(Files.readAllBytes(jar))));
+            MavenFixtures.project(project,"<dependencies>"+MavenFixtures.dependency("later","1")+"</dependencies>");
+            long deadline=System.nanoTime()+Duration.ofSeconds(30).toNanos();List<JsonNode> found;
+            do{found=find(app,session,"Later/value","deps");if(!found.isEmpty())break;Thread.sleep(50);}while(System.nanoTime()<deadline);
+            assertThat(found).hasSize(1);
+            // The committed root is now the project's LOCAL, served on demand.
+            assertThat(localStatus(app,session).path("boot").asText()).isEqualTo("warm");
+        }
+    }
+
     private static List<JsonNode> find(Application app,String session,String name,String scope)throws Exception{
         var response=TestSupport.complete(app.dispatcher(),"symbol.find",Map.of("session",session,"name_path",name,"scope",scope));
         assertThat(response.has("error")).as(response.toString()).isFalse();

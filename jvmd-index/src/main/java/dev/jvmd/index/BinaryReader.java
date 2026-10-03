@@ -76,6 +76,45 @@ public final class BinaryReader {
         }
         return result;
     }
+    /** The number and total uncompressed size of the entries of a zip whose names end with a suffix. */
+    public record EntrySizes(int count,long bytes) { }
+
+    /**
+     * The sizes {@link #entries} would decompress, read from the zip's central directory without
+     * decompressing anything.
+     */
+    public static EntrySizes entrySizes(byte[] zip,String suffix)throws java.util.zip.ZipException{
+        var buffer=java.nio.ByteBuffer.wrap(zip).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        int end=-1;
+        for(int i=zip.length-22;i>=Math.max(0,zip.length-22-0xffff);i--)if(buffer.getInt(i)==0x06054b50){end=i;break;}
+        if(end<0)throw new java.util.zip.ZipException("Not a zip archive");
+        long entries=buffer.getShort(end+10)&0xffff,offset=buffer.getInt(end+16)&0xffffffffL;
+        if((entries==0xffff||offset==0xffffffffL)&&end>=20&&buffer.getInt(end-20)==0x07064b50){
+            long record=buffer.getLong(end-12);
+            if(record<0||record>zip.length-56||buffer.getInt((int)record)!=0x06064b50)throw new java.util.zip.ZipException("Invalid zip64 end record");
+            entries=buffer.getLong((int)record+32);offset=buffer.getLong((int)record+48);
+        }
+        int count=0;long bytes=0;long at=offset;
+        for(long n=0;n<entries;n++){
+            if(at<0||at>zip.length-46||buffer.getInt((int)at)!=0x02014b50)throw new java.util.zip.ZipException("Invalid central directory");
+            int position=(int)at;long size=buffer.getInt(position+24)&0xffffffffL;
+            int nameLength=buffer.getShort(position+28)&0xffff,extraLength=buffer.getShort(position+30)&0xffff,commentLength=buffer.getShort(position+32)&0xffff;
+            if(position+46L+nameLength+extraLength>zip.length)throw new java.util.zip.ZipException("Invalid central directory");
+            String name=new String(zip,position+46,nameLength,java.nio.charset.StandardCharsets.UTF_8);
+            if(size==0xffffffffL)size=zip64Size(buffer,position+46+nameLength,extraLength);
+            if(name.endsWith(suffix)&&!name.endsWith("/")){count++;bytes+=size;}
+            at=position+46L+nameLength+extraLength+commentLength;
+        }
+        return new EntrySizes(count,bytes);
+    }
+    private static long zip64Size(java.nio.ByteBuffer buffer,int extra,int length)throws java.util.zip.ZipException{
+        for(int at=extra;at+4<=extra+length;){
+            int id=buffer.getShort(at)&0xffff,size=buffer.getShort(at+2)&0xffff;
+            if(id==1&&size>=8)return buffer.getLong(at+4);
+            at+=4+size;
+        }
+        throw new java.util.zip.ZipException("Missing zip64 size");
+    }
     private static boolean emptyArchive(byte[] jar){
         return jar.length>=22&&jar[0]=='P'&&jar[1]=='K'&&jar[2]==5&&jar[3]==6;
     }

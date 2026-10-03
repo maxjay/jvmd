@@ -2,11 +2,15 @@ package dev.jvmd.tests;
 
 import dev.jvmd.boot.BootDecision;
 import dev.jvmd.boot.cold.machine.MachineColdBoot;
+import dev.jvmd.boot.cold.machine.ArtifactJob;
+import dev.jvmd.boot.cold.machine.ClaimMap;
 import dev.jvmd.boot.cold.machine.MachineInput;
 import dev.jvmd.core.AlgebraicAccumulator;
 import dev.jvmd.core.tree.KeyedTree;
 import dev.jvmd.core.tree.Root;
 import dev.jvmd.index.*;
+import dev.jvmd.index.layer.machine.ArtifactBuilder;
+import dev.jvmd.index.layer.machine.ArtifactPublisher;
 import dev.jvmd.index.layer.machine.MachineTree;
 import dev.jvmd.index.rocks.RocksIndexStorage;
 import dev.jvmd.index.rocks.layer.RocksMachineStore;
@@ -229,6 +233,41 @@ class MachineColdBootTest {
             assertThat(storage.machine().leafAt(broken.toString())).isNull();
             assertThat(boot.faults()).extracting(MachineColdBoot.Fault::location).containsExactly(broken.toString());
         }
+    }
+
+    @Test void aJobHashesAndClaimsBeforeAdmissionAndDecompressesOnlyContentItBuilds()throws Exception{
+        Path repository=repository();
+        var inputs=new MachineColdBoot(temp.resolve("jobs"),repository,BUDGET).enumerate();
+        var input=inputs.stream().filter(candidate->candidate.path().location().endsWith("other-2.jar")).findFirst().orElseThrow();
+        var acquired=new ArrayList<Long>();
+        var admission=new ArtifactAdmission(){
+            public AutoCloseable acquire(long estimatedBytes){acquired.add(estimatedBytes);return ()->{};}
+            public AutoCloseable acquireArtifact(Path path){throw new AssertionError("cold boot admission is by estimate");}
+        };
+        String cacheKey=input.read().cacheKey();
+        // Content that already has a leaf is claimed by nobody: no admission, nothing decompressed.
+        var known=new ArtifactJob(input,new ClaimMap(key->key.equals(cacheKey)),admission,new ArtifactBuilder(new ArtifactPublisher(){
+            public String publishDocumentation(ArtifactIndexFormat.Key key,String sources,Map<String,Map<String,Object>> members,int unmatched){throw new AssertionError();}
+            public void publish(ArtifactIndexFormat.ArtifactData facts,Set<String> references,KeyedTree<String,MachineTree.ArtifactSymbol> tree){throw new AssertionError();}
+        })).call();
+        assertThat(known).isEqualTo(new ArtifactJob.Duplicate(cacheKey));
+        assertThat(acquired).isEmpty();
+        // The estimate is taken from the central directory, before decompressing, and equals the decompressed sizes.
+        byte[] jar=Files.readAllBytes(Path.of(input.path().location()));
+        var classes=BinaryReader.entries(jar,".class");
+        assertThat(BinaryReader.entrySizes(jar,".class"))
+                .isEqualTo(new BinaryReader.EntrySizes(classes.size(),classes.values().stream().mapToLong(bytes->bytes.length).sum()));
+    }
+
+    @Test void entrySizesReadAZip64CentralDirectory()throws Exception{
+        var bytes=new java.io.ByteArrayOutputStream();int entries=70_000;
+        try(var zip=new java.util.zip.ZipOutputStream(bytes)){
+            for(int i=0;i<entries;i++){zip.putNextEntry(new java.util.zip.ZipEntry("p/C"+i+".class"));zip.write(new byte[i%7]);zip.closeEntry();}
+            zip.putNextEntry(new java.util.zip.ZipEntry("p/"));zip.closeEntry();
+        }
+        long total=0;for(int i=0;i<entries;i++)total+=i%7;
+        assertThat(BinaryReader.entrySizes(bytes.toByteArray(),".class")).isEqualTo(new BinaryReader.EntrySizes(entries,total));
+        assertThatThrownBy(()->BinaryReader.entrySizes("not a jar".getBytes(StandardCharsets.UTF_8),".class")).isInstanceOf(java.util.zip.ZipException.class);
     }
 
     @Test void enumerationPairsSourcesAndSkipsJavadoc()throws Exception{

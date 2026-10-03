@@ -177,22 +177,19 @@ public final class LocalColdBoot implements AutoCloseable {
     /** Every module scope's route, once the routes stage has run; completes exceptionally when the boot failed before it. */
     public CompletableFuture<SortedMap<String,Route>> routed(){return routed;}
 
-    /** Build one artifact a route needs; content already in MACHINE only gains this path. */
+    /** Build one artifact a route needs; content already in MACHINE only gains this path and is not decompressed. */
     private MachineLeaf artifact(Path jar,String gav,MachineTree tree)throws Exception{
         String name=jar.getFileName().toString();
         Path sources=jar.resolveSibling(name.substring(0,name.length()-".jar".length())+"-sources.jar");
         if(!name.endsWith(".jar")||!Files.isRegularFile(sources))sources=null;
         var path=new MachinePath(jar.toString(),gav,MachinePath.Stamp.read(jar),sources==null?null:sources.toString(),
                 sources==null?null:MachinePath.Stamp.read(sources));
-        var outcome=new ArtifactJob(new MachineInput.Jar(path,jar,sources),new ClaimMap(),machineStorage.admission(),
+        var outcome=new ArtifactJob(new MachineInput.Jar(path,jar,sources),new ClaimMap(key->tree.leaf(key)!=null),machineStorage.admission(),
                 new ArtifactBuilder(machineStorage.repository())).call();
         return switch(outcome){
-            case ArtifactJob.Built value->{
-                var existing=tree.leaf(value.leaf().cacheKey());
-                yield existing==null?value.leaf().withPath(path):existing.withPath(path);
-            }
+            case ArtifactJob.Built value->value.leaf().withPath(path);
             case ArtifactJob.Faulted value->{faults.add(new Fault(value.location(),value.reason()));yield null;}
-            case ArtifactJob.Duplicate value->null;
+            case ArtifactJob.Duplicate value->tree.leaf(value.cacheKey()).withPath(path);
         };
     }
 

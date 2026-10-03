@@ -1,24 +1,23 @@
 package dev.jvmd.boot.cold.machine;
 
 import dev.jvmd.index.ArtifactAdmission;
-import dev.jvmd.index.ArtifactIndexFormat;
 import dev.jvmd.index.layer.machine.ArtifactBuilder;
 import dev.jvmd.index.layer.machine.MachineLeaf;
 import java.util.Objects;
 import java.util.concurrent.Callable;
 
 /**
- * One cold boot input, start to finish: read it into memory once and hash those bytes, claim its
- * content, and, only if this job holds the claim, take admission and build its leaf from the same
- * bytes. A job whose content was already claimed has recorded its path and builds nothing.
+ * One cold boot input, start to finish: read its raw bytes once and hash them, claim its content,
+ * and, only if this job holds the claim, take admission, decompress those bytes and build its leaf.
+ * A job whose content was already claimed has recorded its path and decompresses nothing.
  */
 public final class ArtifactJob implements Callable<ArtifactJob.Outcome> {
     /** What one job produced. */
     public sealed interface Outcome permits Built,Duplicate,Faulted { }
     /** This job built the leaf for its content. */
     public record Built(MachineLeaf leaf) implements Outcome { }
-    /** Another job builds this content; this job's path was recorded against it. */
-    public record Duplicate() implements Outcome { }
+    /** Another job builds this content, or it is built already; this job's path was recorded against it. */
+    public record Duplicate(String cacheKey) implements Outcome { }
     /** The input could not be read or parsed; it contributes no leaf. */
     public record Faulted(String location,String reason) implements Outcome { }
 
@@ -33,23 +32,24 @@ public final class ArtifactJob implements Callable<ArtifactJob.Outcome> {
 
     /** Build this input's leaf without claiming: its content is already claimed and this input documents it. */
     Outcome rebuild()throws Exception{
-        MachineInput.Read read;
-        try{read=input.read();}
+        MachineInput.Raw raw;
+        try{raw=input.read();}
         catch(Exception unreadable){return fault(unreadable);}
-        return build(read);
+        return build(raw);
     }
 
     @Override public Outcome call()throws Exception{
-        MachineInput.Read read;
-        try{read=input.read();}
+        MachineInput.Raw raw;
+        try{raw=input.read();}
         catch(Exception unreadable){return fault(unreadable);}
-        String cacheKey=ArtifactIndexFormat.key(read.binary().sha256(),read.binary().mode()).cacheKey();
-        if(!claims.claim(cacheKey,new ClaimMap.Claim(input,read.sources()==null?null:read.sources().sha256())))return new Duplicate();
-        return build(read);
+        String cacheKey=raw.cacheKey();
+        if(!claims.claim(cacheKey,new ClaimMap.Claim(input,raw.sourcesSha256())))return new Duplicate(cacheKey);
+        return build(raw);
     }
 
-    private Outcome build(MachineInput.Read read)throws Exception{
-        try(var permit=admission.acquire(read.estimatedBytes())){
+    private Outcome build(MachineInput.Raw raw)throws Exception{
+        try(var permit=admission.acquire(raw.estimatedBytes())){
+            var read=raw.decompress();
             return new Built(builder.build(read.binary(),read.sources()));
         }catch(ArtifactBuilder.PublishFailed storage){throw storage;}
         catch(Exception malformed){return fault(malformed);}

@@ -14,9 +14,15 @@ public final class ClaimMap {
     public record Claim(MachineInput input,String sourcesSha256) { }
 
     private final ConcurrentHashMap<String,List<Claim>> claims=new ConcurrentHashMap<>();
+    private final java.util.function.Predicate<String> built;
 
-    /** Record {@code claim} against {@code cacheKey}; true when this is the first claim on it. */
+    public ClaimMap(){this(_->false);}
+    /** Claims over contents of which those {@code built} accepts already have a leaf and are never claimed. */
+    public ClaimMap(java.util.function.Predicate<String> built){this.built=Objects.requireNonNull(built);}
+
+    /** Record {@code claim} against {@code cacheKey}; true when this is the first claim on it and it is not built. */
     boolean claim(String cacheKey,Claim claim){
+        if(built.test(cacheKey))return false;
         var first=new boolean[1];
         claims.compute(cacheKey,(_,list)->{
             if(list==null){first[0]=true;list=new ArrayList<>();}

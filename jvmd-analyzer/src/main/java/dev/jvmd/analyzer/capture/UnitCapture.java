@@ -45,10 +45,24 @@ public final class UnitCapture {
 
     /** Compile {@code sources} (absolute path to text) with {@code compiler} and capture each of them. */
     public static Result capture(CompilerPool compiler,CompilerInputs.Snapshot observed,Naming naming,Map<Path,String> sources)throws Exception{
+        var hashes=new HashMap<Path,String>();
+        for(var entry:sources.entrySet())hashes.put(entry.getKey().toAbsolutePath().normalize(),Hashing.sha256(entry.getValue().getBytes(StandardCharsets.UTF_8)));
+        return capture(compiler,Objects.requireNonNull(observed),naming,sources,hashes);
+    }
+
+    /**
+     * A cold boot batch: compile against the inputs given to {@link CompilerPool#bootSources}, with
+     * each unit's identity the hash of the bytes the boot read. Nothing is hashed again.
+     */
+    public static Result boot(CompilerPool compiler,Naming naming,Map<Path,String> sources,Map<Path,String> hashes)throws Exception{
+        return capture(compiler,null,naming,sources,hashes);
+    }
+
+    private static Result capture(CompilerPool compiler,CompilerInputs.Snapshot observed,Naming naming,Map<Path,String> sources,Map<Path,String> hashes)throws Exception{
         var inputs=new ArrayList<CompilerPool.SourceInput>(sources.size());
         for(var entry:sources.entrySet())inputs.add(new CompilerPool.SourceInput(entry.getKey(),entry.getValue()));
         var semanticSnapshots=new LinkedHashMap<Path,SemanticSnapshot>();
-        var outcome=compiler.batchQuery(inputs,2,observed,(task,units,tier)->{
+        CompilerPool.Query<Map<Path,Bindings.Snapshot>> query=(task,units,tier)->{
             var snapshots=new LinkedHashMap<Path,Bindings.Snapshot>();
             var identity=new SymbolIdentity(task,naming.gav(),naming.release(),naming.coordinates(),naming.navigationSources());
             for(var unit:units){
@@ -56,15 +70,16 @@ public final class UnitCapture {
                 if(text==null)continue;
                 var captured=Bindings.capture(task,List.of(unit),identity,file,new SourceText(text),true,null,_->null);
                 snapshots.put(file,captured);
-                if(tier==2)semanticSnapshots.put(file,SemanticFacts.sourceSnapshot(unit,captured.semanticFacts().values()));
+                if(tier==2)semanticSnapshots.put(file,SemanticFacts.sourceSnapshot(unit,captured.semanticFacts().values(),hashes.get(file)));
             }
             return snapshots;
-        });
+        };
+        var outcome=observed==null?compiler.bootQuery(inputs,2,query):compiler.batchQuery(inputs,2,observed,query);
         boolean complete=outcome.result()!=null&&outcome.tier()==2&&outcome.warnings().isEmpty();
         var units=new LinkedHashMap<Path,Unit>();
         for(var input:inputs){
             Path file=input.file();
-            String sha=Hashing.sha256(input.text().getBytes(StandardCharsets.UTF_8));
+            String sha=Objects.requireNonNull(hashes.get(file),"No hash for "+file);
             var problems=outcome.diagnostics().stream().filter(problem->sameFile(problem.file(),file)).toList();
             var snapshot=outcome.result()==null?null:outcome.result().get(file);
             var contribution=complete&&snapshot!=null?SemanticContributions.from(file,sha,snapshot,problems):null;

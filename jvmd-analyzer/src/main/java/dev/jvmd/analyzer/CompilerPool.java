@@ -138,6 +138,12 @@ public final class CompilerPool implements AutoCloseable {
         checkThread();var buffers=new Documents(inputFiles);documents.forEach((file,text)->buffers.open(file,text,1));documents(buffers);
     }
     public void binarySources(Set<Path> sources){checkThread();configuredBinarySources=Set.copyOf(sources);manager.binarySources(sources);}
+    /**
+     * Cold boot: the configured source path is exactly {@code texts}, the files the boot read with the
+     * text it read. Nothing is read from disk or watched, and {@link #bootQuery} compiles against
+     * these inputs without capturing or re-checking live state. Call after each {@link #configure}.
+     */
+    public void bootSources(Map<Path,String> texts){checkThread();if(manager==null)throw new IllegalStateException("Compiler classpath not configured");manager.fixedSources(texts);}
     public boolean cacheValid(CompilerInputs.Snapshot observed)throws Exception{
         checkThread();
         long started=System.nanoTime();classpathValidations++;
@@ -153,7 +159,7 @@ public final class CompilerPool implements AutoCloseable {
         return query(path,source,tier,inputSnapshot(),query);
     }
     public <T> Outcome<T> query(Path path,String source,int tier,CompilerInputs.Snapshot observed,Query<T> query)throws Exception {
-        return execute(List.of(new SourceInput(path,source)),tier,observed,query);
+        return execute(List.of(new SourceInput(path,source)),tier,Objects.requireNonNull(observed),query);
     }
     public <T> Outcome<T> batchQuery(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
         observeSources(sources.stream().map(SourceInput::file).toList());
@@ -161,7 +167,12 @@ public final class CompilerPool implements AutoCloseable {
     }
     public <T> Outcome<T> batchQuery(List<SourceInput> sources,int tier,CompilerInputs.Snapshot observed,Query<T> query)throws Exception {
         checkThread();if(sources.isEmpty())throw new IllegalArgumentException("Empty source batch");
-        batchQueries++;batchFiles+=sources.size();return execute(List.copyOf(sources),tier,observed,query);
+        batchQueries++;batchFiles+=sources.size();return execute(List.copyOf(sources),tier,Objects.requireNonNull(observed),query);
+    }
+    /** Compile a cold boot batch against the inputs given to {@link #bootSources}: no live snapshot, watcher or transaction check. */
+    public <T> Outcome<T> bootQuery(List<SourceInput> sources,int tier,Query<T> query)throws Exception {
+        checkThread();if(sources.isEmpty())throw new IllegalArgumentException("Empty source batch");
+        batchQueries++;batchFiles+=sources.size();return execute(List.copyOf(sources),tier,null,query);
     }
     private <T> Outcome<T> execute(List<SourceInput> sources,int tier,CompilerInputs.Snapshot observed,Query<T> query)throws Exception {
         try(var trace=dev.jvmd.core.RequestScope.stage("compiler.prepare")){
@@ -177,15 +188,18 @@ public final class CompilerPool implements AutoCloseable {
         for(String option:options)if(option.startsWith("-proc")||option.startsWith("-processor")||option.startsWith("--processor")||option.startsWith("-Xplugin"))throw new IllegalArgumentException("Compiler extensions run only in the external processor process: "+option);
         options.addAll(List.of("-proc:none","--should-stop=ifError=FLOW","-Xprefer:source","-parameters","-g"));
         try {
-            long validationStarted=System.nanoTime();classpathValidations++;
-            try{
-                try{manager.validateClasspath(observed.environment());}
-                catch(java.io.UncheckedIOException changed){
-                    // A newly captured environment replaces the prior compiler context before javac
-                    // starts. Recreate the delegate as well: it retains option-supplied module paths.
-                    resetEnvironment();manager.expectedInputs(observed);classpathValidations++;manager.validateClasspath(observed.environment());
-                }
-            }finally{classpathValidationNanos+=System.nanoTime()-validationStarted;}
+            // A cold boot's inputs are what it read; there is no live environment to validate against.
+            if(observed!=null){
+                long validationStarted=System.nanoTime();classpathValidations++;
+                try{
+                    try{manager.validateClasspath(observed.environment());}
+                    catch(java.io.UncheckedIOException changed){
+                        // A newly captured environment replaces the prior compiler context before javac
+                        // starts. Recreate the delegate as well: it retains option-supplied module paths.
+                        resetEnvironment();manager.expectedInputs(observed);classpathValidations++;manager.validateClasspath(observed.environment());
+                    }
+                }finally{classpathValidationNanos+=System.nanoTime()-validationStarted;}
+            }
             releasePlatform.prepare(options);
             T value=pool.getTask(new java.io.StringWriter(),manager,diagnostics,options,null,sources.stream().map(input->manager.source(input.file(),input.text())).toList(),task->{
                 releasePlatform.capture(((JavacTaskImpl)task).getContext(),options);
@@ -207,9 +221,11 @@ public final class CompilerPool implements AutoCloseable {
             int level=actual[0];var problems=diagnostics.getDiagnostics().stream().map(d->new Problem("live",level,d.getCode(),d.getKind().name(),d.getSource()==null?path.toString():d.getSource().toUri().toString(),d.getLineNumber(),Math.max(0,d.getColumnNumber()-1),d.getStartPosition(),d.getEndPosition(),d.getMessage(Locale.ROOT),resolutionNames(d))).toList();
             // Explicit compilation units are a bounded transaction boundary. Re-observe only
             // those paths before commit so edits during javac cannot depend on watcher latency.
-            liveDocuments.liveState(configuredSources).observe(sources.stream().map(SourceInput::file).toList());
-            if(manager.inputsSuperseded()||!inputs.current(observed,inputConfiguration,liveDocuments))
-                return new Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: inputs changed during analysis"));
+            if(observed!=null){
+                liveDocuments.liveState(configuredSources).observe(sources.stream().map(SourceInput::file).toList());
+                if(manager.inputsSuperseded()||!inputs.current(observed,inputConfiguration,liveDocuments))
+                    return new Outcome<>(1,null,List.of(),List.of("diagnostics_superseded: inputs changed during analysis"));
+            }
             return new Outcome<>(level,value,problems,List.copyOf(warnings));
         }catch(QueryFailure e){releasePlatform.close();throw (Exception)e.getCause();}
         catch(AssertionError|RuntimeException e){System.getLogger("jvmd.analyzer").log(System.Logger.Level.ERROR,"Compiler query fault in "+path,e);fault[0]=true;faults++;return new Outcome<>(Math.min(1,tier),null,List.of(),List.of("analyzer_fault: "+e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage())));}

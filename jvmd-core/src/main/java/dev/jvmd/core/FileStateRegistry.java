@@ -108,6 +108,36 @@ public final class FileStateRegistry {
         throw new IOException("Source changed repeatedly while reading: " + file);
     }
 
+    /** A file's bytes as read once, with their SHA-256. */
+    public record Read(byte[] bytes,String hash) { }
+
+    /**
+     * Read a file once and hash those bytes, recording the hash as the file's observation so a later
+     * {@link #hash} of the unchanged file reuses it instead of reading it again. The bytes are read
+     * outside this registry's lock; they are recorded only when the file's stamp is the same before
+     * and after the read.
+     */
+    public Read read(Path file)throws IOException{
+        file=file.toAbsolutePath().normalize();
+        for(int attempt=0;attempt<3;attempt++){
+            Stamp before=attributes(file);
+            byte[] content=Files.readAllBytes(file);
+            String hash=Hashing.sha256(content);
+            Stamp after=attributes(file);
+            if(before!=null&&!before.equals(after))continue;
+            synchronized(this){
+                metadataChecks+=2;hashes++;bytes+=content.length;
+                if(after!=null&&after.regular()){
+                    files.put(file,new Observation(after,hash));restored.remove(file);
+                    while(files.size()>32768)files.remove(files.keySet().iterator().next());
+                    persist(file,after,hash);
+                }
+            }
+            return new Read(content,hash);
+        }
+        throw new IOException("File changed repeatedly while reading: "+file);
+    }
+
     private static long nanos(Object time){
         return time instanceof java.nio.file.attribute.FileTime value?value.to(java.util.concurrent.TimeUnit.NANOSECONDS):Long.MIN_VALUE;
     }
@@ -142,6 +172,9 @@ public final class FileStateRegistry {
 
     private Stamp stamp(Path file) throws IOException {
         metadataChecks++;RequestScope.count("metadata_checks",1);
+        return attributes(file);
+    }
+    private static Stamp attributes(Path file) throws IOException {
         try {
             var values = Files.readAttributes(file, "unix:size,lastModifiedTime,ctime,ino,isRegularFile");
             return new Stamp(values.get("size"), values.get("lastModifiedTime"), values.get("ctime"), values.get("ino"),Boolean.TRUE.equals(values.get("isRegularFile")));

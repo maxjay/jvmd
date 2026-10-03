@@ -1,6 +1,6 @@
 package dev.jvmd.boot.cold.machine;
 
-import dev.jvmd.core.Hashing;
+import dev.jvmd.core.FileStateRegistry;
 import dev.jvmd.index.ArtifactIndexFormat;
 import dev.jvmd.index.BinaryReader;
 import dev.jvmd.index.layer.machine.ArtifactBuilder;
@@ -44,16 +44,21 @@ public sealed interface MachineInput permits MachineInput.Jar {
 
     /** A jar in the repository, paired with its {@code -sources.jar} when there is one. */
     record Jar(MachinePath path,Path binary,Path sources) implements MachineInput {
+        /**
+         * Each file is read once and hashed once; the hash is recorded in the process's file states,
+         * so the compiler that later puts this jar on a classpath does not read or hash it again.
+         */
         @Override public Raw read()throws IOException{
-            byte[] bytes=Files.readAllBytes(binary);
-            checkSha1(binary,bytes);
-            long estimate=estimate(BinaryReader.entrySizes(bytes,".class"));
-            byte[] sourceBytes=null;String sourcesSha256=null;
+            var files=FileStateRegistry.shared();
+            var jar=files.read(binary);
+            checkSha1(binary,jar.bytes());
+            long estimate=estimate(BinaryReader.entrySizes(jar.bytes(),".class"));
+            FileStateRegistry.Read paired=null;
             if(sources!=null){
-                sourceBytes=Files.readAllBytes(sources);checkSha1(sources,sourceBytes);
-                sourcesSha256=Hashing.sha256(sourceBytes);estimate+=estimate(BinaryReader.entrySizes(sourceBytes,".java"))-BASE;
+                paired=files.read(sources);checkSha1(sources,paired.bytes());
+                estimate+=estimate(BinaryReader.entrySizes(paired.bytes(),".java"))-BASE;
             }
-            return new Raw(Hashing.sha256(bytes),bytes,sourcesSha256,sourceBytes,estimate);
+            return new Raw(jar.hash(),jar.bytes(),paired==null?null:paired.hash(),paired==null?null:paired.bytes(),estimate);
         }
         private static void checkSha1(Path file,byte[] bytes)throws IOException{
             Path checksum=file.resolveSibling(file.getFileName()+".sha1");if(!Files.isRegularFile(checksum))return;

@@ -11,8 +11,9 @@ import java.nio.file.Path;
 import java.util.*;
 
 /**
- * One batch of units of one compiler context: compile and capture them from the text that was read
- * and hashed, and turn each complete capture into a LOCAL leaf and its declarations.
+ * One batch of units of one compiler context: compile and capture them from the text that was read,
+ * identified by the hash taken when it was read, and turn each complete capture into a LOCAL leaf
+ * and its declarations.
  */
 final class UnitJob {
     /** A unit's result: its leaf and declarations, or null for both when its attribution was not complete. */
@@ -30,11 +31,11 @@ final class UnitJob {
 
     List<Built> run()throws Exception{
         var context=units.getFirst().context();
-        var sources=new LinkedHashMap<Path,String>();
-        for(var unit:units)sources.put(unit.file(),files.get(unit.file()).text());
-        var captured=UnitCapture.capture(compiler,compiler.inputSnapshot(),
+        var sources=new LinkedHashMap<Path,String>();var hashes=new HashMap<Path,String>();
+        for(var unit:units){var file=files.get(unit.file());sources.put(unit.file(),file.text());hashes.put(unit.file(),file.sha256());}
+        var captured=UnitCapture.boot(compiler,
                 new UnitCapture.Naming(context.compiler().gav(),context.compiler().release(),context::coordinates,context.compiler().navigationSources()),
-                sources);
+                sources,hashes);
         var result=new ArrayList<Built>(units.size());
         for(var unit:units){
             var capture=captured.units().get(unit.file());

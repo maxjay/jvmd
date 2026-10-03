@@ -54,6 +54,25 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         }catch(IOException changed){return true;}
     }
     public void documents(Map<Path,String> values){documents(values,null);}
+    /** Whether the source path is exactly the texts given to {@link #fixedSources}. */
+    private boolean fixedSources;
+    /**
+     * Serve exactly {@code texts} (absolute, normalized path to text) as the source path: the files a
+     * cold boot read, with the text it read. No source is read from disk, no source root is listed,
+     * and nothing is checked against live state.
+     */
+    public void fixedSources(Map<Path,String> texts){
+        documents=Map.copyOf(texts);liveSources=null;expectedInputs=null;fixedSources=true;
+        var packages=new TreeMap<String,List<SourceEntry>>();
+        for(Path file:documents.keySet()){
+            String binary=sourceName(file,sourceRoots);if(binary==null)continue;
+            int dot=binary.lastIndexOf('.');packages.computeIfAbsent(dot<0?"":binary.substring(0,dot),ignored->new ArrayList<>()).add(new SourceEntry(binary,file));
+        }
+        var frozen=new TreeMap<String,List<SourceEntry>>();
+        packages.forEach((pkg,entries)->frozen.put(pkg,entries.stream().sorted(Comparator.comparing(SourceEntry::binary)).toList()));
+        sourcePackages=Map.copyOf(frozen);sourceCatalogDirty=false;sourceCatalogBuilds++;sourceCatalogFiles=documents.size();
+        try{configureModules();}catch(IOException e){throw new UncheckedIOException(e);}
+    }
     public void documents(Map<Path,String> values,LiveSourceState liveSources){
         documents=Map.copyOf(values);this.liveSources=liveSources;
         try{configureModules();}catch(IOException e){throw new UncheckedIOException(e);}
@@ -72,7 +91,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     private Set<Path> binarySources=Set.of();
     public void binarySources(Set<Path> sources){binarySources=Set.copyOf(sources);}
     private boolean preferBinary(JavaFileObject file){
-        return !binarySources.isEmpty()&&file.getKind()==JavaFileObject.Kind.SOURCE&&file.toUri().getScheme().equals("file")&&binarySources.contains(Path.of(file.toUri()).toAbsolutePath().normalize())&&!documents.containsKey(Path.of(file.toUri()).toAbsolutePath().normalize());
+        return !binarySources.isEmpty()&&file.getKind()==JavaFileObject.Kind.SOURCE&&file.toUri().getScheme().equals("file")&&binarySources.contains(Path.of(file.toUri()).toAbsolutePath().normalize())&&(fixedSources||!documents.containsKey(Path.of(file.toUri()).toAbsolutePath().normalize()));
     }
     public IndexedFileManager(StandardJavaFileManager delegate,List<Path> classpath,List<Path> sources,
                               IndexService index,long byteLimit)throws Exception {
@@ -153,6 +172,7 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     }
     long sourceStateGeneration(){
         if(liveSources!=null)return liveSources.snapshot().inputEpoch();
+        if(fixedSources)return sourceStateGeneration;
         try{refreshSourceInventory();return sourceStateGeneration;}
         catch(IOException error){throw new UncheckedIOException(error);}
     }
@@ -160,9 +180,9 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
         var found=new ArrayList<Path>();for(Path root:sourceRoots)found.addAll(files.inventory(root,".java"));
         if(!found.equals(sourceInventory)){sourceInventory=List.copyOf(found);sourceCatalogDirty=true;sourceStateGeneration++;}
     }
-    private boolean sourceCatalogUsable(){return preciseSourceRoots;}
+    private boolean sourceCatalogUsable(){return preciseSourceRoots||fixedSources;}
     private void ensureSourceCatalog()throws IOException{
-        if(liveSources!=null)return;
+        if(liveSources!=null||fixedSources)return;
         refreshSourceInventory();if(!sourceCatalogUsable()||!sourceCatalogDirty)return;
         var packages=new TreeMap<String,List<SourceEntry>>();var files=new LinkedHashSet<Path>();
         files.addAll(sourceInventory);
@@ -272,12 +292,12 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
                     var delegated=EnumSet.copyOf(kinds);delegated.remove(JavaFileObject.Kind.SOURCE);
                     if(!delegated.isEmpty())for(var file:super.list(delegate(location),packageName,delegated,recurse))sources.put(super.inferBinaryName(delegate(location),file),file);
                 }
-                for(var entry:indexed)if(!binarySources.contains(entry.file())||documents.containsKey(entry.file()))
+                for(var entry:indexed)if(!binarySources.contains(entry.file())||!fixedSources&&documents.containsKey(entry.file()))
                     sources.put(entry.binary(),new SourceFile(entry.file(),entry.binary(),documents.get(entry.file())));
             }
             // Open buffers must overlay both the watcher-backed catalog and the conservative
             // standard-file-manager path. Coarse roots intentionally disable the catalog.
-            if(kinds.contains(JavaFileObject.Kind.SOURCE))for(var entry:documents.entrySet()){
+            if(!fixedSources&&kinds.contains(JavaFileObject.Kind.SOURCE))for(var entry:documents.entrySet()){
                 String binary=sourceName(entry.getKey(),sourceInputs);if(binary==null)continue;int dot=binary.lastIndexOf('.');String pkg=dot<0?"":binary.substring(0,dot);
                 if(pkg.equals(packageName)||recurse&&(packageName.isEmpty()||pkg.startsWith(packageName+".")))sources.put(binary,new SourceFile(entry.getKey(),binary,entry.getValue()));
             }
@@ -297,7 +317,13 @@ public final class IndexedFileManager extends ForwardingJavaFileManager<Standard
     }
     @Override public JavaFileObject getJavaFileForInput(Location location,String className,JavaFileObject.Kind kind)throws IOException {
         List<Path> sourceInputs=location==StandardLocation.SOURCE_PATH?sourceRoots:moduleSources.get(location);
-        if(sourceInputs!=null&&kind==JavaFileObject.Kind.SOURCE)for(var entry:documents.entrySet())if(className.equals(sourceName(entry.getKey(),sourceInputs)))return new SourceFile(entry.getKey(),className,entry.getValue());
+        if(sourceInputs!=null&&kind==JavaFileObject.Kind.SOURCE){
+            if(fixedSources){
+                int dot=className.lastIndexOf('.');
+                for(var entry:sourcePackages.getOrDefault(dot<0?"":className.substring(0,dot),List.of()))
+                    if(entry.binary().equals(className)&&sourceInputs.stream().anyMatch(entry.file()::startsWith))return new SourceFile(entry.file(),className,documents.get(entry.file()));
+            }else for(var entry:documents.entrySet())if(className.equals(sourceName(entry.getKey(),sourceInputs)))return new SourceFile(entry.getKey(),className,entry.getValue());
+        }
         List<Path> inputs=location==StandardLocation.CLASS_PATH?classInputs():modulePaths.get(location);
         if(inputs!=null&&kind==JavaFileObject.Kind.CLASS&&!className.equals("module-info")){
             if(inputs.stream().filter(path->!path.toString().endsWith(".jar")).anyMatch(Files::isDirectory)){var directory=super.getJavaFileForInput(delegate(location),className,kind);if(directory!=null){return directory;}}

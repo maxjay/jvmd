@@ -228,8 +228,11 @@ public final class SemanticFacts {
 
     /** Build a source unit from canonical declarations already extracted by Bindings in this attribution. */
     public static SemanticSnapshot sourceSnapshot(CompilationUnitTree unit,Collection<SemanticFact> captured)throws Exception{
-        String text=unit.getSourceFile().getCharContent(true).toString();
-        String source=sourcePath(unit),content=Hashing.sha256(text.getBytes(StandardCharsets.UTF_8));
+        return sourceSnapshot(unit,captured,Hashing.sha256(unit.getSourceFile().getCharContent(true).toString().getBytes(StandardCharsets.UTF_8)));
+    }
+    /** The unit's snapshot whose content identity is {@code content}, the hash its caller already took of the unit's source. */
+    public static SemanticSnapshot sourceSnapshot(CompilationUnitTree unit,Collection<SemanticFact> captured,String content)throws Exception{
+        String source=sourcePath(unit);Objects.requireNonNull(content);
         var facts=new LinkedHashMap<String,SemanticFact>();
         var excluded=Set.of("local","local_variable","resource_variable","exception_parameter","binding_variable","parameter","type_parameter");
         for(var fact:captured)if(source.equals(fact.sourceFile())&&!excluded.contains(fact.kind()))facts.put(fact.id(),fact);

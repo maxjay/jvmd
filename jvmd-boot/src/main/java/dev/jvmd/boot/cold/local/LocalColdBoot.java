@@ -5,7 +5,7 @@ import dev.jvmd.analyzer.CompilerPool;
 import dev.jvmd.boot.cold.machine.ArtifactJob;
 import dev.jvmd.boot.cold.machine.ClaimMap;
 import dev.jvmd.boot.cold.machine.MachineInput;
-import dev.jvmd.core.Hashing;
+import dev.jvmd.core.FileStateRegistry;
 import dev.jvmd.core.tree.Root;
 import dev.jvmd.index.ClasspathSequence;
 import dev.jvmd.index.layer.local.*;
@@ -38,7 +38,8 @@ public final class LocalColdBoot implements AutoCloseable {
     /** The compiler context analysis uses for a module scope; the cold boot compiles that scope with it. */
     @FunctionalInterface public interface Contexts { Analyzer.Context context(Resolution.Module module,boolean test)throws Exception; }
 
-    private static final int BATCH=32;
+    /** The source text one batch compiles at most; a context smaller than this is one batch. */
+    static final long BATCH_CHARS=8L*1024*1024;
 
     private final Path generation,projectRoot;
     private final Callable<Resolution> resolve;
@@ -62,6 +63,8 @@ public final class LocalColdBoot implements AutoCloseable {
     private final List<Context> contexts=new ArrayList<>();
     private final SortedMap<String,Route> routes=new TreeMap<>();
     private final Map<Path,SourceFile> files=new HashMap<>();
+    /** Each context's source path: every Java file under its source roots, as read. */
+    private final Map<String,Map<Path,String>> sourcePaths=new HashMap<>();
     private final List<UnitJob.Built> built=new ArrayList<>();
     private Resolution graph;
 
@@ -194,34 +197,54 @@ public final class LocalColdBoot implements AutoCloseable {
     }
 
     /**
-     * Read each source file once; its hash and its attribution use the same bytes. Queue each
-     * context's units as batches that keep every dependency cycle together.
+     * Read each source file once and hash those bytes; the hash is recorded in the process's file
+     * states, so nothing reads or hashes the file again. Each context's source path is the files
+     * under its source roots as read here, and its units are queued in path order as batches of at
+     * most {@link #BATCH_CHARS} of source.
      */
     void files()throws Exception{
         stage="files";
         var batches=new ArrayList<List<UnitQueue.Unit>>();var expected=new LinkedHashMap<Path,String>();
+        var states=FileStateRegistry.shared();
         for(var context:contexts){
-            var units=new ArrayList<UnitQueue.Unit>();
-            var module=modules.get(context.module());
-            var roots=context.scope().equals("test")?module.testSources():module.sources();
-            for(String value:roots){
-                Path root=normalize(value);if(!Files.isDirectory(root))continue;
-                List<Path> sources;
-                try(var walk=Files.walk(root)){sources=walk.filter(file->file.toString().endsWith(".java")&&Files.isRegularFile(file)).sorted().toList();}
-                for(Path file:sources){
-                    file=file.toAbsolutePath().normalize();
-                    if(files.containsKey(file)||file.getFileName().toString().equals("module-info.java")||file.getFileName().toString().equals("package-info.java"))continue;
-                    byte[] bytes=Files.readAllBytes(file);
-                    files.put(file,new SourceFile(new String(bytes,StandardCharsets.UTF_8),Hashing.sha256(bytes)));
+            var sourcePath=new HashMap<Path,String>();
+            for(Path root:context.compiler().sources())for(Path file:javaFiles(root.toAbsolutePath().normalize()))sourcePath.put(file,read(states,file).text());
+            sourcePaths.put(context.key(),Collections.unmodifiableMap(sourcePath));
+            var module=modules.get(context.module());var units=new ArrayList<UnitQueue.Unit>();
+            for(String value:context.scope().equals("test")?module.testSources():module.sources()){
+                Path root=normalize(value);
+                for(Path file:javaFiles(root)){
+                    String name=file.getFileName().toString();
+                    if(expected.containsKey(file)||name.equals("module-info.java")||name.equals("package-info.java"))continue;
+                    read(states,file);
                     String relative=root.relativize(file).toString().replace(File.separatorChar,'/');
                     String binaryName=relative.substring(0,relative.length()-".java".length()).replace('/','.');
                     units.add(new UnitQueue.Unit(file,context,logicalPath(file),binaryName));expected.put(file,binaryName);
                 }
             }
-            var texts=new HashMap<Path,String>();for(var unit:units)texts.put(unit.file(),files.get(unit.file()).text());
-            batches.addAll(UnitGraph.batches(units,texts));
+            var batch=new ArrayList<UnitQueue.Unit>();long chars=0;
+            for(var unit:units){
+                long size=files.get(unit.file()).text().length();
+                if(!batch.isEmpty()&&chars+size>BATCH_CHARS){batches.add(batch);batch=new ArrayList<>();chars=0;}
+                batch.add(unit);chars+=size;
+            }
+            if(!batch.isEmpty())batches.add(batch);
         }
         layer=new LocalLayer(expected,routes);queue.addAll(batches);enumerated.countDown();
+    }
+
+    private SourceFile read(FileStateRegistry states,Path file)throws IOException{
+        var known=files.get(file);if(known!=null)return known;
+        var read=states.read(file);
+        var source=new SourceFile(new String(read.bytes(),StandardCharsets.UTF_8),read.hash());files.put(file,source);return source;
+    }
+
+    /** The Java files under {@code root}, absolute and normalized, in path order; none when it is not a directory. */
+    private static List<Path> javaFiles(Path root)throws IOException{
+        if(!Files.isDirectory(root))return List.of();
+        try(var walk=Files.walk(root)){
+            return walk.filter(file->file.toString().endsWith(".java")&&Files.isRegularFile(file)).map(file->file.toAbsolutePath().normalize()).sorted().toList();
+        }
     }
 
     /** Attribute every queued batch, front of the queue first, in its context's compiler context. */
@@ -236,6 +259,7 @@ public final class LocalColdBoot implements AutoCloseable {
                 if(!context.key().equals(configured)){
                     var c=context.compiler();
                     compiler.configure(c.generation(),c.release(),c.classpath(),c.sources(),null,compilerBudget,c.compilerOptions(),c.preciseSourceRoots());
+                    compiler.bootSources(sourcePaths.get(context.key()));
                     compiler.binarySources(c.binarySources());
                     configured=context.key();
                 }

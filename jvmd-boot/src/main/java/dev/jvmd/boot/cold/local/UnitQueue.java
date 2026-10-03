@@ -5,8 +5,8 @@ import java.util.*;
 
 /**
  * The LOCAL cold boot's (unit, compiler context) jobs, as attribution batches: contexts in reactor
- * order, and within a context the batches {@link UnitGraph} forms, in dependency order. A unit a
- * request needs moves its batch to the front; nothing else attributes it.
+ * order, and within a context its units in path order. A unit a request needs moves its batch to
+ * the front; nothing else attributes it.
  */
 final class UnitQueue {
     /** One source file to attribute, with the compiler context that compiles it. */

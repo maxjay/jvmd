@@ -3,7 +3,6 @@ package dev.jvmd.index.rocks;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
-import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.*;
 import org.rocksdb.SstFileWriter;
@@ -44,15 +43,7 @@ final class SstSorter implements AutoCloseable {
     long runRecords(){return runRecords;}
     long writtenRecords(){return writtenRecords;}
     /** Write every entry, in key order. */
-    void writeTo(SstFileWriter writer)throws Exception{write(writer,null);}
-
-    /** Write every entry, in key order, and return the SHA-256 over the written keys and values. */
-    String writeHashedTo(SstFileWriter writer)throws Exception{
-        var digest=MessageDigest.getInstance("SHA-256");write(writer,digest);return HexFormat.of().formatHex(digest.digest());
-    }
-
-    private void write(SstFileWriter writer,MessageDigest digest)throws Exception{
-        byte[] lengths=new byte[8];
+    void writeTo(SstFileWriter writer)throws Exception{
         var postings=new PostingWriter(new Consumer(){
             private byte[] full=new byte[0];
             @Override public void accept(Entry entry)throws Exception{
@@ -61,7 +52,7 @@ final class SstSorter implements AutoCloseable {
                 int length=namespace.length+entry.key().length;
                 if(full.length!=length)full=Arrays.copyOf(namespace,length);
                 System.arraycopy(entry.key(),0,full,namespace.length,entry.key().length);
-                if(digest!=null)hash(digest,full,entry.value(),lengths);writer.put(full,entry.value());writtenRecords++;
+                writer.put(full,entry.value());writtenRecords++;
             }
         });
         Consumer write=postings::accept;
@@ -85,14 +76,6 @@ final class SstSorter implements AutoCloseable {
         }
         merge(runs,write);
         postings.flush();
-    }
-    static void hash(MessageDigest digest,byte[] key,byte[] value){
-        hash(digest,key,value,new byte[8]);
-    }
-    private static void hash(MessageDigest digest,byte[] key,byte[] value,byte[] lengths){
-        for(int i=0;i<4;i++){lengths[i]=(byte)(key.length>>>(24-i*8));lengths[i+4]=(byte)(value.length>>>(24-i*8));}
-        digest.update(lengths);
-        digest.update(key);digest.update(value);
     }
     private void spill()throws Exception{
         if(buffered.isEmpty())return;long started=System.nanoTime();buffered.sort(ORDER);Path path=newRun();

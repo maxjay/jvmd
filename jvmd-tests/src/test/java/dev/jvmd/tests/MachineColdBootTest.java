@@ -88,7 +88,10 @@ class MachineColdBootTest {
             storage.commitMachine(next);
             var recommit=storage.machineStore().lastCommit();
             assertThat(recommit).containsEntry("leaves",1L).containsEntry("paths",0L).containsEntry("deleted",1L);
-            assertThat(recommit.get("nodes")).isPositive().isLessThan(first.get("nodes"));
+            // Exactly the nodes of the new tree that the committed tree did not have.
+            var stored=new HashSet<dev.jvmd.core.Hash256>();previous.tree().writeNodes((hash,node)->stored.add(hash));
+            var changed=new HashSet<dev.jvmd.core.Hash256>();next.tree().writeNodes((hash,node)->{if(!stored.contains(hash))changed.add(hash);});
+            assertThat(recommit.get("nodes")).isEqualTo((long)changed.size());
         }
         try(var storage=RocksIndexStorage.open(generation,BUDGET)){
             assertThat(storage.machine().root().orElseThrow().identity()).isEqualTo(next.root().identity());

@@ -337,7 +337,7 @@ class RocksArtifactRepositoryTest {
                     "parameters",List.of("value"));
             String docs=store.publishDocumentation(data.key().cacheKey(),sourceKey,
                     Map.of("fixture.Type#method1()V",member),0);
-            assertThat(store.verifyDocumentation(docs,data.key().cacheKey(),sourceKey.binarySha256())).isTrue();
+            assertThat(store.documentationPublished(docs,data.key().cacheKey(),sourceKey.binarySha256())).isTrue();
             assertThat(store.documentation(docs,"fixture.Type#method1()V"))
                     .containsEntry("doc","Example docs")
                     .containsEntry("line",12);

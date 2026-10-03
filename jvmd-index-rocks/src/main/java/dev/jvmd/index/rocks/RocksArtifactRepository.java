@@ -167,18 +167,16 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
         Object artifactLock=artifactLocks.computeIfAbsent(docsKey,ignored->new Object());
         try{
             synchronized(artifactLock){
-                if(verifyDocumentation(docsKey,binaryCacheKey,sourceKey.binarySha256()))return docsKey;
+                if(documentationPublished(docsKey,binaryCacheKey,sourceKey.binarySha256()))return docsKey;
                 Path sst=staging.resolve(docsKey+"-"+UUID.randomUUID()+".docs.sst.tmp");
                 try{
                     writeDocumentationSst(sst,docsKey,binaryCacheKey,sourceKey.binarySha256(),members,unmatchedMembers);
                     try(var file=FileChannel.open(sst,StandardOpenOption.WRITE)){file.force(true);}
                     synchronized(ingestLock){
-                        if(!verifyDocumentation(docsKey,binaryCacheKey,sourceKey.binarySha256())){
+                        if(!documentationPublished(docsKey,binaryCacheKey,sourceKey.binarySha256())){
                             try(var ingest=new IngestExternalFileOptions().setMoveFiles(true)){db.ingestExternalFile(List.of(sst.toString()),ingest);}
                         }
                     }
-                    if(!verifyDocumentation(docsKey,binaryCacheKey,sourceKey.binarySha256()))
-                        throw new IOException("Documentation publication verification failed: "+docsKey);
                     return docsKey;
                 }finally{Files.deleteIfExists(sst);}
             }
@@ -193,26 +191,22 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
             for(var entry:new TreeMap<>(members).entrySet())
                 entries.add(relativeKey("9|member|"+entry.getKey()),Json.MAPPER.writeValueAsBytes(entry.getValue()));
             try(var env=new EnvOptions();var writer=new SstFileWriter(env,options)){
-                writer.open(sst.toString());String checksum=entries.writeHashedTo(writer);
-                writer.put(key(docsKey,"z|manifest"),(manifest+"sha256="+checksum+"\n").getBytes(StandardCharsets.UTF_8));writer.finish();
+                writer.open(sst.toString());entries.writeTo(writer);
+                writer.put(key(docsKey,"z|manifest"),manifest.getBytes(StandardCharsets.UTF_8));writer.finish();
             }
             sortPeakBytes.accumulateAndGet(entries.peakBytes(),Math::max);sortSpillBytes.addAndGet(entries.spillBytes());
             return entries.writtenRecords()+1;
         }
     }
 
-    public boolean verifyDocumentation(String docsKey,String binaryCacheKey,String sourceSha)throws Exception{
+    /**
+     * Whether the documentation of this binary and sources is published. Its manifest is ingested in
+     * the same file as its members, so a manifest naming them means they are present.
+     */
+    public boolean documentationPublished(String docsKey,String binaryCacheKey,String sourceSha)throws Exception{
         byte[] value=db.get(key(docsKey,"z|manifest"));if(value==null)return false;
         var manifest=parseManifest(value);
-        if(!"documentation".equals(manifest.get("kind"))||!binaryCacheKey.equals(manifest.get("binary"))||!sourceSha.equals(manifest.get("source_sha")))return false;
-        var digest=java.security.MessageDigest.getInstance("SHA-256");byte[] prefix=key(docsKey,"9|member|");long count=0;
-        try(var read=new ReadOptions().setFillCache(false);var iterator=db.newIterator(read)){
-            for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next()){
-                SstSorter.hash(digest,iterator.key(),iterator.value());count++;
-            }
-            iterator.status();
-        }
-        return Objects.equals(manifest.get("members"),Long.toString(count))&&Objects.equals(manifest.get("sha256"),HexFormat.of().formatHex(digest.digest()));
+        return "documentation".equals(manifest.get("kind"))&&binaryCacheKey.equals(manifest.get("binary"))&&sourceSha.equals(manifest.get("source_sha"));
     }
 
     public Map<String,Object> documentation(String docsKey,String binaryKey)throws Exception{

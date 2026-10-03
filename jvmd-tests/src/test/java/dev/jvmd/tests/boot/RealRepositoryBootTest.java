@@ -59,7 +59,7 @@ class RealRepositoryBootTest {
         for (int b : new int[] {16, 32, 64}) {
             var store = new Counting();
             var started = System.nanoTime();
-            var result = new Stage1(digest, new ContentTree(digest, b, 4 * b), 25, Runtime.getRuntime().availableProcessors()).run(store, locations);
+            var result = new Stage1(digest, new ContentTree(digest, b, 4 * b), 25, Runtime.getRuntime().availableProcessors(), ClassFacts::of).run(store, locations);
             System.out.printf("real-repository B=%d: leaves=%d distinct_jars=%d nodes=%d produced=%d shared_by_equal_nodes=%.3f node_bytes=%d faults=%d wall_ms=%d%n",
                     b, result.leaves(), result.distinctJars(), result.nodes(), result.nodesProduced(),
                     1.0 - (double) result.nodes() / Math.max(1, result.nodesProduced()), store.nodeBytes.get(), result.faults().size(), (System.nanoTime() - started) / 1_000_000);

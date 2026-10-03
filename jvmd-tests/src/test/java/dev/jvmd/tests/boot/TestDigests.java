@@ -12,12 +12,13 @@ final class TestDigests {
     static final class Sha3 implements Digest {
         @Override public String name() { return "SHA3-256"; }
         @Override public int width() { return 32; }
-        @Override public Identity hash(byte[]... parts) {
-            try {
-                var md = MessageDigest.getInstance("SHA3-256");
-                for (var part : parts) md.update(part);
-                return Identity.of(md.digest());
-            } catch (NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
+        @Override public Hasher hasher() {
+            final MessageDigest md;
+            try { md = MessageDigest.getInstance("SHA3-256"); } catch (NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
+            return new Hasher() {
+                @Override public void update(byte[] bytes, int offset, int length) { md.update(bytes, offset, length); }
+                @Override public Identity finish() { return Identity.of(md.digest()); }
+            };
         }
     }
 }

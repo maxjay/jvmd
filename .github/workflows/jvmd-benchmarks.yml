@@ -3,9 +3,21 @@ name: JVMD benchmarks
 # JVMD against JDTLS: editor scenarios on Maven fixtures, plus the lifecycle of a real Maven project.
 # Informational: results are reported on the PR and in the job summary, never used to fail the build.
 on:
-  # Paused while the layered index is being rebuilt: stage 1 of the cold boot is in, warm boot and stages 2 and 3 are not, so
-  # the numbers would only describe unfinished work and the daemon-restart steps cannot pass yet. Re-add the pull_request, push
-  # and schedule triggers when the layers are complete. Manual dispatch still works.
+  pull_request:
+    paths:
+      - 'benchmarks/**'
+      - 'jvmd-*/src/main/**'
+      - 'shim/src/**'
+      - '.github/workflows/benchmarks.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'benchmarks/**'
+      - 'jvmd-*/src/main/**'
+      - 'shim/src/**'
+      - '.github/workflows/benchmarks.yml'
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
     inputs:
       runs:

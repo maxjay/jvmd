@@ -4,6 +4,7 @@ import dev.jvmd.boot.cold.stage1.Stage1;
 import dev.jvmd.core.Config;
 import dev.jvmd.core.hash.digests.Sha256;
 import dev.jvmd.core.tree.ContentTree;
+import dev.jvmd.index.layer.machine.ClassFacts;
 import dev.jvmd.index.layer.machine.Format;
 import dev.jvmd.index.rocks.layer.Generation;
 import java.io.IOException;
@@ -11,11 +12,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
- * Chooses cold or warm for the MACHINE layer (stage 1, 5.6). The digest, boundary parameters, JDK feature and worker count are
- * decided here, once, and handed to {@link Stage1}. The generation directory name carries the digest, so changing it is a new
- * FORMAT and a cold boot, never a migration.
+ * Chooses cold or warm for the MACHINE layer (stage 1, 5.6). The digest, boundary parameters, JDK feature, worker count and class
+ * parser are decided here, once, and handed to {@link Stage1}. The generation directory name carries the digest, so changing it
+ * is a new FORMAT and a cold boot, never a migration.
  */
 public final class BootDecision {
     private static final System.Logger LOG = System.getLogger("dev.jvmd.boot");
@@ -23,29 +25,35 @@ public final class BootDecision {
     private BootDecision() { }
 
     /**
-     * Boots MACHINE into {@code indexDir/<FORMAT>}. A generation that already has a ROOT is a warm boot, which is not implemented:
-     * this fails with one clear line and changes nothing.
+     * Boots MACHINE into {@code indexDir/<FORMAT>}. A generation that already has a ROOT would be a warm boot, which does not
+     * exist yet: log one line and return, without touching it. Nothing on main reads this generation, so skipping is correct and
+     * failing would stop every daemon restart. Warm boot replaces this branch.
+     *
+     * @return the boot's result, or empty if a committed generation was skipped
      */
-    public static Stage1.Result machine(Path indexDir, Config config) throws IOException {
+    public static Optional<Stage1.Result> machine(Path indexDir, Config config) throws IOException {
         var digest = Sha256.INSTANCE;
+        // The running JVM's feature version, not any configured JDK's. It selects multi-release entries (C.2) and is part of FORMAT.
+        // A configured JDK newer than the runtime therefore faults every one of its classes on the major_version check, and its
+        // multi-release selection uses the runtime's feature. Acceptable until stage 2 routes per-JDK views; written down here
+        // so it is not rediscovered.
         int jdkFeature = Runtime.version().feature();
         var generation = Generation.of(indexDir, Format.of(digest, jdkFeature));
-        if (generation.hasRoot())
-            throw new IllegalStateException("Machine index generation " + generation.directory() + " is already committed and warm boot is not implemented yet; delete it to cold boot.");
+        if (generation.hasRoot()) {
+            LOG.log(System.Logger.Level.INFO, "machine generation {0} committed; warm boot not implemented, skipping", generation.directory());
+            return Optional.empty();
+        }
 
         var homes = new ArrayList<Path>();
         homes.add(Path.of(System.getProperty("java.home")));
         for (var configured : new Path[] {config.jdkHome(), config.jbrHome()})
             if (configured != null && Files.isRegularFile(configured.resolve("lib/modules")) && homes.stream().noneMatch(h -> sameFile(h, configured))) homes.add(configured);
 
-        // The class memo only skips re-parsing repeated class files; the output is identical either way (3.8). On by default, because
-        // an internal library published in hundreds of versions repeats nearly every class. -Djvmd.boot.classMemo=false turns it off.
-        boolean classMemo = Boolean.parseBoolean(System.getProperty("jvmd.boot.classMemo", "true"));
-        var stage1 = new Stage1(digest, new ContentTree(digest), jdkFeature, Runtime.getRuntime().availableProcessors(), classMemo);
+        var stage1 = new Stage1(digest, new ContentTree(digest), jdkFeature, Runtime.getRuntime().availableProcessors(), ClassFacts::of);
         try (var store = generation.create()) {
             var result = stage1.run(store, config.m2Repo(), List.copyOf(homes));
             log(result);
-            return result;
+            return Optional.of(result);
         }
     }
 

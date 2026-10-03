@@ -79,7 +79,13 @@ public final class Enumerate {
     public static List<Location> jdk(Path jdkHome, Digest digest, List<FileSystem> opened) throws IOException {
         Path modules = jdkHome.resolve("lib/modules");
         var attributes = Files.readAttributes(modules, java.nio.file.attribute.BasicFileAttributes.class);
-        var jdkDigest = digest.hash(Files.readAllBytes(modules));
+        // Streamed, not read into one array: lib/modules is over a hundred megabytes. The buffer sizes a read, not a limit.
+        var hasher = digest.hasher();
+        var buffer = new byte[1 << 20];
+        try (var in = Files.newInputStream(modules)) {
+            for (int n; (n = in.read(buffer)) > 0; ) hasher.update(buffer, 0, n);
+        }
+        var jdkDigest = hasher.finish();
         FileSystem jrt;
         if (sameFile(jdkHome, Path.of(System.getProperty("java.home")))) jrt = FileSystems.getFileSystem(URI.create("jrt:/"));
         else { jrt = FileSystems.newFileSystem(URI.create("jrt:/"), Map.of("java.home", jdkHome.toString())); opened.add(jrt); }

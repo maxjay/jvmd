@@ -1,6 +1,7 @@
 package dev.jvmd.boot.cold.stage1;
 
 import dev.jvmd.core.hash.Digest;
+import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.tree.ContentTree;
 import dev.jvmd.core.tree.Root;
 import dev.jvmd.index.layer.machine.ClassFacts;
@@ -8,12 +9,10 @@ import dev.jvmd.index.layer.machine.Format;
 import dev.jvmd.index.layer.machine.MachineStore;
 import dev.jvmd.index.layer.machine.MachineTree;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.FileSystem;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -24,13 +23,14 @@ import java.util.concurrent.Future;
  * Before ROOT is written the layer does not exist. No store read happens before that write.
  *
  * <p>Everything that shapes the result is a constructor argument with one call site ({@code BootDecision}): the digest, the
- * tree's boundary parameters, the JDK feature version and the worker count. There is no other configuration.
+ * tree's boundary parameters, the JDK feature version, the worker count and the class parser. There is no other configuration
+ * and no switch that changes what the boot does.
  */
 public final class Stage1 {
-    /** Φ. A seam so a test can count invocations (invariant 6); production uses {@link ClassFacts#of}. */
+    /** Φ. The one seam the tests need: counting invocations (invariant 6) and observing when entries are read (invariant 7). */
     @FunctionalInterface public interface Parser { ClassFacts parse(Digest digest, byte[] bytes, String expectedOwner) throws ClassFacts.Fault; }
 
-    /** What the boot did: the numbers of the one log line (D.4). */
+    /** What the boot did: the numbers of the one log line (D.4). {@code faults} are {@code location: entry-or-reason}. */
     public record Result(int locations, int distinctJars, int leaves, long nodes, long nodesProduced, List<String> faults, long wallMillis, Root root) { }
 
     private final Digest digest;
@@ -39,23 +39,12 @@ public final class Stage1 {
     private final int workers;
     private final Parser parser;
 
-    private final boolean classMemo;
-
-    /** Class memo off: the plain design. */
-    public Stage1(Digest digest, ContentTree tree, int jdkFeature, int workers) { this(digest, tree, jdkFeature, workers, ClassFacts::of, false); }
-
-    /** @param classMemo skip re-parsing class files that repeat byte for byte within an artifact directory (3.8); output is identical either way */
-    public Stage1(Digest digest, ContentTree tree, int jdkFeature, int workers, boolean classMemo) { this(digest, tree, jdkFeature, workers, ClassFacts::of, classMemo); }
-
-    public Stage1(Digest digest, ContentTree tree, int jdkFeature, int workers, Parser parser) { this(digest, tree, jdkFeature, workers, parser, false); }
-
-    public Stage1(Digest digest, ContentTree tree, int jdkFeature, int workers, Parser parser, boolean classMemo) {
+    public Stage1(Digest digest, ContentTree tree, int jdkFeature, int workers, Parser parser) {
         this.digest = digest;
         this.tree = tree;
         this.jdkFeature = jdkFeature;
         this.workers = workers;
         this.parser = parser;
-        this.classMemo = classMemo;
     }
 
     /** Enumerates the repository and then the JDK homes, and boots into {@code store}. */
@@ -76,8 +65,7 @@ public final class Stage1 {
         var seen = new Seen();
         var leaves = new Leaves();
         var written = new Written();
-        var faults = new ConcurrentLinkedQueue<String>();
-        var job = new ArtifactJob(digest, tree, jdkFeature, seen, leaves, written, store, parser, faults, classMemo ? new ClassMemo(locations) : null);
+        var job = new ArtifactJob(digest, tree, jdkFeature, seen, leaves, written, store, parser, new ClassMemo(digest, locations));
 
         // Step 2: P workers, jobs started in enumeration order (a FIFO queue). A failure anywhere aborts the boot: no ROOT.
         ExecutorService pool = Executors.newFixedThreadPool(workers, Thread.ofPlatform().name("jvmd-stage1-", 0).daemon(true).factory());
@@ -100,28 +88,32 @@ public final class Stage1 {
             throw new IllegalStateException("Stage 1 interrupted", interrupted);
         } finally { pool.shutdown(); }
 
-        // Step 3: the machine tree.
-        leaves.resolvePending();
+        // Step 3: the machine tree. Each leaf was written by the job that won its claim.
         var all = leaves.all();
         var sink = written.through(store);
         var machine = MachineTree.build(tree, all, sink);
-        for (var leaf : all) store.putLeaf(leaf.k(), leaf.encode());
         sink.flush();
 
-        // Step 4: paths, one sync, and the root, last.
+        // Step 4: paths (with their faults), one sync, and the root, last.
+        var faults = new ArrayList<String>();
         for (var observation : seen.all()) {
             var location = observation.location();
-            var k = leaves.kFor(observation.bh());
-            store.putPath(location.name(), MachineTree.encodePath(observation.bh(), k, location.size(), location.mtimeNanos()));
+            var unreadable = seen.unreadableReason(observation);
+            if (unreadable != null) {
+                // Not an archive, or not readable: the zero identity, no k, one fault naming the reason (B.5).
+                store.putPath(location.name(), MachineTree.encodePath(Identity.zero(digest.width()), null, location.size(), location.mtimeNanos(), List.of(unreadable)));
+                faults.add(location.name() + ": " + unreadable);
+                continue;
+            }
+            var skipped = seen.skipped(observation.bh());
+            store.putPath(location.name(), MachineTree.encodePath(observation.bh(), leaves.kFor(observation.bh()), location.size(), location.mtimeNanos(), skipped));
+            for (var entry : skipped) faults.add(location.name() + ": " + entry);
         }
         store.flush();
         store.sync();
         store.putRoot(MachineTree.encodeRoot(digest, Format.of(digest, jdkFeature), machine));
 
-        var allFaults = new ArrayList<>(faults);
-        for (var leaf : all) for (var fault : leaf.faults()) allFaults.add(fault);
-        allFaults.sort(Enumerate::compareNames);
-        return new Result(locations.size(), seen.distinct(), all.size(), written.count(), written.produced(), List.copyOf(allFaults),
+        return new Result(locations.size(), seen.distinct(), all.size(), written.count(), written.produced(), List.copyOf(faults),
                 (System.nanoTime() - started) / 1_000_000, machine);
     }
 }

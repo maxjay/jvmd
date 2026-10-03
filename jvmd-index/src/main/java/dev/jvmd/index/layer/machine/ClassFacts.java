@@ -133,8 +133,8 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                     }
                 } else res.u8(0);
                 var key = memberKey(owner, KIND_FIELD, name, desc);
-                add(key, name, res, tail(field, false), null);
-                typeNames(desc, signature, false, n -> edge(n, FIELD_TYPE, key));
+                add(key, name, res, tail(field, false));
+                typeNames(desc, signature, n -> edge(n, FIELD_TYPE, key));
                 annotationEdges(field, key);
             }
             for (var method : cm.methods()) {
@@ -150,9 +150,9 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                 res.u32(thrown.size());
                 for (var t : thrown) res.str(t.asInternalName());
                 var def = method.findAttribute(Attributes.annotationDefault());
-                if (def.isPresent()) { res.u8(1); res.lenBytes(valueBytes(def.get().defaultValue())); } else res.u8(0);
+                if (def.isPresent()) { res.u8(1); writeValue(res, def.get().defaultValue()); } else res.u8(0); // opt<value>, structural (A.4a)
                 var key = memberKey(owner, KIND_METHOD, name, desc);
-                add(key, name, res, tail(method, true), null);
+                add(key, name, res, tail(method, true));
                 methodEdges(key, desc, signature, thrown);
                 annotationEdges(method, key);
             }
@@ -188,33 +188,38 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
             for (var p : permits) res.str(p.asInternalName());
             var host = cm.findAttribute(Attributes.nestHost());
             res.optStr(host.map(h -> h.nestHost().asInternalName()).orElse(null));
+            // The outer class of this class's own InnerClasses entry: javac resolves Outer.Inner through it, so it is a resolution
+            // field, and it is what makes the encloses edge a function of res, so that L is a function of k (A.4, A.5).
+            String outer = self != null && self.outerClass().isPresent() ? self.outerClass().get().asInternalName() : null;
+            res.optStr(outer);
             var components = record.isPresent() ? record.get().components() : List.<java.lang.classfile.attribute.RecordComponentInfo>of();
             res.u32(components.size());
             for (var rc : components) {
                 String csig = signature(rc);
                 res.str(rc.name().stringValue()).str(rc.descriptor().stringValue()).optStr(csig);
-                typeNames(rc.descriptor().stringValue(), csig, false, n -> edge(n, RECORD_COMPONENT_TYPE, key));
+                typeNames(rc.descriptor().stringValue(), csig, n -> edge(n, RECORD_COMPONENT_TYPE, key));
             }
             if (kind == 4) {
+                // opt<annotation> per meta-annotation, in the fixed order, with the structural encoding of A.4a.
                 var visible = cm.findAttribute(Attributes.runtimeVisibleAnnotations());
                 for (var meta : META_ANNOTATIONS) {
                     String descriptor = "Ljava/lang/annotation/" + meta + ";";
-                    String text = null;
+                    Annotation found = null;
                     if (visible.isPresent()) for (var a : visible.get().annotations())
-                        if (a.className().stringValue().equals(descriptor)) text = annotationText(a);
-                    res.optStr(text);
+                        if (a.className().stringValue().equals(descriptor)) found = a;
+                    if (found == null) res.u8(0); else { res.u8(1); writeAnnotation(res, found); }
                 }
             }
             if (kind == 5) {
                 var module0 = cm.findAttribute(Attributes.module());
                 if (module0.isPresent()) moduleBytes(res, module0.get());
             }
-            add(key, simpleName(owner), res, tail(cm, false), null);
+            add(key, simpleName(owner), res, tail(cm, false));
 
             superclass.ifPresent(s -> edge(s.asInternalName(), EXTENDS, key));
             for (var i : cm.interfaces()) edge(i.asInternalName(), IMPLEMENTS, key);
             for (var p : permits) edge(p.asInternalName(), PERMITS, key);
-            if (self != null && self.outerClass().isPresent()) edge(self.outerClass().get().asInternalName(), ENCLOSES, key);
+            if (outer != null) edge(outer, ENCLOSES, key);
             annotationEdges(cm, key);
         }
 
@@ -260,7 +265,7 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         }
 
         /** Names in a field or record-component descriptor and, if present, its generic signature. */
-        void typeNames(String descriptor, String signature, boolean unused, Consumer<String> out) {
+        void typeNames(String descriptor, String signature, Consumer<String> out) {
             descriptorNames(descriptor, out);
             if (signature == null) return;
             try { signatureNames(Signature.parseFrom(signature), out); } catch (RuntimeException malformed) { /* see methodEdges */ }
@@ -283,7 +288,7 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         }
 
         /** Adds one fact: {@code e = u32 resLen || res || tail}, {@code h = Digest(res)}. */
-        void add(byte[] key, String simpleName, Codec.Writer res, byte[] tail, Void unused) {
+        void add(byte[] key, String simpleName, Codec.Writer res, byte[] tail) {
             var resBytes = res.toBytes();
             var e = new Codec.Writer(resBytes.length + tail.length + 4).u32(resBytes.length).raw(resBytes).raw(tail).toBytes();
             facts.add(new Fact(key, e, digest.hash(resBytes), simpleName));
@@ -343,7 +348,7 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         if (typeVisible.isPresent()) types.addAll(typeVisible.get().annotations());
         if (typeInvisible.isPresent()) types.addAll(typeInvisible.get().annotations());
         out.u32(types.size());
-        for (var t : types) out.lenBytes(typeAnnotationBytes(t));
+        for (var t : types) writeTypeAnnotation(out, t);
         out.u8(element.findAttribute(Attributes.deprecated()).isPresent() ? 1 : 0);
         if (method) {
             var params = element.findAttribute(Attributes.methodParameters());
@@ -354,17 +359,13 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         return out.toBytes();
     }
 
+    /** {@code list<annotation>}: a u32 count, then the annotations inline (A.4a). They are self-delimiting, so no per-item length. */
     private static void writeAnnotations(Codec.Writer out, List<Annotation> annotations) {
         out.u32(annotations.size());
-        for (var a : annotations) out.lenBytes(annotationBytes(a));
+        for (var a : annotations) writeAnnotation(out, a);
     }
 
-    static byte[] annotationBytes(Annotation a) {
-        var out = new Codec.Writer();
-        writeAnnotation(out, a);
-        return out.toBytes();
-    }
-
+    /** {@code annotation = str typeDescriptor || u16 elementCount || (str name || value)[elementCount]} (A.4a). */
     private static void writeAnnotation(Codec.Writer out, Annotation a) {
         out.str(a.className().stringValue()).u16(a.elements().size());
         for (var element : a.elements()) {
@@ -373,12 +374,7 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         }
     }
 
-    static byte[] valueBytes(AnnotationValue value) {
-        var out = new Codec.Writer();
-        writeValue(out, value);
-        return out.toBytes();
-    }
-
+    /** {@code value = u8 tag || payload} (A.4a). Every name and constant is resolved: no constant-pool index is ever stored. */
     private static void writeValue(Codec.Writer out, AnnotationValue value) {
         out.u8(value.tag());
         switch (value) {
@@ -401,8 +397,8 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         }
     }
 
-    private static byte[] typeAnnotationBytes(TypeAnnotation t) {
-        var out = new Codec.Writer();
+    /** {@code typeAnnotation = u8 targetType || targetInfo || u8 pathLength || (u8 kind || u8 argumentIndex)[] || annotation} (A.4a). */
+    private static void writeTypeAnnotation(Codec.Writer out, TypeAnnotation t) {
         var info = t.targetInfo();
         out.u8(info.targetType().targetTypeValue());
         switch (info) {
@@ -416,32 +412,5 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         out.u8(t.targetPath().size());
         for (var c : t.targetPath()) out.u8(c.typePathKind().tag()).u8(c.typeArgumentIndex());
         writeAnnotation(out, t.annotation());
-        return out.toBytes();
-    }
-
-    /** A readable, deterministic rendering of an annotation, for the meta-annotation fields of an annotation type (A.4 item 9). */
-    private static String annotationText(Annotation a) {
-        var sb = new StringBuilder();
-        for (var element : a.elements()) {
-            if (!sb.isEmpty()) sb.append(';');
-            sb.append(element.name().stringValue()).append('=');
-            valueText(sb, element.value());
-        }
-        return sb.toString();
-    }
-
-    private static void valueText(StringBuilder sb, AnnotationValue value) {
-        switch (value) {
-            case AnnotationValue.OfConstant c -> sb.append(value.tag()).append(':').append(c.resolvedValue());
-            case AnnotationValue.OfEnum e -> sb.append("e:").append(e.className().stringValue()).append('.').append(e.constantName().stringValue());
-            case AnnotationValue.OfClass c -> sb.append("c:").append(c.className().stringValue());
-            case AnnotationValue.OfAnnotation a -> sb.append('@').append(a.annotation().className().stringValue()).append('(').append(annotationText(a.annotation())).append(')');
-            case AnnotationValue.OfArray a -> {
-                sb.append('[');
-                boolean first = true;
-                for (var v : a.values()) { if (!first) sb.append(','); first = false; valueText(sb, v); }
-                sb.append(']');
-            }
-        }
     }
 }

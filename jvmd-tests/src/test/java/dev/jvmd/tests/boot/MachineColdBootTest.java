@@ -2,6 +2,7 @@ package dev.jvmd.tests.boot;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.jvmd.boot.cold.stage1.Entries;
 import dev.jvmd.boot.cold.stage1.Enumerate;
 import dev.jvmd.boot.cold.stage1.Stage1;
 import dev.jvmd.core.hash.Digest;
@@ -135,7 +136,7 @@ class MachineColdBootTest {
     }
 
     static Stage1.Result boot(Digest digest, int workers, List<Enumerate.Location> locations, InMemoryMachineStore store) {
-        return new Stage1(digest, new ContentTree(digest), 25, workers).run(store, locations);
+        return new Stage1(digest, new ContentTree(digest), 25, workers, ClassFacts::of).run(store, locations);
     }
 
     static Identity zero(Digest digest) { return Sum.forWidth(digest.width()).zero(); }
@@ -162,9 +163,21 @@ class MachineColdBootTest {
         var machine = MachineTree.decodeRoot(digest, store.root());
         tree.verify(machine.root(), h -> store.get(MachineStore.nodeKey(h)));
 
+        // 1: the sum of the tree equals the sum of h(f) over every fact of the jar, recomputed here from the class files alone.
+        for (var location : all()) {
+            var path = MachineTree.decodePath(store.get(MachineStore.pathKey(location.name())), digest.width());
+            if (path.k() == null) continue;
+            var expected = sums.zero();
+            var entries = Entries.zip(Files.readAllBytes(location.file()), 25);
+            for (var item : entries.classes()) {
+                try { for (var fact : ClassFacts.of(digest, entries.read(item), item.owner()).facts()) expected = sums.add(expected, fact.h()); }
+                catch (ClassFacts.Fault skipped) { /* a fault contributes nothing, here and in the boot */ }
+            }
+            var leaf = MachineLeaf.decode(store.get(MachineStore.leafKey(path.k())), digest.width());
+            assertThat(leaf.r()).as("r of %s", location.name()).isEqualTo(expected);
+        }
         var total = sums.zero();
         for (var leaf : leaves(digest, store)) {
-            // 1: the chunker's running sum (checked inside the job) equals the stored tree sum, and that is r.
             assertThat(treeSum(digest, store, leaf.k())).as("sum(T)").isEqualTo(leaf.r());
             // 2: rekeying preserves the sum.
             assertThat(treeSum(digest, store, leaf.nHash())).as("sum(N)").isEqualTo(leaf.r());
@@ -192,31 +205,42 @@ class MachineColdBootTest {
         }
     }
 
-    @Test void invariant5_equalFactsAreOneLeafAndTheSecondJobWritesNoNodes() throws Exception {
+    /**
+     * Invariant 5 under L as a function of k: two jars with identical facts and different corrupt extra entries are one L, two P
+     * records with different fault lists, and the second job writes no nodes.
+     */
+    @ParameterizedTest @MethodSource("digests") void invariant5_equalFactsAreOneLeafTwoPathRecordsWithTheirOwnFaultsAndTheSecondJobWritesNoNodes(Digest digest) throws Exception {
+        var classes = BootFixtures.compile(Files.createTempDirectory(dir, "eq-"), library(""));
+        var first = new LinkedHashMap<>(classes);
+        first.put("x/Bad1.class", new byte[] {1, 2, 3});
+        var second = new LinkedHashMap<>(classes);
+        second.put("y/Bad2.class", new byte[] {4, 5, 6});
+        var j1 = BootFixtures.pack(dir.resolve("eq/one/1/one-1.jar"), T1, first);
+        var j2 = BootFixtures.pack(dir.resolve("eq/two/1/two-1.jar"), T2, second);
+        var l1 = Enumerate.jar("eq/one/1/one-1.jar", j1);
+        var l2 = Enumerate.jar("eq/two/1/two-1.jar", j2);
+
         var only = new InMemoryMachineStore();
-        var one = boot(Sha256.INSTANCE, 1, List.of(Enumerate.jar("a/a-1.jar", a)), only);
+        var one = boot(digest, 1, List.of(l1), only);
         var both = new InMemoryMachineStore();
-        var two = boot(Sha256.INSTANCE, 1, List.of(Enumerate.jar("a/a-1.jar", a), Enumerate.jar("b/a2-1.jar", a2)), both);
+        var two = boot(digest, 1, List.of(l1, l2), both);
+
         assertThat(two.leaves()).isEqualTo(1);
         assertThat(two.nodes()).as("nodes written for two API-identical jars").isEqualTo(one.nodes());
         assertThat(both.kinds().get("L")).isEqualTo(1L);
         assertThat(both.kinds().get("P")).isEqualTo(2L);
-        var paths = new HashSet<String>();
-        for (var e : both.snapshot().entrySet()) if (e.getKey()[0] == 0x50) paths.add(java.util.HexFormat.of().formatHex(e.getValue(), 32 + 1, 32 + 1 + 32));
-        assertThat(paths).as("both locations point at one leaf key").hasSize(1);
-        assertThat(both.snapshot().keySet()).containsExactlyElementsOf(withPaths(only.snapshot().keySet(), both));
+        var p1 = MachineTree.decodePath(both.get(MachineStore.pathKey("eq/one/1/one-1.jar")), 32);
+        var p2 = MachineTree.decodePath(both.get(MachineStore.pathKey("eq/two/1/two-1.jar")), 32);
+        assertThat(p1.k()).as("both locations point at one leaf key").isNotNull().isEqualTo(p2.k());
+        assertThat(p1.bh()).isNotEqualTo(p2.bh());
+        assertThat(p1.faults()).containsExactly("x/Bad1.class");
+        assertThat(p2.faults()).containsExactly("y/Bad2.class");
+        // L is the same record either way: it holds nothing per jar file.
+        assertThat(both.get(MachineStore.leafKey(p1.k()))).isEqualTo(only.get(MachineStore.leafKey(p1.k())));
     }
 
-    private static Set<byte[]> withPaths(Set<byte[]> keys, InMemoryMachineStore with) {
-        var out = new java.util.TreeSet<byte[]>(java.util.Arrays::compareUnsigned);
-        out.addAll(keys);
-        for (var key : with.snapshot().keySet()) if (key[0] == 0x50) out.add(key);
-        return out;
-    }
-
-    @Test void invariant6_aClassIsParsedOncePerDistinctJar() throws Exception {
+    @ParameterizedTest @MethodSource("digests") void invariant6_aClassIsParsedOncePerDistinctJar(Digest digest) throws Exception {
         var parses = new AtomicInteger();
-        var digest = Sha256.INSTANCE;
         var stage = new Stage1(digest, new ContentTree(digest), 25, 4, (d, bytes, owner) -> { parses.incrementAndGet(); return ClassFacts.of(d, bytes, owner); });
         var locations = List.of(Enumerate.jar("a.jar", a), Enumerate.jar("copy.jar", aCopy), Enumerate.jar("other.jar", other));
         var result = stage.run(new InMemoryMachineStore(), locations);
@@ -244,27 +268,69 @@ class MachineColdBootTest {
                 locations.add(Enumerate.jar("memo/" + artifact + "/" + version + "/lib-" + version + ".jar", jar));
             }
         }
-        var without = new AtomicInteger();
-        var with = new AtomicInteger();
-        var plain = new InMemoryMachineStore();
-        var memoized = new InMemoryMachineStore();
-        new Stage1(digest, new ContentTree(digest), 25, 8, (d, b, o) -> { without.incrementAndGet(); return ClassFacts.of(d, b, o); }, false).run(plain, locations);
+        var parses = new AtomicInteger();
+        var combined = new InMemoryMachineStore();
         var shuffled = new ArrayList<>(locations);
         Collections.shuffle(shuffled, new Random(11));
-        new Stage1(digest, new ContentTree(digest), 25, 8, (d, b, o) -> { with.incrementAndGet(); return ClassFacts.of(d, b, o); }, true).run(memoized, shuffled);
+        new Stage1(digest, new ContentTree(digest), 25, 8, (d, b, o) -> { parses.incrementAndGet(); return ClassFacts.of(d, b, o); }).run(combined, shuffled);
+        // 200 shared classes plus the 6 distinct Ver classes, per artifact directory; without the memo it would be 12 * 201 = 2412.
+        assertThat(parses.get()).as("distinct class contents per artifact directory").isEqualTo(2 * (shared.size() + 6));
 
-        int perVersion = shared.size() + 1;
-        assertThat(without.get()).as("no memo: every class of every jar").isEqualTo(12 * perVersion);
-        // With the memo: the distinct contents of each artifact directory (200 shared + 6 Ver), parsed once per directory.
-        assertThat(with.get()).as("memo: distinct class contents per artifact directory").isEqualTo(2 * (shared.size() + 6));
-        assertThat(memoized.root()).as("the memo must not change ROOT").isEqualTo(plain.root());
-        assertThat(memoized.snapshot().keySet()).containsExactlyElementsOf(plain.snapshot().keySet());
-        for (var e : plain.snapshot().entrySet()) assertThat(memoized.get(e.getKey())).isEqualTo(e.getValue());
+        // Booting each jar alone cannot hit the memo (a jar has no repeated class), so its records are what the memo must reproduce.
+        var union = new java.util.TreeMap<byte[], byte[]>(java.util.Arrays::compareUnsigned);
+        for (var location : locations) {
+            var alone = new InMemoryMachineStore();
+            boot(digest, 1, List.of(location), alone);
+            for (var e : alone.snapshot().entrySet()) if (e.getKey()[0] == 0x4C || e.getKey()[0] == 0x4E) union.put(e.getKey(), e.getValue());
+        }
+        for (var e : combined.snapshot().entrySet()) {
+            // M's own nodes depend on the whole machine; every leaf and every node under a leaf must be what each jar gave alone.
+            if (e.getKey()[0] == 0x4C) assertThat(union.get(e.getKey())).as("L|k").isEqualTo(e.getValue());
+        }
+        var leafNodes = 0;
+        for (var e : union.entrySet()) if (e.getKey()[0] == 0x4E && combined.get(e.getKey()) != null) { leafNodes++; assertThat(combined.get(e.getKey())).isEqualTo(e.getValue()); }
+        assertThat(leafNodes).isGreaterThan(0);
     }
 
-    @Test void invariant8_nothingIsReadFromTheStoreBeforeTheRootIsWritten() throws Exception {
+    /** A store that records how many entries had been parsed when each node reached it. */
+    private static final class RecordingStore implements MachineStore {
+        final InMemoryMachineStore inner = new InMemoryMachineStore();
+        final AtomicInteger parsed;
+        final List<Integer> arrivals = java.util.Collections.synchronizedList(new ArrayList<>());
+        RecordingStore(AtomicInteger parsed) { this.parsed = parsed; }
+        @Override public void write(dev.jvmd.core.tree.Node node) { arrivals.add(parsed.get()); inner.write(node); }
+        @Override public void flush() { inner.flush(); }
+        @Override public void putLeaf(Identity k, byte[] leaf) { inner.putLeaf(k, leaf); }
+        @Override public void putPath(String location, byte[] value) { inner.putPath(location, value); }
+        @Override public void putRoot(byte[] value) { inner.putRoot(value); }
+        @Override public void sync() { inner.sync(); }
+        @Override public boolean hasRoot() { return inner.hasRoot(); }
+    }
+
+    /**
+     * Invariant 7 as specified: T is written as the stream advances. For a jar with at least 4 * CAP facts, a node of T reaches
+     * the sink before the last class entry has been read. This is the testable form of "job memory is independent of jar size".
+     */
+    @ParameterizedTest @MethodSource("digests") void invariant7_nodesOfTLeaveTheJobWhileEntriesAreStillBeingRead(Digest digest) throws Exception {
+        var big = BootFixtures.jar(dir, "big/big/1/big-1.jar", T1, generated(600, -1));
+        var location = Enumerate.jar("big/big/1/big-1.jar", big);
+        int entries = classCount(big);
+        var parsed = new AtomicInteger();
+        var store = new RecordingStore(parsed);
+        new Stage1(digest, new ContentTree(digest), 25, 1, (d, b, o) -> { parsed.incrementAndGet(); return ClassFacts.of(d, b, o); }).run(store, List.of(location));
+        var k = MachineTree.decodePath(store.inner.get(MachineStore.pathKey("big/big/1/big-1.jar")), 32).k();
+        long facts = MachineLeaf.decode(store.inner.get(MachineStore.leafKey(k)), 32).factCount();
+        assertThat(facts).as("the fixture has at least 4 * CAP facts").isGreaterThanOrEqualTo(4L * ContentTree.CAP);
+        assertThat(parsed.get()).isEqualTo(entries);
+        assertThat(store.arrivals).isNotEmpty();
+        assertThat(store.arrivals.get(0)).as("entries read when the first node arrived").isLessThan(entries);
+        // A chunk closes after at most CAP facts, and every class has at least its type fact, so by CAP classes a node must have left.
+        assertThat(store.arrivals.get(0)).isLessThanOrEqualTo(ContentTree.CAP);
+    }
+
+    @ParameterizedTest @MethodSource("digests") void invariant8_nothingIsReadFromTheStoreBeforeTheRootIsWritten(Digest digest) throws Exception {
         var store = new InMemoryMachineStore();
-        boot(Sha256.INSTANCE, 4, all(), store);
+        boot(digest, 4, all(), store);
         assertThat(store.events()).doesNotContain("read");
         assertThat(store.events()).containsExactly("sync", "putRoot");
     }
@@ -286,8 +352,7 @@ class MachineColdBootTest {
      * Invariant 10. Measured on this fixture (400 generated classes, one class gains a method): the share of T nodes common to
      * the two versions was 0.94 (47 of 50 nodes); the floor below is set under that. A tree this small has few chunks, so the share is lower than it would be for a real library with thousands of members.
      */
-    @Test void invariant10_adjacentVersionsShareMostChunks() throws Exception {
-        var digest = Sha256.INSTANCE;
+    @ParameterizedTest @MethodSource("digests") void invariant10_adjacentVersionsShareMostChunks(Digest digest) throws Exception {
         var one = BootFixtures.jar(dir, "g/gen/1/gen-1.jar", T1, generated(400, -1));
         var two = BootFixtures.jar(dir, "g/gen/2/gen-2.jar", T1, generated(400, 200));
         var first = nodeHashes(digest, one);
@@ -316,21 +381,25 @@ class MachineColdBootTest {
         assertThat(store.kinds().keySet()).containsExactlyInAnyOrder("L", "N", "P", "ROOT");
         var record = MachineTree.decodeRoot(Sha256.INSTANCE, store.root());
         assertThat(record.format()).isEqualTo(Format.of(Sha256.INSTANCE, 25).toString());
-        assertThat(record.format()).isEqualTo("layout=1;digest=SHA-256;jdk=25;parser=1");
+        assertThat(record.format()).isEqualTo("layout=1;digest=SHA-256;jdk=25;parser=2");
     }
 
     @Test void faultsAreRecordedAndNeverFatal() throws Exception {
         var store = new InMemoryMachineStore();
         var result = boot(Sha256.INSTANCE, 4, all(), store);
-        assertThat(result.faults()).contains("p/Corrupt.class", "p/Renamed.class");
+        var corruptName = dir.relativize(corrupt).toString().replace('\\', '/');
+        assertThat(result.faults()).contains(corruptName + ": p/Corrupt.class", corruptName + ": p/Renamed.class");
         assertThat(result.faults()).anyMatch(f -> f.contains("garbage-1.jar"));
-        var leaf = leaves(Sha256.INSTANCE, store).stream().filter(l -> l.faults().contains("p/Corrupt.class")).findFirst().orElseThrow();
-        assertThat(leaf.faults()).containsExactlyInAnyOrder("p/Corrupt.class", "p/Renamed.class");
-        assertThat(leaf.typeCount()).isEqualTo(1);
-        // A jar that cannot be read has a path record and no leaf key.
-        var garbage = store.get(MachineStore.pathKey(dir.relativize(notAJar).toString().replace('\\', '/')));
-        assertThat(garbage).isNotNull();
-        assertThat(garbage[32]).as("opt<id> k is absent").isZero();
+        // Faults are a fact about one file: they are in its P| record, in owner order, and not in L.
+        var corruptPath = MachineTree.decodePath(store.get(MachineStore.pathKey(corruptName)), 32);
+        assertThat(corruptPath.faults()).containsExactly("p/Corrupt.class", "p/Renamed.class");
+        assertThat(corruptPath.k()).isNotNull();
+        assertThat(MachineLeaf.decode(store.get(MachineStore.leafKey(corruptPath.k())), 32).typeCount()).isEqualTo(1);
+        // A location that is not an archive: the zero identity, no leaf key, one fault naming the reason (B.5).
+        var garbage = MachineTree.decodePath(store.get(MachineStore.pathKey(dir.relativize(notAJar).toString().replace('\\', '/'))), 32);
+        assertThat(garbage.bh()).isEqualTo(zero(Sha256.INSTANCE));
+        assertThat(garbage.k()).isNull();
+        assertThat(garbage.faults()).hasSize(1);
     }
 
     @Test void aJarWithNoClassesIsAnEmptyApiLeaf() throws Exception {

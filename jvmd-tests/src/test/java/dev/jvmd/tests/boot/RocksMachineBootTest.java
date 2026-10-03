@@ -9,6 +9,7 @@ import dev.jvmd.boot.cold.stage1.Stage1;
 import dev.jvmd.core.Config;
 import dev.jvmd.core.hash.digests.Sha256;
 import dev.jvmd.core.tree.ContentTree;
+import dev.jvmd.index.layer.machine.ClassFacts;
 import dev.jvmd.index.layer.machine.Format;
 import dev.jvmd.index.layer.machine.MachineStore;
 import dev.jvmd.index.layer.machine.MachineTree;
@@ -44,12 +45,12 @@ class RocksMachineBootTest {
         var digest = Sha256.INSTANCE;
         var repo = repository();
         var memory = new InMemoryMachineStore();
-        var expected = new Stage1(digest, new ContentTree(digest), 25, 4).run(memory, locations(repo));
+        var expected = new Stage1(digest, new ContentTree(digest), 25, 4, ClassFacts::of).run(memory, locations(repo));
 
         var generation = Generation.of(temp.resolve("index"), Format.of(digest, 25));
         assertThat(generation.hasRoot()).isFalse();
         try (var store = generation.create()) {
-            var result = new Stage1(digest, new ContentTree(digest), 25, 4).run(store, locations(repo));
+            var result = new Stage1(digest, new ContentTree(digest), 25, 4, ClassFacts::of).run(store, locations(repo));
             assertThat(result.root()).isEqualTo(expected.root());
             assertThat(store.get(MachineStore.ROOT_KEY)).isEqualTo(memory.root());
             var kinds = new TreeMap<String, Long>();
@@ -67,37 +68,53 @@ class RocksMachineBootTest {
         var generation = Generation.of(temp.resolve("index"), Format.of(digest, 25));
         // A boot that died before its root: nodes on disk, no ROOT. The next cold boot starts from nothing.
         try (var store = generation.create()) {
-            var one = new Stage1(digest, new ContentTree(digest), 25, 2);
+            var one = new Stage1(digest, new ContentTree(digest), 25, 2, ClassFacts::of);
             store.putPath("stale", new byte[] {1});
             store.flush();
         }
         assertThat(generation.hasRoot()).isFalse();
         try (var store = generation.create()) {
             assertThat(store.get(MachineStore.pathKey("stale"))).as("the unfinished generation was replaced").isNull();
-            new Stage1(digest, new ContentTree(digest), 25, 2).run(store, locations(repository()));
+            new Stage1(digest, new ContentTree(digest), 25, 2, ClassFacts::of).run(store, locations(repository()));
         }
         assertThat(generation.hasRoot()).isTrue();
         assertThatThrownBy(generation::create).isInstanceOf(IllegalStateException.class).hasMessageContaining("already committed");
         try (var store = generation.open()) { assertThat(store.hasRoot()).isTrue(); }
     }
 
-    @Test void bootDecisionColdBootsOnceThenRefusesWithOneLineAndChangesNothing() throws Exception {
+    @Test void bootDecisionColdBootsOnceThenSkipsACommittedGenerationWithOneLineAndChangesNothing() throws Exception {
         var repo = repository();
         var config = new Config(Path.of(System.getProperty("java.home")), null, repo, 3, Duration.ofHours(1), 512, false, temp.resolve("state"), temp.resolve("daemon.sock"));
         var index = temp.resolve("machine");
-        var result = BootDecision.machine(index, config);
-        // The two jars, and every module of the running JDK.
-        assertThat(result.locations()).isGreaterThan(2);
-        assertThat(result.leaves()).isGreaterThan(2);
-        assertThat(result.faults()).as("no JDK module and no fixture jar should fault").isEmpty();
-        var generation = Generation.of(index, Format.of(Sha256.INSTANCE, Runtime.version().feature()));
-        assertThat(generation.hasRoot()).isTrue();
-        byte[] root;
-        try (var store = generation.open()) { root = store.get(MachineStore.ROOT_KEY); }
+        var lines = new java.util.ArrayList<String>();
+        var logger = java.util.logging.Logger.getLogger("dev.jvmd.boot");
+        var handler = new java.util.logging.Handler() {
+            @Override public void publish(java.util.logging.LogRecord r) { lines.add(new java.util.logging.SimpleFormatter().formatMessage(r)); }
+            @Override public void flush() { }
+            @Override public void close() { }
+        };
+        logger.addHandler(handler);
+        try {
+            var first = BootDecision.machine(index, config);
+            assertThat(first).isPresent();
+            var result = first.get();
+            // The two jars, and every module of the running JDK.
+            assertThat(result.locations()).isGreaterThan(2);
+            assertThat(result.leaves()).isGreaterThan(2);
+            assertThat(result.faults()).as("no JDK module and no fixture jar should fault").isEmpty();
+            assertThat(lines).anyMatch(l -> l.startsWith("machine cold boot: locations="));
+            var generation = Generation.of(index, Format.of(Sha256.INSTANCE, Runtime.version().feature()));
+            assertThat(generation.hasRoot()).isTrue();
+            byte[] root;
+            try (var store = generation.open()) { root = store.get(MachineStore.ROOT_KEY); }
 
-        assertThatThrownBy(() -> BootDecision.machine(index, config)).isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining(generation.directory().toString()).hasMessageContaining("warm boot is not implemented").hasMessageNotContaining("\n");
-        try (var store = generation.open()) { assertThat(store.get(MachineStore.ROOT_KEY)).as("nothing was deleted or rewritten").isEqualTo(root); }
-        assertThat(Files.list(index).map(p -> p.getFileName().toString()).toList()).containsExactly("layout=1_digest=SHA-256_jdk=" + Runtime.version().feature() + "_parser=1");
+            lines.clear();
+            // A second start does not fail and does not boot again: one line, and the generation is untouched.
+            assertThat(BootDecision.machine(index, config)).isEmpty();
+            assertThat(lines).hasSize(1);
+            assertThat(lines.get(0)).contains(generation.directory().toString()).contains("warm boot not implemented, skipping").doesNotContain("\n");
+            try (var store = generation.open()) { assertThat(store.get(MachineStore.ROOT_KEY)).as("nothing was deleted or rewritten").isEqualTo(root); }
+            assertThat(Files.list(index).map(p -> p.getFileName().toString()).toList()).containsExactly("layout=1_digest=SHA-256_jdk=" + Runtime.version().feature() + "_parser=2");
+        } finally { logger.removeHandler(handler); }
     }
 }

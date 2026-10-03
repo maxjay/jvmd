@@ -31,7 +31,7 @@ public final class Stage1 {
     @FunctionalInterface public interface Parser { ClassFacts parse(Digest digest, byte[] bytes, String expectedOwner) throws ClassFacts.Fault; }
 
     /** What the boot did: the numbers of the one log line (D.4). */
-    public record Result(int locations, int distinctJars, int leaves, long nodes, List<String> faults, long wallMillis, Root root) { }
+    public record Result(int locations, int distinctJars, int leaves, long nodes, long nodesProduced, List<String> faults, long wallMillis, Root root) { }
 
     private final Digest digest;
     private final ContentTree tree;
@@ -112,7 +112,7 @@ public final class Stage1 {
         var allFaults = new ArrayList<>(faults);
         for (var leaf : all) for (var fault : leaf.faults()) allFaults.add(fault);
         allFaults.sort(Enumerate::compareNames);
-        return new Result(locations.size(), seen.distinct(), all.size(), written.count(), List.copyOf(allFaults),
+        return new Result(locations.size(), seen.distinct(), all.size(), written.count(), written.produced(), List.copyOf(allFaults),
                 (System.nanoTime() - started) / 1_000_000, machine);
     }
 }

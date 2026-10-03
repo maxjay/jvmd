@@ -229,6 +229,39 @@ class MachineColdBootTest {
         return dev.jvmd.boot.cold.stage1.Entries.zip(Files.readAllBytes(jar), 25).classes().size();
     }
 
+    /** An internal library published as many versions: every class repeats except one, in two artifact directories. */
+    @Test void theClassMemoSkipsRepeatedClassesWithinAnArtifactDirectoryAndChangesNothingElse() throws Exception {
+        var digest = Sha256.INSTANCE;
+        var shared = BootFixtures.compile(Files.createTempDirectory(dir, "memo-"), generated(200, -1));
+        var locations = new ArrayList<Enumerate.Location>();
+        for (var artifact : List.of("corp/lib", "corp/lib2")) {
+            long offset = artifact.endsWith("2") ? 86_400_000L : 0;
+            for (int version = 1; version <= 6; version++) {
+                var classes = new LinkedHashMap<>(shared);
+                classes.putAll(BootFixtures.compile(Files.createTempDirectory(dir, "memo-"), Map.of("v/Ver.java", "package v; public class Ver { public static final int N = " + version + "; }")));
+                // A different timestamp per jar (and per artifact), so no two jars are byte-identical and Seen cannot hide the repeats.
+                var jar = BootFixtures.pack(dir.resolve("memo/" + artifact + "/" + version + "/lib-" + version + ".jar"), T1 + offset + version * 3_600_000L, classes);
+                locations.add(Enumerate.jar("memo/" + artifact + "/" + version + "/lib-" + version + ".jar", jar));
+            }
+        }
+        var without = new AtomicInteger();
+        var with = new AtomicInteger();
+        var plain = new InMemoryMachineStore();
+        var memoized = new InMemoryMachineStore();
+        new Stage1(digest, new ContentTree(digest), 25, 8, (d, b, o) -> { without.incrementAndGet(); return ClassFacts.of(d, b, o); }, false).run(plain, locations);
+        var shuffled = new ArrayList<>(locations);
+        Collections.shuffle(shuffled, new Random(11));
+        new Stage1(digest, new ContentTree(digest), 25, 8, (d, b, o) -> { with.incrementAndGet(); return ClassFacts.of(d, b, o); }, true).run(memoized, shuffled);
+
+        int perVersion = shared.size() + 1;
+        assertThat(without.get()).as("no memo: every class of every jar").isEqualTo(12 * perVersion);
+        // With the memo: the distinct contents of each artifact directory (200 shared + 6 Ver), parsed once per directory.
+        assertThat(with.get()).as("memo: distinct class contents per artifact directory").isEqualTo(2 * (shared.size() + 6));
+        assertThat(memoized.root()).as("the memo must not change ROOT").isEqualTo(plain.root());
+        assertThat(memoized.snapshot().keySet()).containsExactlyElementsOf(plain.snapshot().keySet());
+        for (var e : plain.snapshot().entrySet()) assertThat(memoized.get(e.getKey())).isEqualTo(e.getValue());
+    }
+
     @Test void invariant8_nothingIsReadFromTheStoreBeforeTheRootIsWritten() throws Exception {
         var store = new InMemoryMachineStore();
         boot(Sha256.INSTANCE, 4, all(), store);

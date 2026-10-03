@@ -38,7 +38,10 @@ public final class BootDecision {
         for (var configured : new Path[] {config.jdkHome(), config.jbrHome()})
             if (configured != null && Files.isRegularFile(configured.resolve("lib/modules")) && homes.stream().noneMatch(h -> sameFile(h, configured))) homes.add(configured);
 
-        var stage1 = new Stage1(digest, new ContentTree(digest), jdkFeature, Runtime.getRuntime().availableProcessors());
+        // The class memo only skips re-parsing repeated class files; the output is identical either way (3.8). On by default, because
+        // an internal library published in hundreds of versions repeats nearly every class. -Djvmd.boot.classMemo=false turns it off.
+        boolean classMemo = Boolean.parseBoolean(System.getProperty("jvmd.boot.classMemo", "true"));
+        var stage1 = new Stage1(digest, new ContentTree(digest), jdkFeature, Runtime.getRuntime().availableProcessors(), classMemo);
         try (var store = generation.create()) {
             var result = stage1.run(store, config.m2Repo(), List.copyOf(homes));
             log(result);

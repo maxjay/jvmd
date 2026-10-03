@@ -31,9 +31,12 @@ final class ArtifactJob {
     private final MachineStore store;
     private final Stage1.Parser parser;
     private final ConcurrentLinkedQueue<String> locationFaults;
+    /** Null when the class memo is off. */
+    private final ClassMemo memo;
 
     ArtifactJob(Digest digest, ContentTree tree, int jdkFeature, Seen seen, Leaves leaves, Written written, MachineStore store,
-                Stage1.Parser parser, ConcurrentLinkedQueue<String> locationFaults) {
+                Stage1.Parser parser, ConcurrentLinkedQueue<String> locationFaults, ClassMemo memo) {
+        this.memo = memo;
         this.digest = digest;
         this.tree = tree;
         this.jdkFeature = jdkFeature;
@@ -46,6 +49,19 @@ final class ArtifactJob {
     }
 
     void run(Enumerate.Location location) {
+        try { work(location); } finally { if (memo != null) memo.release(location); }
+    }
+
+    /** Φ of one class entry, through the memo when it is on. A memo hit is re-checked against the owner the entry name promises. */
+    private ClassFacts facts(ClassMemo.Scope scope, byte[] classBytes, String owner) throws ClassFacts.Fault {
+        if (scope == null) return parser.parse(digest, classBytes, owner);
+        var known = scope.getOrParse(digest.hash(classBytes), () -> parser.parse(digest, classBytes, owner));
+        if (known.ownerKey().equals(owner)) return known;
+        // Same bytes, but this entry's name promises another owner: parse for real so the mismatch is the fault it must be.
+        return parser.parse(digest, classBytes, owner);
+    }
+
+    private void work(Enumerate.Location location) {
         byte[] bytes = null;
         Identity bh;
         if (location.isModule()) {
@@ -86,10 +102,11 @@ final class ArtifactJob {
         String owner = null;
         var ownerSum = sums.zero();
         var total = sums.zero();
+        var scope = memo == null ? null : memo.open(location);
         for (var item : classes) {
             ClassFacts facts;
             try {
-                facts = parser.parse(digest, entries.read(item), item.owner());
+                facts = facts(scope, entries.read(item), item.owner());
             } catch (ClassFacts.Fault | IOException fault) {
                 faults.add(item.path());
                 continue;

@@ -39,14 +39,23 @@ public final class Stage1 {
     private final int workers;
     private final Parser parser;
 
-    public Stage1(Digest digest, ContentTree tree, int jdkFeature, int workers) { this(digest, tree, jdkFeature, workers, ClassFacts::of); }
+    private final boolean classMemo;
 
-    public Stage1(Digest digest, ContentTree tree, int jdkFeature, int workers, Parser parser) {
+    /** Class memo off: the plain design. */
+    public Stage1(Digest digest, ContentTree tree, int jdkFeature, int workers) { this(digest, tree, jdkFeature, workers, ClassFacts::of, false); }
+
+    /** @param classMemo skip re-parsing class files that repeat byte for byte within an artifact directory (3.8); output is identical either way */
+    public Stage1(Digest digest, ContentTree tree, int jdkFeature, int workers, boolean classMemo) { this(digest, tree, jdkFeature, workers, ClassFacts::of, classMemo); }
+
+    public Stage1(Digest digest, ContentTree tree, int jdkFeature, int workers, Parser parser) { this(digest, tree, jdkFeature, workers, parser, false); }
+
+    public Stage1(Digest digest, ContentTree tree, int jdkFeature, int workers, Parser parser, boolean classMemo) {
         this.digest = digest;
         this.tree = tree;
         this.jdkFeature = jdkFeature;
         this.workers = workers;
         this.parser = parser;
+        this.classMemo = classMemo;
     }
 
     /** Enumerates the repository and then the JDK homes, and boots into {@code store}. */
@@ -68,7 +77,7 @@ public final class Stage1 {
         var leaves = new Leaves();
         var written = new Written();
         var faults = new ConcurrentLinkedQueue<String>();
-        var job = new ArtifactJob(digest, tree, jdkFeature, seen, leaves, written, store, parser, faults);
+        var job = new ArtifactJob(digest, tree, jdkFeature, seen, leaves, written, store, parser, faults, classMemo ? new ClassMemo(locations) : null);
 
         // Step 2: P workers, jobs started in enumeration order (a FIFO queue). A failure anywhere aborts the boot: no ROOT.
         ExecutorService pool = Executors.newFixedThreadPool(workers, Thread.ofPlatform().name("jvmd-stage1-", 0).daemon(true).factory());

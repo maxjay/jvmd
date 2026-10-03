@@ -103,8 +103,8 @@ class KeyedTreeTest {
     @Test void commitStagesBoundedBatchesThenSyncsThenWritesTheRoot()throws Exception{
         var events=new ArrayList<String>();var staged=new ArrayList<Integer>();var stagedBytes=new ArrayList<Integer>();
         var commit=new Commit(new Commit.Store(){
-            @Override public void stage(List<Map.Entry<byte[],byte[]>> batch){
-                events.add("stage");staged.add(batch.size());stagedBytes.add(batch.stream().mapToInt(record->record.getKey().length+record.getValue().length).sum());
+            @Override public void stage(List<Commit.Write> batch){
+                events.add("stage");staged.add(batch.size());stagedBytes.add(batch.stream().mapToInt(record->record.key().length+record.value().length).sum());
             }
             @Override public void sync(){events.add("sync");}
             @Override public void root(byte[] root){events.add("root");}

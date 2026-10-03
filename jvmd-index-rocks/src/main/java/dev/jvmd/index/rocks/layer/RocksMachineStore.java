@@ -15,8 +15,9 @@ import org.rocksdb.*;
 /**
  * MACHINE storage: leaves ({@code L|cacheKey}), tree nodes ({@code N|hash}), the path table
  * ({@code P|location}) and the root ({@code ROOT}). A commit stages leaves, nodes and paths in
- * bounded batches, syncs once, then writes the root. A node already written by this store is not
- * written again, so a recommit writes only the nodes on changed paths.
+ * bounded batches, syncs once, then writes the root. A recommit is the difference from the committed
+ * tree: it writes the leaves and paths that changed, deletes the ones that went, and writes only the
+ * nodes that are not stored, so its writes grow with the change and not with the layer.
  */
 public final class RocksMachineStore implements AutoCloseable {
     static {RocksDB.loadLibrary();}
@@ -26,6 +27,7 @@ public final class RocksMachineStore implements AutoCloseable {
     private final RocksDB db;
     private final Options options;
     private final Set<Hash256> written=new HashSet<>();
+    private volatile Map<String,Long> lastCommit=Map.of();
 
     /** Opens the store; {@code options} decide whether a missing database is created. */
     public RocksMachineStore(Path directory,Options options)throws RocksDBException{
@@ -46,23 +48,44 @@ public final class RocksMachineStore implements AutoCloseable {
         catch(RocksDBException unreadable){throw new IOException(unreadable);}
     }
 
-    /** Commit a tree: its leaves, every node not yet written, its path table, then its root. */
-    public synchronized void commit(MachineTree tree)throws Exception{
+    /**
+     * Commit {@code tree} over {@code previous}, the tree whose root is committed in this store
+     * ({@link MachineTree#EMPTY} before the first commit): the changed leaves, the nodes not stored,
+     * the changed paths, then the root.
+     */
+    public synchronized void commit(MachineTree previous,MachineTree tree)throws Exception{
         var newlyWritten=new ArrayList<Hash256>();
         try(var sync=new WriteOptions().setSync(true);var staged=new WriteOptions()){
             var commit=new Commit(new Commit.Store(){
-                @Override public void stage(List<Map.Entry<byte[],byte[]>> batch)throws Exception{
-                    try(var write=new WriteBatch()){for(var record:batch)write.put(record.getKey(),record.getValue());db.write(staged,write);}
+                @Override public void stage(List<Commit.Write> batch)throws Exception{
+                    try(var write=new WriteBatch()){
+                        for(var record:batch)if(record.delete())write.delete(record.key());else write.put(record.key(),record.value());
+                        db.write(staged,write);
+                    }
                 }
                 @Override public void sync()throws Exception{db.flushWal(true);}
                 @Override public void root(byte[] root)throws Exception{db.put(sync,ROOT,root);}
             },BATCH_BYTES);
-            for(var leaf:tree.leaves())commit.put(bytes("L|"+leaf.cacheKey()),leaf.encode());
-            tree.tree().writeNodes((hash,node)->{commit.put(bytes("N|"+hash.hex()),node);newlyWritten.add(hash);},written::contains);
-            for(var path:tree.paths().entrySet())commit.put(bytes("P|"+path.getKey()),bytes(path.getValue()));
+            long leaves=0,paths=0,deleted=0;
+            for(var leaf:tree.leaves())if(!leaf.equals(previous.leaf(leaf.cacheKey()))){commit.put(bytes("L|"+leaf.cacheKey()),leaf.encode());leaves++;}
+            for(var leaf:previous.leaves())if(tree.leaf(leaf.cacheKey())==null){commit.delete(bytes("L|"+leaf.cacheKey()));deleted++;}
+            // Every node of a committed tree is stored, so a subtree whose root is stored is skipped whole.
+            boolean committed=!previous.tree().isEmpty();
+            tree.tree().writeNodes((hash,node)->{commit.put(bytes("N|"+hash.hex()),node);newlyWritten.add(hash);},
+                    hash->written.contains(hash)||committed&&stored(hash));
+            for(var path:tree.paths().entrySet())if(!path.getValue().equals(previous.paths().get(path.getKey()))){commit.put(bytes("P|"+path.getKey()),bytes(path.getValue()));paths++;}
+            for(var path:previous.paths().keySet())if(!tree.paths().containsKey(path)){commit.delete(bytes("P|"+path));deleted++;}
             commit.root(tree.root());
             written.addAll(newlyWritten);
+            lastCommit=Map.of("leaves",leaves,"nodes",(long)newlyWritten.size(),"paths",paths,"deleted",deleted);
         }
+    }
+
+    /** What the last commit wrote: leaves, nodes and paths put, and leaves and paths deleted. */
+    public Map<String,Long> lastCommit(){return lastCommit;}
+
+    private boolean stored(Hash256 hash){
+        try{return db.get(bytes("N|"+hash.hex()))!=null;}catch(RocksDBException e){throw new IllegalStateException(e);}
     }
 
     /** The committed artifact tree, read from its stored nodes. */

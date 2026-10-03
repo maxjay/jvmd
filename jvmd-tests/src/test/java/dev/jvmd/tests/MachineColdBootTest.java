@@ -73,6 +73,30 @@ class MachineColdBootTest {
         }
     }
 
+    @Test void aRecommitWritesOnlyWhatChangedAndDeletesWhatWent()throws Exception{
+        Path repository=repository(),generation=temp.resolve("recommit");
+        String copy=repository.resolve("fixture/copy/1/copy-1.jar").toString();MachineTree next;
+        try(var storage=new MachineColdBoot(generation,repository,BUDGET).run()){
+            var first=storage.machineStore().lastCommit();
+            assertThat(first.get("leaves")).isEqualTo(storage.machine().tree().size());
+            assertThat(first.get("deleted")).isZero();
+            // The shared content loses its second location: one leaf changes and one path goes.
+            var previous=storage.machine().tree();var shared=previous.leafAt(copy);
+            var leaves=new ArrayList<>(previous.leaves());leaves.remove(shared);
+            leaves.add(shared.withPaths(shared.paths().stream().filter(path->!path.location().equals(copy)).toList()));
+            next=MachineTree.build(leaves);
+            storage.commitMachine(next);
+            var recommit=storage.machineStore().lastCommit();
+            assertThat(recommit).containsEntry("leaves",1L).containsEntry("paths",0L).containsEntry("deleted",1L);
+            assertThat(recommit.get("nodes")).isPositive().isLessThan(first.get("nodes"));
+        }
+        try(var storage=RocksIndexStorage.open(generation,BUDGET)){
+            assertThat(storage.machine().root().orElseThrow().identity()).isEqualTo(next.root().identity());
+            assertThat(storage.machineStore().committedTree().root().identity()).isEqualTo(next.root().identity());
+            assertThat(storage.machine().leafAt(copy)).isNull();
+        }
+    }
+
     @Test void documentationIdentityFollowsDocCommentsNotPositions()throws Exception{
         Path base=temp.resolve("base");Path jar=IndexFixtures.jar(base.resolve("fixture/sample/1"),"sample-1",IndexFixtures.generic(),false);
         // The same binary, paired with sources whose declarations moved, or whose doc comment changed.

@@ -129,7 +129,7 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
             inventory.observe(scan,Path.of(path.location()),path.gav(),"jar",leaf.cacheKey(),leaf.binarySha256(),
                     new RocksArtifactInventory.Stamp(path.stamp().size(),path.stamp().modifiedNanos(),path.stamp().modifiedNanos(),path.stamp().fileKey()));
         }
-        machineStore.commit(tree);
+        machineStore.commit(previous,tree);
         machine.committed(tree);
     }
 

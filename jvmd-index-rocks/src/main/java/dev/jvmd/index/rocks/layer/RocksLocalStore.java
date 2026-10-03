@@ -72,8 +72,11 @@ public final class RocksLocalStore implements AutoCloseable {
     public synchronized Root commit(LocalTree tree)throws Exception{
         try(var sync=new WriteOptions().setSync(true);var staged=new WriteOptions()){
             var commit=new Commit(new Commit.Store(){
-                @Override public void stage(List<Map.Entry<byte[],byte[]>> batch)throws Exception{
-                    try(var write=new WriteBatch()){for(var record:batch)write.put(record.getKey(),record.getValue());db.write(staged,write);}
+                @Override public void stage(List<Commit.Write> batch)throws Exception{
+                    try(var write=new WriteBatch()){
+                        for(var record:batch)if(record.delete())write.delete(record.key());else write.put(record.key(),record.value());
+                        db.write(staged,write);
+                    }
                 }
                 @Override public void sync()throws Exception{db.flushWal(true);}
                 @Override public void root(byte[] root)throws Exception{db.put(sync,ROOT,root);}

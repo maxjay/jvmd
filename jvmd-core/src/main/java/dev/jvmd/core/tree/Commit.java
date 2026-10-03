@@ -9,10 +9,17 @@ import java.util.*;
  * the size of the layer. A failure before {@link #root} leaves no root.
  */
 public final class Commit {
+    /** One record write: {@code value} is null when the record is deleted. */
+    public record Write(byte[] key,byte[] value) {
+        public Write { Objects.requireNonNull(key); }
+        public boolean delete(){return value==null;}
+        long bytes(){return key.length+(value==null?0:value.length);}
+    }
+
     /** The storage a commit writes to. */
     public interface Store {
         /** Write one batch of records. It need not be durable until {@link #sync}. */
-        void stage(List<Map.Entry<byte[],byte[]>> batch)throws Exception;
+        void stage(List<Write> batch)throws Exception;
         /** Make every staged batch durable. */
         void sync()throws Exception;
         /** Durably write the root, after which the layer is committed. */
@@ -21,7 +28,7 @@ public final class Commit {
 
     private final Store store;
     private final long batchBytes;
-    private final List<Map.Entry<byte[],byte[]>> pending=new ArrayList<>();
+    private final List<Write> pending=new ArrayList<>();
     private long pendingBytes;
     private boolean finished;
 
@@ -30,9 +37,14 @@ public final class Commit {
         this.store=Objects.requireNonNull(store);this.batchBytes=batchBytes;
     }
 
-    public void put(byte[] key,byte[] value)throws Exception{
+    public void put(byte[] key,byte[] value)throws Exception{write(new Write(key,Objects.requireNonNull(value)));}
+
+    /** Delete a record the root being committed no longer covers. */
+    public void delete(byte[] key)throws Exception{write(new Write(key,null));}
+
+    private void write(Write write)throws Exception{
         if(finished)throw new IllegalStateException("Commit is finished");
-        pending.add(Map.entry(key,value));pendingBytes+=key.length+value.length;
+        pending.add(write);pendingBytes+=write.bytes();
         if(pendingBytes>=batchBytes)stage();
     }
 

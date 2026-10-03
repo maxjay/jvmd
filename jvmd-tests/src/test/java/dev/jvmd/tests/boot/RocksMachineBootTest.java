@@ -114,7 +114,7 @@ class RocksMachineBootTest {
             assertThat(lines).hasSize(1);
             assertThat(lines.get(0)).contains(generation.directory().toString()).contains("warm boot not implemented, skipping").doesNotContain("\n");
             try (var store = generation.open()) { assertThat(store.get(MachineStore.ROOT_KEY)).as("nothing was deleted or rewritten").isEqualTo(root); }
-            assertThat(Files.list(index).map(p -> p.getFileName().toString()).toList()).containsExactly("layout=1_digest=SHA-256_jdk=" + Runtime.version().feature() + "_parser=2");
+            assertThat(Files.list(index).map(p -> p.getFileName().toString()).toList()).containsExactly("layout=2_digest=SHA-256_jdk=" + Runtime.version().feature() + "_parser=2");
         } finally { logger.removeHandler(handler); }
     }
 }

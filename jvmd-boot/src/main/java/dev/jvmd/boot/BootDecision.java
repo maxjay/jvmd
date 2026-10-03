@@ -55,7 +55,7 @@ public final class BootDecision {
         var prefix = new StringBuilder();
         for (byte b : r.root().hash().view()) { if (prefix.length() >= 16) break; prefix.append(String.format("%02x", b)); }
         LOG.log(System.Logger.Level.INFO, "machine cold boot: locations={0} distinct_jars={1} leaves={2} nodes={3} faults={4} wall_ms={5} root={6}",
-                String.valueOf(r.locations()), String.valueOf(r.distinctJars()), String.valueOf(r.leaves()), String.valueOf(r.nodes()), String.valueOf(r.faults().size()), String.valueOf(r.wallMillis()), prefix);
+                r.locations(), r.distinctJars(), r.leaves(), r.nodes(), r.faults().size(), r.wallMillis(), prefix);
         if (!r.faults().isEmpty()) LOG.log(System.Logger.Level.WARNING, "machine cold boot faults: {0}", String.join("; ", r.faults()));
     }
 }

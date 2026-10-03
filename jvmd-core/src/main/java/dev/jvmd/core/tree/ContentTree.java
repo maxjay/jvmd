@@ -1,0 +1,109 @@
+package dev.jvmd.core.tree;
+
+import dev.jvmd.core.hash.Digest;
+import dev.jvmd.core.hash.Identity;
+import dev.jvmd.core.hash.Sum;
+import java.util.Arrays;
+import java.util.List;
+import java.util.function.Function;
+
+/**
+ * The one tree type of every layer (stage 1, 2.3): entries sorted by key, cut into content-defined chunks, with a hash and a sum
+ * at every node. The shape is a function of the entry set alone, so equal sets give equal roots in any build order; changing d
+ * entries rewrites O(d * depth) nodes; the identity of any key range is a sum of O(depth) node sums.
+ */
+public final class ContentTree {
+    /** Boundary modulus: a chunk ends after a key whose Hash64 is 0 mod B. Chosen in the design (2.3); re-measured per rule 7. */
+    public static final int B = 32;
+    /** Hard cap on a chunk: 4 * B, so a run of keys with no boundary cannot make an unbounded node (2.3). */
+    public static final int CAP = 128;
+
+    private final Digest digest;
+    private final Sum sums;
+    private final int b;
+    private final int cap;
+
+    public ContentTree(Digest digest) { this(digest, B, CAP); }
+
+    public ContentTree(Digest digest, int b, int cap) {
+        if (Integer.bitCount(b) != 1) throw new IllegalArgumentException("B must be a power of two");
+        if (cap < 2) throw new IllegalArgumentException("CAP must be at least 2");
+        this.digest = digest;
+        this.sums = Sum.forWidth(digest.width());
+        this.b = b;
+        this.cap = cap;
+    }
+
+    public Digest digest() { return digest; }
+    public Sum sums() { return sums; }
+
+    /** A streaming builder over this tree's shape; add entries in key order, then call {@link Chunker#finish()}. */
+    public Chunker chunker(NodeSink sink) { return new Chunker(digest, b, cap, sink, 0); }
+
+    /** Builds a tree from entries already sorted by key. */
+    public Root build(Iterable<Entry> sorted, NodeSink sink) {
+        var chunker = chunker(sink);
+        for (var entry : sorted) chunker.add(entry);
+        return chunker.finish();
+    }
+
+    /**
+     * The sum of {@code h} over entries with {@code from <= key < to} (null bounds are open), reading O(depth) nodes: a child
+     * wholly inside the range contributes its stored sum without being read.
+     */
+    public Identity rangeSum(Root root, Function<Identity, byte[]> reader, byte[] from, byte[] to) {
+        return range(root.hash(), reader, from, to, null, sums.zero());
+    }
+
+    private Identity range(Identity hash, Function<Identity, byte[]> reader, byte[] from, byte[] to, byte[] nodeEnd, Identity acc) {
+        var bytes = reader.apply(hash);
+        int width = digest.width();
+        if (Node.level(bytes) == 0) {
+            for (var e : Node.entries(bytes, width)) {
+                if (from != null && Arrays.compareUnsigned(e.key(), from) < 0) continue;
+                if (to != null && Arrays.compareUnsigned(e.key(), to) >= 0) continue;
+                acc = sums.add(acc, e.h());
+            }
+            return acc;
+        }
+        var children = Node.children(bytes, width);
+        for (int i = 0; i < children.size(); i++) {
+            var child = children.get(i);
+            byte[] end = i + 1 < children.size() ? children.get(i + 1).first() : nodeEnd;
+            boolean entirelyBefore = from != null && end != null && Arrays.compareUnsigned(end, from) <= 0;
+            boolean entirelyAfter = to != null && Arrays.compareUnsigned(child.first(), to) >= 0;
+            if (entirelyBefore || entirelyAfter) continue;
+            // The child covers [child.first, end); end == null means unbounded above.
+            boolean inside = (from == null || Arrays.compareUnsigned(child.first(), from) >= 0)
+                    && (to == null || (end != null && Arrays.compareUnsigned(end, to) <= 0));
+            if (inside) { acc = sums.add(acc, child.sum()); continue; }
+            acc = range(child.hash(), reader, from, to, end, acc);
+        }
+        return acc;
+    }
+
+    /** Recomputes every hash, sum and count under the root from the stored bytes; throws if any disagrees. */
+    public void verify(Root root, Function<Identity, byte[]> reader) {
+        var node = check(root.hash(), reader);
+        if (!node.sum().equals(root.sum()) || node.count() != root.count() || node.level() != root.level())
+            throw new IllegalStateException("Root does not match its node");
+    }
+
+    private Node check(Identity hash, Function<Identity, byte[]> reader) {
+        var bytes = reader.apply(hash);
+        if (!digest.hash(bytes).equals(hash)) throw new IllegalStateException("Node bytes do not match their hash");
+        int width = digest.width();
+        int level = Node.level(bytes);
+        if (level == 0) {
+            List<Entry> entries = Node.entries(bytes, width);
+            return Node.leaf(digest, sums, entries);
+        }
+        var children = Node.children(bytes, width);
+        for (var child : children) {
+            var below = check(child.hash(), reader);
+            if (!below.sum().equals(child.sum()) || below.count() != child.count() || below.level() != level - 1)
+                throw new IllegalStateException("Child summary does not match its node");
+        }
+        return Node.interior(digest, sums, level, children);
+    }
+}

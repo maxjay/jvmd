@@ -21,7 +21,7 @@ class RocksMemoryTest {
 
     @Test void readsSucceedWhilePinnedBlocksExceedTheBudgetAndTheCacheShrinksBack()throws Exception{
         long budget=8L*1024*1024;
-        try(var memory=new RocksMemory(budget);var options=memory.options(64);var db=RocksDB.open(options,root.toString())){
+        try(var memory=new RocksMemory(budget);var options=memory.options(64).setCreateIfMissing(true);var db=RocksDB.open(options,root.toString())){
             var value=new byte[1024];
             for(int i=0;i<32_000;i++)db.put(key(i),value);
             try(var flush=new FlushOptions().setWaitForFlush(true)){db.flush(flush);}
@@ -44,7 +44,7 @@ class RocksMemoryTest {
     @Test void aWriteDoesNotStallOnMemtablesHeldByOtherIdleDatabases()throws Exception{
         long budget=8L*1024*1024;var memory=new RocksMemory(budget);
         var databases=new ArrayList<RocksDB>();var options=new ArrayList<Options>();
-        for(int d=0;d<8;d++){var o=memory.options(64);options.add(o);databases.add(RocksDB.open(o,root.resolve("db"+d).toString()));}
+        for(int d=0;d<8;d++){var o=memory.options(64).setCreateIfMissing(true);options.add(o);databases.add(RocksDB.open(o,root.resolve("db"+d).toString()));}
         var value=new byte[1024];
         // Seven databases each take ~700 KiB of memtable, below their own 1 MiB write buffer (so none
         // flushes itself) but together far over the shared 2 MiB write-buffer budget, and then idle.

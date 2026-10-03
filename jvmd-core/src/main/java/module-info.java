@@ -5,5 +5,8 @@ module dev.jvmd.core {
     requires jdk.jfr;
     requires jdk.management;
     exports dev.jvmd.core;
+    exports dev.jvmd.core.hash;
+    exports dev.jvmd.core.hash.digests;
+    exports dev.jvmd.core.tree;
     opens dev.jvmd.core to com.fasterxml.jackson.databind;
 }

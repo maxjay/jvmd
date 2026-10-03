@@ -3,6 +3,7 @@ module dev.jvmd.dist {
     requires dev.jvmd.core;
     requires dev.jvmd.index;
     requires dev.jvmd.index.rocks;
+    requires dev.jvmd.boot;
     requires dev.jvmd.analyzer;
     requires dev.jvmd.resolver;
     requires dev.jvmd.runtime;

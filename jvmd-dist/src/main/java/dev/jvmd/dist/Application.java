@@ -1267,6 +1267,8 @@ public final class Application implements AutoCloseable {
         server.start();
         try {
             app.awaitReady();
+            // Stage 1 of the layered index: the MACHINE cold boot, before READY. A failure here is a start failure.
+            dev.jvmd.boot.BootDecision.machine(config.stateDir().resolve("machine"), config);
             server.ready();
             System.out.println("READY " + config.socket());
             server.await();

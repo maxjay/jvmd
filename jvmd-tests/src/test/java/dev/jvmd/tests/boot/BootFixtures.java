@@ -58,8 +58,13 @@ final class BootFixtures {
     }
 
     static Path jar(Path dir, String name, long timeMillis, Map<String, String> sources, String... options) throws IOException {
-        var work = Files.createTempDirectory(dir, "build-");
-        return pack(dir.resolve(name), timeMillis, compile(work, sources, options));
+        // Build outside the target directory: it may be a repository that is about to be enumerated.
+        var work = Files.createTempDirectory("fixture-build-");
+        try {
+            return pack(dir.resolve(name), timeMillis, compile(work, sources, options));
+        } finally {
+            try (var walk = Files.walk(work)) { for (var p : walk.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(p); }
+        }
     }
 
     static byte[] text(String s) { return s.getBytes(StandardCharsets.UTF_8); }

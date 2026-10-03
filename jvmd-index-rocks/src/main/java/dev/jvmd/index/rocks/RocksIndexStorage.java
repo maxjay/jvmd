@@ -53,8 +53,8 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
 
     /**
      * Open a generation whose MACHINE root is committed. TEMPORARY(warm-boot): the existing warm path
-     * reopens the generation's A| records and inventory; the warm boot task replaces this with
-     * restoring the committed MACHINE tree.
+     * reopens the A| records it wrote itself and is served the committed MACHINE leaves as numbered
+     * artifacts; the warm boot task replaces this with restoring the committed MACHINE tree.
      */
     public static RocksIndexStorage open(Path generation,long maxEstimatedBytes)throws Exception{
         rejectRetiredSettings();
@@ -64,7 +64,9 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
             // cold boot can route to its leaves; it is read when first needed, so the existing warm
             // path opens as before. The warm boot task restores and updates it.
             var root=storage.machineStore.committedRoot().orElseThrow(()->new IllegalStateException("No committed MACHINE root: "+generation));
-            storage.machine.committed(root,storage.machineStore::committedTree);
+            var leaves=storage.machineStore.leaves();
+            storage.store.restoreMachine(leaves);
+            storage.machine.committed(root,()->MachineTree.build(leaves));
             return storage;
         }catch(Exception|Error failure){
             try{storage.close();}catch(Exception close){failure.addSuppressed(close);}
@@ -111,25 +113,14 @@ public final class RocksIndexStorage implements IndexStorage,ArtifactInventory {
     @Override public ArtifactAdmission admission(){return admission;}
 
     /**
-     * Commit a MACHINE tree built by a cold boot: write what the existing warm path reads, then the
-     * MACHINE leaves, nodes and path table, then the root, then serve it.
+     * Commit a MACHINE tree: its changed leaves, nodes and paths, then its root, then serve it. The
+     * committed leaves and path table are all that is written; the existing warm path is served
+     * them in memory (TEMPORARY(warm-boot)).
      */
     public synchronized void commitMachine(MachineTree tree)throws Exception{
         var previous=machine.tree();
-        // TEMPORARY(warm-boot): the MACHINE leaves and path table replace the A| records and the
-        // inventory P| entries, which only the existing warm path reads.
-        store.installMachine(previous,tree);
-        // Paths whose leaf changed are observed in the current scan generation, so a repository scan
-        // of a reopened generation that is running keeps them.
-        long scan=inventory.currentScan();
-        for(var location:tree.paths().entrySet()){
-            var leaf=tree.leaf(location.getValue());
-            if(leaf.equals(previous.leafAt(location.getKey())))continue;
-            var path=leaf.paths().stream().filter(candidate->candidate.location().equals(location.getKey())).findFirst().orElseThrow();
-            inventory.observe(scan,Path.of(path.location()),path.gav(),"jar",leaf.cacheKey(),leaf.binarySha256(),
-                    new RocksArtifactInventory.Stamp(path.stamp().size(),path.stamp().modifiedNanos(),path.stamp().modifiedNanos(),path.stamp().fileKey()));
-        }
         machineStore.commit(previous,tree);
+        store.installMachine(previous,tree);
         machine.committed(tree);
     }
 

@@ -77,6 +77,27 @@ class MachineColdBootTest {
         }
     }
 
+    @Test void aColdBootWritesOnlyMachineAndAReopenServesTheSameArtifacts()throws Exception{
+        Path repository=repository(),generation=temp.resolve("served");Map<String,Long> counts;
+        try(var storage=new MachineColdBoot(generation,repository,BUDGET).run()){
+            counts=storage.store().counts();
+            assertThat(counts.get("artifacts")).as("two binaries at three paths, two of them with sources").isEqualTo(5L);
+        }
+        // M1: the MACHINE leaves and path table are the only record of what was built.
+        org.rocksdb.RocksDB.loadLibrary();
+        for(String database:List.of("store","inventory"))
+            try(var options=new org.rocksdb.Options();var db=org.rocksdb.RocksDB.openReadOnly(options,generation.resolve(database).toString());var iterator=db.newIterator()){
+                var keys=new ArrayList<String>();
+                for(iterator.seekToFirst();iterator.isValid();iterator.next())keys.add(new String(iterator.key(),StandardCharsets.UTF_8));
+                assertThat(keys).as(database).isEmpty();
+            }
+        try(var storage=RocksIndexStorage.open(generation,BUDGET)){
+            assertThat(storage.store().counts()).isEqualTo(counts);
+            assertThat(storage.store().artifact(repository.resolve("fixture/copy/1/copy-1.jar"))).isNotNull();
+            assertThat(storage.store().find("transform",null,false,10,0,Set.of())).isNotEmpty();
+        }
+    }
+
     @Test void aRecommitWritesOnlyWhatChangedAndDeletesWhatWent()throws Exception{
         Path repository=repository(),generation=temp.resolve("recommit");
         String copy=repository.resolve("fixture/copy/1/copy-1.jar").toString();MachineTree next;

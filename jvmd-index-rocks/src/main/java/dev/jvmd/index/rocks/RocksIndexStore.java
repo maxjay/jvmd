@@ -2,6 +2,7 @@ package dev.jvmd.index.rocks;
 
 import dev.jvmd.core.*;
 import dev.jvmd.index.*;
+import dev.jvmd.index.layer.machine.MachineLeaf;
 import dev.jvmd.index.layer.machine.MachineTree;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -102,33 +103,62 @@ public final class RocksIndexStore implements IndexStore {
     }
     /**
      * Serve a committed MACHINE tree: every path whose leaf is new or changed becomes a numbered
-     * artifact, and the observations over those artifacts are refreshed.
+     * artifact, and the observations over those artifacts are refreshed. Nothing is written: the
+     * MACHINE leaves and path table are these artifacts' durable form, and {@link #restoreMachine}
+     * serves them again when the generation is reopened. TEMPORARY(warm-boot): the existing warm
+     * path's queries read these numbered artifacts.
      */
     synchronized void installMachine(MachineTree previous,MachineTree current)throws Exception{
         var changed=new ArrayList<StoredArtifact>();var values=new ArrayList<StoredArtifact>();
         for(var entry:current.paths().entrySet()){
             String location=entry.getKey();var leaf=current.leaf(entry.getValue());
             if(leaf.equals(previous.leafAt(location)))continue;
-            var path=leaf.paths().stream().filter(candidate->candidate.location().equals(location)).findFirst().orElseThrow();
-            Long existing=paths.get(location);long id=existing==null?nextArtifact++:existing;
-            var prior=existing==null?null:artifacts.get(id);
-            var input=new ArtifactInput(new ArtifactContext(path.gav(),"jar",location),leaf.key(),path.stamp().size(),path.stamp().modifiedNanos());
-            values.add(new StoredArtifact(id,input,leaf.docsKey(),prior!=null&&prior.input().key().equals(leaf.key())?prior.codeKey():null,
-                    leaf.resolution().hex(),leaf.symbols(),leaf.relationships(),true,0,leaf.types(),path.sources()));
+            Long existing=paths.get(location);var prior=existing==null?null:artifacts.get(existing);
             if(prior!=null)changed.add(prior);
-            if(leaf.mode().equals("signatures")&&path.sources()!=null&&leaf.sourcesSha256()!=null){
-                Long sourcesExisting=paths.get(path.sources());long sourcesId=sourcesExisting==null?nextArtifact++:sourcesExisting;
+            values.addAll(machineArtifacts(location,leaf,prior,true));
+        }
+        for(var value:values){artifacts.put(value.id(),value);paths.put(value.input().context().path(),value.id());}
+        changed.addAll(values);
+        if(!changed.isEmpty())refreshSemanticObservations(changed,null);
+    }
+
+    /**
+     * Serve the committed MACHINE leaves of a reopened generation, in location order. A location with
+     * its own A| record, written by the existing warm path after it re-indexed that location, keeps
+     * that record. Nothing is written, and nothing is observed yet that could need a refresh.
+     */
+    synchronized void restoreMachine(Collection<MachineLeaf> leaves)throws Exception{
+        var located=new TreeMap<String,MachineLeaf>();
+        for(var leaf:leaves)for(var path:leaf.paths())located.put(path.location(),leaf);
+        for(var entry:located.entrySet()){
+            if(paths.containsKey(entry.getKey()))continue;
+            for(var value:machineArtifacts(entry.getKey(),entry.getValue(),null,false)){artifacts.put(value.id(),value);paths.put(value.input().context().path(),value.id());}
+        }
+    }
+
+    /**
+     * The numbered artifacts one MACHINE location serves: its binary and, when its leaf was documented
+     * from this location's paired sources, those sources. Ids are reused for locations already
+     * numbered; new ids are never persisted ones, because the persisted next id is at least every
+     * persisted id plus one.
+     */
+    private List<StoredArtifact> machineArtifacts(String location,MachineLeaf leaf,StoredArtifact prior,boolean replaceSources){
+        var path=leaf.paths().stream().filter(candidate->candidate.location().equals(location)).findFirst().orElseThrow();
+        long id=prior==null?nextArtifact++:prior.id();
+        var input=new ArtifactInput(new ArtifactContext(path.gav(),"jar",location),leaf.key(),path.stamp().size(),path.stamp().modifiedNanos());
+        var result=new ArrayList<StoredArtifact>(2);
+        result.add(new StoredArtifact(id,input,leaf.docsKey(),prior!=null&&prior.input().key().equals(leaf.key())?prior.codeKey():null,
+                leaf.resolution().hex(),leaf.symbols(),leaf.relationships(),true,0,leaf.types(),path.sources()));
+        if(leaf.mode().equals("signatures")&&path.sources()!=null&&leaf.sourcesSha256()!=null){
+            Long sourcesExisting=paths.get(path.sources());
+            if(sourcesExisting==null||replaceSources){
+                long sourcesId=sourcesExisting==null?nextArtifact++:sourcesExisting;
                 var sourcesInput=new ArtifactInput(new ArtifactContext(path.gav(),"sources",path.sources()),
                         ArtifactIndexFormat.key(leaf.sourcesSha256(),"sources"),path.sourcesStamp().size(),path.sourcesStamp().modifiedNanos());
-                values.add(new StoredArtifact(sourcesId,sourcesInput,leaf.docsKey(),null,leaf.sourcesSha256(),0,0,false,0,0));
+                result.add(new StoredArtifact(sourcesId,sourcesInput,leaf.docsKey(),null,leaf.sourcesSha256(),0,0,false,0,0));
             }
         }
-        // TEMPORARY(warm-boot): the MACHINE leaves and path table replace these A| records, which only
-        // the existing warm path reads when it reopens this generation.
-        try(var batch=new WriteBatch()){for(var value:values)save(batch,value);state.write(durable,batch);}
-        for(var value:values){artifacts.put(value.id(),value);paths.put(value.input().context().path(),value.id());}
-        metadataWrites+=values.size();changed.addAll(values);
-        if(!changed.isEmpty())refreshSemanticObservations(changed,null);
+        return result;
     }
     private boolean selects(String workspace,SemanticLayer layer,StoredArtifact artifact){
         var context=artifact.input().context();

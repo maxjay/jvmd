@@ -203,4 +203,4 @@ The folder a class sits in says whether it is a cold boot, a warm boot, or a lay
 | `jvmd-boot/.../boot/cold/local/` | `LocalColdBoot`, `Context`, `UnitQueue`, `UnitJob` | The LOCAL cold boot, one method per stage; the (unit, context) batch queue |
 | `jvmd-boot/.../boot/warm/` | `MachineWarmBoot`, `LocalWarmBoot` | Reopening a committed MACHINE generation; serving a project whose LOCAL root is committed on demand |
 
-Code that exists only so a reopened generation or a committed LOCAL root keeps working until the warm boot reads the committed layers directly is marked `TEMPORARY(warm-boot)`.
+Code that exists only so a reopened generation or a committed LOCAL root keeps working until the warm boot reads the committed layers directly is marked `TEMPORARY(warm-boot)`. A MACHINE cold boot writes only the MACHINE leaves, nodes, path table and root: the existing warm path's numbered artifacts are served from the committed leaves in memory, at commit and again when the generation is reopened (`RocksIndexStore.installMachine`, `restoreMachine`), and no artifact record or inventory entry is written for them.

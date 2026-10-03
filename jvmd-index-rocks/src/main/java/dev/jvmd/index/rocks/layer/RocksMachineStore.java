@@ -96,12 +96,15 @@ public final class RocksMachineStore implements AutoCloseable {
     }
 
     /** The committed MACHINE tree: every stored leaf, bulk-built. */
-    public MachineTree committedTree()throws IOException{
+    public MachineTree committedTree()throws IOException{return MachineTree.build(leaves());}
+
+    /** Every stored leaf, in cacheKey order. */
+    public List<MachineLeaf> leaves()throws IOException{
         var leaves=new ArrayList<MachineLeaf>();byte[] prefix=bytes("L|");
         try(var iterator=db.newIterator()){
             for(iterator.seek(prefix);iterator.isValid()&&startsWith(iterator.key(),prefix);iterator.next())leaves.add(MachineLeaf.decode(iterator.value()));
         }
-        return MachineTree.build(leaves);
+        return leaves;
     }
     private static boolean startsWith(byte[] value,byte[] prefix){
         if(value.length<prefix.length)return false;

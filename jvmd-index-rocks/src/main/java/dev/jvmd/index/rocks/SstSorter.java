@@ -43,8 +43,15 @@ final class SstSorter implements AutoCloseable {
     long inputRecords(){return inputRecords;}
     long runRecords(){return runRecords;}
     long writtenRecords(){return writtenRecords;}
-    String writeTo(SstFileWriter writer)throws Exception{
-        var digest=MessageDigest.getInstance("SHA-256");
+    /** Write every entry, in key order. */
+    void writeTo(SstFileWriter writer)throws Exception{write(writer,null);}
+
+    /** Write every entry, in key order, and return the SHA-256 over the written keys and values. */
+    String writeHashedTo(SstFileWriter writer)throws Exception{
+        var digest=MessageDigest.getInstance("SHA-256");write(writer,digest);return HexFormat.of().formatHex(digest.digest());
+    }
+
+    private void write(SstFileWriter writer,MessageDigest digest)throws Exception{
         byte[] lengths=new byte[8];
         var postings=new PostingWriter(new Consumer(){
             private byte[] full=new byte[0];
@@ -54,14 +61,14 @@ final class SstSorter implements AutoCloseable {
                 int length=namespace.length+entry.key().length;
                 if(full.length!=length)full=Arrays.copyOf(namespace,length);
                 System.arraycopy(entry.key(),0,full,namespace.length,entry.key().length);
-                hash(digest,full,entry.value(),lengths);writer.put(full,entry.value());writtenRecords++;
+                if(digest!=null)hash(digest,full,entry.value(),lengths);writer.put(full,entry.value());writtenRecords++;
             }
         });
         Consumer write=postings::accept;
         if(runs.isEmpty()){
             buffered.sort(ORDER);byte[] previous=null;
             for(var entry:buffered){check(previous,entry.key());write.accept(entry);previous=entry.key();}
-            postings.flush();return HexFormat.of().formatHex(digest.digest());
+            postings.flush();return;
         }
         spill();
         while(runs.size()>FAN_IN){
@@ -78,7 +85,6 @@ final class SstSorter implements AutoCloseable {
         }
         merge(runs,write);
         postings.flush();
-        return HexFormat.of().formatHex(digest.digest());
     }
     static void hash(MessageDigest digest,byte[] key,byte[] value){
         hash(digest,key,value,new byte[8]);

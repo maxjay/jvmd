@@ -135,7 +135,7 @@ class RocksArtifactRepositoryTest {
             store.publish(data,Set.of());
             for(var entry:expected.entrySet())assertThat(gramIds(store,data.key().cacheKey(),entry.getKey(),100))
                     .as("gram %s",entry.getKey()).containsExactlyElementsOf(entry.getValue());
-            assertThat(store.verify(data.key().cacheKey())).isTrue();
+            assertThat(store.artifact(data.key().cacheKey())).isEqualTo(data);
         }
     }
 
@@ -166,7 +166,7 @@ class RocksArtifactRepositoryTest {
                 assertThat(store.contains(original.key().cacheKey())).isFalse();
             }
             assertThat(store.publish(original,Set.of()).reused()).isFalse();
-            assertThat(store.verify(original.key().cacheKey())).isTrue();
+            assertThat(store.artifact(original.key().cacheKey())).isEqualTo(original);
         }
     }
 
@@ -178,7 +178,7 @@ class RocksArtifactRepositoryTest {
         Path root=temp.resolve("packed");String key=data.key().cacheKey();
         try(var store=new RocksArtifactRepository(root,TestOptions.creating())){store.publish(data,Set.of("dep.Shared"));}
         try(var store=new RocksArtifactRepository(root,TestOptions.creating())){
-            assertThat(store.verify(key)).isTrue();assertThat(store.artifact(key)).isEqualTo(data);
+            assertThat(store.artifact(key)).isEqualTo(data);
             assertThat(gramIds(store,key,"method",2000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,1100).boxed().toList());
             assertThat(store.incoming(key,"dep.Shared",Set.of("calls"),2000).stream().map(ArtifactIndexFormat.Relationship::sourceId).toList()).containsExactlyElementsOf(java.util.stream.IntStream.range(0,1100).boxed().toList());
             assertThat(store.incoming(key,"dep.Shared",Set.of("calls"),2000)).containsExactlyElementsOf(edges);
@@ -194,7 +194,7 @@ class RocksArtifactRepositoryTest {
             var original=facts(5000,0);var shuffled=new ArrayList<>(original.symbols());Collections.shuffle(shuffled,new Random(17));
             var data=new ArtifactIndexFormat.ArtifactData(original.key(),shuffled,List.of());String key=data.key().cacheKey();
             try(var store=new RocksArtifactRepository(temp.resolve("interleaved"),TestOptions.creating())){
-                store.publish(data,Set.of());assertThat(store.verify(key)).isTrue();
+                store.publish(data,Set.of());assertThat(store.artifact(key).symbols()).containsExactlyInAnyOrderElementsOf(shuffled);
                 assertThat(gramIds(store,key,"method",6000)).containsExactlyElementsOf(java.util.stream.IntStream.range(0,5000).boxed().toList());
                 assertThat(store.select(key,"8|gram|met|",254,4,s->s.id()%2==0)).extracting(ArtifactIndexFormat.SymbolRecord::id).containsExactly(256,258,260,262);
                 assertThat(((Number)store.status().get("sort_peak_bytes")).longValue()).isLessThanOrEqualTo(65536L);
@@ -259,10 +259,9 @@ class RocksArtifactRepositoryTest {
     @Test void generationSurvivesReopenAndReusesWithoutArtifactRewrite()throws Exception{
         Path root=temp.resolve("reopen");var data=facts(1000,2000);String cacheKey=data.key().cacheKey();
         try(var first=new RocksArtifactRepository(root,TestOptions.creating())){
-            first.publish(data,Set.of("dep.Type12"));assertThat(first.verify(cacheKey)).isTrue();
+            first.publish(data,Set.of("dep.Type12"));assertThat(first.artifact(cacheKey)).isEqualTo(data);
         }
         try(var reopened=new RocksArtifactRepository(root,TestOptions.creating())){
-            assertThat(reopened.verify(cacheKey)).isTrue();
             assertThat(reopened.artifact(cacheKey)).isEqualTo(data);
             assertThat(reopened.publish(data,Set.of("dep.Type12")).reused()).isTrue();
             assertThat(reopened.status()).containsEntry("published",0L).containsEntry("reused",1L);
@@ -277,27 +276,23 @@ class RocksArtifactRepositoryTest {
             var values=new ArrayList<RocksArtifactRepository.Publication>();for(var future:futures)values.add(future.get());
             assertThat(values).filteredOn(value->!value.reused()).hasSize(1);
             assertThat(values).filteredOn(RocksArtifactRepository.Publication::reused).hasSize(3);
-            assertThat(store.verify(data.key().cacheKey())).isTrue();
+            assertThat(store.artifact(data.key().cacheKey())).isEqualTo(data);
             assertThat(((Number)store.status().get("published")).longValue()).isEqualTo(1L);
         }
     }
 
-    @Test void spillsSortedRunsAndVerifiesEveryPosting()throws Exception{
+    @Test void spillsSortedRunsAndReadsBackEveryRecord()throws Exception{
         String prior=System.getProperty("jvmd.index.sort_buffer_bytes");
         System.setProperty("jvmd.index.sort_buffer_bytes","65536");
         Path root=temp.resolve("spilled");var data=facts(1000,2000);String key=data.key().cacheKey();
         try{
             try(var store=new RocksArtifactRepository(root,TestOptions.creating())){
                 store.publish(data,Set.of("dep.Type12"));
-                assertThat(store.verify(key)).isTrue();assertThat(store.artifact(key)).isEqualTo(data);
+                assertThat(store.artifact(key)).isEqualTo(data);
                 assertThat(((Number)store.status().get("sort_peak_bytes")).longValue()).isLessThanOrEqualTo(65536L);
                 assertThat(((Number)store.status().get("sort_spill_bytes")).longValue()).isPositive();
                 try(var files=Files.list(root.resolve("staging"))){assertThat(files.toList()).isEmpty();}
             }
-            try(var options=new org.rocksdb.Options();var db=org.rocksdb.RocksDB.open(options,root.resolve("db").toString())){
-                db.delete((key+"|3|name|method0|00000000").getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            }
-            try(var reopened=new RocksArtifactRepository(root,TestOptions.creating())){assertThat(reopened.verify(key)).isFalse();}
         }finally{if(prior==null)System.clearProperty("jvmd.index.sort_buffer_bytes");else System.setProperty("jvmd.index.sort_buffer_bytes",prior);}
     }
 

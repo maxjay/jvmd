@@ -30,7 +30,7 @@ class SstSorterTest {
             try(var options=new Options();var env=new EnvOptions();var writer=new SstFileWriter(env,options);
                 var sorter=new SstSorter(temp,budget,namespace)){
                 for(String key:keys)sorter.add(key.getBytes(StandardCharsets.UTF_8),expected.get(namespace+"|"+key));
-                writer.open(file.toString());assertThat(sorter.writeTo(writer)).isEqualTo(checksum);writer.finish();
+                writer.open(file.toString());assertThat(sorter.writeHashedTo(writer)).isEqualTo(checksum);writer.finish();
                 assertThat(sorter.peakBytes()).isLessThanOrEqualTo(budget);
                 assertThat(sorter.spillBytes()>0).isEqualTo(budget==65536);
                 try(var reader=new SstFileReader(options);var read=new ReadOptions()){

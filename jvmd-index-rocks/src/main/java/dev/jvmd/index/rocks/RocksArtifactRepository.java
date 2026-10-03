@@ -38,7 +38,7 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
     private final Options options;
     private final RocksDB db;
     private final ConcurrentHashMap<String,Object> artifactLocks=new ConcurrentHashMap<>();
-    private final AtomicLong verificationPasses=new AtomicLong(),nativePublicationVerifications=new AtomicLong(),oracleMaterializations=new AtomicLong();
+    private final AtomicLong nativePublicationVerifications=new AtomicLong(),oracleMaterializations=new AtomicLong();
     private final Object ingestLock=new Object();
     private final AtomicLong published=new AtomicLong(),reused=new AtomicLong();
     private final AtomicLong sortPeakBytes=new AtomicLong(),sortSpillBytes=new AtomicLong();
@@ -193,7 +193,7 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
             for(var entry:new TreeMap<>(members).entrySet())
                 entries.add(relativeKey("9|member|"+entry.getKey()),Json.MAPPER.writeValueAsBytes(entry.getValue()));
             try(var env=new EnvOptions();var writer=new SstFileWriter(env,options)){
-                writer.open(sst.toString());String checksum=entries.writeTo(writer);
+                writer.open(sst.toString());String checksum=entries.writeHashedTo(writer);
                 writer.put(key(docsKey,"z|manifest"),(manifest+"sha256="+checksum+"\n").getBytes(StandardCharsets.UTF_8));writer.finish();
             }
             sortPeakBytes.accumulateAndGet(entries.peakBytes(),Math::max);sortSpillBytes.addAndGet(entries.spillBytes());
@@ -223,34 +223,6 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
 
     public boolean contains(String cacheKey)throws Exception{dev.jvmd.core.BootEvents.count("repository.contains",1);return db.get(key(cacheKey,"z|manifest"))!=null;}
 
-    public boolean verify(String cacheKey)throws Exception{
-        verificationPasses.incrementAndGet();
-        byte[] manifestBytes=db.get(key(cacheKey,"z|manifest"));if(manifestBytes==null)return false;
-        var manifest=parseManifest(manifestBytes);var identity=artifactKey(cacheKey);
-        if(identity==null||!identity.cacheKey().equals(cacheKey))return false;
-        var digest=java.security.MessageDigest.getInstance("SHA-256");
-        long symbols=0,relationships=0,references=0;byte[] prefix=key(cacheKey,"");
-        long expectedSymbols=Long.parseLong(manifest.get("symbols"));
-        byte[] manifestKey=key(cacheKey,"z|manifest");
-        try(var read=new ReadOptions().setFillCache(false);var iterator=db.newIterator(read)){
-            for(iterator.seek(prefix);iterator.isValid();iterator.next()){
-                byte[] current=iterator.key();if(!startsWith(current,prefix))break;
-                if(Arrays.equals(current,manifestKey))continue;
-                byte[] value=iterator.value();SstSorter.hash(digest,current,value);
-                if(suffixStartsWith(current,prefix.length,"1|symbol|")){
-                    if(PostingCodec.lastId(current)!=symbols||!ArtifactIndexFormat.validateSymbol(value,symbols,expectedSymbols))return false;
-                    symbols++;
-                }
-                else if(suffixStartsWith(current,prefix.length,"4|out|"))relationships++;
-                else if(suffixStartsWith(current,prefix.length,"6|class|"))references++;
-            }
-            iterator.status();
-        }
-        return Objects.equals(manifest.get("sha256"),HexFormat.of().formatHex(digest.digest()))
-                &&Objects.equals(manifest.get("symbols"),Long.toString(symbols))
-                &&Objects.equals(manifest.get("relationships"),Long.toString(relationships))
-                &&Objects.equals(manifest.get("class_references"),Long.toString(references));
-    }
     private static boolean suffixStartsWith(byte[] key,int offset,String ascii){
         if(key.length-offset<ascii.length())return false;
         for(int i=0;i<ascii.length();i++)if(key[offset+i]!=ascii.charAt(i))return false;return true;
@@ -449,7 +421,7 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
         result.put("gram_occurrences",gramOccurrences.get());result.put("gram_posting_blocks",gramBlocks.get());
         result.put("query_posting_candidates",queryPostingCandidates.get());result.put("query_symbol_reads",querySymbolReads.get());
         result.put("owner_prefix_queries",ownerPrefixQueries.get());
-        result.put("verification_passes",verificationPasses.get());result.put("native_publication_verifications",nativePublicationVerifications.get());result.put("oracle_materializations",oracleMaterializations.get());
+        result.put("native_publication_verifications",nativePublicationVerifications.get());result.put("oracle_materializations",oracleMaterializations.get());
         for(String property:List.of("estimate-pending-compaction-bytes","num-running-compactions","num-running-flushes",
                 "actual-delayed-write-rate","is-write-stopped","estimate-table-readers-mem","cur-size-all-mem-tables"))
             result.put(property.replace('-','_'),db.getLongProperty("rocksdb."+property));
@@ -512,8 +484,8 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
         prepareNanos.addAndGet(System.nanoTime()-preparationStarted-entries.spillNanos());
         long writeStarted=System.nanoTime(),previousSpill=entries.spillNanos();
         try(var env=new EnvOptions();var writer=new SstFileWriter(env,options)){
-            writer.open(path.toString());String checksum=entries.writeTo(writer);
-            writer.put(key(cacheKey,"z|manifest"),manifest(facts,classReferences,semanticTree==null?null:semanticTree.rootHash(),checksum));writer.finish();
+            writer.open(path.toString());entries.writeTo(writer);
+            writer.put(key(cacheKey,"z|manifest"),manifest(facts,classReferences,semanticTree==null?null:semanticTree.rootHash()));writer.finish();
         }
         sstNanos.addAndGet(System.nanoTime()-writeStarted-(entries.spillNanos()-previousSpill));
         spillNanos.addAndGet(entries.spillNanos());sortInputRecords.addAndGet(entries.inputRecords());sortRunRecords.addAndGet(entries.runRecords());
@@ -537,11 +509,11 @@ public final class RocksArtifactRepository implements ArtifactPublisher,AutoClos
         if(index!=null)index.add(gram,id);else entries.add(relativeKey("8|gram|"+GramSet.text(gram)+"|"+hex8(id)),EMPTY);
     }
 
-    private static byte[] manifest(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,Hash256 semanticRoot,String checksum){
+    private static byte[] manifest(ArtifactIndexFormat.ArtifactData facts,Set<String> classReferences,Hash256 semanticRoot){
         String value="format="+facts.key().formatVersion()+"\nindexer="+facts.key().indexerVersion()+
                 "\nruntime="+facts.key().runtimeFeature()+"\nmode="+facts.key().mode()+"\nbinary_sha="+facts.key().binarySha256()+
                 "\nsymbols="+facts.symbols().size()+"\nrelationships="+facts.relationships().size()+
-                "\nclass_references="+classReferences.size()+(semanticRoot==null?"":"\nsemantic_root="+semanticRoot.hex())+"\nsha256="+checksum+"\n";
+                "\nclass_references="+classReferences.size()+(semanticRoot==null?"":"\nsemantic_root="+semanticRoot.hex())+"\n";
         return value.getBytes(StandardCharsets.UTF_8);
     }
 

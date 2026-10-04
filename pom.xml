@@ -5,7 +5,7 @@
   <name>jvmd</name>
   <modules>
     <module>jvmd-core</module><module>jvmd-analyzer</module><module>jvmd-resolver</module><module>jvmd-resolver/maven3</module><module>jvmd-resolver/maven4</module>
-    <module>jvmd-index</module><module>jvmd-index-rocks</module><module>jvmd-runtime</module><module>jvmd-mcp</module>
+    <module>jvmd-index</module><module>jvmd-index-rocks</module><module>jvmd-boot</module><module>jvmd-runtime</module><module>jvmd-mcp</module>
     <module>jvmd-lsp</module><module>jvmd-dist</module><module>jvmd-tests</module>
   </modules>
   <properties>

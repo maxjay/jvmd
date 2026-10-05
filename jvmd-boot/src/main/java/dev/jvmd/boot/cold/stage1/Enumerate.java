@@ -100,7 +100,7 @@ public final class Enumerate {
         return out;
     }
 
-    static boolean sameFile(Path a, Path b) {
+    public static boolean sameFile(Path a, Path b) {
         try { return Files.isSameFile(a, b); } catch (IOException e) { return a.equals(b); }
     }
 }

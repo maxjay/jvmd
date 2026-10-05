@@ -1,5 +1,8 @@
 package dev.jvmd.index.rocks.layer;
 
+import dev.jvmd.core.hash.Identity;
+import dev.jvmd.core.tree.Codec;
+import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.machine.Format;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -45,6 +48,34 @@ public final class Generation {
     public RocksMachineStore open() {
         if (!hasRoot()) throw new IllegalStateException("No committed machine index in " + directory);
         return new RocksMachineStore(directory, true);
+    }
+
+    /** The LOCAL generation of one project inside this MACHINE generation: a key prefix, not a directory (stage 2, 2.5 and 9.1). */
+    public Local local(Identity projectKey, String format) { return new Local(projectKey, format); }
+
+    public final class Local {
+        private final Identity projectKey;
+        private final String format;
+
+        private Local(Identity projectKey, String format) { this.projectKey = projectKey; this.format = format; }
+
+        /** True if the project has a LOCAL root of this FORMAT. A root of another FORMAT is a cold boot, never a migration. */
+        public boolean hasLocalRoot() {
+            if (!Files.isDirectory(directory)) return false;
+            try (var store = new RocksMachineStore(directory, true)) {
+                var value = store.get(LocalStore.localRootKey(projectKey));
+                return value != null && new Codec.Reader(value).str().equals(format);
+            } catch (RuntimeException unreadable) {
+                return false;
+            }
+        }
+
+        /** The committed MACHINE store, writable, as a LOCAL store. Throws if MACHINE has no ROOT or this project already has a root. */
+        public RocksLocalStore createLocal() {
+            if (!hasRoot()) throw new IllegalStateException("No committed machine index in " + directory);
+            if (hasLocalRoot()) throw new IllegalStateException("Local generation already committed for this project");
+            return new RocksLocalStore(new RocksMachineStore(directory, false));
+        }
     }
 
     private static void deleteRecursively(Path root) throws IOException {

@@ -43,6 +43,22 @@ public final class Chunker {
         if (boundary(entry.key()) || openEntries.size() == cap) close();
     }
 
+    /** An interior chunker fed by another builder (ContentList): adds one child of the level below. */
+    void addChild(Node.Child child) { add(child); }
+
+    /**
+     * Finishes an interior chunker whose children came from a level-0 builder of the given level; returns null if it was never
+     * fed (the caller then has an empty list). A single child is the root, never wrapped.
+     */
+    Root finishFrom(int childLevel) {
+        if (parent == null && openChildren.size() == 1) {
+            var only = openChildren.get(0);
+            return new Root(only.hash(), only.sum(), only.count(), level - 1);
+        }
+        if (openChildren.isEmpty() && parent == null) return null;
+        return finishUp();
+    }
+
     private void add(Node.Child child) {
         openChildren.add(child);
         // Above level 0 the key is the child's hash, so the same boundary rule applies unchanged.

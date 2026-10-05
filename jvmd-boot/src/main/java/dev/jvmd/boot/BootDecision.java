@@ -1,6 +1,9 @@
 package dev.jvmd.boot;
 
 import dev.jvmd.boot.cold.stage1.Stage1;
+import dev.jvmd.boot.cold.stage2.Stage2;
+import dev.jvmd.index.layer.local.LocalFormat;
+import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.core.Config;
 import dev.jvmd.core.hash.digests.Sha256;
 import dev.jvmd.core.tree.ContentTree;
@@ -55,6 +58,43 @@ public final class BootDecision {
             log(result);
             return Optional.of(result);
         }
+    }
+
+    /**
+     * Boots LOCAL for one project into the committed MACHINE generation (stage 2, 5.7). The project's records live under the key prefix
+     * of its project key; a project that already has a LOCAL root of this FORMAT would be a warm boot, which does not exist yet: log one
+     * line and return, deleting nothing and not falling through to a cold boot.
+     *
+     * @param repository the Maven repository root the model's locations are relative to
+     * @return the boot's result, or empty if a committed LOCAL generation was skipped
+     * @throws IllegalStateException if MACHINE has not been booted
+     */
+    public static Optional<Stage2.Result> local(Path indexDir, ProjectModel model, Path repository) throws IOException {
+        var digest = Sha256.INSTANCE;
+        int jdkFeature = Runtime.version().feature();
+        var format = Format.of(digest, jdkFeature);
+        var generation = Generation.of(indexDir, format);
+        if (!generation.hasRoot()) throw new IllegalStateException("MACHINE generation is not committed: " + generation.directory());
+        var local = generation.local(Stage2.projectKey(digest, model), LocalFormat.of(format));
+        if (local.hasLocalRoot()) {
+            LOG.log(System.Logger.Level.INFO, "local generation for {0} committed; warm boot not implemented, skipping", model.root());
+            return Optional.empty();
+        }
+        var stage2 = new Stage2(digest, new ContentTree(digest), jdkFeature, Runtime.getRuntime().availableProcessors(), repository, ClassFacts::of);
+        try (var store = local.createLocal()) {
+            var result = stage2.run(store, model);
+            log(result);
+            return Optional.of(result);
+        }
+    }
+
+    private static void log(Stage2.Result r) {
+        var prefix = new StringBuilder();
+        for (byte b : r.root().hash().view()) { if (prefix.length() >= 16) break; prefix.append(String.format("%02x", b)); }
+        LOG.log(System.Logger.Level.INFO, "local cold boot: modules={0} routes={1} source_files={2} parsed_files={3} source_leaves={4} leaf_sets={5} indexed_on_the_spot={6} nodes={7} faults={8} wall_ms={9} root={10}",
+                String.valueOf(r.modules()), String.valueOf(r.routes()), String.valueOf(r.sourceFiles()), String.valueOf(r.parsedFiles()), String.valueOf(r.sourceLeaves()),
+                String.valueOf(r.distinctLeafSets()), String.valueOf(r.indexedOnTheSpot()), String.valueOf(r.nodes()), String.valueOf(r.faults().size()), String.valueOf(r.wallMillis()), prefix);
+        if (!r.faults().isEmpty()) LOG.log(System.Logger.Level.WARNING, "local cold boot faults: {0}", String.join("; ", r.faults()));
     }
 
     private static boolean sameFile(Path a, Path b) {

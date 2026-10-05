@@ -8,4 +8,11 @@
     <dependency><groupId>dev.jvmd</groupId><artifactId>jvmd-index</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>dev.jvmd</groupId><artifactId>jvmd-index-rocks</artifactId><version>${project.version}</version></dependency>
   </dependencies>
+  <!-- Exporting a package of a system module is not allowed together with the release option; the analyzer builds the same way. -->
+  <properties><maven.compiler.release></maven.compiler.release><maven.compiler.source>25</maven.compiler.source><maven.compiler.target>25</maven.compiler.target></properties>
+  <build><plugins><plugin>
+    <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
+    <!-- JavacTask has no public enter(); HeaderCompiler needs it to stop short of attribution (stage 2, C.1). The daemon image exports the same package. -->
+    <configuration><compilerArgs><arg>--add-exports=jdk.compiler/com.sun.tools.javac.api=dev.jvmd.boot</arg><arg>--add-exports=jdk.compiler/com.sun.tools.javac.main=dev.jvmd.boot</arg><arg>--add-exports=jdk.compiler/com.sun.tools.javac.util=dev.jvmd.boot</arg></compilerArgs></configuration>
+  </plugin></plugins></build>
 </project>

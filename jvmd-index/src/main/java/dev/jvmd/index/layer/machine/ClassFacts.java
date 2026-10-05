@@ -71,6 +71,19 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         }
     }
 
+    /**
+     * C.4: a local or anonymous class has no source-level API and cannot be produced from a source file without attributing
+     * bodies, so it is excluded on both sides. Local classes carry {@code EnclosingMethod}; an anonymous class's own
+     * {@code InnerClasses} entry has neither an outer class nor a simple name. A class with no facts is skipped by the caller.
+     */
+    static boolean isLocalOrAnonymous(ClassModel cm, String owner) {
+        if (cm.findAttribute(Attributes.enclosingMethod()).isPresent()) return true;
+        var inner = cm.findAttribute(Attributes.innerClasses());
+        if (inner.isPresent()) for (var info : inner.get().classes())
+            if (info.innerClass().asInternalName().equals(owner) && info.outerClass().isEmpty() && info.innerName().isEmpty()) return true;
+        return false;
+    }
+
     // ---- keys ------------------------------------------------------------------------------------------------------------
 
     static byte[] typeKey(String internalName) { return new Codec.Writer(internalName.length() + 2).zstr(internalName).u8(KIND_TYPE).toBytes(); }
@@ -108,6 +121,8 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                 throw new Fault("Unsupported class file major version " + cm.majorVersion());
             String owner = cm.thisClass().asInternalName();
             if (!owner.equals(expected)) throw new Fault("Entry name does not match this_class: " + owner);
+
+            if (isLocalOrAnonymous(cm, owner)) return new ClassFacts(owner, List.of(), List.of());
 
             typeFact(cm, owner);
             for (var field : cm.fields()) {

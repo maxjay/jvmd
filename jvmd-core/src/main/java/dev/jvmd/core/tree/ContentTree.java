@@ -82,6 +82,14 @@ public final class ContentTree {
         return acc;
     }
 
+    /** Every entry under {@code hash} in key order: one sequential read of the stored tree. */
+    public void forEach(Identity hash, Function<Identity, byte[]> reader, java.util.function.Consumer<Entry> out) {
+        var bytes = reader.apply(hash);
+        int width = digest.width();
+        if (Node.level(bytes) == 0) { for (var e : Node.entries(bytes, width)) out.accept(e); return; }
+        for (var child : Node.children(bytes, width)) forEach(child.hash(), reader, out);
+    }
+
     /** Recomputes every hash, sum and count under the root from the stored bytes; throws if any disagrees. */
     public void verify(Root root, Function<Identity, byte[]> reader) {
         var node = check(root.hash(), reader);

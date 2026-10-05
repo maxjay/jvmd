@@ -67,6 +67,17 @@ public final class RocksMachineStore implements MachineStore, AutoCloseable {
     @Override public boolean hasRoot() {
         try { return db.get(MachineStore.ROOT_KEY) != null; } catch (RocksDBException e) { throw failure(e); }
     }
+    /** Buffers one raw record in the calling thread's batch, committed by {@link #flush()}: how {@link RocksLocalStore} writes LOCAL records. */
+    void put(byte[] key, byte[] value) {
+        try { batches.get().put(key, value); } catch (RocksDBException e) { throw failure(e); }
+    }
+    /** Commits records at once, atomically and durably. */
+    void commit(java.util.List<byte[][]> records) {
+        try (var batch = new WriteBatch()) {
+            for (var kv : records) batch.put(kv[0], kv[1]);
+            db.write(durable, batch);
+        } catch (RocksDBException e) { throw failure(e); }
+    }
     /** For tests and warm boot: the value stored under a raw key, or null. */
     public byte[] get(byte[] key) {
         try { return db.get(key); } catch (RocksDBException e) { throw failure(e); }

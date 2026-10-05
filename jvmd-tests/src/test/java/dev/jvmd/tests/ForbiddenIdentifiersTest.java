@@ -16,7 +16,12 @@ class ForbiddenIdentifiersTest {
                 String text=Files.readString(file),relative=root.relativize(file).toString().replace('\\','/');
                 for(String token:forbidden)if(text.contains(token))failures.add(relative+": "+token);
                 if(relative.startsWith("jvmd-index/")&&text.contains("WatchService"))failures.add(relative+": filesystem watcher");
-                if(!relative.startsWith("jvmd-analyzer/")&&text.contains("com.sun.tools.javac"))failures.add(relative+": compiler internals outside analyzer");
+                int source=relative.indexOf("/src/main/java/");
+                if(text.contains("com.sun.tools.javac")) {
+                    String module=relative.substring("jvmd-".length(),relative.indexOf('/'));
+                    String type=source<0?"":relative.substring(source+"/src/main/java/".length(),relative.length()-".java".length());
+                    if(!ModuleArchitectureTest.compilerInternalsAllowed(module,type))failures.add(relative+": compiler internals outside an approved compiler adapter");
+                }
             }
         }
         assertThat(failures).isEmpty();

@@ -97,7 +97,6 @@ class FactCodecsTest {
 
     private static Fact fact(byte[] m, String simpleName, String what) {
         var res = new Codec.Writer().str(what).toBytes();
-        var e = new Codec.Writer(res.length + 8).u32(res.length).raw(res).toBytes();
-        return new Fact(m, e, D.hash(res), simpleName);
+        return Fact.of(D, m, res, Entry.NONE, simpleName);
     }
 }

@@ -27,7 +27,7 @@ import java.util.List;
  */
 public final class ArtifactJob {
     /** What indexing one location gave: its leaf key, or null if it is not a readable archive, and the entries skipped in it. */
-    public record Indexed(Identity k, List<String> faults) { }
+    public record Indexed(Identity k, Identity a, List<String> faults) { }
 
     /**
      * Indexes one location into the shared node space and returns its leaf key (stage 2, 3.15): the same {@code L|k} and nodes a
@@ -38,8 +38,8 @@ public final class ArtifactJob {
         var leaves = new Leaves();
         new ArtifactJob(digest, tree, jdkFeature, seen, leaves, written, store, parser, new ClassMemo(digest, List.of(location))).run(location);
         var observation = seen.all().get(0);
-        if (seen.unreadableReason(observation) != null) return new Indexed(null, List.of(seen.unreadableReason(observation)));
-        return new Indexed(leaves.kFor(observation.bh()), seen.skipped(observation.bh()));
+        if (seen.unreadableReason(observation) != null) return new Indexed(null, null, List.of(seen.unreadableReason(observation)));
+        return new Indexed(leaves.kFor(observation.bh()), leaves.aFor(observation.bh()), seen.skipped(observation.bh()));
     }
 
     /** Copy-and-digest chunk when hashing a mapped jar. One per worker thread; it sizes a copy, not a limit on anything. */
@@ -148,7 +148,7 @@ public final class ArtifactJob {
 
         var k = builder.seal();
         if (!leaves.claim(k)) {
-            leaves.attach(bh, k);
+            leaves.attach(bh, k, builder.a());
             sink.flush();
             return;
         }
@@ -157,6 +157,6 @@ public final class ArtifactJob {
         // L is a function of k, so the winner writes it in its own batch, together with its nodes.
         store.putLeaf(k, leaf.encode());
         sink.flush();
-        leaves.register(leaf, bh);
+        leaves.register(leaf, bh, builder.a());
     }
 }

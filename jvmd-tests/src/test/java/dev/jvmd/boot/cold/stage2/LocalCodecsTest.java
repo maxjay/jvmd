@@ -36,8 +36,8 @@ class LocalCodecsTest {
     private static Identity id(String s) { return D.hash(s.getBytes()); }
 
     @Test void routesAndRecordsRoundTrip() {
-        var route = new Route(List.of(new RouteEntry.Jrt("jrt:/java.base", "java.base", id("jdk")), new RouteEntry.Jar("g:a:1", "g/a/1/a-1.jar", id("jar")),
-                new RouteEntry.Jar("g:missing:1", "g/missing/1/missing-1.jar", null), new RouteEntry.Sibling("g:b:1", "b")), id("hash"), id("R"), id("ext"), id("sib"));
+        var route = new Route(List.of(new RouteEntry.Jrt("jrt:/java.base", "java.base", id("jdk"), id("jdk-annotations")), new RouteEntry.Jar("g:a:1", "g/a/1/a-1.jar", id("jar"), id("jar-annotations")),
+                new RouteEntry.Jar("g:missing:1", "g/missing/1/missing-1.jar", null, null), new RouteEntry.Sibling("g:b:1", "b")), id("hash"), id("R"), id("ext"), id("sib"));
         var back = Route.decode(route.encode(), 32);
         assertThat(back.entries()).isEqualTo(route.entries());
         assertThat(back.routeHash()).isEqualTo(route.routeHash());
@@ -52,13 +52,16 @@ class LocalCodecsTest {
         var m = new Codec.Writer().zstr("p/Owner").u8(1).zstr("field").zstr("I").toBytes();
         var row = new FileRow("m/src/main/java/p/Owner.java", id("kappa"), 123, 456_789_000_000L, id("sum"), List.of("p/Owner", "p/Owner$Inner"),
                 List.of(new FileRow.Fault(m, "cannot resolve Foo"), new FileRow.Fault(new byte[0], "1:2 expected ';'")),
-                List.of(new FileRow.Proof("java/lang/Object", id("o")), new FileRow.Proof("p/Other", id("p"))));
+                List.of(new FileRow.Proof("java/lang/Object", id("o")), new FileRow.Proof("p/Other", id("p"))), id("ownR"),
+                List.of(new dev.jvmd.index.layer.local.HeaderProof.Absence(0, "p/Missing", ""), new dev.jvmd.index.layer.local.HeaderProof.Absence(1, "p/Base", "Inner")));
         var rowBack = FileRow.decode(row.path(), row.encode(), 32);
         assertThat(rowBack.typeKeys()).isEqualTo(row.typeKeys());
         assertThat(rowBack.faults().get(0).m()).isEqualTo(m);
         assertThat(rowBack.faults().get(1).m()).isEmpty();
         assertThat(rowBack.faults().get(1).reason()).isEqualTo("1:2 expected ';'");
         assertThat(rowBack.headerProof()).isEqualTo(row.headerProof());
+        assertThat(rowBack.ownR()).isEqualTo(row.ownR());
+        assertThat(rowBack.absences()).isEqualTo(row.absences());
         assertThat(rowBack.sum()).isEqualTo(row.sum());
         assertThat(rowBack.size()).isEqualTo(123);
         assertThat(rowBack.mtimeNanos()).isEqualTo(456_789_000_000L);

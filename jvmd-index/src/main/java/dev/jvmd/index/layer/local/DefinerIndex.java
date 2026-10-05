@@ -197,6 +197,58 @@ public final class DefinerIndex {
             var defs = definers(internalName);
             return defs.isEmpty() ? null : defs.get(0).oSum();
         }
+
+        public Identity definer(String internalName) {
+            var defs = definers(internalName);
+            return defs.isEmpty() ? null : defs.getFirst().k();
+        }
+    }
+
+    /** Point reads of committed indexes, with the current own module preceding the route. */
+    public static final class Reader {
+        private final ContentTree tree;
+        private final MachineLeaf own;
+        private final Function<byte[], byte[]> records;
+        private final Function<Identity, byte[]> nodes;
+        private final Root dd, ds, dc;
+        private final Map<Identity, MachineLeaf> leaves = new HashMap<>();
+
+        public Reader(ContentTree tree, MachineLeaf own, Route route, Function<byte[], byte[]> records) {
+            this.tree = tree;
+            this.own = own;
+            this.records = records;
+            this.nodes = h -> records.apply(dev.jvmd.index.layer.machine.MachineStore.nodeKey(h));
+            int width = tree.digest().width();
+            dd = decodeRoot(records.apply(LocalStore.disjointKey(route.leafSetExt())), width);
+            ds = decodeRoot(records.apply(LocalStore.siblingKey(route.leafSetSib())), width);
+            dc = decodeRoot(records.apply(LocalStore.conflictsKey(route.routeHash())), width);
+        }
+
+        public Root external() { return dd; }
+        public Root sibling() { return ds; }
+        public Root conflicts() { return dc; }
+        public Function<Identity, byte[]> nodes() { return nodes; }
+
+        public MachineLeaf definer(String type) {
+            var key = Keys.ownerKey(type);
+            if (tree.get(own.oHash(), nodes, key) != null) return own;
+            // A cross-part collision also occurs in each disjoint index. DC must win first.
+            var entry = tree.get(dc.hash(), nodes, key);
+            if (entry == null) entry = tree.get(ds.hash(), nodes, key);
+            if (entry == null) entry = tree.get(dd.hash(), nodes, key);
+            if (entry == null) return null;
+            var k = new Codec.Reader(entry.value()).id(tree.digest().width());
+            return leaves.computeIfAbsent(k, h -> MachineLeaf.decode(records.apply(dev.jvmd.index.layer.machine.MachineStore.leafKey(h)), tree.digest().width()));
+        }
+
+        public boolean absent(String type) {
+            var key = Keys.ownerKey(type);
+            var zero = tree.sums().zero();
+            return tree.rangeSum(own.oHash(), nodes, key).equals(zero)
+                    && tree.rangeSum(dd.hash(), nodes, key).equals(zero)
+                    && tree.rangeSum(ds.hash(), nodes, key).equals(zero)
+                    && tree.rangeSum(dc.hash(), nodes, key).equals(zero);
+        }
     }
 
     /** The multiset difference of two sorted key lists: {@code removed = old \ now}, {@code added = now \ old}. */

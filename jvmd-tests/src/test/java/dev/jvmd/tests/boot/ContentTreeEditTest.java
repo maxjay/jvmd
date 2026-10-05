@@ -98,6 +98,18 @@ class ContentTreeEditTest {
             var full = tree.build(new ArrayList<>(expected.values()), new Store());
             assertThat(edited).as("seed %d, %d entries, %s", seed, size, shape).isEqualTo(full);
 
+            // Conservation uses the actual before/after maps, including replacements, duplicate edits and absent removals.
+            var conserved = base.sum();
+            for (var e : current.values()) {
+                var now = expected.get(e.key());
+                if (now == null || !e.h().equals(now.h())) conserved = tree.sums().subtract(conserved, e.h());
+            }
+            for (var e : expected.values()) {
+                var old = current.get(e.key());
+                if (old == null || !e.h().equals(old.h())) conserved = tree.sums().add(conserved, e.h());
+            }
+            assertThat(edited.sum()).as("sum conservation at seed %d", seed).isEqualTo(conserved);
+
             // The edited tree is a tree: every node is stored, and its hashes and sums verify from its own nodes.
             var all = new HashMap<>(baseStore.nodes);
             all.putAll(editStore.nodes);

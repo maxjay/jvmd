@@ -1,16 +1,24 @@
 package dev.jvmd.index.layer.machine;
 
 import dev.jvmd.core.hash.Identity;
+import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.tree.Codec;
 import dev.jvmd.core.tree.Entry;
 
 /**
- * One declared member of one class file (stage 1, 2.2): its key {@code m}, its one binary encoding {@code e} (resolution fields
- * first), and the resolution identity {@code h = Digest(resolution prefix of e)}.
+ * One declaration with independent resolution and annotation projections (LAYOUT 4).
+ * Each projected identity binds the value to its declaration key.
  */
-public record Fact(byte[] m, byte[] e, Identity h, String simpleName) {
-    /** The entry of {@code T}: key m, value e, identity h. */
-    public Entry entry() { return new Entry(m, e, h); }
+public record Fact(byte[] m, byte[] res, byte[] tail, Identity h, String simpleName) {
+    public static Fact of(Digest digest, byte[] m, byte[] res, byte[] tail, String simpleName) {
+        return new Fact(m, res, tail, digest.hash(m, res), simpleName);
+    }
+
+    /** The entry of {@code T}: res only. */
+    public Entry entry() { return new Entry(m, res, h); }
+
+    /** An empty tail has no A entry. */
+    public Entry aEntry(Digest digest) { return tail.length == 0 ? null : new Entry(m, tail, digest.hash(m, tail)); }
 
     /** The entry of {@code N}: key (simple name, m), no value, identity h. */
     public Entry byName() {

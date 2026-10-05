@@ -165,13 +165,17 @@ class MavenProjectTest {
             assertThat(result.faults()).as("faults").isEmpty();
             assertThat(result.modules()).isEqualTo(3);
             assertThat(result.indexedOnTheSpot()).as("dependencies MACHINE never saw were indexed on the spot").isGreaterThan(5);
-            var maven = outputLeaves(digest, model, work);
+            var classStore = new InMemoryLocalStore();
+            var maven = outputLeaves(digest, model, work, classStore);
             int equal = 0;
             for (var e : maven.entrySet()) {
                 var source = MachineLeaf.decode(machine.get(MachineStore.leafKey(result.leaves().get(e.getKey()))), digest.width());
                 var expected = e.getValue();
                 assertThat(source.factCount()).as("facts of %s", e.getKey()).isEqualTo(expected.factCount());
                 assertThat(source.r()).as("r of %s", e.getKey()).isEqualTo(expected.r());
+                assertThat(source.k()).as("exact k of %s", e.getKey()).isEqualTo(expected.k());
+                var binaryA = MachineTree.decodePath(classStore.get(MachineStore.pathKey(e.getKey() + ".jar")), digest.width()).a();
+                assertThat(result.annotations().get(e.getKey())).as("a of %s with identical compiler options", e.getKey()).isEqualTo(binaryA);
                 assertThat(source.oHash()).as("O root of %s", e.getKey()).isEqualTo(expected.oHash());
                 assertThat(source.nHash()).as("N root of %s", e.getKey()).isEqualTo(expected.nHash());
                 assertThat(source.eHash()).as("E root of %s", e.getKey()).isEqualTo(expected.eHash());

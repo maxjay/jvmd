@@ -381,7 +381,7 @@ class MachineColdBootTest {
         assertThat(store.kinds().keySet()).containsExactlyInAnyOrder("L", "N", "P", "ROOT");
         var record = MachineTree.decodeRoot(Sha256.INSTANCE, store.root());
         assertThat(record.format()).isEqualTo(Format.of(Sha256.INSTANCE, 25).toString());
-        assertThat(record.format()).isEqualTo("layout=3;digest=SHA-256;jdk=25;parser=2");
+        assertThat(record.format()).isEqualTo("layout=4;digest=SHA-256;jdk=25;parser=2");
     }
 
     @Test void faultsAreRecordedAndNeverFatal() throws Exception {
@@ -423,7 +423,7 @@ class MachineColdBootTest {
             assertThat(x.facts()).hasSameSizeAs(y.facts());
             for (int i = 0; i < x.facts().size(); i++) {
                 assertThat(x.facts().get(i).m()).isEqualTo(y.facts().get(i).m());
-                assertThat(x.facts().get(i).e()).as("e of %s", name).isEqualTo(y.facts().get(i).e());
+                assertThat(x.facts().get(i).res()).as("e of %s", name).isEqualTo(y.facts().get(i).res());
                 assertThat(x.facts().get(i).h()).isEqualTo(y.facts().get(i).h());
             }
         }
@@ -443,7 +443,8 @@ class MachineColdBootTest {
         var fx = x.facts().stream().filter(f -> f.simpleName().equals("f")).findFirst().orElseThrow();
         var fy = y.facts().stream().filter(f -> f.simpleName().equals("f")).findFirst().orElseThrow();
         assertThat(fx.h()).isEqualTo(fy.h());
-        assertThat(fx.e()).isNotEqualTo(fy.e());
+        assertThat(fx.res()).isEqualTo(fy.res());
+        assertThat(fx.tail()).isNotEqualTo(fy.tail());
     }
 
     @Test void membersAreFilteredAndKeyedAsSpecified() throws Exception {

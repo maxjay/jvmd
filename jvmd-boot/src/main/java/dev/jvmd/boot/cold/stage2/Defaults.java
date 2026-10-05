@@ -8,6 +8,7 @@ import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.tree.ContentTree;
 import dev.jvmd.index.layer.local.LocalStore;
+import dev.jvmd.index.layer.local.Bind;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.index.layer.local.RouteEntry;
 import dev.jvmd.index.layer.machine.MachineStore;
@@ -44,7 +45,7 @@ final class Defaults implements AutoCloseable {
     private final LocalStore store;
     private final Written written;
     private final Stage1.Parser parser;
-    private final Map<String, Identity> jars = new HashMap<>();
+    private final Map<String, Bind.Leaf> jars = new HashMap<>();
     private final List<FileSystem> opened = new ArrayList<>();
     private final List<String> notes = new ArrayList<>();
     private List<RouteEntry.Jrt> jdk;
@@ -73,17 +74,17 @@ final class Defaults implements AutoCloseable {
         if (jdk != null) return jdk;
         // The module names are free; the digest of lib/modules (over a hundred megabytes) is only needed to index a module MACHINE lacks.
         var names = moduleNames();
-        var found = new java.util.TreeMap<String, Identity>(Enumerate::compareNames);
+        var found = new java.util.TreeMap<String, Bind.Leaf>(Enumerate::compareNames);
         boolean missing = false;
         for (var name : names) {
-            Identity k = lookup(locationName(name));
+            Bind.Leaf k = lookup(locationName(name));
             if (k == null) missing = true; else found.put(name, k);
         }
         if (missing) {
             var toIndex = new ArrayList<Enumerate.Location>();
             for (var location : Enumerate.jdk(jdkHome, digest, opened)) {
                 if (found.containsKey(location.module())) continue;
-                Identity k = lookup(location.name());
+                Bind.Leaf k = lookup(location.name());
                 if (k != null) found.put(location.module(), k); else toIndex.add(location);
             }
             var indexed = indexAll(toIndex);
@@ -93,7 +94,7 @@ final class Defaults implements AutoCloseable {
             }
         }
         var out = new ArrayList<RouteEntry.Jrt>();
-        for (var e : found.entrySet()) out.add(new RouteEntry.Jrt("jrt:/" + e.getKey(), e.getKey(), e.getValue()));
+        for (var e : found.entrySet()) out.add(new RouteEntry.Jrt("jrt:/" + e.getKey(), e.getKey(), e.getValue().k(), e.getValue().a()));
         return jdk = List.copyOf(out);
     }
 
@@ -124,7 +125,7 @@ final class Defaults implements AutoCloseable {
         for (var dependency : dependencies) {
             var location = dependency.location();
             if (jars.containsKey(location) || queued.contains(location)) continue;
-            Identity k = lookup(location);
+            Bind.Leaf k = lookup(location);
             if (k == null) {
                 var file = repository.resolve(location);
                 if (!Files.isRegularFile(file)) notes.add(location + ": no such file under " + repository);
@@ -144,29 +145,32 @@ final class Defaults implements AutoCloseable {
     RouteEntry.Jar jar(ProjectModel.Dependency dependency) throws IOException {
         var location = dependency.location();
         if (!jars.containsKey(location)) prepare(List.of(dependency));
-        return new RouteEntry.Jar(dependency.coordinate(), location, jars.get(location));
+        var leaf = jars.get(location);
+        return new RouteEntry.Jar(dependency.coordinate(), location, leaf == null ? null : leaf.k(), leaf == null ? null : leaf.a());
     }
 
     /** {@code P|location -> k}: null if MACHINE has no record, or its record has no leaf (an unreadable archive). */
-    private Identity lookup(String location) {
+    private Bind.Leaf lookup(String location) {
         var value = store.get(MachineStore.pathKey(location));
-        return value == null ? null : MachineTree.decodePath(value, digest.width()).k();
+        if (value == null) return null;
+        var path = MachineTree.decodePath(value, digest.width());
+        return path.k() == null ? null : new Bind.Leaf(path.k(), path.a());
     }
 
     /** The leaf of each location, in order, indexed on the pool; null for one that is not a readable archive. */
-    private List<Identity> indexAll(List<Enumerate.Location> locations) {
+    private List<Bind.Leaf> indexAll(List<Enumerate.Location> locations) {
         indexedOnTheSpot += locations.size();
         if (locations.isEmpty()) return List.of();
-        var out = new ArrayList<Identity>(locations.size());
+        var out = new ArrayList<Bind.Leaf>(locations.size());
         int threads = Math.min(workers, locations.size());
         if (threads <= 1) {
-            for (var location : locations) out.add(ArtifactJob.index(digest, tree, jdkFeature, written, store, parser, location).k());
+            for (var location : locations) out.add(index(location));
             return out;
         }
         var pool = Executors.newFixedThreadPool(threads, Thread.ofPlatform().name("jvmd-defaults-", 0).daemon(true).factory());
         try {
-            var futures = new ArrayList<Future<Identity>>(locations.size());
-            for (var location : locations) futures.add(pool.submit(() -> ArtifactJob.index(digest, tree, jdkFeature, written, store, parser, location).k()));
+            var futures = new ArrayList<Future<Bind.Leaf>>(locations.size());
+            for (var location : locations) futures.add(pool.submit(() -> index(location)));
             for (var future : futures) out.add(future.get());
             return out;
         } catch (ExecutionException failed) {
@@ -177,6 +181,11 @@ final class Defaults implements AutoCloseable {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while indexing", interrupted);
         } finally { pool.shutdownNow(); }
+    }
+
+    private Bind.Leaf index(Enumerate.Location location) {
+        var indexed = ArtifactJob.index(digest, tree, jdkFeature, written, store, parser, location);
+        return indexed.k() == null ? null : new Bind.Leaf(indexed.k(), indexed.a());
     }
 
     @Override public void close() {

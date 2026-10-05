@@ -218,3 +218,8 @@ mvn -B -pl jvmd-tests -am test '-Dtest=MachineColdBootTest,ClassMemoTest,Content
 ```
 
 The previous hosted Tests and benchmark workflows passed at 08534aa2. Those runs do not cover this amendment; fresh exact-head CI is required. PR #60 remains open pending Max's explicit merge approval. Appendix F and Stage 3 body attribution remain unfinished, and warm remains untouched.
+
+
+### Second review integration with Appendix F
+
+PR #60 commit `22067f1c` is integrated locally by `a0a6f333` into `feat/jvmd-stage-3`; GitHub PR #60 remains open. The only merge conflict was the progress document, resolved by retaining both the F checkpoints and review evidence. **130 tests passed**, no failures/errors/skips, in 1m14s (`stage3-second-review-integration.log`), covering the processor host/model/diagnostics/empty-output/GEN/configuration suites, header environment and absences, stub and source projections, and architecture guards. No processor implementation changed during this integration. The unresolved processor-proof attribution/replay contract and all Stage 3 body/result/driver work remain pending.

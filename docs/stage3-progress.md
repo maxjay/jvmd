@@ -66,7 +66,7 @@ Command:
 mvn -B -pl jvmd-tests -am test '-Dtest=MachineColdBootTest,ClassMemoTest,ContentTreeTest,ContentTreeEditTest,ZipReaderTest,RocksMachineBootTest,LocalColdBootTest,LocalCodecsTest,FactCodecsTest,RocksLocalBootTest,Layout4Test,HeaderAbsencesTest,SourceAnnotationProjectionTest,TailStrippingTest,MavenProjectTest,Stage2Measurement' '-DexcludedGroups=none' '-Djvmd.stage2.workers=4' '-Dsurefire.failIfNoSpecifiedTests=false'
 ```
 
-This is the local Appendix A gate; PR publication/CI/landing remain pending. Appendix F, body attribution, the two-sided javac read-set oracle and all Stage 3 result/driver invariants are still outstanding. `warm/` still contains only its original `package-info.java`.
+Appendix A landed on main in PR #59, merge commit `20e825a3`, on 2026-10-05. The corrections below are in [PR #60](https://github.com/maxjay/jvmd/pull/60), awaiting review and CI. Appendix F, body attribution, the two-sided javac read-set oracle and all Stage 3 result/driver invariants remain outstanding. `warm/` still contains only its original `package-info.java`.
 
 
 ## PR 59 review corrections

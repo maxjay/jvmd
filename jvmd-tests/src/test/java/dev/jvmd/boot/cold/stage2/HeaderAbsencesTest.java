@@ -153,6 +153,10 @@ class HeaderAbsencesTest {
         var after = boot(digest);
         var tree = new ContentTree(digest);
         var leaf = MachineLeaf.decode(after.store.get(MachineStore.leafKey(after.result.leaves().get("dep/main"))), digest.width());
+        var oldLeaf = MachineLeaf.decode(before.store.get(MachineStore.leafKey(before.result.leaves().get("dep/main"))), digest.width());
+        assertThat(tree.get(leaf.oHash(), h -> after.store.get(MachineStore.nodeKey(h)), Keys.ownerKey("q/Base")).h())
+                .as("adding Base.Foo changes its N range while oSum(Base) stays equal")
+                .isEqualTo(tree.get(oldLeaf.oHash(), h -> before.store.get(MachineStore.nodeKey(h)), Keys.ownerKey("q/Base")).h());
         assertThat(HeaderProof.absent(foo, tree, _ -> leaf, h -> after.store.get(MachineStore.nodeKey(h)))).isFalse();
         assertThat(HeaderProof.absent(bar, tree, _ -> leaf, h -> after.store.get(MachineStore.nodeKey(h)))).isTrue();
         assertThat(valid(digest, row(digest, before, "B"), after)).isFalse();
@@ -188,6 +192,31 @@ class HeaderAbsencesTest {
         for (var name : List.of("B", "Unrelated")) {
             assertThat(valid(digest, row(digest, before, name), after)).isTrue();
             assertThat(row(digest, after, name).ownR()).isEqualTo(row(digest, before, name).ownR());
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void longerPackagePrefixesAreExactAbsencesInHeadersAndImports(Digest digest) throws Exception {
+        for (var provider : List.of("dep", "app")) for (var prefix : List.of("q/r", "q/r/s")) {
+            Stage2Support.write(root, Map.of(
+                    "dep/src/main/java/q/r/s/X.java", "package q.r.s; public class X {}",
+                    "app/src/main/java/p/B.java", "package p; public class B { q.r.s.X field; }",
+                    "app/src/main/java/p/Imported.java", "package p; import q.r.s.*; public class Imported { X field; }",
+                    "app/src/main/java/p/Unrelated.java", "package p; public class Unrelated { void body() { q.r.s.X unused; } }"));
+            var before = boot(digest);
+            assertThat(before.result.faults()).isEmpty();
+            for (var consumer : List.of("B", "Imported")) assertThat(row(digest, before, consumer).absences()).contains(
+                    new HeaderProof.Absence(0, "q/r", ""), new HeaderProof.Absence(0, "q/r/s", ""));
+            assertThat(row(digest, before, "Unrelated").absences()).doesNotContain(
+                    new HeaderProof.Absence(0, "q/r", ""), new HeaderProof.Absence(0, "q/r/s", ""));
+            var inserted = root.resolve(provider + "/src/main/java/" + prefix + ".java");
+            Stage2Support.write(root, Map.of(provider + "/src/main/java/" + prefix + ".java",
+                    prefix.equals("q/r") ? "package q; public class r {}" : "package q.r; public class s {}"));
+            var after = boot(digest);
+            assertThat(valid(digest, row(digest, before, "B"), after)).isFalse();
+            assertThat(valid(digest, row(digest, before, "Imported"), after)).isFalse();
+            assertThat(valid(digest, row(digest, before, "Unrelated"), after)).isTrue();
+            java.nio.file.Files.delete(inserted);
         }
     }
 }

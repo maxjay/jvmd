@@ -129,12 +129,10 @@ public final class Stubs {
         var refs = new ArrayList<Ref>();
         for (var decl : decls.values()) {
             if (decl.res == null || decl.res[0] == 5) continue; // no type fact (not produced), or a module descriptor
-            var typeKey = new Codec.Writer(decl.owner.length() + 1).zstr(decl.owner).toBytes();
-            var oSum = tree.get(leaf.oHash(), reader, typeKey).h();
-            var parts = new ArrayList<byte[]>(List.of(typeKey, oSum.view()));
-            for (var member : members.getOrDefault(decl.owner, List.of()))
-                parts.add(new Codec.Writer(member.length() + 3).zstr(member).u16(accessOf(decls.get(member).res)).toBytes());
-            var stKey = digest.hash(parts.toArray(byte[][]::new));
+            var oSum = tree.get(leaf.oHash(), reader, new Codec.Writer(decl.owner.length() + 1).zstr(decl.owner).toBytes()).h();
+            var memberTypes = new ArrayList<Member>();
+            for (var member : members.getOrDefault(decl.owner, List.of())) memberTypes.add(new Member(member, accessOf(decls.get(member).res)));
+            var stKey = stKey(digest, decl.owner, oSum, memberTypes);
             var stored = cache.type(stKey);
             byte[] bytes;
             if (stored != null) bytes = new Codec.Reader(stored).lenBytes();
@@ -147,6 +145,24 @@ public final class Stubs {
         }
         cache.putList(leaf.k(), encodeList(refs));
         return out;
+    }
+
+    /** A member type of a type, as its outer type's stub names it: its internal name and its flags (the access bits of its own {@code res}). */
+    public record Member(String internalName, int flags) { }
+
+    /**
+     * {@code Digest(typeKey || oSum || sorted (memberTypeKey || u16 flags))} (B.10): the member part sorted by the unsigned bytes of
+     * {@code memberTypeKey} ({@code zstr internalName}), so it is the same on every machine and in every language, and absent for a
+     * type without member types.
+     */
+    public static Identity stKey(Digest digest, String owner, Identity oSum, List<Member> members) {
+        var parts = new ArrayList<byte[]>(List.of(new Codec.Writer(owner.length() + 1).zstr(owner).toBytes(), oSum.view()));
+        var sorted = new ArrayList<byte[]>();
+        for (var member : members) sorted.add(new Codec.Writer(member.internalName().length() + 3).zstr(member.internalName()).u16(member.flags()).toBytes());
+        // memberTypeKey is a zstr, so the NUL after the name ends it: comparing the whole parts compares the keys first.
+        sorted.sort(Arrays::compareUnsigned);
+        parts.addAll(sorted);
+        return digest.hash(parts.toArray(byte[][]::new));
     }
 
     /** B.10: {@code S|k = u32 count || (str internalName || id stKey)[count]}. */

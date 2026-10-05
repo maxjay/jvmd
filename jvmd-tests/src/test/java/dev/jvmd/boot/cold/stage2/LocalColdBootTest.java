@@ -1193,6 +1193,142 @@ class LocalColdBootTest {
         } finally { Stage2Support.delete(project); }
     }
 
+    /**
+     * The member part of a stub key is sorted by the unsigned bytes of {@code memberTypeKey}, not by {@code String.compareTo}: the two
+     * differ for a supplementary character against a high BMP one (here U+FF21, UTF-8 {@code EF BC A1}, against U+1D400, UTF-8
+     * {@code F0 9D 90 80}), and the key must be the same in every language and on every machine.
+     */
+    @ParameterizedTest @MethodSource("digests")
+    void theMemberPartOfAStubKeyIsSortedByUnsignedBytes(Digest digest) {
+        var bmp = "p/O$\uFF21";
+        var supplementary = "p/O$\uD835\uDC00";
+        assertThat(bmp.compareTo(supplementary)).as("String order puts the supplementary one first").isGreaterThan(0);
+        var oSum = digest.hash("o".getBytes());
+        var typeKey = new dev.jvmd.core.tree.Codec.Writer().zstr("p/O").toBytes();
+        byte[] first = new dev.jvmd.core.tree.Codec.Writer().zstr(bmp).u16(9).toBytes();
+        byte[] second = new dev.jvmd.core.tree.Codec.Writer().zstr(supplementary).u16(8).toBytes();
+        var expected = digest.hash(typeKey, oSum.view(), first, second); // bytes order: EF.. before F0..
+        var wrongOrder = digest.hash(typeKey, oSum.view(), second, first);
+        var a = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(bmp, 9), new Stubs.Member(supplementary, 8)));
+        var b = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(supplementary, 8), new Stubs.Member(bmp, 9)));
+        assertThat(a).as("whatever order the members arrive in").isEqualTo(b);
+        assertThat(a).isEqualTo(expected).isNotEqualTo(wrongOrder);
+        assertThat(Stubs.stKey(digest, "p/O", oSum, List.of())).as("no members: exactly Digest(typeKey || oSum)").isEqualTo(digest.hash(typeKey, oSum.view()));
+    }
+
+    // ---- kind 8: everything a declaration resolved a name through outside bodies ------------------------------------------------
+
+    /** Boots a project of modules {@code lib} and {@code app} (app depends on lib), applies one edit, boots again. */
+    private record Edited(Booted before, Booted after) { }
+
+    private static Edited edited(Digest digest, Map<String, String> files, String path, String replacement) throws Exception {
+        var project = Files.createTempDirectory("stage2-kind8");
+        try {
+            Stage2Support.write(project, files);
+            var model = Stage2Support.model(project, new Stage2Support.Mod("lib", "corp:lib:1", List.of()),
+                    new Stage2Support.Mod("app", "corp:app:1", List.of(Stage2Support.Dep.module("corp:lib:1", "lib"))));
+            var before = boot(digest, model, 2);
+            Files.writeString(project.resolve(path), replacement);
+            return new Edited(before, boot(digest, model, 2));
+        } finally { Stage2Support.delete(project); }
+    }
+
+    private static void assertKind8(Digest digest, Edited e, String file, String type, boolean failsAfter) {
+        assertThat(row(digest, e.before(), file).headerProof()).as("the proof of " + file + " names " + type).extracting(FileRow.Proof::typeKey).contains(type);
+        var stored = e.before().store().get(LocalStore.reverseKey(ConsumerRecord.CONSTANT, new dev.jvmd.core.tree.Codec.Writer().zstr(type).toBytes(), e.before().projectKey()));
+        assertThat(stored).as("X|8|" + type).isNotNull();
+        assertThat(ReverseIndex.decode(stored, digest.width()).consumers()).extracting(ReverseIndex.Consumer::kappa).contains(row(digest, e.before(), file).kappa());
+        assertThat(holds(digest, e.before(), e.after(), file)).as("proof of " + file + " after the change").isEqualTo(!failsAfter);
+        assertThat(holds(digest, e.before(), e.after(), "UsesNothing")).as("nothing else fails").isTrue();
+    }
+
+    /** The edges of the consumer leaf: the same set of E edges before and after, because kind 8 never adds an edge. */
+    private static void assertSameEdges(Digest digest, Edited e) {
+        assertThat(leaf(digest, e.after().store(), e.after().result().leaves().get("app/main")).eHash()).as("the E root of app").isEqualTo(leaf(digest, e.before().store(), e.before().result().leaves().get("app/main")).eHash());
+    }
+
+    private static final Map<String, String> NOTHING = Map.of("app/src/main/java/app/UsesNothing.java", "package app; public class UsesNothing { public String s; }");
+
+    private static Map<String, String> with(Map<String, String> a, Map<String, String> b) {
+        var out = new LinkedHashMap<String, String>(a);
+        out.putAll(b);
+        return out;
+    }
+
+    /** (a) A final field whose initialiser does not fold today is still attributed, and becomes a constant tomorrow: the proof names its owner. */
+    @ParameterizedTest @MethodSource("digests")
+    void aFinalInitialiserThatDoesNotFoldYetIsInTheProof(Digest digest) throws Exception {
+        var edit = edited(digest, with(NOTHING, Map.of(
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = compute(); static int compute() { return 1; } }",
+                "app/src/main/java/app/UsesConst.java", "package app; public class UsesConst { public static final int N = lib.K.VALUE; }")),
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; static int compute() { return 1; } }");
+        assertThat(leaf(digest, edit.before().store(), edit.before().result().leaves().get("app/main")).factCount()).isEqualTo(6); // 2 types, 2 constructors, N, s
+        assertKind8(digest, edit, "UsesConst", "lib/K", true);
+        assertSameEdges(digest, edit);
+    }
+
+    /** (b) An annotation element value: {@code @Foo(K.VALUE)} on a type. */
+    @ParameterizedTest @MethodSource("digests")
+    void anAnnotationElementValueIsInTheProof(Digest digest) throws Exception {
+        var edit = edited(digest, with(NOTHING, Map.of(
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; }",
+                "lib/src/main/java/lib/Foo.java", "package lib; public @interface Foo { int value(); }",
+                "app/src/main/java/app/Annotated.java", "package app; @lib.Foo(lib.K.VALUE) public class Annotated { }")),
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; }");
+        assertKind8(digest, edit, "Annotated", "lib/K", true);
+        assertSameEdges(digest, edit);
+    }
+
+    /** (c) An enum constant as an annotation value, {@code @Foo(E.X)}; remove {@code X} from {@code E}. */
+    @ParameterizedTest @MethodSource("digests")
+    void anEnumConstantAsAnAnnotationValueIsInTheProof(Digest digest) throws Exception {
+        var edit = edited(digest, with(NOTHING, Map.of(
+                "lib/src/main/java/lib/E.java", "package lib; public enum E { X, Y }",
+                "lib/src/main/java/lib/Foo.java", "package lib; public @interface Foo { E value(); }",
+                "app/src/main/java/app/AnnotatedE.java", "package app; @lib.Foo(lib.E.X) public class AnnotatedE { }")),
+                "lib/src/main/java/lib/E.java", "package lib; public enum E { Y }");
+        assertKind8(digest, edit, "AnnotatedE", "lib/E", true);
+        assertSameEdges(digest, edit);
+    }
+
+    /** A class literal as an annotation value, {@code @Foo(K.class)}, and a nested annotation, {@code @Outer(@Foo(K.VALUE))}. */
+    @ParameterizedTest @MethodSource("digests")
+    void aClassLiteralAndANestedAnnotationAreInTheProof(Digest digest) throws Exception {
+        var lib = with(NOTHING, Map.of(
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; }",
+                "lib/src/main/java/lib/Cls.java", "package lib; public @interface Cls { Class<?> value(); }",
+                "lib/src/main/java/lib/Foo.java", "package lib; public @interface Foo { int value(); }",
+                "lib/src/main/java/lib/Wrap.java", "package lib; public @interface Wrap { Foo value(); }",
+                "app/src/main/java/app/UsesLiteral.java", "package app; @lib.Cls(lib.K.class) public class UsesLiteral { }",
+                "app/src/main/java/app/UsesNested.java", "package app; @lib.Wrap(@lib.Foo(lib.K.VALUE)) public class UsesNested { }"));
+        var edit = edited(digest, lib, "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; public int extra; }");
+        assertKind8(digest, edit, "UsesLiteral", "lib/K", true);
+        assertKind8(digest, edit, "UsesNested", "lib/K", true);
+        assertSameEdges(digest, edit);
+    }
+
+    /** An annotation method's default, {@code int n() default K.VALUE}, is a declaration's name resolution too. */
+    @ParameterizedTest @MethodSource("digests")
+    void anAnnotationMethodDefaultIsInTheProof(Digest digest) throws Exception {
+        var edit = edited(digest, with(NOTHING, Map.of(
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; }",
+                "app/src/main/java/app/Cfg.java", "package app; public @interface Cfg { int n() default lib.K.VALUE; }")),
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; }");
+        assertKind8(digest, edit, "Cfg", "lib/K", true);
+        assertSameEdges(digest, edit);
+    }
+
+    /** Bodies are not declarations: a name resolved only inside a method, a lambda, an initialiser block or a non-final initialiser is not in the proof. */
+    @ParameterizedTest @MethodSource("digests")
+    void aNameResolvedOnlyInsideABodyIsNotInTheProof(Digest digest) throws Exception {
+        var edit = edited(digest, with(NOTHING, Map.of(
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; }",
+                "app/src/main/java/app/Bodies.java", "package app; public class Bodies { public int plain = lib.K.VALUE; static { int x = lib.K.VALUE; } public int f() { return lib.K.VALUE; } public Runnable r() { return () -> System.out.println(lib.K.VALUE); } }")),
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; }");
+        assertThat(row(digest, edit.before(), "Bodies").headerProof()).extracting(FileRow.Proof::typeKey).doesNotContain("lib/K");
+        assertThat(holds(digest, edit.before(), edit.after(), "Bodies")).isTrue();
+    }
+
     /** The type keys in each file of {@code app}'s header proof. */
     private static Map<String, List<String>> proofsOf(Digest digest, Booted booted, List<String> files) {
         var out = new HashMap<String, List<String>>();

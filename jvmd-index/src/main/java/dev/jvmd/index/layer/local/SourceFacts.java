@@ -51,8 +51,8 @@ import com.sun.source.util.Trees;
 public final class SourceFacts {
     /**
      * What one file declares. {@code typeKeys} are internal names; each becomes an {@code O} key. {@code constantTargets} are the types
-     * the initialisers of its constants resolved through (internal names): not edges, because a class file has none for them, but part of
-     * the file's proof, because the value they supply is inlined into its facts.
+     * its declarations resolved a name through outside bodies (internal names, header targets included): not edges, because a class file
+     * has none for them, but part of the file's proof, because what they supply (an inlined constant, an annotation value) is in its facts.
      */
     public record Result(List<Fact> facts, List<Entry> edges, List<String> typeKeys, List<FileRow.Fault> faults, List<String> constantTargets) {
         /** The {@code N} entries of this file: its facts keyed by simple name. */
@@ -218,6 +218,8 @@ public final class SourceFacts {
                 default -> { }
             }
         }
+        // After every member was completed: the lazily attributed initialisers and annotation values are attributed by now.
+        if (!faulted) declarationTargets(type, out.constants);
     }
 
     private void typeFact(TypeElement type, String owner, byte[] key, List<String> errors, Out out) {
@@ -334,7 +336,6 @@ public final class SourceFacts {
                 default -> throw new IllegalArgumentException("Unexpected constant " + constant.getClass());
             }
         }
-        if (constant != null) constantTargets(field, out.constants);
         var annotations = retained(field);
         add(out, key, name, res, tail(field, annotations, false, null));
         typeNames(desc, signature, n -> edge(out, n, FIELD_TYPE, key));
@@ -383,28 +384,67 @@ public final class SourceFacts {
     }
 
     /**
-     * The types the initialiser of a constant resolved through: the qualifier types, the owner of every constant field it names, and so
-     * the owner of a static-imported constant. {@code getConstantValue()} has attributed the initialiser in place, so javac's symbols
-     * are on its tree and {@code Trees.getElement} reads them; nothing here attributes anything. The value of {@code ns.K.VALUE} is inlined
-     * into this file's {@code ConstantValue}, so while {@code K}'s resolution identity is unchanged the value is, and when it changes the
-     * file's facts may have: the file's proof names {@code K} (3.18).
+     * Every type a declaration resolved a name through outside bodies (kind 8), whatever the declaration then did with it: one scanner
+     * over the declaration's tree that skips method bodies, initialiser blocks, lambdas, nested type bodies (each nested type is a
+     * declaration of its own, scanned on its own) and the initialisers of non-final fields. Every resolved {@code TypeElement}, and the
+     * owner of every resolved {@code VariableElement}, is a target.
+     *
+     * <p>That covers the initialiser of a final field whether or not it folded today (javac attributes it for
+     * {@code getConstantValue()} either way, so a {@code K.VALUE} that is not a constant now and becomes one changes this file's facts
+     * with no edge naming {@code K}); the values of annotation elements ({@code @Foo(K.VALUE)}, {@code @Foo(E.X)}, {@code @Foo(K.class)},
+     * nested annotations); and the defaults of annotation methods. Their trees were attributed in place by javac when it completed the
+     * declarations, so its symbols are on them and {@code Trees.getElement} reads them; nothing here attributes anything. Private members
+     * are not facts and are not looked at. The caller removes the header targets (the {@code E} edges), which it has.
      */
-    private void constantTargets(VariableElement field, java.util.Set<String> into) {
+    private void declarationTargets(TypeElement type, java.util.Set<String> into) {
         try {
-            var path = trees.getPath(field);
-            if (path == null || !(path.getLeaf() instanceof com.sun.source.tree.VariableTree variable) || variable.getInitializer() == null) return;
+            var root = trees.getPath(type);
+            if (root == null || !(root.getLeaf() instanceof com.sun.source.tree.ClassTree klass)) return;
             new com.sun.source.util.TreePathScanner<Void, Void>() {
-                @Override public Void visitIdentifier(com.sun.source.tree.IdentifierTree node, Void p) { note(getCurrentPath()); return super.visitIdentifier(node, p); }
+                @Override public Void visitClass(com.sun.source.tree.ClassTree node, Void p) { return node == klass ? super.visitClass(node, p) : null; }
+
+                @Override public Void visitMethod(com.sun.source.tree.MethodTree node, Void p) {
+                    if (isPrivate(getCurrentPath())) return null;
+                    scan(node.getModifiers(), p);
+                    scan(node.getTypeParameters(), p);
+                    scan(node.getReturnType(), p);
+                    scan(node.getParameters(), p);
+                    scan(node.getReceiverParameter(), p);
+                    scan(node.getThrows(), p);
+                    scan(node.getDefaultValue(), p);
+                    return null; // never the body
+                }
+
+                @Override public Void visitVariable(com.sun.source.tree.VariableTree node, Void p) {
+                    var element = trees.getElement(getCurrentPath());
+                    if (element != null && element.getModifiers().contains(Modifier.PRIVATE)) return null;
+                    scan(node.getModifiers(), p);
+                    scan(node.getType(), p);
+                    if (element != null && element.getModifiers().contains(Modifier.FINAL)) scan(node.getInitializer(), p);
+                    return null;
+                }
+
+                @Override public Void visitBlock(com.sun.source.tree.BlockTree node, Void p) { return null; }
+
+                @Override public Void visitLambdaExpression(com.sun.source.tree.LambdaExpressionTree node, Void p) { return null; }
+
+                @Override public Void visitIdentifier(com.sun.source.tree.IdentifierTree node, Void p) { note(getCurrentPath()); return null; }
+
                 @Override public Void visitMemberSelect(com.sun.source.tree.MemberSelectTree node, Void p) { note(getCurrentPath()); return super.visitMemberSelect(node, p); }
+
+                private boolean isPrivate(com.sun.source.util.TreePath at) {
+                    var element = trees.getElement(at);
+                    return element != null && element.getModifiers().contains(Modifier.PRIVATE);
+                }
 
                 private void note(com.sun.source.util.TreePath at) {
                     Element element = trees.getElement(at);
                     if (element instanceof VariableElement variable && variable.getEnclosingElement() instanceof TypeElement owner) element = owner;
-                    if (element instanceof TypeElement type && type.asType().getKind() != TypeKind.ERROR) into.add(binaryName(type));
+                    if (element instanceof TypeElement resolved && resolved.asType().getKind() != TypeKind.ERROR) into.add(binaryName(resolved));
                 }
-            }.scan(new com.sun.source.util.TreePath(path, variable.getInitializer()), null);
+            }.scan(root, null);
         } catch (RuntimeException unreadable) {
-            // A tree javac did not attribute names nothing; the constant's own value is in res either way.
+            // A tree javac did not attribute names nothing; the declaration's own facts are unaffected.
         }
     }
 

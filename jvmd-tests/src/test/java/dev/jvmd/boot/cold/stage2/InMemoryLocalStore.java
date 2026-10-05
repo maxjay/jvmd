@@ -21,6 +21,10 @@ final class InMemoryLocalStore implements LocalStore {
     private final ThreadLocal<List<byte[][]>> pending = ThreadLocal.withInitial(ArrayList::new);
     private final List<String> events = Collections.synchronizedList(new ArrayList<>());
     private final List<byte[]> recordWrites = Collections.synchronizedList(new ArrayList<>());
+    private final java.util.concurrent.atomic.AtomicLong nodeWrites = new java.util.concurrent.atomic.AtomicLong();
+
+    long recordWriteCount() { return recordWrites.size(); }
+    long nodeWriteCount() { return nodeWrites.get(); }
 
     InMemoryLocalStore copy() {
         var out = new InMemoryLocalStore();
@@ -43,7 +47,7 @@ final class InMemoryLocalStore implements LocalStore {
         synchronized (records) { return records.get(key); }
     }
 
-    private static final List<String> LOCAL_TAGS = List.of("LROOT", "MOD", "RT", "F", "DD", "DS", "DC", "C", "X", "RS", "ST", "S");
+    private static final List<String> LOCAL_TAGS = List.of("LROOT", "MOD", "RT", "F", "DD", "DS", "DC", "C", "X", "RS", "ST", "S", "PROC", "PD", "RES", "GEN", "GS");
 
     private static String kindOf(byte[] key) {
         if (Arrays.equals(key, MachineStore.ROOT_KEY)) return "ROOT";
@@ -54,7 +58,7 @@ final class InMemoryLocalStore implements LocalStore {
         return String.valueOf((char) key[0]);
     }
 
-    @Override public void write(Node node) { put(MachineStore.nodeKey(node.hash()), node.bytes()); }
+    @Override public void write(Node node) { nodeWrites.incrementAndGet(); put(MachineStore.nodeKey(node.hash()), node.bytes()); }
     @Override public void putLeaf(Identity k, byte[] leaf) { put(MachineStore.leafKey(k), leaf); }
     @Override public void putPath(String location, byte[] value) { put(MachineStore.pathKey(location), value); }
 

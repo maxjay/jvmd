@@ -72,7 +72,8 @@ final class ModuleJob {
         }
 
         // 3. Header-compile the scope's source files. A module-info.java is parsed with the rest and never entered.
-        var options = module.javacOptions();
+        var options = new ArrayList<>(module.javacOptions());
+        options.addAll(module.processing().options());
         int release = HeaderCompiler.effectiveRelease(module.release(), options.contains("--enable-preview"), Runtime.version().feature());
         var found = sources(module.scope(scope).sourceRoots());
         var toCompile = new ArrayList<HeaderCompiler.Source>(found.size());
@@ -82,13 +83,23 @@ final class ModuleJob {
         var builder = new LeafBuilder(boot.tree, sink);
         var pending = new ArrayList<Pending>();
         var seen = new HashSet<ByteBuffer>();
+        var processing = module.processing().path().isEmpty() || found.isEmpty() ? null : new ModuleProcessing(boot, module, scope, options, release,
+                found.stream().map(Found::path).toList());
+        var processorHost = processing == null ? null : processing.host;
         long headerStarted = System.nanoTime();
-        var compiled = HeaderCompiler.compile(toCompile, classpath, Path.of(boot.model.jdkHome()), release, options, digest);
+        HeaderCompiler.Compiled compiled;
+        try { compiled = HeaderCompiler.compile(toCompile, classpath, Path.of(boot.model.jdkHome()), release, options, digest, processorHost); }
+        catch (RuntimeException | Error failed) { if (processorHost != null) processorHost.close(); throw failed; }
         boot.headerNanos.addAndGet(System.nanoTime() - headerStarted);
-        try (compiled) {
+        try (processorHost; compiled) {
             var extract = new SourceFacts(digest, compiled.elements, compiled.types, compiled.trees, options.contains("-parameters"));
             var unitsByPath = new HashMap<String, HeaderCompiler.Unit>();
             for (var u : compiled.units) unitsByPath.put(u.path, u);
+            var initialPaths = found.stream().map(Found::path).collect(Collectors.toSet());
+            for (var unit : compiled.units) if (!initialPaths.contains(unit.path)) {
+                found.add(new Found(unit.path, boot.model.resolve(unit.path), 0));
+                boot.sourceFiles.incrementAndGet();
+            }
             // 4. Each compilation unit, in path order.
             for (var file : found) {
                 var unit = unitsByPath.get(file.path());
@@ -122,8 +133,15 @@ final class ModuleJob {
                 builder.edges(result.edges());
                 var types = new ArrayList<String>();
                 for (var type : result.typeKeys()) if (kept.contains(ByteBuffer.wrap(Keys.typeKey(type)))) types.add(type);
-                var absences = dev.jvmd.index.layer.local.ProofCollector.headerAbsences(unit.declared, compiled.trees, compiled.elements, compiled.types);
-                pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sum, types, faults, new TreeSet<>(result.headerTargets()), result.constantTargets(), absences));
+                var absences = new ArrayList<>(dev.jvmd.index.layer.local.ProofCollector.headerAbsences(unit.declared, compiled.trees, compiled.elements, compiled.types));
+                var headerTargets = new TreeSet<>(result.headerTargets());
+                if (processorHost != null) for (var read : processorHost.readsFor(file.file().toAbsolutePath().normalize().toUri())) {
+                    headerTargets.addAll(read.types());
+                    for (var name : read.missingTypes()) for (var candidate : ProcessorReads.absentCandidates(name))
+                        absences.add(new dev.jvmd.index.layer.local.HeaderProof.Absence(0, candidate, ""));
+                }
+                pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sum, types, faults, headerTargets, result.constantTargets(),
+                        absences.stream().distinct().toList()));
             }
         }
 
@@ -173,6 +191,11 @@ final class ModuleJob {
             for (var type : p.headerTargets()) if (named.contains(type)) boot.headerConsumers.computeIfAbsent(type, t -> ConcurrentHashMap.newKeySet()).add(consumer);
             for (var type : constants) if (named.contains(type)) boot.constantConsumers.computeIfAbsent(type, t -> ConcurrentHashMap.newKeySet()).add(consumer);
             for (var fault : row.faults()) boot.faults.add(row.path() + ": " + (fault.m().length == 0 ? "" : Keys.ownerOf(fault.m()) + ": ") + fault.reason());
+        }
+        if (processing != null) {
+            var rows = new TreeMap<String, FileRow>();
+            for (var p : pending) rows.put(p.path(), boot.files.get(p.path()));
+            processing.finish(rows);
         }
         sink.flush();
         return leaf;

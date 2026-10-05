@@ -38,8 +38,8 @@ import java.util.concurrent.ConcurrentSkipListMap;
  *
  * <p>Everything that shapes the result is a constructor argument with one call site ({@code BootDecision}): the digest, the tree's
  * boundary parameters, the JDK feature version, the worker count, the Maven repository root and the class parser stage 1 uses for
- * jars indexed on the spot. No LOCAL record is read before the root is written; MACHINE ({@code P|}, {@code L|}, {@code N|} and its
- * {@code ROOT}) is the committed layer below and may be.
+ * jars indexed on the spot. Before publication it reads MACHINE and shared derivations/capabilities listed in {@link LocalStore};
+ * it does not read a previous project's mutable file, route, configuration or domain records to construct the new root.
  */
 public final class Stage2 {
     /** What the boot did: the numbers of the one log line. {@code faults} are {@code path: declaration: reason}, and the classpath entries that bound to nothing. */
@@ -87,8 +87,10 @@ public final class Stage2 {
             try (var defaults = new Defaults(digest, tree, jdkFeature, workers, repository, Path.of(model.jdkHome()), store, boot.written, parser)) {
                 var jdk = defaults.jdk();
                 var jars = new ArrayList<ProjectModel.Dependency>();
-                for (var module : model.modules())
+                for (var module : model.modules()) {
                     for (var scope : List.of(module.main(), module.test())) for (var d : scope.dependencies()) if (d.module() == null) jars.add(d);
+                    jars.addAll(module.processing().path());
+                }
                 defaults.prepare(jars);
                 for (var module : model.modules()) {
                     for (int scope : new int[] {LocalStore.MAIN, LocalStore.TEST}) {
@@ -106,9 +108,14 @@ public final class Stage2 {
                 // Step 3: the LOCAL tree over the records. One batch for the records, one for the tree, one for the root.
                 var records = new ConcurrentSkipListMap<byte[], byte[]>(Arrays::compareUnsigned);
                 records.putAll(boot.definers);
+                for (var record : boot.processingRecords.entrySet()) {
+                    // Content-addressed derivations were already deduplicated by GeneratedOutputs.
+                    if (record.getKey()[0] == 'G') records.put(record.getKey(), record.getValue());
+                    else put(store, records, record.getKey(), record.getValue());
+                }
                 for (var module : model.modules()) {
                     var descriptor = new ModuleRecord(module.coordinate(), effectiveRelease(module), module.moduleInfo(), module.javacOptions(),
-                            module.main().sourceRoots(), module.test().sourceRoots()).encode();
+                            module.main().sourceRoots(), module.test().sourceRoots(), module.processing()).encode();
                     put(store, records, LocalStore.moduleKey(projectKey, module.name()), descriptor);
                     for (int scope : new int[] {LocalStore.MAIN, LocalStore.TEST}) {
                         var route = boot.routes.get(Boot.routeKey(module.name(), scope)).encode();

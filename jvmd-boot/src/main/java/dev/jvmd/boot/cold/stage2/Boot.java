@@ -66,6 +66,8 @@ final class Boot implements AutoCloseable {
     final Map<String, java.util.Set<dev.jvmd.index.layer.local.ReverseIndex.Consumer>> constantConsumers = new ConcurrentHashMap<>();
     /** {@code DD|}, {@code DS|} and {@code DC|} records this boot used: they are part of the LOCAL tree of the project that used them. */
     final ConcurrentSkipListMap<byte[], byte[]> definers = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);
+    final ConcurrentSkipListMap<byte[], byte[]> processingRecords = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);
+    private ProcessorConfiguration configuration;
     final ConcurrentLinkedQueue<String> faults = new ConcurrentLinkedQueue<>();
     final AtomicInteger sourceFiles = new AtomicInteger(), parsedFiles = new AtomicInteger(), sourceLeaves = new AtomicInteger();
     /** Summed over jobs, so with several workers they exceed the wall time: header compilation (parse, enter, member completion), Φ_src, and definer indexes. */
@@ -88,6 +90,38 @@ final class Boot implements AutoCloseable {
     }
 
     static String routeKey(String module, int scope) { return module + "\0" + scope; }
+
+    synchronized ProcessorConfiguration configuration() throws IOException {
+        if (configuration != null) return configuration;
+        var sources = new java.util.TreeSet<String>();
+        var tracked = new java.util.TreeSet<String>();
+        for (var module : model.modules()) {
+            if (module.processing().path().isEmpty()) continue;
+            tracked.addAll(module.processing().configurationFiles());
+            for (var scope : List.of(module.main(), module.test())) for (var sourceRoot : scope.sourceRoots()) {
+                var directory = model.resolve(sourceRoot);
+                if (!Files.isDirectory(directory)) continue;
+                try (var walk = Files.walk(directory)) {
+                    for (var file : walk.filter(p -> p.toString().endsWith(".java") && Files.isRegularFile(p)).toList()) sources.add(sourcePath(file.toUri()));
+                }
+            }
+        }
+        configuration = ProcessorConfiguration.scan(digest, tree, Path.of(model.root()), List.copyOf(sources), List.copyOf(tracked), sink, this::node);
+        sink.flush();
+        processingRecords.put(LocalStore.resourcesKey(projectKey), dev.jvmd.index.layer.local.DefinerIndex.encodeRoot(configuration.root()));
+        return configuration;
+    }
+
+    String sourcePath(java.net.URI uri) {
+        var base = Path.of(model.root()).toAbsolutePath().normalize();
+        var file = Path.of(uri).toAbsolutePath().normalize();
+        return (file.startsWith(base) ? base.relativize(file) : file).toString().replace('\\', '/');
+    }
+
+    Path generatedDirectory(String module, int scope) {
+        var name = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(module.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return model.resolve(".jvmd/generated/" + name + "/" + scope);
+    }
 
     /**
      * The leaf of {@code k}: a leaf some job of this boot built comes from {@link Built}, which holds the object; only a MACHINE leaf

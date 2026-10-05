@@ -857,19 +857,23 @@ The stage 2 side of 3.5 and C.5, as its own PR after appendix A. It changes no i
 ```
 RES|projectKey                             ContentTree root over the configuration files jvmd tracks: key zstr path, h = Digest(path || κ); a directory with no file is a range of sum zero
 PD|projectKey|module|scope|processorClass  ContentTree root over the elements carrying one of the processor's supported annotations: key elementKey, value processorElementProjection(e), h = Digest(elementKey || processorElementProjection(e))
-GEN|id                                     = str processorClass || bytes generatedSource
+GEN|id                                     = generatedOutputTreeRoot
                                            id = Digest(processorClass || processorPathHash || optionsHash || zstr path_f || κ_f || configProof(f) || sorted (key || sum) of f's header proof)   // isolating
                                            id = Digest(processorClass || processorPathHash || optionsHash || rootSum(PD))                                                          // aggregating
+GS|contentId                               = generated source bytes; contentId = Digest(sourceBytes)
+GeneratedOutputTree                        key = u8 outputKind || zstr path; value = contentId; h = Digest(key || contentId)
 F| row                                     += u8 generated || opt<zstr originPath> || opt<id genId>
 PROC|processorPathHash|processorClass      = u8 declared (0 none, 1 isolating, 2 aggregating) || u8 observed (0 overlay, 1 generator, 2 violated)   // the recorded capability of 3.5
 ```
+
+**Normative clarification from Max, 2026-10-05: generated output sets.** A derivation may emit multiple files. `GEN|derivationId` stores their `ContentTree` root, with kind/path keys and content-id values; generated Java bytes are deduplicated in `GS|Digest(bytes)`. Every generated row from that derivation points to the same `genId`. The derivation identity describes inputs, the tree root describes the exact output set, and each content id describes one artifact's bytes. Use root-hash equality and `Diff` for exact output identity and added/removed/changed files. Entry hashes bind keys to content ids; the tree's natural sum is not added to another proof or key without a real projected-semantic use. Two clean processor runs with identical inputs must give the same derivation id, output root and bytes. For changed inputs, the output-tree Diff must exactly match generated-row insertions, removals and changes. Output blobs and unchanged tree nodes must be shared across derivations.
 
 The wrapper (C.5) is how `PD|`, `GEN|` and `PROC|` are observed: a delegating `Processor` whose `init` hands the processor a `ProcessingEnvironment` with a recording `Filer`. Lombok locates the real `JavacProcessingEnvironment` by reflecting over the fields of whatever wrapper it is given, as it does for Gradle's and IntelliJ's, so the wrapper keeps the delegate in a field and the test of F.2 item 1 pins that Lombok runs through it.
 
 **F.2 Tests**
 
 1. A module with Lombok on its processor path: the header compile through the wrapper gives facts equal to the header compile without it, and equal to class facts of a javac build of the module (stage 2 invariant 1 with processing on).
-2. A module with AutoValue: every generated file has one originating element, its row carries the origin and a `GEN|` id, and `GEN|` holds its bytes; regenerating with an unchanged originating file writes nothing.
+2. A module with AutoValue: every generated file has one originating element, its row carries the origin and a shared `GEN|` derivation id; GEN holds the output-tree root and GS holds each generated source's bytes. Regenerating with an unchanged originating file writes no GEN, GS or output-tree nodes. Separate clean invocations agree on derivation id, output root and bytes; manifest Diff agrees exactly with generated-row changes.
 3. `lombok.config` added, edited and deleted at two depths: `RES|` moves at exactly those paths; the configuration chain of a file below reads the change, the chain of a file beside it does not.
 4. An aggregating processor over `@Entity`: `PD|` holds exactly the annotated elements; a body edit in an entity class leaves its root sum unchanged; adding one `@Entity` is one insertion.
 5. A processor with no declaration, and one declaring isolating that emits a file with two originating elements: `PROC|` records the violation, the boot names the class, and no record of the module carries a module-, route- or project-wide identity in place of a read.

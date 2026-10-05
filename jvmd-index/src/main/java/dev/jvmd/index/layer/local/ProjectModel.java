@@ -24,8 +24,16 @@ public record ProjectModel(String root, String jdkHome, List<Module> modules, by
     }
 
     /** {@code coordinate} is the module's own, for siblings that depend on it. */
-    public record Module(String name, String coordinate, int release, boolean moduleInfo, List<String> javacOptions, Scope main, Scope test) {
+    public record Module(String name, String coordinate, int release, boolean moduleInfo, List<String> javacOptions, Scope main, Scope test, Processing processing) {
+        public Module(String name, String coordinate, int release, boolean moduleInfo, List<String> javacOptions, Scope main, Scope test) {
+            this(name, coordinate, release, moduleInfo, javacOptions, main, test, Processing.NONE);
+        }
         public Scope scope(int scope) { return scope == LocalStore.MAIN ? main : test; }
+    }
+
+    /** Executable processor jars, explicit processor selection, options and tracked configuration files. */
+    public record Processing(List<Dependency> path, List<String> processors, List<String> options, List<String> configurationFiles) {
+        public static final Processing NONE = new Processing(List.of(), List.of(), List.of(), List.of());
     }
 
     public record Scope(List<String> sourceRoots, List<Dependency> dependencies) { }
@@ -43,7 +51,7 @@ public record ProjectModel(String root, String jdkHome, List<Module> modules, by
             for (var m : doc.path("modules")) {
                 var scopes = m.path("scopes");
                 modules.add(new Module(text(m, "name"), text(m, "coordinate"), m.path("release").asInt(0), m.path("moduleInfo").asBoolean(false),
-                        strings(m.path("javacOptions")), scope(scopes.path("main")), scope(scopes.path("test"))));
+                        strings(m.path("javacOptions")), scope(scopes.path("main")), scope(scopes.path("test")), processing(m.path("processing"))));
             }
             return new ProjectModel(text(doc, "root"), text(doc, "jdkHome"), List.copyOf(modules), json.clone());
         } catch (IOException e) {
@@ -52,15 +60,24 @@ public record ProjectModel(String root, String jdkHome, List<Module> modules, by
     }
 
     private static Scope scope(JsonNode node) {
+        return new Scope(strings(node.path("sourceRoots")), dependencies(node.path("dependencies")));
+    }
+
+    private static Processing processing(JsonNode node) {
+        return node.isMissingNode() ? Processing.NONE : new Processing(dependencies(node.path("path")), strings(node.path("processors")),
+                strings(node.path("options")), strings(node.path("configurationFiles")));
+    }
+
+    private static List<Dependency> dependencies(JsonNode nodes) {
         var deps = new ArrayList<Dependency>();
-        for (var d : node.path("dependencies")) {
+        for (var d : nodes) {
             String location = d.hasNonNull("location") ? d.get("location").asText() : null;
             String module = d.hasNonNull("module") ? d.get("module").asText() : null;
             if ((location == null) == (module == null))
                 throw new Fault("Dependency " + text(d, "coordinate") + " must have exactly one of location and module");
             deps.add(new Dependency(text(d, "coordinate"), location, module));
         }
-        return new Scope(strings(node.path("sourceRoots")), List.copyOf(deps));
+        return List.copyOf(deps);
     }
 
     private static String text(JsonNode node, String field) {
@@ -80,6 +97,10 @@ public record ProjectModel(String root, String jdkHome, List<Module> modules, by
         for (var m : modules) if (!names.add(m.name())) throw new Fault("Duplicate module name: " + m.name());
         for (var m : modules) {
             try { Coordinate.parse(m.coordinate()); } catch (IllegalArgumentException e) { throw new Fault("Module " + m.name() + ": " + e.getMessage(), e); }
+            for (var processor : m.processing().path()) {
+                if (processor.module() != null) throw new Fault("Processor path requires executable jar bytes, not sibling stubs: " + processor.module());
+                try { Coordinate.parse(processor.coordinate()); } catch (IllegalArgumentException e) { throw new Fault("Module " + m.name() + ": " + e.getMessage(), e); }
+            }
             for (var scope : List.of(m.main(), m.test()))
                 for (var d : scope.dependencies()) {
                     try { Coordinate.parse(d.coordinate()); } catch (IllegalArgumentException e) { throw new Fault("Module " + m.name() + ": " + e.getMessage(), e); }

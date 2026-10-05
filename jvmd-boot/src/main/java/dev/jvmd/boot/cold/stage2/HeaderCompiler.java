@@ -13,13 +13,13 @@ import dev.jvmd.index.layer.local.FileRow;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
@@ -141,21 +141,27 @@ final class HeaderCompiler {
      * @param release   the language level; with {@code --enable-preview} the caller has already made it the running feature version
      */
     static Compiled compile(List<Source> sources, List<Path> classpath, Path jdkHome, int release, List<String> javacOptions, Digest digest) {
+        return compile(sources, classpath, jdkHome, release, javacOptions, digest, null);
+    }
+
+    static Compiled compile(List<Source> sources, List<Path> classpath, Path jdkHome, int release, List<String> javacOptions, Digest digest, ProcessorHost host) {
         // A scope with no source files has an empty leaf (appendix A); javac would call it an error.
         if (sources.isEmpty()) return new Compiled(List.of(), null, null, null, null, null);
         var options = new ArrayList<String>();
-        options.addAll(List.of("-source", String.valueOf(release), "-Xlint:-options", "-proc:none", "-implicit:none"));
+        options.addAll(List.of("-source", String.valueOf(release), "-Xlint:-options", host == null ? "-proc:none" : "-proc:full", "-implicit:none"));
         options.add("--class-path");
         // An empty classpath would be the current directory; a path that cannot exist is the empty classpath.
         options.add(classpath.isEmpty() ? Path.of(System.getProperty("java.io.tmpdir"), "jvmd-no-classpath").toString()
                 : String.join(File.pathSeparator, classpath.stream().map(Path::toString).toList()));
         options.addAll(List.of("--system", jdkHome.toString()));
         options.addAll(filtered(javacOptions));
+        options.addAll(List.of("-encoding", charset(javacOptions).name()));
+        if (host != null) options.addAll(List.of("-s", host.generatedDirectory().toString(), "-d", host.generatedDirectory().toString()));
 
         var compiler = ToolProvider.getSystemJavaCompiler();
         var diagnostics = new DiagnosticCollector<JavaFileObject>();
         var charset = charset(javacOptions);
-        var files = compiler.getStandardFileManager(diagnostics, null, charset);
+        var files = compiler.getStandardFileManager(diagnostics, Locale.ROOT, charset);
         var units = new ArrayList<Unit>(sources.size());
         var objects = new ArrayList<SourceObject>(sources.size());
         // javac hands its own wrappers back, so a file is recognised by its URI, never by the object it was given.
@@ -163,36 +169,91 @@ final class HeaderCompiler {
         for (var source : sources) {
             var unit = new Unit(source.path());
             units.add(unit);
-            var object = new SourceObject(uri(source.path()), unit, source.file(), charset, digest);
+            var object = new SourceObject(source.file().toAbsolutePath().normalize().toUri(), unit, source.file(), charset, digest);
             objects.add(object);
             byUri.put(object.toUri(), unit);
         }
         JavacTaskImpl task = null;
         try {
             task = (JavacTaskImpl) compiler.getTask(null, files, diagnostics, options, null, objects);
+            task.setLocale(Locale.ROOT);
+            if (host != null) {
+                new ProcessorTrees(task.getContext(), host);
+                task.setProcessors(host.processors());
+            }
+            var generatedTrees = new ArrayList<CompilationUnitTree>();
+            task.addTaskListener(new com.sun.source.util.TaskListener() {
+                @Override public void finished(com.sun.source.util.TaskEvent event) {
+                    if (event.getKind() == com.sun.source.util.TaskEvent.Kind.PARSE && event.getCompilationUnit() != null
+                            && !byUri.containsKey(event.getCompilationUnit().getSourceFile().toUri())) generatedTrees.add(event.getCompilationUnit());
+                }
+            });
             var parsed = new ArrayList<CompilationUnitTree>();
             for (var tree : task.parse()) parsed.add(tree);
             for (var d : diagnostics.getDiagnostics()) {
                 if (d.getKind() != Diagnostic.Kind.ERROR) continue;
                 var unit = d.getSource() == null ? null : byUri.get(d.getSource().toUri());
                 if (unit != null) {
-                    var message = d.getLineNumber() + ":" + d.getColumnNumber() + " " + d.getMessage(null);
+                    var message = message(d);
                     unit.parseError = unit.parseError == null ? message : unit.parseError + "; " + message;
-                } else throw new IllegalStateException("javac refused the module's options: " + d.getMessage(null));
+                } else throw new IllegalStateException("javac refused the module's options: " + d.getMessage(Locale.ROOT));
             }
             var entered = new ArrayList<CompilationUnitTree>();
+            var consumed = new ArrayList<CompilationUnitTree>();
             for (var tree : parsed) {
                 var unit = byUri.get(tree.getSourceFile().toUri());
-                if (!unit.parsed()) continue;
                 // Classpath mode has no use for a module declaration: its descriptor fact is read from the parsed directives.
-                if (tree.getModule() != null) unit.module = tree.getModule();
-                else entered.add(tree);
+                if (unit.parsed() && tree.getModule() != null) unit.module = tree.getModule();
+                if (unit.parsed() && tree.getModule() == null) {
+                    entered.add(tree);
+                    consumed.add(tree);
+                } else {
+                    // Consume javac's pending-file slot without entering the excluded declaration. Otherwise processor
+                    // Element lookups call ensureEntered(), which tries to initialize the module graph a second time.
+                    var empty = com.sun.tools.javac.tree.TreeMaker.instance(task.getContext()).TopLevel(com.sun.tools.javac.util.List.nil());
+                    empty.sourcefile = ((com.sun.tools.javac.tree.JCTree.JCCompilationUnit) tree).sourcefile;
+                    consumed.add(empty);
+                }
             }
-            task.enter(entered);
+            task.enter(consumed);
+
+            // Processor rounds defer their diagnostics until after PARSE has finished. Classify them using javac's syntax
+            // flag, not translated message text; a resolution error remains a declaration fault in SourceFacts.
+            var generatedParseErrors = new java.util.HashMap<URI, String>();
+            for (var diagnostic : diagnostics.getDiagnostics()) {
+                if (diagnostic.getKind() != Diagnostic.Kind.ERROR || diagnostic.getSource() == null) continue;
+                var raw = diagnostic instanceof com.sun.tools.javac.api.ClientCodeWrapper.DiagnosticSourceUnwrapper wrapped ? wrapped.d
+                        : diagnostic instanceof com.sun.tools.javac.util.JCDiagnostic d ? d : null;
+                if (raw != null && raw.isFlagSet(com.sun.tools.javac.util.JCDiagnostic.DiagnosticFlag.SYNTAX))
+                    generatedParseErrors.merge(diagnostic.getSource().toUri(), message(diagnostic), (a, b) -> a + "; " + b);
+            }
+
+            for (var tree : generatedTrees) {
+                var uri = tree.getSourceFile().toUri();
+                var unit = new Unit(host.sourcePath(uri));
+                var bytes = Files.readAllBytes(Path.of(uri));
+                unit.kappa = digest.hash(bytes);
+                unit.size = bytes.length;
+                unit.parseError = generatedParseErrors.get(uri);
+                byUri.put(uri, unit);
+                units.add(unit);
+                entered.add(tree);
+            }
+
+            if (host != null) for (var output : host.outputs()) {
+                if (output.kind() != JavaFileObject.Kind.SOURCE || byUri.containsKey(output.uri())) continue;
+                var unit = new Unit(host.sourcePath(output.uri()));
+                unit.kappa = digest.hash(output.bytes());
+                unit.size = output.bytes().length;
+                unit.parseError = "annotation processing did not enter this generated source";
+                units.add(unit);
+                byUri.put(output.uri(), unit);
+            }
 
             var trees = Trees.instance(task);
             for (var tree : entered) {
                 var unit = byUri.get(tree.getSourceFile().toUri());
+                if (!unit.parsed()) continue;
                 for (var decl : tree.getTypeDecls()) {
                     if (!(decl instanceof ClassTree klass)) continue;
                     Element element = trees.getElement(TreePath.getPath(tree, klass));
@@ -206,10 +267,17 @@ final class HeaderCompiler {
                 }
             }
             return new Compiled(units, task.getElements(), task.getTypes(), trees, task, files);
-        } catch (RuntimeException e) {
+        } catch (IOException e) {
+            release(task, files);
+            throw new java.io.UncheckedIOException(e);
+        } catch (RuntimeException | Error e) {
             release(task, files);
             throw e;
         }
+    }
+
+    private static String message(Diagnostic<? extends JavaFileObject> diagnostic) {
+        return diagnostic.getLineNumber() + ":" + diagnostic.getColumnNumber() + " " + diagnostic.getMessage(Locale.ROOT);
     }
 
     /** C.1: forces completion of a type's header and members, so that everything javac resolves is resolved before facts are read. */
@@ -231,13 +299,19 @@ final class HeaderCompiler {
         return Keys.typeKey(pkg + klass.getSimpleName());
     }
 
-    private static URI uri(String path) {
-        try { return new URI("mem", "", "/" + path, null); } catch (URISyntaxException e) { throw new IllegalArgumentException(e); }
+    static Charset charset(List<String> options) {
+        var charset = StandardCharsets.UTF_8;
+        for (int i = 0; i + 1 < options.size(); i++) if (options.get(i).equals("-encoding")) charset = Charset.forName(options.get(++i));
+        return charset;
     }
 
-    private static Charset charset(List<String> options) {
-        int at = options.indexOf("-encoding");
-        return at >= 0 && at + 1 < options.size() ? Charset.forName(options.get(at + 1)) : StandardCharsets.UTF_8;
+    static Identity optionsHash(Digest digest, List<String> options, int release, Identity processorPathHash, List<String> processors) {
+        var filtered = filtered(options);
+        var out = new dev.jvmd.core.tree.Codec.Writer().u32(filtered.size());
+        for (var option : filtered) out.str(option);
+        out.u8(release).str(charset(options).name()).optId(processorPathHash).u32(processors.size());
+        for (var processor : processors) out.str(processor);
+        return digest.hash(out.toBytes());
     }
 
     /** Options that take an argument, and are dropped with it (C.1). */

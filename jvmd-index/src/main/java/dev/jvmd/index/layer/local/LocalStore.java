@@ -12,7 +12,8 @@ import dev.jvmd.index.layer.machine.MachineStore;
  * <p>One put and one get, over keys from the layout below: a record kind is a key function, not a method. {@link #put} buffers in the
  * calling thread's batch and is committed by {@link #flush()}, as stage 1's. {@link #putLocalRoot} commits at once and is called only
  * after {@link #sync()}. Stage 2 itself reads only MACHINE's records ({@code L|}, {@code N|}, {@code P|}, {@code ROOT}) and the shared,
- * derivable ones ({@code DD|}, {@code DS|}, {@code S|}, {@code ST|}) before its root; the others are for warm boot and attribution.
+ * derivable ones ({@code DD|}, {@code DS|}, {@code S|}, {@code ST|}, {@code GEN|}, {@code GS|}), and the byte-keyed processor capability
+ * record ({@code PROC|}) before its root; the others are for warm boot and attribution. PROC retains observed violations across boots.
  */
 public interface LocalStore extends MachineStore {
     /** Buffers one record under {@code key}. */
@@ -48,6 +49,15 @@ public interface LocalStore extends MachineStore {
     static byte[] resultKey(Identity kappa, Identity leafSetExt) { return join("RS|", kappa.view(), "|", leafSetExt.view()); }
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }
     static byte[] stubTypeKey(Identity stKey) { return join("ST|", stKey.view()); }
+    static byte[] generatedKey(Identity derivation) { return join("GEN|", derivation.view()); }
+    static byte[] generatedSourceKey(Identity content) { return join("GS|", content.view()); }
+    static byte[] resourcesKey(Identity projectKey) { return join("RES|", projectKey.view()); }
+    static byte[] processorDomainKey(Identity projectKey, String module, int scope, String processorClass) {
+        return join("PD|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope}, "|", processorClass.getBytes(StandardCharsets.UTF_8));
+    }
+    static byte[] processorKey(Identity processorPathHash, String processorClass) {
+        return join("PROC|", processorPathHash.view(), "|", processorClass.getBytes(StandardCharsets.UTF_8));
+    }
     static byte[] localRootKey(Identity projectKey) { return join("LROOT|", projectKey.view()); }
     /** A kept previous root; {@code n} counts from 1, oldest first. */
     static byte[] localRootHistoryKey(Identity projectKey, int n) {

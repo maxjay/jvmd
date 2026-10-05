@@ -91,7 +91,7 @@ public final class Stage1 {
         // Step 3: the machine tree. Each leaf was written by the job that won its claim.
         var all = leaves.all();
         var sink = written.through(store);
-        var machine = MachineTree.build(tree, all, sink);
+        var machine = MachineTree.build(tree, all, sink.named("MACHINE"));
         sink.flush();
 
         // Step 4: paths (with their faults), one sync, and the root, last.

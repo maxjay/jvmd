@@ -137,6 +137,49 @@ class HeaderAbsencesTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void memberTypeAbsencesUseExactSimpleNameAndDirectOwner(Digest digest) throws Exception {
+        fixture();
+        Stage2Support.write(root, Map.of(
+                "dep/src/main/java/q/Foo.java", "package q; public class Foo {}",
+                "dep/src/main/java/q/Bar.java", "package q; public class Bar {}",
+                "dep/src/main/java/q/Base.java", "package q; public class Base { public static class Foobar {} public static class Foo$Bar {} }",
+                "app/src/main/java/p/B.java", "package p; import q.*; public class B extends Base { Foo f; Bar b; }"));
+        var before = boot(digest);
+        var foo = new HeaderProof.Absence(1, "q/Base", "Foo");
+        var bar = new HeaderProof.Absence(1, "q/Base", "Bar");
+        assertThat(row(digest, before, "B").absences()).contains(foo, bar);
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/Base.java",
+                "package q; public class Base { public static class Foobar {} public static class Foo$Bar {} public static class Foo {} }"));
+        var after = boot(digest);
+        var tree = new ContentTree(digest);
+        var leaf = MachineLeaf.decode(after.store.get(MachineStore.leafKey(after.result.leaves().get("dep/main"))), digest.width());
+        assertThat(HeaderProof.absent(foo, tree, _ -> leaf, h -> after.store.get(MachineStore.nodeKey(h)))).isFalse();
+        assertThat(HeaderProof.absent(bar, tree, _ -> leaf, h -> after.store.get(MachineStore.nodeKey(h)))).isTrue();
+        assertThat(valid(digest, row(digest, before, "B"), after)).isFalse();
+        assertThat(valid(digest, row(digest, before, "Unrelated"), after)).isTrue();
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/Base.java",
+                "package q; public class Base { public static class Foo { public static class Bar {} } }"));
+        var nested = boot(digest);
+        var nestedLeaf = MachineLeaf.decode(nested.store.get(MachineStore.leafKey(nested.result.leaves().get("dep/main"))), digest.width());
+        assertThat(HeaderProof.absent(bar, tree, _ -> nestedLeaf, h -> nested.store.get(MachineStore.nodeKey(h)))).isTrue();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void qualifiedPackageHeadCanBeShadowedOnlyForHeaderConsumers(Digest digest) throws Exception {
+        fixture();
+        Stage2Support.write(root, Map.of(
+                "app/src/main/java/p/B.java", "package p; public class B { java.util.List<String> values; }",
+                "app/src/main/java/p/Unrelated.java", "package p; public class Unrelated { void body() { java.util.List.of(); } }"));
+        var before = boot(digest);
+        assertThat(row(digest, before, "B").absences()).contains(new HeaderProof.Absence(0, "p/java", ""));
+        assertThat(row(digest, before, "Unrelated").absences()).doesNotContain(new HeaderProof.Absence(0, "p/java", ""), new HeaderProof.Absence(0, "p/p", ""));
+        Stage2Support.write(root, Map.of("app/src/main/java/p/java.java", "package p; public class java {}"));
+        var after = boot(digest);
+        assertThat(valid(digest, row(digest, before, "B"), after)).isFalse();
+        assertThat(valid(digest, row(digest, before, "Unrelated"), after)).isTrue();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void bodyOnlyEditLeavesEveryHeaderValid(Digest digest) throws Exception {
         fixture();
         var before = boot(digest);

@@ -35,6 +35,14 @@ class LocalCodecsTest {
 
     private static Identity id(String s) { return D.hash(s.getBytes()); }
 
+    @Test void annotationAndSourceLeafRecordsRetainFullRoots() {
+        var binding = new dev.jvmd.index.layer.local.SourceLeaf(id("k"), id("a"));
+        assertThat(dev.jvmd.index.layer.local.SourceLeaf.decode(binding.encode(), D.width())).isEqualTo(binding);
+        var roots = new dev.jvmd.index.layer.machine.AnnotationLeaf(new Root(id("A"), id("A.sum"), 73, 2), new Root(id("EA"), id("EA.sum"), 16, 1));
+        assertThat(dev.jvmd.index.layer.machine.AnnotationLeaf.decode(roots.encode(), D.width())).isEqualTo(roots);
+        assertThat(roots.encode().length).isEqualTo(4 * D.width() + 10);
+    }
+
     @Test void routesAndRecordsRoundTrip() {
         var route = new Route(List.of(new RouteEntry.Jrt("jrt:/java.base", "java.base", id("jdk"), id("jdk-annotations")), new RouteEntry.Jar("g:a:1", "g/a/1/a-1.jar", id("jar"), id("jar-annotations")),
                 new RouteEntry.Jar("g:missing:1", "g/missing/1/missing-1.jar", null, null), new RouteEntry.Sibling("g:b:1", "b")), id("hash"), id("R"), id("ext"), id("sib"));

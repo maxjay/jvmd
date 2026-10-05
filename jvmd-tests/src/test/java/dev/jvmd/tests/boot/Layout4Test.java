@@ -37,15 +37,24 @@ class Layout4Test {
 
     private Leaf leaf(Digest digest, String fixture, String source) throws Exception {
         var classes = BootFixtures.compile(dir.resolve(fixture), Map.of("p/K.java", source), "-parameters");
-        var facts = ClassFacts.of(digest, classes.get("p/K.class"), "p/K");
+        return leaf(digest, Map.of("p/K.class", classes.get("p/K.class")));
+    }
+
+    private Leaf leaf(Digest digest, Map<String, byte[]> classes) throws Exception {
         var nodes = new HashMap<Identity, byte[]>();
         var tree = new ContentTree(digest);
         var builder = new LeafBuilder(tree, new NodeSink() {
             public void write(Node node) { nodes.put(node.hash(), node.bytes()); }
             public void flush() { }
         });
-        facts.facts().forEach(builder::add);
-        builder.edges(facts.edges());
+        var facts = new java.util.ArrayList<dev.jvmd.index.layer.machine.Fact>();
+        for (var c : classes.entrySet()) {
+            var parsed = ClassFacts.of(digest, c.getValue(), c.getKey().substring(0, c.getKey().length() - 6));
+            facts.addAll(parsed.facts());
+            builder.edges(parsed.edges());
+        }
+        facts.sort((a, b) -> java.util.Arrays.compareUnsigned(a.m(), b.m()));
+        facts.forEach(builder::add);
         builder.seal();
         return new Leaf(tree, builder.build(), builder.a(), builder.annotations(), builder.annotationEdges(), nodes);
     }
@@ -93,10 +102,63 @@ class Layout4Test {
     void exchangingFieldValuesChangesRangeAndOwnerSums(Digest digest) throws Exception {
         var before = leaf(digest, "before", "package p; public class K { public static final int x=1, y=2; }");
         var after = leaf(digest, "after", "package p; public class K { public static final int x=2, y=1; }");
+        assertThat(unboundSum(after)).as("the old sum loses the key/value association").isEqualTo(unboundSum(before));
         assertThat(after.value.r()).isNotEqualTo(before.value.r());
+        var range = Keys.groupKey("p/K", Keys.FIELD, "x");
+        assertThat(after.tree.rangeSum(after.value.k(), after.nodes::get, range))
+                .isNotEqualTo(before.tree.rangeSum(before.value.k(), before.nodes::get, range));
         var key = Keys.ownerKey("p/K");
         assertThat(after.tree.get(after.value.oHash(), after.nodes::get, key).h())
                 .isNotEqualTo(before.tree.get(before.value.oHash(), before.nodes::get, key).h());
+    }
+
+    private Identity unboundSum(Leaf leaf) {
+        var sum = leaf.tree.sums().zero();
+        var entries = new java.util.ArrayList<Entry>();
+        leaf.tree.forEach(leaf.value.k(), leaf.nodes::get, entries::add);
+        for (var entry : entries)
+            sum = leaf.tree.sums().add(sum, leaf.tree.digest().hash(entry.value()));
+        return sum;
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void exchangingMemberSetsBetweenTypesChangesKeyBoundSums(Digest digest) throws Exception {
+        var before = leaf(digest, BootFixtures.compile(dir.resolve("owners-before"), Map.of(
+                "p/K.java", "package p; public class K { public static final int x=1; }",
+                "p/J.java", "package p; public class J { public static final int y=2; }")));
+        var after = leaf(digest, BootFixtures.compile(dir.resolve("owners-after"), Map.of(
+                "p/K.java", "package p; public class K { public static final int y=2; }",
+                "p/J.java", "package p; public class J { public static final int x=1; }")));
+        assertThat(unboundSum(after)).isEqualTo(unboundSum(before));
+        assertThat(after.value.r()).isNotEqualTo(before.value.r());
+        for (var owner : List.of("p/K", "p/J")) {
+            assertThat(after.tree.get(after.value.oHash(), after.nodes::get, Keys.ownerKey(owner)).h())
+                    .isNotEqualTo(before.tree.get(before.value.oHash(), before.nodes::get, Keys.ownerKey(owner)).h());
+            var range = Keys.groupKey(owner, Keys.FIELD, "x");
+            assertThat(after.tree.rangeSum(after.value.k(), after.nodes::get, range))
+                    .isNotEqualTo(before.tree.rangeSum(before.value.k(), before.nodes::get, range));
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void exchangingThrowsListsPreservesTheUnboundSumOnly(Digest digest) throws Exception {
+        var before = leaf(digest, "throws-before", "package p; public class K { public void f() throws java.io.IOException {} public void g() throws ReflectiveOperationException {} }");
+        var after = leaf(digest, "throws-after", "package p; public class K { public void f() throws ReflectiveOperationException {} public void g() throws java.io.IOException {} }");
+        assertThat(unboundSum(after)).isEqualTo(unboundSum(before));
+        assertThat(after.value.r()).isNotEqualTo(before.value.r());
+        var range = Keys.groupKey("p/K", Keys.METHOD, "f");
+        assertThat(after.tree.rangeSum(after.value.k(), after.nodes::get, range)).isNotEqualTo(before.tree.rangeSum(before.value.k(), before.nodes::get, range));
+        assertThat(after.tree.get(after.value.oHash(), after.nodes::get, Keys.ownerKey("p/K")).h())
+                .isNotEqualTo(before.tree.get(before.value.oHash(), before.nodes::get, Keys.ownerKey("p/K")).h());
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void deprecationSinceIsNotAResolutionInput(Digest digest) throws Exception {
+        var before = leaf(digest, "since-before", "package p; @Deprecated(since=\"1\") public class K { @Deprecated(since=\"1\") public int f; @Deprecated(since=\"1\") public void m() {} }");
+        var after = leaf(digest, "since-after", "package p; @Deprecated(since=\"2\", forRemoval=false) public class K { @Deprecated(since=\"2\", forRemoval=false) public int f; @Deprecated(since=\"2\", forRemoval=false) public void m() {} }");
+        assertThat(after.value.encode()).isEqualTo(before.value.encode());
+        assertThat(Stubs.stubs(digest, after.tree, after.value, after.nodes::get, Stubs.Cache.NONE).getFirst().bytes())
+                .isEqualTo(Stubs.stubs(digest, before.tree, before.value, before.nodes::get, Stubs.Cache.NONE).getFirst().bytes());
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -181,6 +243,33 @@ class Layout4Test {
         for (var e : diff.removed()) sum = tree.sums().subtract(sum, e.h());
         for (var e : diff.added()) sum = tree.sums().add(sum, e.h());
         return sum;
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void artifactsSharingAnApiPersistBothAnnotationRoots(Digest digest) throws Exception {
+        var locations = new java.util.ArrayList<dev.jvmd.boot.cold.stage1.Enumerate.Location>();
+        for (int value : new int[] {1, 2}) {
+            String name = "g/k/" + value + "/k.jar";
+            var jar = BootFixtures.jar(dir, name, MachineColdBootTest.T1, Map.of("p/K.java",
+                    "package p; import java.lang.annotation.*; @Retention(RetentionPolicy.RUNTIME) @interface A { int value(); } @A(" + value + ") public class K {}"));
+            locations.add(dev.jvmd.boot.cold.stage1.Enumerate.jar(name, jar));
+        }
+        var store = new InMemoryMachineStore();
+        var tree = new ContentTree(digest);
+        var result = new dev.jvmd.boot.cold.stage1.Stage1(digest, tree, Runtime.version().feature(), 2, ClassFacts::of).run(store, locations);
+        assertThat(result.leaves()).isEqualTo(1);
+        var ids = new java.util.HashSet<Identity>();
+        for (var location : locations) {
+            var path = dev.jvmd.index.layer.machine.MachineTree.decodePath(store.get(dev.jvmd.index.layer.machine.MachineStore.pathKey(location.name())), digest.width());
+            ids.add(path.a());
+            var encoded = store.get(dev.jvmd.index.layer.machine.MachineStore.annotationLeafKey(path.a()));
+            assertThat(encoded).isNotNull();
+            var leaf = dev.jvmd.index.layer.machine.AnnotationLeaf.decode(encoded, digest.width());
+            assertThat(digest.hash(leaf.annotations().hash().view(), leaf.edges().hash().view())).isEqualTo(path.a());
+            tree.verify(leaf.annotations(), h -> store.get(dev.jvmd.index.layer.machine.MachineStore.nodeKey(h)));
+            tree.verify(leaf.edges(), h -> store.get(dev.jvmd.index.layer.machine.MachineStore.nodeKey(h)));
+        }
+        assertThat(ids).hasSize(2);
     }
 
     @ParameterizedTest @MethodSource("digests")

@@ -1,17 +1,18 @@
 # LAYOUT 4 implementation audit
 
-This is Appendix A of [the Stage 3 specification](jvmd-stage3-bodies.md), before processor support (Appendix F) and body attribution. It creates no Stage 3 proof or result. The remaining Stage 3 gates are tracked in [stage3-progress.md](stage3-progress.md).
+This is Appendix A of [the Stage 3 specification snapshot, revision 123](jvmd-stage3-bodies.md), before processor support (Appendix F) and body attribution. It creates no Stage 3 proof or result. The remaining Stage 3 gates are tracked in [stage3-progress.md](stage3-progress.md).
 
 ## Projection and sum semantics
 
 | Projection | Entry identity and meaning | Counterexample checks |
 | --- | --- | --- |
-| T; r; member ranges | `Digest(m || res)`, summed over a map of declaration keys to resolution facts | Exchanging two constant values between unchanged field keys changes r and oSum. Insertion/removal/replacement conservation is checked by actual tree edits. Reordering input declarations preserves the sorted map. |
+| T; r; member ranges | `Digest(m || res)`, summed over a map of declaration keys to resolution facts | Exchanging two constant values between unchanged field keys preserves the independently computed old sum of Digest(res), but changes the keyed x range, r and oSum. Throws-list and two-owner member-set exchanges are also covered. Insertion/removal/replacement conservation is checked by actual tree edits. Reordering input declarations preserves the sorted map. |
+| N | One entry per fact: exact simple name, kind, TYPE outer-or-empty, and m; identity h unchanged | sum(N) = r. Exact member-type prefixes exclude Foobar, direct Foo$Bar and deeper Foo.Bar when looking for a different direct member. Class/source/stub name parity is exercised. |
 | O; oSum | Each owner entry sums that type's key-bound T identities | The change in r equals the sum of changed oSum values; each changed oSum equals the sum of its changed member ranges. |
 | A | `Digest(m || tail)`, summed over nonempty annotation projections | An annotation-value change and a parameter-name change move A while T/L/stubs stay equal. Empty tails contribute no entry. A edits obey the same conservation equation as T. |
 | E and EA | `Digest(edgeKey)` for a set of relations, split by edge kind | Repeated observations deduplicate; order does not matter. Annotation edges are produced by decoding the same retained tail used for A. An annotation-value edit preserves EA while changing A. |
 | DD, DS, DC | `Digest(typeKey || winning oSum)` | API changes move the identity; a storage location is not a dependency. Existing route-conflict/order tests cover winner changes, duplicate leaves and commutative disjoint folds. Conservation is also tested on a definer edit. |
-| Bound R | Sum of leaf r values; no new a sum | Order is represented by the route content list. A-only edits keep k, routeHash and the definer projections unchanged. Both k and a travel on bindings. |
+| Bound R | Sum of leaf r values; no new a sum | Order is represented by the route content list. A-only edits keep k, routeHash and the definer projections unchanged. SL persists the own (k,a) binding, and AL persists both full annotation roots; neither introduces a route sum. Both k and a travel on bindings. |
 
 The algebra is modulo the prime for the digest width. Sums are compared and updated; they are never storage keys. `k = root(T).hash`; `a = Digest(root(A).hash || root(EA).hash)`. Leaf L and stubs depend only on the resolution projection.
 
@@ -39,7 +40,7 @@ Appendix A establishes the T/O/definer projections, warning-preserving stubs, ow
 ## Implementation notes
 
 - `LeafBuilder.seal()` retains its existing k return type and exposes a and both annotation roots after sealing. A/EA nodes are written before API-leaf deduplication, so sharing L does not drop distinct annotation projections.
-- Res codecs gain explicit warning metadata (including `forRemoval`); the module field gains its own presence marker before those bytes. LAYOUT 4 invalidates earlier generations.
+- Res.Type carries the exact innerName from InnerClasses or the completed source element. Res codecs carry only the three warning bytes (Deprecated attribute, presence/forRemoval, SafeVarargs); since is excluded. Convenience constructors that silently supply no warnings are removed; the module field gains its own presence marker before those bytes. LAYOUT 4 invalidates earlier generations.
 - SourceFacts uses javac's `TypeCompound` positions directly. Index compilation therefore exports javac code/util packages to `dev.jvmd.index`; the existing classpath test/runtime launch configuration already exports those packages to `ALL-UNNAMED`.
 - Identical-option parity required correcting javac parameter-table behavior: private inner outer-instance parameters are synthetic; other member-inner ones are mandated; their generated names depend on nesting depth. Mandatory flags may be emitted without `-parameters`, and canonical record constructors retain names without that option.
 - The Maven test model now reads effective source roots and compiler configuration, including build-helper roots. Exports to named compilation targets are mapped to `ALL-UNNAMED` for the accepted Stage 2 classpath-mode boundary. This change repairs the test inputs; it is not a new production Maven model provider.
@@ -48,3 +49,19 @@ Appendix A establishes the T/O/definer projections, warning-preserving stubs, ow
 ## Validation
 
 Commands and final measurement results are recorded in stage3-progress.md after the gate completes. The warm package remains untouched.
+
+
+## Review correction evidence
+
+The new persistence records are recoverable without Stage2.Result or Built. SL is in the committed LOCAL tree; AL is keyed by the digest of the two annotation root hashes and stores their hashes, sums, counts and levels. A source module with no dependents and two jars sharing k but differing in annotations cover the previously unreachable cases. Rocks reopening checks the same records.
+
+Package-valued qualified-name heads now use the same candidate universe as on-demand type answers, with no answered package omitted, and never visit package declarations or bodies. Form-1 member-type absences consume only the N prefix (name, TYPE, direct outer), with ordinary ContentTree prefix handling. No binary-name byte bounds remain.
+
+The controlled Stage 1 comparison, including exact inventory/JDK identities and per-tree build counts, is in [layout4-review-measurements.md](layout4-review-measurements.md). The earlier Stage 2 timing was not evidence for the requested Stage 1 comparison.
+
+The verbatim revision-123 snapshot still says an old unbound sum would preserve each individual x/y range in its introductory counterexample; that sentence is mathematically inaccurate. The executable counterexample asserts equality of the whole unbound sum, as invariant 25 and the review request specify. It does not claim equality of an individual old one-entry range. The snapshot also retains a T reference for member-type absences in A.1; the exact N rule from 2.3 and the review governs the implementation. These are snapshot inconsistencies, not alternative implementations.
+
+
+### Stage 2 C.1 classpath-mode amendment
+
+For the accepted classpath-mode header compile, rewrite each javac `--add-exports module/package=target-list` target to `ALL-UNNAMED`, preserving module/package. Both `--add-exports value` and `--add-exports=value` spellings follow this rule. Sources and sibling stubs are in the unnamed module for this task, so named output-module targets cannot describe that compilation. Module-info remains parsed separately; this rule does not claim JPMS compilation support.

@@ -1,0 +1,47 @@
+diff --git a/jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Stage1.java b/jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Stage1.java
+index 31c1d6b2..915165bd 100644
+--- a/jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Stage1.java
++++ b/jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Stage1.java
+@@ -94 +94 @@ public final class Stage1 {
+-        var machine = MachineTree.build(tree, all, sink);
++        var machine = MachineTree.build(tree, all, sink.named("MACHINE"));
+diff --git a/jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Written.java b/jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Written.java
+index b2644a6a..7cf3f164 100644
+--- a/jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Written.java
++++ b/jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Written.java
+@@ -21,0 +22,4 @@ public final class Written {
++        return through(store, "unlabelled");
++    }
++
++    private NodeSink through(MachineStore store, String tree) {
+@@ -23,0 +28 @@ public final class Written {
++                store.nodeBuilt(tree, node);
+@@ -27,0 +33 @@ public final class Written {
++            @Override public NodeSink named(String name) { return through(store, name); }
+diff --git a/jvmd-core/src/main/java/dev/jvmd/core/tree/NodeSink.java b/jvmd-core/src/main/java/dev/jvmd/core/tree/NodeSink.java
+index f4d75c15..b3f46ae9 100644
+--- a/jvmd-core/src/main/java/dev/jvmd/core/tree/NodeSink.java
++++ b/jvmd-core/src/main/java/dev/jvmd/core/tree/NodeSink.java
+@@ -6,0 +7,2 @@ public interface NodeSink {
++    /** Optional build instrumentation; naming a sink never changes a node's bytes or identity. */
++    default NodeSink named(String tree) { return this; }
+diff --git a/jvmd-index/src/main/java/dev/jvmd/index/layer/machine/LeafBuilder.java b/jvmd-index/src/main/java/dev/jvmd/index/layer/machine/LeafBuilder.java
+index 4177ed50..cc9c8bcd 100644
+--- a/jvmd-index/src/main/java/dev/jvmd/index/layer/machine/LeafBuilder.java
++++ b/jvmd-index/src/main/java/dev/jvmd/index/layer/machine/LeafBuilder.java
+@@ -33 +33 @@ public final class LeafBuilder {
+-        this.chunker = tree.chunker(sink);
++        this.chunker = tree.chunker(sink.named("T"));
+@@ -76,3 +76,3 @@ public final class LeafBuilder {
+-        var n = tree.build(names, sink);
+-        var e = tree.build(distinct, sink);
+-        var o = tree.build(types, sink);
++        var n = tree.build(names, sink.named("N"));
++        var e = tree.build(distinct, sink.named("E"));
++        var o = tree.build(types, sink.named("O"));
+diff --git a/jvmd-index/src/main/java/dev/jvmd/index/layer/machine/MachineStore.java b/jvmd-index/src/main/java/dev/jvmd/index/layer/machine/MachineStore.java
+index 7a46d420..149b310c 100644
+--- a/jvmd-index/src/main/java/dev/jvmd/index/layer/machine/MachineStore.java
++++ b/jvmd-index/src/main/java/dev/jvmd/index/layer/machine/MachineStore.java
+@@ -15,0 +16 @@ public interface MachineStore extends NodeSink {
++    default void nodeBuilt(String tree, dev.jvmd.core.tree.Node node) { }

@@ -194,8 +194,8 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                 if (module0.isPresent()) moduleRes = module(module0.get());
             }
             var res = new Res.Type(kind, access, signature, superclass.map(c -> c.asInternalName()).orElse(null), interfaces, permitNames,
-                    host.map(h -> h.nestHost().asInternalName()).orElse(null), outer, components, metas, moduleRes, warnings(cm));
-            add(key, Keys.simpleName(owner), res.encode(), tail(cm, false));
+                    host.map(h -> h.nestHost().asInternalName()).orElse(null), outer, self == null ? null : self.innerName().map(n -> n.stringValue()).orElse(null), components, metas, moduleRes, warnings(cm));
+            add(key, res.innerName() == null ? Keys.topLevelName(owner) : res.innerName(), res.encode(), tail(cm, false));
 
             superclass.ifPresent(s -> edge(s.asInternalName(), EXTENDS, key));
             for (var i : cm.interfaces()) edge(i.asInternalName(), IMPLEMENTS, key);
@@ -258,7 +258,7 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
             if (a.className().stringValue().equals("Ljava/lang/Deprecated;")) deprecated = annotation(a);
             if (a.className().stringValue().equals("Ljava/lang/SafeVarargs;")) safeVarargs = annotation(a);
         }
-        return new Res.Warnings(element.findAttribute(Attributes.deprecated()).isPresent(), deprecated, safeVarargs);
+        return Res.Warnings.of(element.findAttribute(Attributes.deprecated()).isPresent(), deprecated, safeVarargs != null);
     }
 
     /** Annotation metadata javac does not read during dependency resolution. */

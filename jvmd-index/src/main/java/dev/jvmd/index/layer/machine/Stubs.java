@@ -211,16 +211,16 @@ public final class Stubs {
 
         return ClassFile.of().build(internal(decl.owner), cb -> {
             cb.withFlags(classFlags);
-            if (type.warnings().deprecated()) cb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
+            if (type.warnings().deprecatedAttribute()) cb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
             if (superName != null) cb.withSuperclass(internal(superName));
             if (!interfaces.isEmpty()) cb.withInterfaceSymbols(interfaces);
             if (signature != null) cb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(signature)));
             if (host != null) cb.with(NestHostAttribute.of(internal(host)));
             if (!permits.isEmpty()) cb.with(PermittedSubclassesAttribute.ofSymbols(permits));
             var inner = new ArrayList<InnerClassInfo>();
-            if (outer != null) inner.add(InnerClassInfo.of(internal(decl.owner), Optional.of(internal(outer)), Optional.of(Keys.simpleName(decl.owner)), innerFlags(access)));
+            if (outer != null) inner.add(InnerClassInfo.of(internal(decl.owner), Optional.of(internal(outer)), Optional.ofNullable(type.innerName()), innerFlags(access)));
             for (var member : memberTypes) {
-                inner.add(InnerClassInfo.of(internal(member), Optional.of(internal(decl.owner)), Optional.of(Keys.simpleName(member)), innerFlags(all.get(member).type.access())));
+                inner.add(InnerClassInfo.of(internal(member), Optional.of(internal(decl.owner)), Optional.ofNullable(all.get(member).type.innerName()), innerFlags(all.get(member).type.access())));
             }
             if (!inner.isEmpty()) cb.with(InnerClassesAttribute.of(inner));
             if (kind == 3) {
@@ -249,7 +249,7 @@ public final class Stubs {
         };
         cb.withField(decl.name(), ClassDesc.ofDescriptor(decl.descriptor()), fb -> {
             fb.withFlags(res.access());
-            if (res.warnings().deprecated()) fb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
+            if (res.warnings().deprecatedAttribute()) fb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
             if (!res.warnings().annotations().isEmpty()) fb.with(RuntimeVisibleAnnotationsAttribute.of(res.warnings().annotations().stream().map(Stubs::annotation).toList()));
             if (res.signature() != null) fb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(res.signature())));
             if (constant != null) fb.with(ConstantValueAttribute.of(constant));
@@ -262,7 +262,7 @@ public final class Stubs {
         for (var t : res.thrown()) thrown.add(internal(t));
         AnnotationValue defaultValue = res.defaultValue() == null ? null : value(res.defaultValue());
         cb.withMethod(decl.name(), MethodTypeDesc.ofDescriptor(decl.descriptor()), res.access(), mb -> {
-            if (res.warnings().deprecated()) mb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
+            if (res.warnings().deprecatedAttribute()) mb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
             if (!res.warnings().annotations().isEmpty()) mb.with(RuntimeVisibleAnnotationsAttribute.of(res.warnings().annotations().stream().map(Stubs::annotation).toList()));
             if (res.signature() != null) mb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(res.signature())));
             if (!thrown.isEmpty()) mb.with(ExceptionsAttribute.ofSymbols(thrown));

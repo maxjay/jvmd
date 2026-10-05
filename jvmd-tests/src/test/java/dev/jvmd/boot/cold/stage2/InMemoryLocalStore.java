@@ -43,7 +43,7 @@ final class InMemoryLocalStore implements LocalStore {
         synchronized (records) { return records.get(key); }
     }
 
-    private static final List<String> LOCAL_TAGS = List.of("LROOT", "MOD", "RT", "F", "DD", "DS", "DC", "C", "X", "RS", "ST", "S");
+    private static final List<String> LOCAL_TAGS = List.of("LROOT", "SL", "AL", "MOD", "RT", "F", "DD", "DS", "DC", "C", "X", "RS", "ST", "S");
 
     private static String kindOf(byte[] key) {
         if (Arrays.equals(key, MachineStore.ROOT_KEY)) return "ROOT";
@@ -56,6 +56,7 @@ final class InMemoryLocalStore implements LocalStore {
 
     @Override public void write(Node node) { put(MachineStore.nodeKey(node.hash()), node.bytes()); }
     @Override public void putLeaf(Identity k, byte[] leaf) { put(MachineStore.leafKey(k), leaf); }
+    @Override public void putAnnotationLeaf(Identity a, byte[] roots) { put(MachineStore.annotationLeafKey(a), roots); }
     @Override public void putPath(String location, byte[] value) { put(MachineStore.pathKey(location), value); }
 
     @Override public void flush() {

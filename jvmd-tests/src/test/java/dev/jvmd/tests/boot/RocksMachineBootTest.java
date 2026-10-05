@@ -54,8 +54,8 @@ class RocksMachineBootTest {
             assertThat(result.root()).isEqualTo(expected.root());
             assertThat(store.get(MachineStore.ROOT_KEY)).isEqualTo(memory.root());
             var kinds = new TreeMap<String, Long>();
-            for (var key : store.keys()) kinds.merge(Arrays.equals(key, MachineStore.ROOT_KEY) ? "ROOT" : String.valueOf((char) (key[0] & 0xFF)), 1L, Long::sum);
-            assertThat(kinds.keySet()).containsExactlyInAnyOrder("L", "N", "P", "ROOT");
+            for (var key : store.keys()) kinds.merge(Arrays.equals(key, MachineStore.ROOT_KEY) ? "ROOT" : key[0] == 'A' ? "AL" : String.valueOf((char) (key[0] & 0xFF)), 1L, Long::sum);
+            assertThat(kinds.keySet()).containsExactlyInAnyOrder("L", "N", "P", "AL", "ROOT");
             assertThat(kinds).isEqualTo(memory.kinds());
             new ContentTree(digest).verify(MachineTree.decodeRoot(digest, store.get(MachineStore.ROOT_KEY)).root(), h -> store.get(MachineStore.nodeKey(h)));
         }

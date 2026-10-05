@@ -52,6 +52,7 @@ public final class ProofCollector {
         var found = new LinkedHashSet<HeaderProof.Absence>();
         new TreePathScanner<Void, Void>() {
             @Override public Void visitImport(ImportTree node, Void p) { return null; }
+            @Override public Void visitPackage(PackageTree node, Void p) { return null; }
             @Override public Void visitBlock(BlockTree node, Void p) { return null; }
             @Override public Void visitLambdaExpression(LambdaExpressionTree node, Void p) { return null; }
 
@@ -80,7 +81,11 @@ public final class ProofCollector {
 
             @Override public Void visitIdentifier(IdentifierTree node, Void p) {
                 var symbol = trees.getElement(getCurrentPath());
-                if (!(symbol instanceof TypeElement resolved) || resolved.asType().getKind() == TypeKind.ERROR) return null;
+                var parent = getCurrentPath().getParentPath();
+                boolean packageHead = symbol instanceof javax.lang.model.element.PackageElement
+                        && parent != null && parent.getLeaf() instanceof MemberSelectTree select && select.getExpression() == node;
+                var resolved = symbol instanceof TypeElement type ? type : null;
+                if (!packageHead && (resolved == null || resolved.asType().getKind() == TypeKind.ERROR)) return null;
                 String simple = node.getName().toString();
                 // Inherited members are considered before single imports and top-level declarations in this unit.
                 for (var path = getCurrentPath(); path != null; path = path.getParentPath()) {
@@ -90,6 +95,12 @@ public final class ProofCollector {
                         String name = binary(type, elements);
                         if (!own.contains(name)) found.add(new HeaderProof.Absence(1, name, simple));
                     }
+                }
+                if (packageHead) {
+                    found.add(new HeaderProof.Absence(0, qualified(ownPackage, simple), ""));
+                    for (var pkg : packages) found.add(new HeaderProof.Absence(0, qualified(pkg, simple), ""));
+                    for (var imported : memberImports) found.add(new HeaderProof.Absence(1, imported, simple));
+                    return null;
                 }
                 if (explicit.contains(simple) || own.contains(binary(resolved, elements))) return null;
                 String answered = elements.getPackageOf(resolved).getQualifiedName().toString().replace('.', '/');

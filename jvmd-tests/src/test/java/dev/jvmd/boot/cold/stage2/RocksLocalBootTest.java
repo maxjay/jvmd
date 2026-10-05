@@ -70,18 +70,27 @@ class RocksLocalBootTest {
             try (var store = Generation.of(indexDir, format).open()) {
                 var kinds = new TreeMap<String, Integer>();
                 for (var key : store.keys()) kinds.merge(kind(key), 1, Integer::sum);
-                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT");
+                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT");
                 assertThat(kinds).as("C| and RS| are empty after a cold boot").doesNotContainKeys("C", "RS");
                 for (var key : store.keys()) if (kind(key).equals("X")) assertThat(key[2]).as("the only X| entries are the header proofs: kind 7").isEqualTo((byte) 7);
-                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT");
+                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT");
                 assertThat(kinds.get("MOD")).isEqualTo(4);
                 assertThat(kinds.get("RT")).isEqualTo(8);
+                assertThat(kinds.get("SL")).isEqualTo(8);
                 assertThat(kinds.get("F")).isEqualTo(Fixtures.multi().size());
                 assertThat(kinds.get("LROOT")).isEqualTo(1);
 
                 var root = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(projectKey)));
                 assertThat(root.format()).isEqualTo(LocalFormat.of(format));
                 new ContentTree(digest).verify(root.local(), h -> store.get(MachineStore.nodeKey(h)));
+                for (var module : model.modules()) for (int scope : new int[] {LocalStore.MAIN, LocalStore.TEST}) {
+                    var binding = dev.jvmd.index.layer.local.SourceLeaf.decode(store.get(LocalStore.sourceLeafKey(projectKey, module.name(), scope)), digest.width());
+                    assertThat(store.get(MachineStore.leafKey(binding.k()))).isNotNull();
+                    var annotations = dev.jvmd.index.layer.machine.AnnotationLeaf.decode(store.get(MachineStore.annotationLeafKey(binding.a())), digest.width());
+                    assertThat(digest.hash(annotations.annotations().hash().view(), annotations.edges().hash().view())).isEqualTo(binding.a());
+                    new ContentTree(digest).verify(annotations.annotations(), h -> store.get(MachineStore.nodeKey(h)));
+                    new ContentTree(digest).verify(annotations.edges(), h -> store.get(MachineStore.nodeKey(h)));
+                }
                 assertThat(root.local().count()).as("every record is in the LOCAL tree").isGreaterThan(kinds.get("MOD") + kinds.get("RT") + kinds.get("F"));
             }
         } finally { Stage2Support.delete(repository); Stage2Support.delete(project); Stage2Support.delete(indexDir); }
@@ -91,7 +100,7 @@ class RocksLocalBootTest {
     private static String kind(byte[] key) {
         if (new String(key, StandardCharsets.US_ASCII).equals("ROOT")) return "ROOT";
         var text = new String(key, StandardCharsets.ISO_8859_1);
-        for (var tag : List.of("LROOT|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
+        for (var tag : List.of("LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
         if (key[0] == 'L' && key.length == 33) return "L";
         if (key[0] == 'N' && key.length == 33) return "N";
         if (key[0] == 'P') return "P";

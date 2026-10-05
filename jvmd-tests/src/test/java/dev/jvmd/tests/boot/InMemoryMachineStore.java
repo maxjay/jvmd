@@ -23,6 +23,7 @@ final class InMemoryMachineStore implements MachineStore {
 
     @Override public void write(Node node) { pending.get().add(new byte[][] {MachineStore.nodeKey(node.hash()), node.bytes()}); }
     @Override public void putLeaf(Identity k, byte[] leaf) { pending.get().add(new byte[][] {MachineStore.leafKey(k), leaf}); }
+    @Override public void putAnnotationLeaf(Identity a, byte[] roots) { pending.get().add(new byte[][] {MachineStore.annotationLeafKey(a), roots}); }
     @Override public void putPath(String location, byte[] value) { pending.get().add(new byte[][] {MachineStore.pathKey(location), value}); }
 
     @Override public void flush() {
@@ -59,7 +60,7 @@ final class InMemoryMachineStore implements MachineStore {
         var out = new TreeMap<String, Long>();
         synchronized (records) {
             for (var key : records.keySet()) {
-                String kind = Arrays.equals(key, MachineStore.ROOT_KEY) ? "ROOT" : String.valueOf((char) (key[0] & 0xFF));
+                String kind = Arrays.equals(key, MachineStore.ROOT_KEY) ? "ROOT" : key[0] == 'A' ? "AL" : String.valueOf((char) (key[0] & 0xFF));
                 out.merge(kind, 1L, Long::sum);
             }
         }

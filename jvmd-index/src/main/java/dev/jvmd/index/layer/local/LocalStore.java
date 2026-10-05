@@ -30,6 +30,9 @@ public interface LocalStore extends MachineStore {
     int MAIN = 0, TEST = 1;
 
     static byte[] moduleKey(Identity projectKey, String module) { return join("MOD|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8)); }
+    static byte[] sourceLeafKey(Identity projectKey, String module, int scope) {
+        return join("SL|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
+    }
     static byte[] routeKey(Identity projectKey, String module, int scope) {
         return join("RT|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
     }

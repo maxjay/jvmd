@@ -46,15 +46,110 @@ final class ProcessorReads {
     private final Consumer<String> unsupported;
     private final Map<Object, Object> wrappers = new IdentityHashMap<>();
     private final Map<Object, Integer> references = new IdentityHashMap<>();
+    private final Map<String, Class<? extends java.lang.annotation.Annotation>> annotationInterfaces = new LinkedHashMap<>();
     private final List<byte[]> answers = new ArrayList<>();
+    private final Map<Query, Observed> queries = new LinkedHashMap<>();
+    private final Set<Query> ambiguous = new java.util.HashSet<>();
+    private final ProcessorReads captured;
+    private int phase = -1;
+
+    private record Query(int phase, String operation, java.nio.ByteBuffer arguments) { }
+    private record Observed(Object value, Throwable failure, Read read, byte[] identity) { }
+    private record Dispatch(Method method, Object value) { }
+    static final class ReplayUnavailable extends RuntimeException {
+        ReplayUnavailable(String reason) { super(reason); }
+    }
 
     ProcessorReads(Elements elements, Types types, Consumer<Read> observations, Consumer<String> unsupported) {
+        this(elements, types, observations, unsupported, null);
+    }
+
+    private ProcessorReads(Elements elements, Types types, Consumer<Read> observations, Consumer<String> unsupported, ProcessorReads captured) {
         nativeElements = elements;
         nativeTypes = types;
         this.observations = observations;
         this.unsupported = unsupported;
+        this.captured = captured;
         this.elements = proxy(Elements.class, elements);
         this.types = proxy(Types.class, types);
+    }
+
+    /** In-memory replay of observations from this invocation, before the host releases its model objects. No native query fallback. */
+    ProcessorReads replay(Consumer<Read> observations, Consumer<String> unsupported) {
+        if (captured != null) throw new IllegalStateException("Cannot capture a replay");
+        return new ProcessorReads(nativeElements, nativeTypes, observations, unsupported, this);
+    }
+
+    void phase(int phase) { this.phase = phase; }
+
+    private Query query(String operation, Object receiver, Object args) {
+        var out = new Codec.Writer();
+        var source = captured == null ? this : captured;
+        source.encode(out, receiver);
+        source.encode(out, args);
+        return new Query(phase, operation, java.nio.ByteBuffer.wrap(out.toBytes()));
+    }
+
+    private Observed lookup(Query query) {
+        String reason = captured.ambiguous.contains(query) ? "ambiguous" : !captured.queries.containsKey(query) ? "unobserved" : null;
+        if (reason != null) throw new ReplayUnavailable(reason + " processor query in phase " + phase + ": " + query.operation());
+        return captured.queries.get(query);
+    }
+
+    private void retain(Query query, Object value, Throwable failure, Read read) {
+        var out = new Codec.Writer();
+        if (value instanceof Dispatch dispatch) {
+            out.str(dispatch.method().toGenericString());
+            encode(out, dispatch.value());
+        } else encode(out, value);
+        if (failure instanceof MirroredTypeException mirror) {
+            out.str(MirroredTypeException.class.getName()); encode(out, mirror.getTypeMirror());
+        } else if (failure instanceof MirroredTypesException mirrors) {
+            out.str(MirroredTypesException.class.getName()); encode(out, mirrors.getTypeMirrors());
+        } else out.str(failure == null ? "" : failure.getClass().getName());
+        var next = new Observed(freeze(value), failure, read, out.toBytes());
+        var previous = queries.putIfAbsent(query, next);
+        if (previous != null && !java.util.Arrays.equals(previous.identity(), next.identity())) ambiguous.add(query);
+    }
+
+    /** Containers are snapshots, model objects are opaque handles. A replay can only ask recorded methods of those handles. */
+    private Object freeze(Object value) {
+        if (value == null || modelApi(value) != null || value instanceof java.lang.annotation.Annotation || value instanceof Name) return value;
+        if (value instanceof CharSequence text) return text.toString();
+        if (value instanceof Dispatch dispatch) return new Dispatch(dispatch.method(), freeze(dispatch.value()));
+        if (value instanceof List<?> list) {
+            var items = new ArrayList<Object>();
+            for (var item : list) items.add(freeze(item));
+            return new java.util.AbstractList<>() {
+                @Override public int size() { return items.size(); }
+                @Override public Object get(int index) { return items.get(index); }
+                @Override public String toString() { return list.toString(); } // invoked only during capture, through listText
+            };
+        }
+        if (value instanceof Set<?> set) {
+            var items = new LinkedHashSet<>();
+            for (var item : set) items.add(freeze(item));
+            return Collections.unmodifiableSet(items);
+        }
+        if (value instanceof Map<?, ?> map) {
+            var items = new LinkedHashMap<>();
+            map.forEach((key, item) -> items.put(freeze(key), freeze(item)));
+            return Collections.unmodifiableMap(items);
+        }
+        if (value.getClass().isArray()) {
+            var copy = Array.newInstance(value.getClass().getComponentType(), Array.getLength(value));
+            for (int i = 0; i < Array.getLength(value); i++) Array.set(copy, i, freeze(Array.get(value, i)));
+            return copy;
+        }
+        return value;
+    }
+
+    private String listText(List<?> list) {
+        var key = query("List.toString", null, new Object[] {list});
+        String value;
+        if (captured == null) { value = list.toString(); retain(key, value, null, null); }
+        else value = (String) lookup(key).value();
+        return (String) answer("List.toString", new Object[] {list}, value);
     }
 
     private <T> T proxy(Class<T> api, Object delegate) {
@@ -93,14 +188,28 @@ final class ProcessorReads {
             if (method.getName().equals("accept") && args != null && args.length == 2)
                 return accept(method, args);
             var nativeArgs = args == null ? null : (Object[]) unwrap(args);
+            if ((method.getName().equals("getAnnotation") || method.getName().equals("getAnnotationsByType"))
+                    && nativeArgs != null && nativeArgs.length == 1 && nativeArgs[0] instanceof Class<?> annotation
+                    && java.lang.annotation.Annotation.class.isAssignableFrom(annotation))
+                annotationInterfaces.put(annotation.getName(), annotation.asSubclass(java.lang.annotation.Annotation.class));
             var query = new Codec.Writer().u8(0).u32(reference(delegate)).str(method.toGenericString());
             boolean objectIdentity = method.getName().equals("hashCode") && method.getParameterCount() == 0
                     && !(delegate instanceof java.lang.annotation.Annotation);
             if (!objectIdentity) encode(query, nativeArgs);
-            Object result;
-            try { result = method.invoke(delegate, nativeArgs); }
-            catch (InvocationTargetException failure) {
-                var cause = failure.getCause();
+            var key = query(method.toGenericString(), delegate, nativeArgs);
+            Object result = null;
+            Throwable cause = null;
+            Read read = null;
+            if (captured != null) {
+                var observed = lookup(key);
+                result = observed.value(); cause = observed.failure(); read = observed.read();
+            } else {
+                try { result = method.invoke(delegate, nativeArgs); }
+                catch (InvocationTargetException failure) { cause = failure.getCause(); }
+                if (cause == null && method.getDeclaringClass() != Object.class) read = observation(api, method, nativeArgs, result);
+                retain(key, result, cause, read);
+            }
+            if (cause != null) {
                 if (cause instanceof MirroredTypeException mirror) {
                     query.u8(1).str(MirroredTypeException.class.getName());
                     encode(query, mirror.getTypeMirror());
@@ -122,7 +231,7 @@ final class ProcessorReads {
                 encode(query, result);
                 answers.add(query.toBytes());
             }
-            if (method.getDeclaringClass() != Object.class) observe(api, method, nativeArgs, result);
+            if (read != null) observations.accept(read);
             return wrap(result);
         }
 
@@ -131,17 +240,22 @@ final class ProcessorReads {
             if (visitorApi != ElementVisitor.class && visitorApi != TypeVisitor.class
                     && visitorApi != AnnotationValueVisitor.class && visitorApi != ModuleElement.DirectiveVisitor.class)
                 throw new IllegalStateException("Unexpected model visitor: " + visitorApi);
+            var key = query("dispatch:" + method.toGenericString(), delegate, null);
+            if (captured != null) return dispatch((Dispatch) lookup(key).value(), args);
             var visitor = Proxy.newProxyInstance(visitorApi.getClassLoader(), new Class<?>[] {visitorApi}, (proxy, visit, values) -> {
-                // The native model selects a visitor branch, but never passes its native object to processor code.
-                var dispatch = new Codec.Writer().u8(2).u32(reference(delegate)).str(visit.getName());
-                if (values != null && values.length != 0) encode(dispatch, values[0]);
-                answers.add(dispatch.toBytes());
-                Object[] wrapped = values == null ? null : values.clone();
-                if (wrapped != null && wrapped.length != 0) wrapped[0] = wrap(wrapped[0]);
-                try { return visit.invoke(args[0], wrapped); }
-                catch (InvocationTargetException failure) { throw failure.getCause(); }
+                var selected = new Dispatch(visit, values[0]);
+                retain(key, selected, null, null);
+                return dispatch(selected, args);
             });
             try { return method.invoke(delegate, visitor, args[1]); }
+            catch (InvocationTargetException failure) { throw failure.getCause(); }
+        }
+
+        private Object dispatch(Dispatch selected, Object[] args) throws Throwable {
+            var dispatch = new Codec.Writer().u8(2).u32(reference(delegate)).str(selected.method().getName());
+            encode(dispatch, selected.value());
+            answers.add(dispatch.toBytes());
+            try { return selected.method().invoke(args[0], wrap(selected.value()), args[1]); }
             catch (InvocationTargetException failure) { throw failure.getCause(); }
         }
     }
@@ -179,14 +293,15 @@ final class ProcessorReads {
     Object wrap(Object value) {
         if (value == null) return null;
         if (value instanceof Name) return value; // immutable character sequence; encode its content at the returning query
+        if (value instanceof Class<?> type) return annotationInterface(type);
         var api = modelApi(value);
         if (api != null) return proxy(api, value);
-        if (value instanceof java.lang.annotation.Annotation annotation) return proxy(annotation.annotationType(), value);
+        if (value instanceof java.lang.annotation.Annotation annotation) return proxy(annotationInterface(annotation.annotationType()), value);
         if (value instanceof List<?> list) return new java.util.AbstractList<>() {
             @Override public int size() { return list.size(); }
             @Override public Object get(int index) { return wrap(list.get(index)); }
             // javac's List prints comma-separated entries without brackets. That string is observable too.
-            @Override public String toString() { return (String) answer("List.toString", new Object[] {list}, list.toString()); }
+            @Override public String toString() { return listText(list); }
         };
         if (value instanceof Set<?> set) {
             var copy = new LinkedHashSet<>();
@@ -199,11 +314,16 @@ final class ProcessorReads {
             return Collections.unmodifiableMap(copy);
         }
         if (value.getClass().isArray()) {
-            var copy = Array.newInstance(value.getClass().getComponentType(), Array.getLength(value));
+            var copy = Array.newInstance(annotationInterface(value.getClass().getComponentType()), Array.getLength(value));
             for (int i = 0; i < Array.getLength(value); i++) Array.set(copy, i, wrap(Array.get(value, i)));
             return copy;
         }
         return value;
+    }
+
+    private Class<?> annotationInterface(Class<?> type) {
+        var current = annotationInterfaces.get(type.getName());
+        return current == null ? type : current;
     }
 
     private void encode(Codec.Writer out, Object value) {
@@ -264,7 +384,7 @@ final class ProcessorReads {
         ModuleElement.UsesDirective.class, ModuleElement.ProvidesDirective.class, ModuleElement.Directive.class
     };
 
-    private void observe(Class<?> api, Method method, Object[] args, Object result) {
+    private Read observation(Class<?> api, Method method, Object[] args, Object result) {
         var targets = new TreeSet<String>();
         Set<TypeMirror> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         boolean closure = method.getName().equals("getAllMembers") || method.getName().equals("isSubtype") || method.getName().equals("isAssignable");
@@ -273,7 +393,7 @@ final class ProcessorReads {
         var missing = new ArrayList<String>();
         if (method.getName().equals("getTypeElement") && result == null && args != null && args.length != 0)
             missing.add(args[args.length - 1].toString());
-        observations.accept(new Read(api.getSimpleName() + "." + method.getName(), List.copyOf(targets), List.copyOf(missing)));
+        return new Read(api.getSimpleName() + "." + method.getName(), List.copyOf(targets), List.copyOf(missing));
     }
 
     private void collect(Object value, Set<String> targets, Set<TypeMirror> seen, boolean closure) {

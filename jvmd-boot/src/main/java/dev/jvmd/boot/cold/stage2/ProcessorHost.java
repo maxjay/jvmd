@@ -257,6 +257,7 @@ public final class ProcessorHost implements AutoCloseable {
                     domain.put(key, new Entry(key, value, digest.hash(key, value)));
                 }
             }
+            if (reads != null) reads.phase(roundNumber);
             var roundPrefix = "round." + roundNumber++ + ".";
             @SuppressWarnings("unchecked") var wrappedAnnotations = reads == null ? annotations
                     : (Set<? extends TypeElement>) reads.answer(roundPrefix + "annotations", null, annotations);

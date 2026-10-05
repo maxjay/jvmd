@@ -76,18 +76,32 @@ class ProcessorModelTest {
         var file = dir.resolve("Api.java");
         Files.writeString(file, "package p; @fixture.WithTypes(value=String.class, many={Integer.class, Number.class}) class Api {}");
         try (var loader = new java.net.URLClassLoader(new java.net.URL[] {jar.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
+             var replayLoader = new java.net.URLClassLoader(new java.net.URL[] {jar.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
              var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("Api.java", file)), List.of(jar),
                      Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest)) {
             var annotation = loader.loadClass("fixture.WithTypes").asSubclass(java.lang.annotation.Annotation.class);
             var unsupported = new ArrayList<String>();
             var reads = new ProcessorReads(compiled.elements, compiled.types, ignored -> {}, unsupported::add);
             assertThat(classValues(reads.elements, annotation, true)).isEqualTo(classValues(compiled.elements, annotation, false));
+            var replay = reads.replay(ignored -> {}, unsupported::add);
+            assertThat(classValues(replay.elements, annotation, true)).isEqualTo(classValues(compiled.elements, annotation, false));
+            assertThat(replay.proof()).isEqualTo(reads.proof());
+            var isolated = reads.replay(ignored -> {}, unsupported::add);
+            var isolatedAnnotation = replayLoader.loadClass("fixture.WithTypes").asSubclass(java.lang.annotation.Annotation.class);
+            assertThat(isolatedAnnotation).isNotSameAs(annotation);
+            assertThat(classValues(isolated.elements, isolatedAnnotation, true)).isEqualTo(classValues(compiled.elements, annotation, false));
+            assertThat(isolated.proof()).isEqualTo(reads.proof());
             assertThat(unsupported).isEmpty();
         }
     }
 
     private static List<String> classValues(Elements elements, Class<? extends java.lang.annotation.Annotation> annotation, boolean wrapped) throws Exception {
         var instance = elements.getTypeElement("p.Api").getAnnotation(annotation);
+        assertThat(instance.annotationType()).isSameAs(annotation);
+        var repeated = elements.getTypeElement("p.Api").getAnnotationsByType(annotation);
+        assertThat(repeated.getClass().getComponentType()).isSameAs(annotation);
+        assertThat(repeated).hasSize(1);
+        assertThat(repeated[0].annotationType()).isSameAs(annotation);
         var names = new ArrayList<String>();
         for (var method : List.of("value", "many")) {
             try { annotation.getMethod(method).invoke(instance); throw new AssertionError("javac must return mirrors through the model exception"); }
@@ -106,6 +120,102 @@ class ProcessorModelTest {
     }
 
     private record Snapshot(byte[] proof) { }
+
+    @ParameterizedTest @MethodSource("digests")
+    void replayUsesObservedAnswersWithoutReenteringTheCompletedCompiler(Digest digest) throws Exception {
+        var file = dir.resolve("Api.java");
+        Files.writeString(file, SOURCE);
+        var blocked = new java.util.concurrent.atomic.AtomicBoolean();
+        var unsupported = new ArrayList<String>();
+        ProcessorReads reads;
+        List<String> expected;
+        try (var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("Api.java", file)), List.of(),
+                Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest)) {
+            reads = new ProcessorReads(guard(Elements.class, compiled.elements, blocked), guard(Types.class, compiled.types, blocked),
+                    ignored -> {}, unsupported::add);
+            expected = query(reads.elements, reads.types, true, true);
+        }
+        blocked.set(true);
+        var replay = reads.replay(ignored -> {}, unsupported::add);
+        assertThat(query(replay.elements, replay.types, true, true)).isEqualTo(expected);
+        assertThat(replay.proof()).isEqualTo(reads.proof());
+        assertThat(unsupported).isEmpty();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void replayRetainsTheQueryPhaseInsteadOfUsingTheLastModelAnswer(Digest digest) throws Exception {
+        var file = dir.resolve("Api.java");
+        Files.writeString(file, SOURCE);
+        try (var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("Api.java", file)), List.of(),
+                Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest)) {
+            var current = new java.util.concurrent.atomic.AtomicReference<>("first round");
+            var elements = (Elements) Proxy.newProxyInstance(Elements.class.getClassLoader(), new Class<?>[] {Elements.class}, (p, m, a) -> {
+                if (m.getName().equals("getDocComment")) return current.get();
+                try { return m.invoke(compiled.elements, a); }
+                catch (java.lang.reflect.InvocationTargetException failure) { throw failure.getCause(); }
+            });
+            var reads = new ProcessorReads(elements, compiled.types, ignored -> {}, reason -> { throw new AssertionError(reason); });
+            reads.phase(0);
+            var type = reads.elements.getTypeElement("p.Api");
+            assertThat(reads.elements.getDocComment(type)).isEqualTo("first round");
+            reads.phase(1);
+            current.set("second round");
+            assertThat(reads.elements.getDocComment(type)).isEqualTo("second round");
+            current.set("completed model must not be queried");
+            var replay = reads.replay(ignored -> {}, reason -> { throw new AssertionError(reason); });
+            replay.phase(0);
+            var replayType = replay.elements.getTypeElement("p.Api");
+            assertThat(replay.elements.getDocComment(replayType)).isEqualTo("first round");
+            replay.phase(1);
+            assertThat(replay.elements.getDocComment(replayType)).isEqualTo("second round");
+            assertThat(replay.proof()).isEqualTo(reads.proof());
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> replay.elements.getTypeElement("p.Unobserved"))
+                    .isInstanceOf(ProcessorReads.ReplayUnavailable.class).hasMessageContaining("unobserved").hasMessageContaining("phase 1");
+
+            // The same query changing within a phase cannot be silently assigned the first or last answer.
+            reads.phase(2);
+            current.set("before completion");
+            reads.elements.getDocComment(type);
+            current.set("after completion");
+            reads.elements.getDocComment(type);
+            replay.phase(2);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> replay.elements.getDocComment(replayType))
+                    .isInstanceOf(ProcessorReads.ReplayUnavailable.class).hasMessageContaining("ambiguous").hasMessageContaining("phase 2");
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void replayCanReuseAnAnswerForEachOriginWithoutIncludingOtherOriginsQueries(Digest digest) throws Exception {
+        var file = dir.resolve("Api.java");
+        Files.writeString(file, SOURCE);
+        try (var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("Api.java", file)), List.of(),
+                Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest)) {
+            var unsupported = new ArrayList<String>();
+            var baseline = new ProcessorReads(compiled.elements, compiled.types, ignored -> {}, unsupported::add);
+            assertThat(query(baseline.elements, baseline.types, false, true)).containsExactly("field");
+            var captured = new ProcessorReads(compiled.elements, compiled.types, ignored -> {}, unsupported::add);
+            // A different origin is queried first, moving every handle ordinal in the full invocation transcript.
+            captured.elements.getTypeElement("p.Unrelated").getEnclosedElements().forEach(Element::getSimpleName);
+            assertThat(query(captured.elements, captured.types, false, true)).containsExactly("field");
+            assertThat(captured.proof()).isNotEqualTo(baseline.proof());
+            for (int origin = 0; origin < 2; origin++) {
+                var replay = captured.replay(ignored -> {}, unsupported::add);
+                // Both origins can consume the captured answer even if the batched processor cached it after one query.
+                assertThat(query(replay.elements, replay.types, false, true)).containsExactly("field");
+                assertThat(replay.proof()).isEqualTo(baseline.proof());
+            }
+            assertThat(unsupported).isEmpty();
+        }
+    }
+
+    private static <T> T guard(Class<T> api, T delegate, java.util.concurrent.atomic.AtomicBoolean blocked) {
+        return api.cast(Proxy.newProxyInstance(api.getClassLoader(), new Class<?>[] {api}, (p, m, a) -> {
+            if (blocked.get()) throw new AssertionError("native query after capture: " + m);
+            try { return m.invoke(delegate, a); }
+            catch (java.lang.reflect.InvocationTargetException failure) { throw failure.getCause(); }
+        }));
+    }
+
     private Snapshot snapshot(Digest digest, String source, boolean annotations) throws Exception {
         var file = dir.resolve("p/Api.java");
         Files.createDirectories(file.getParent());

@@ -29,6 +29,29 @@ import org.junit.jupiter.api.Test;
  */
 @Tag("benchmark")
 class Stage2Measurement {
+    /** The module descriptor fact of a leaf, in words: name, flags, and every directive. */
+    private static String describeModule(InMemoryLocalStore store, MachineLeaf leaf) {
+        var tree = new ContentTree(Sha256.INSTANCE);
+        var e = tree.get(leaf.k(), h -> store.get(MachineStore.nodeKey(h)), new dev.jvmd.core.tree.Codec.Writer().zstr("module-info").u8(0).toBytes());
+        if (e == null) return "none";
+        var v = new dev.jvmd.core.tree.Codec.Reader(e.value());
+        var res = new dev.jvmd.core.tree.Codec.Reader(v.raw(v.count()));
+        res.u8(); res.u16();
+        for (int i = 0; i < 2; i++) if (res.u8() == 1) res.str();
+        for (int i = res.count(); i > 0; i--) res.str();
+        for (int i = res.count(); i > 0; i--) res.str();
+        for (int i = 0; i < 2; i++) if (res.u8() == 1) res.str();
+        for (int i = res.count(); i > 0; i--) { res.str(); res.str(); if (res.u8() == 1) res.str(); }
+        var sb = new StringBuilder(res.str());
+        sb.append(" flags=").append(Integer.toHexString(res.u16())).append(res.u8() == 1 ? " version=" + res.str() : "");
+        for (int i = res.count(); i > 0; i--) sb.append("; requires ").append(res.str()).append(' ').append(Integer.toHexString(res.u16())).append(res.u8() == 1 ? " v" + res.str() : "");
+        for (var kind : new String[] {"exports", "opens"})
+            for (int i = res.count(); i > 0; i--) { sb.append("; ").append(kind).append(' ').append(res.str()); res.u16(); for (int j = res.count(); j > 0; j--) sb.append(" to ").append(res.str()); }
+        for (int i = res.count(); i > 0; i--) sb.append("; uses ").append(res.str());
+        for (int i = res.count(); i > 0; i--) { sb.append("; provides ").append(res.str()); for (int j = res.count(); j > 0; j--) sb.append(" with ").append(res.str()); }
+        return sb.toString();
+    }
+
     private static String describe(byte[] m) {
         var text = new String(m, java.nio.charset.StandardCharsets.ISO_8859_1).replace('\0', ' ');
         return text.length() > 90 ? text.substring(0, 90) : text;
@@ -64,7 +87,11 @@ class Stage2Measurement {
             var source = MachineLeaf.decode(machine.get(MachineStore.leafKey(result.leaves().get(e.getKey()))), digest.width());
             var expected = e.getValue();
             total++;
-            if (source.r().equals(expected.r())) { equal++; continue; }
+            if (source.r().equals(expected.r())) {
+                equal++;
+                report.append(String.format("  equal: %s (%d facts)%n", e.getKey(), source.factCount()));
+                continue;
+            }
             // Where they differ, T names the members: a module descriptor is a fact of the class output that classpath mode has no source for (section 8).
             var diff = Diff.trees(digest, new Root(source.k(), source.r(), source.factCount(), Node.level(reader.apply(source.k()))),
                     new Root(expected.k(), expected.r(), expected.factCount(), Node.level(reader.apply(expected.k()))), reader);
@@ -73,6 +100,10 @@ class Stage2Measurement {
             for (var entry : diff.added()) keys.add("class-only " + describe(entry.key()));
             boolean moduleOnly = keys.stream().allMatch(k -> k.contains("module-info"));
             if (moduleOnly) onlyModuleInfo++;
+            if (keys.stream().anyMatch(k -> k.contains("module-info"))) {
+                report.append("    module (source): ").append(describeModule(machine, source)).append('\n');
+                report.append("    module (class) : ").append(describeModule(classStore, expected)).append('\n');
+            }
             report.append(String.format("  r differs: %s (source %d facts, class output %d facts): %s%n", e.getKey(), source.factCount(), expected.factCount(),
                     keys.stream().limit(4).toList()));
         }

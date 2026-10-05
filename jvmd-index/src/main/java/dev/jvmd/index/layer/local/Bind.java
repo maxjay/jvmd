@@ -23,9 +23,9 @@ public final class Bind {
 
     /**
      * session over built over default. The list of bound {@code k} becomes a {@link ContentList}: {@code routeHash} is its root hash,
-     * {@code R} its root sum ({@code Σ r}), {@code leafSet} the digest of the sorted {@code k} sequence. An entry with no binding
-     * (a jar whose file is missing) is left out of the sequence and reported in {@link Bound#unbound()}; a sibling entry whose
-     * module has not been built is a bug in the build order and throws.
+     * {@code R} its root sum ({@code Σ r}). {@code leafSetExt} and {@code leafSetSib} are the digests of the sorted distinct external
+     * and sibling {@code k}. An entry with no binding (a jar whose file is missing) is left out of the sequence and reported in
+     * {@link Bound#unbound()}; a sibling entry whose module has not been built is a bug in the build order and throws.
      */
     public static Bound bind(Digest digest, List<RouteEntry> entries, Provider session, Provider built, Function<Identity, MachineLeaf> leafOf, NodeSink sink) {
         var bindings = new ArrayList<Bound.Binding>(entries.size());
@@ -33,9 +33,9 @@ public final class Bind {
         for (var entry : entries) {
             Identity k = session.leafFor(entry.coordinate());
             var origin = Bound.Origin.SESSION;
-            if (k == null) { k = built.leafFor(entry.coordinate()); origin = Bound.Origin.BUILT; }
+            if (k == null) { k = built.leafFor(entry.coordinate()); origin = Bound.Origin.SIBLING; }
             if (k == null) {
-                origin = Bound.Origin.DEFAULT;
+                origin = Bound.Origin.EXTERNAL;
                 k = switch (entry) {
                     case RouteEntry.Jar j -> j.defaultK();
                     case RouteEntry.Jrt j -> j.k();
@@ -52,13 +52,14 @@ public final class Bind {
             list.add(binding.k().view(), leafOf.apply(binding.k()).r());
         }
         var root = list.finish();
-        return new Bound(List.copyOf(bindings), List.copyOf(sequence), List.copyOf(unbound), root.hash(), root.sum(), leafSet(digest, sequence));
+        var partial = new Bound(List.copyOf(bindings), List.copyOf(sequence), List.copyOf(unbound), root.hash(), root.sum(), null, null);
+        return new Bound(partial.bindings(), partial.sequence(), partial.unbound(), root.hash(), root.sum(),
+                leafSet(digest, partial.external()), leafSet(digest, partial.sibling()));
     }
 
-    /** {@code Digest(sort(k sequence))} over the unsigned bytes: the same for any order of the same leaves. */
-    public static Identity leafSet(Digest digest, List<Identity> sequence) {
-        var sorted = new ArrayList<>(sequence);
-        sorted.sort(Identity::compareTo);
+    /** {@code Digest(sort(distinct(k)))} over the unsigned bytes: the same for any order of the same leaves, and a leaf listed twice is one leaf. */
+    public static Identity leafSet(Digest digest, List<Identity> leaves) {
+        var sorted = leaves.stream().distinct().sorted().toList();
         var hasher = digest.hasher();
         for (var k : sorted) { var bytes = k.view(); hasher.update(bytes, 0, bytes.length); }
         return hasher.finish();

@@ -86,6 +86,20 @@ final class Fixtures {
     /** A module that declares every kind of header javac resolves, and bodies with local classes, lambdas and switches. */
     static Map<String, String> rich() {
         var s = new LinkedHashMap<String, String>();
+        // A module descriptor with every kind of directive: the fact is read from the parsed file, and javac adds the mandated java.base.
+        s.put("module-info.java", """
+                module fx.rich {
+                    requires java.logging;
+                    requires static java.sql;
+                    requires transitive java.xml;
+                    exports fx;
+                    exports fx.sub to java.logging, java.sql;
+                    opens fx to java.sql;
+                    uses java.util.function.Supplier;
+                    provides java.util.function.Supplier with fx.Supplied;
+                }
+                """);
+        s.put("fx/Supplied.java", "package fx; public class Supplied implements java.util.function.Supplier<String> { public String get() { return \"\"; } }");
         s.put("fx/Box.java", """
                 package fx;
                 import java.io.Serializable;

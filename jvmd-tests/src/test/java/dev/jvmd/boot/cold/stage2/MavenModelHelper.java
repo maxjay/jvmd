@@ -57,13 +57,34 @@ final class MavenModelHelper {
             testOnly.removeAll(mainEntries);
             ObjectNode node = list.addObject();
             node.put("name", m.name()).put("coordinate", m.coordinate()).put("release", release).put("moduleInfo", false);
-            node.putArray("javacOptions");
+            // As the build passes them: the compiler plugin gives a module its project version as --module-version.
+            var options = node.putArray("javacOptions");
+            for (var option : compilerOptions(root, m)) options.add(option);
+            if (Files.isRegularFile(m.directory().resolve("src/main/java/module-info.java")))
+                options.add("--module-version").add(m.coordinate().substring(m.coordinate().lastIndexOf(':') + 1));
             var scopes = node.putObject("scopes");
             var base = root.toAbsolutePath().normalize();
             scope(scopes.putObject("main"), List.of(relative(base, m.directory().resolve("src/main/java")), relative(base, m.directory().resolve("target/generated-sources/annotations"))), mainEntries);
             scope(scopes.putObject("test"), List.of(relative(base, m.directory().resolve("src/test/java")), relative(base, m.directory().resolve("target/generated-test-sources/test-annotations"))), testOnly);
         }
         return new Model(json.writeValueAsBytes(doc), modules);
+    }
+
+    /**
+     * What the compiler plugin passes for the language level, as the poms say it: {@code --release N} when the module (or its parent)
+     * sets {@code maven.compiler.release}, {@code -source N -target N} when that property is empty and source and target are set.
+     */
+    private static List<String> compilerOptions(Path root, Module module) throws IOException {
+        for (var pom : List.of(module.directory().resolve("pom.xml"), root.resolve("pom.xml"))) {
+            var properties = child(parse(pom).getDocumentElement(), "properties");
+            if (properties == null) continue;
+            var release = child(properties, "maven.compiler.release");
+            if (release != null && !release.getTextContent().trim().isEmpty()) return List.of("--release", release.getTextContent().trim());
+            var source = child(properties, "maven.compiler.source");
+            var target = child(properties, "maven.compiler.target");
+            if (release != null && source != null && target != null) return List.of("-source", source.getTextContent().trim(), "-target", target.getTextContent().trim());
+        }
+        return List.of();
     }
 
     private static String relative(Path base, Path path) { return base.relativize(path.toAbsolutePath().normalize()).toString().replace('\\', '/'); }

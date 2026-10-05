@@ -80,7 +80,11 @@ class MavenProjectTest {
                     public static Map<String, Object> asMap(Object value) { return MAPPER.convertValue(value, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { }); }
                 }
                 """);
-        for (var e : Fixtures.rich().entrySet()) files.put("core/src/main/java/" + e.getKey(), e.getValue());
+        // lib and core are JPMS modules: Maven compiles them in module mode and writes a module-info.class, whose descriptor fact stage 2
+        // reads from the parsed module-info.java (E.3). The rich fixture brings its own descriptor, which is replaced by core's.
+        files.put("lib/src/main/java/module-info.java", "module corp.lib { requires transitive com.fasterxml.jackson.databind; exports lib; }");
+        files.put("core/src/main/java/module-info.java", "module corp.core { requires transitive corp.lib; requires java.logging; exports core; exports fx; }");
+        for (var e : Fixtures.rich().entrySet()) if (!e.getKey().equals("module-info.java")) files.put("core/src/main/java/" + e.getKey(), e.getValue());
         files.put("core/src/main/java/core/Service.java", """
                 package core;
                 import fx.Box;

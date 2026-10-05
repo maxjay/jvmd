@@ -17,15 +17,19 @@ import dev.jvmd.index.layer.machine.Fact;
 import dev.jvmd.index.layer.machine.MachineLeaf;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /**
  * One module and scope (stage 2, 4 step 2 and 5.4): bind its route, header-compile its source files against the classpath of jars
@@ -37,8 +41,11 @@ final class ModuleJob {
 
     ModuleJob(Boot boot) { this.boot = boot; }
 
-    /** What {@code Stage2} needs back: the leaf key. Everything else is recorded in {@link Boot}. */
-    Identity run(ProjectModel.Module module, int scope) throws IOException {
+    /** A file's row before its header proof, which needs the definer indexes of the route (3.18). */
+    private record Pending(SourceFile file, Identity sum, List<String> types, List<FileRow.Fault> faults, List<Entry> edges) { }
+
+    /** What {@code Stage2} needs back: the leaf. Everything else is recorded in {@link Boot}. */
+    MachineLeaf run(ProjectModel.Module module, int scope) throws IOException {
         var digest = boot.digest;
         var sums = boot.tree.sums();
         var store = boot.store;
@@ -47,48 +54,50 @@ final class ModuleJob {
 
         // 1. Bind the route. No session providers exist in a cold boot.
         var bound = Bind.bind(digest, entries, Bind.NONE, boot.built.provider(), boot::leaf, sink);
-        boot.routes.put(Boot.routeKey(module.name(), scope), new Route(entries, bound.routeHash(), bound.r(), bound.leafSet()));
+        boot.routes.put(Boot.routeKey(module.name(), scope), new Route(entries, bound.routeHash(), bound.r(), bound.leafSetExt(), bound.leafSetSib()));
 
         // 2. Stubs for siblings; jars go on the classpath as jars.
         var classpath = new ArrayList<Path>();
         for (var binding : bound.bindings()) {
-            if (binding.origin() == Bound.Origin.BUILT) classpath.add(boot.stubDir(binding.k()));
+            if (binding.origin() == Bound.Origin.SIBLING) classpath.add(boot.stubDir(binding.k()));
             else if (binding.entry() instanceof RouteEntry.Jar jar) classpath.add(boot.repository.resolve(jar.location()));
         }
 
-        // 3. Header-compile the scope's source files.
+        // 3. Header-compile the scope's source files. A module-info.java is parsed with the rest and never entered.
         var options = module.javacOptions();
-        int release = options.contains("--enable-preview") || module.release() <= 0 ? Runtime.version().feature() : module.release();
-        var roots = module.scope(scope).sourceRoots();
-        var found = sources(roots);
+        int release = HeaderCompiler.effectiveRelease(module.release(), options.contains("--enable-preview"), Runtime.version().feature());
+        var found = sources(module.scope(scope).sourceRoots());
         var toCompile = new ArrayList<HeaderCompiler.Source>();
-        for (var file : found) if (!file.moduleInfo()) toCompile.add(new HeaderCompiler.Source(file.path(), file.bytes()));
+        for (var file : found) toCompile.add(new HeaderCompiler.Source(file.path(), file.bytes()));
         boot.sourceFiles.addAndGet(found.size());
         var facts = new ArrayList<Fact>();
         var edges = new TreeMap<byte[], Entry>(Arrays::compareUnsigned);
-        var rows = new ArrayList<FileRow>();
+        var pending = new ArrayList<Pending>();
         var seen = new HashSet<ByteBuffer>();
-        var optionsKey = digest.hash((String.join("\0", options) + "\0" + release).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var optionsKey = digest.hash((String.join("\0", options) + "\0" + release).getBytes(StandardCharsets.UTF_8));
         long headerStarted = System.nanoTime();
         var compiled = HeaderCompiler.compile(toCompile, classpath, Path.of(boot.model.jdkHome()), release, options);
         boot.headerNanos.addAndGet(System.nanoTime() - headerStarted);
         boot.compiledFiles.addAndGet(toCompile.size());
         try (compiled) {
             var extract = new SourceFacts(digest, compiled.elements, compiled.types, options.contains("-parameters"));
-            var unitsByPath = new java.util.HashMap<String, HeaderCompiler.Unit>();
+            var unitsByPath = new HashMap<String, HeaderCompiler.Unit>();
             for (var u : compiled.units) unitsByPath.put(u.source.path(), u);
             // 4. Each compilation unit, in path order.
             for (var file : found) {
-                if (file.moduleInfo()) { rows.add(row(file, sums.zero(), List.of(), List.of())); continue; }
                 var unit = unitsByPath.get(file.path());
                 if (!unit.parsed()) {
-                    rows.add(row(file, sums.zero(), List.of(), List.of(new FileRow.Fault(new byte[0], unit.parseError))));
+                    pending.add(new Pending(file, sums.zero(), List.of(), List.of(new FileRow.Fault(new byte[0], unit.parseError)), List.of()));
                     continue;
                 }
                 var result = boot.fileMemo.get(file.kappa(), bound.routeHash(), optionsKey);
                 if (result == null) {
                     long factsStarted = System.nanoTime();
-                    result = extract.of(unit.declared);
+                    if (unit.module != null) {
+                        // The descriptor of the module's own main code; a test scope has none (its module is patched, not declared).
+                        result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)))
+                                : new SourceFacts.Result(List.of(), List.of(), List.of(), List.of());
+                    } else result = extract.of(unit.declared);
                     boot.factsNanos.addAndGet(System.nanoTime() - factsStarted);
                     boot.fileMemo.put(file.kappa(), bound.routeHash(), optionsKey, result);
                     boot.parsedFiles.incrementAndGet();
@@ -107,12 +116,8 @@ final class ModuleJob {
                 for (var edge : result.edges()) edges.putIfAbsent(edge.key(), edge);
                 var types = new ArrayList<String>();
                 for (var type : result.typeKeys()) if (kept.contains(ByteBuffer.wrap(typeKey(type)))) types.add(type);
-                rows.add(row(file, sum, types, faults));
+                pending.add(new Pending(file, sum, types, faults, result.edges()));
             }
-        }
-        for (var row : rows) {
-            boot.files.put(row.path(), row);
-            for (var fault : row.faults()) boot.faults.add(row.path() + ": " + (fault.m().length == 0 ? "" : describe(fault.m()) + ": ") + fault.reason());
         }
 
         // 5. Sort the facts by m, stream them into T with the per-type running sum, and build N, E and O.
@@ -137,60 +142,128 @@ final class ModuleJob {
         var tRoot = chunker.finish();
         var k = tRoot.hash();
 
-        var done = boot.leafDone(k);
-        if (boot.written.claimLeaf(k)) {
-            try {
-                // First time this boot sees this API; if MACHINE already has it (a jar with the same API) there is nothing to build.
-                if (store.getLeaf(k) == null) {
-                    names.sort((a, b) -> Arrays.compareUnsigned(a.key(), b.key()));
-                    var edgeList = new ArrayList<>(edges.values());
-                    var nRoot = boot.tree.build(names, sink);
-                    var eRoot = boot.tree.build(edgeList, sink);
-                    var oRoot = boot.tree.build(types, sink);
-                    var leaf = new MachineLeaf(k, tRoot.sum(), nRoot.hash(), nRoot.level(), eRoot.hash(), eRoot.sum(), eRoot.level(), oRoot.hash(),
-                            oRoot.level(), tRoot.count(), types.size(), eRoot.count());
-                    store.putLeaf(k, leaf.encode());
-                }
-                sink.flush();
-                done.complete(null);
-            } catch (RuntimeException | Error failed) {
-                done.completeExceptionally(failed);
-                throw failed;
-            }
-        } else done.join(); // another job is writing this leaf: its commit is what makes it readable
+        // The leaf: a leaf this boot or MACHINE already holds is not built again. A leaf another job is writing at this moment is not
+        // yet visible, and is built here too: every write is of the same bytes under the same keys, so the duplicate is harmless.
+        if (boot.written.claimLeaf(k)) boot.sourceLeaves.incrementAndGet();
+        MachineLeaf leaf = boot.built.byKey(k);
+        if (leaf == null) {
+            var stored = store.getLeaf(k);
+            if (stored != null) leaf = MachineLeaf.decode(stored, digest.width());
+        }
+        if (leaf == null) {
+            names.sort((a, b) -> Arrays.compareUnsigned(a.key(), b.key()));
+            var nRoot = boot.tree.build(names, sink);
+            var eRoot = boot.tree.build(new ArrayList<>(edges.values()), sink);
+            var oRoot = boot.tree.build(types, sink);
+            leaf = new MachineLeaf(k, tRoot.sum(), nRoot.hash(), nRoot.level(), eRoot.hash(), eRoot.sum(), eRoot.level(), oRoot.hash(),
+                    oRoot.level(), tRoot.count(), types.size(), eRoot.count());
+            store.putLeaf(k, leaf.encode());
+        }
         sink.flush();
-        boot.sourceLeaves.incrementAndGet();
 
         // 6. Register the leaf for the modules that depend on this one.
-        boot.built.register(module.name(), module.coordinate(), scope, k);
+        boot.built.register(module.name(), module.coordinate(), scope, leaf);
 
-        // 7. The definer index of this route, from the nearest one already built.
+        // 7. The definer indexes of this route, then the header proof of every file from what they resolve.
         long definerStarted = System.nanoTime();
-        definerIndex(bound);
+        var resolver = definerIndex(bound);
         boot.definerNanos.addAndGet(System.nanoTime() - definerStarted);
+        var own = new HashMap<String, Identity>();
+        for (var type : types) own.put(new String(type.key(), StandardCharsets.ISO_8859_1), type.h());
+        for (var p : pending) {
+            var row = new FileRow(p.file().path(), p.file().kappa(), p.file().size(), p.file().mtimeNanos(), p.sum(), List.copyOf(p.types()), List.copyOf(p.faults()),
+                    headerProof(p.edges(), own, resolver));
+            boot.files.put(row.path(), row);
+            for (var fault : row.faults()) boot.faults.add(row.path() + ": " + (fault.m().length == 0 ? "" : describe(fault.m()) + ": ") + fault.reason());
+        }
         sink.flush();
-        return k;
+        return leaf;
     }
 
-    private void definerIndex(Bound bound) {
-        if (boot.indexMemo.written(bound.leafSet(), bound.routeHash())) return;
-        var sorted = new ArrayList<>(bound.sequence());
-        sorted.sort(Identity::compareTo);
-        var base = boot.indexMemo.nearest(sorted);
-        var result = DefinerIndex.build(boot.digest, boot.tree, bound.sequence(), base, boot::leaf, boot::node, boot.sink);
-        var disjoint = DefinerIndex.encodeRoot(result.disjoint());
-        var conflicts = DefinerIndex.encodeRoot(result.conflicts());
-        boot.store.putDisjoint(bound.leafSet(), disjoint);
-        boot.store.putConflicts(bound.routeHash(), conflicts);
-        boot.definers.put(LocalStore.disjointKey(bound.leafSet()), disjoint);
-        boot.definers.put(LocalStore.conflictsKey(bound.routeHash()), conflicts);
-        boot.indexMemo.put(bound.leafSet(), result.state());
-        boot.indexMemo.markWritten(bound.leafSet(), bound.routeHash());
+    /**
+     * The {@code --release N} the build passed, or 0. It is not the model's {@code release}: a build that passes {@code -source} and
+     * {@code -target} reads the JDK's own modules, with their own version strings, while one that passes {@code --release} reads
+     * {@code ct.sym}, where every module's version is {@code N}. Which of the two the build did is in its options, as passed.
+     */
+    private static int releaseOption(List<String> options) {
+        for (int i = 0; i < options.size(); i++) {
+            String value = options.get(i).equals("--release") && i + 1 < options.size() ? options.get(i + 1)
+                    : options.get(i).startsWith("--release=") ? options.get(i).substring("--release=".length()) : null;
+            if (value != null) { try { return Integer.parseInt(value.trim()); } catch (NumberFormatException notANumber) { return 0; } }
+        }
+        return 0;
+    }
+
+    /** The {@code --module-version} the build passed, which javac writes into the module's own descriptor; null if none. */
+    private static String moduleVersion(List<String> options) {
+        for (int i = 0; i < options.size(); i++) {
+            if (options.get(i).equals("--module-version") && i + 1 < options.size()) return options.get(i + 1);
+            if (options.get(i).startsWith("--module-version=")) return options.get(i).substring("--module-version=".length());
+        }
+        return null;
+    }
+
+    /**
+     * 3.18: for every type the file's headers mention (the targets of its {@code E} edges), the {@code oSum} of its definer under this
+     * binding. A type the module declares itself is its own definer; any other is resolved sibling, then external, then conflicts. A
+     * name nothing declares has no definer and no entry. Sorted by type key, so the row is a function of the file and the binding.
+     */
+    private static List<FileRow.Proof> headerProof(List<Entry> edges, Map<String, Identity> own, DefinerIndex.Resolver resolver) {
+        var targets = new TreeSet<String>();
+        for (var edge : edges) {
+            var key = edge.key();
+            int end = 0;
+            while (key[end] != 0) end++;
+            targets.add(new String(key, 0, end, StandardCharsets.UTF_8));
+        }
+        var proof = new ArrayList<FileRow.Proof>(targets.size());
+        for (var target : targets) {
+            var key = typeKeyOf(target);
+            var oSum = own.get(new String(key, StandardCharsets.ISO_8859_1));
+            if (oSum == null) oSum = resolver.oSum(key);
+            if (oSum != null) proof.add(new FileRow.Proof(target, oSum));
+        }
+        return proof;
+    }
+
+    /**
+     * The definer indexes of a route (3.6, 3.17, 5.5): the external and the sibling disjoint index, each folded from the nearest state of
+     * its kind, and the conflict table across both. A disjoint index the store already holds (another project wrote the external one)
+     * is not built again: it is a shared, derivable record, and reading it is allowed.
+     */
+    private DefinerIndex.Resolver definerIndex(Bound bound) {
+        var external = state(IndexMemo.Kind.EXTERNAL, bound.leafSetExt(), bound.external());
+        var sibling = state(IndexMemo.Kind.SIBLING, bound.leafSetSib(), bound.sibling());
+        if (boot.indexMemo.claimConflicts(bound.routeHash())) {
+            var root = DefinerIndex.encodeRoot(DefinerIndex.conflicts(boot.digest, boot.tree, external, sibling, bound.sequence(), boot.sink));
+            boot.store.putConflicts(bound.routeHash(), root);
+            boot.definers.put(LocalStore.conflictsKey(bound.routeHash()), root);
+        }
+        return new DefinerIndex.Resolver(external, sibling, bound.sequence());
+    }
+
+    private DefinerIndex.State state(IndexMemo.Kind kind, Identity key, List<Identity> leaves) {
+        var state = boot.indexMemo.stateFor(kind, key);
+        if (state == null) {
+            state = DefinerIndex.fold(boot.tree, leaves, boot.indexMemo.nearest(kind, leaves), boot::leaf, boot::node);
+            boot.indexMemo.put(kind, key, state);
+        }
+        if (boot.indexMemo.claimRecord(kind, key)) {
+            boolean external = kind == IndexMemo.Kind.EXTERNAL;
+            var recordKey = external ? LocalStore.disjointKey(key) : LocalStore.siblingKey(key);
+            var value = external ? boot.store.getDisjoint(key) : boot.store.getSibling(key);
+            if (value == null) {
+                value = DefinerIndex.encodeRoot(DefinerIndex.disjoint(boot.digest, boot.tree, state, boot.sink));
+                if (external) boot.store.putDisjoint(key, value); else boot.store.putSibling(key, value);
+            }
+            boot.definers.put(recordKey, value);
+        }
+        return state;
     }
 
     // ---- source files ------------------------------------------------------------------------------------------------------
 
-    private record SourceFile(String path, long size, long mtimeNanos, byte[] bytes, Identity kappa, boolean moduleInfo) { }
+    private record SourceFile(String path, long size, long mtimeNanos, byte[] bytes, Identity kappa) { }
 
     /** Step 1.4: regular {@code *.java} under the source roots, in path order, one stat each, κ on read. A root that does not exist is skipped. */
     private List<SourceFile> sources(List<String> roots) throws IOException {
@@ -213,19 +286,17 @@ final class ModuleJob {
             var attributes = Files.readAttributes(e.getValue(), BasicFileAttributes.class);
             var instant = attributes.lastModifiedTime().toInstant();
             var bytes = Files.readAllBytes(e.getValue());
-            out.add(new SourceFile(e.getKey(), attributes.size(), instant.getEpochSecond() * 1_000_000_000L + instant.getNano(), bytes,
-                    boot.digest.hash(bytes), e.getValue().getFileName().toString().equals("module-info.java")));
+            out.add(new SourceFile(e.getKey(), attributes.size(), instant.getEpochSecond() * 1_000_000_000L + instant.getNano(), bytes, boot.digest.hash(bytes)));
         }
         return out;
-    }
-
-    private static FileRow row(SourceFile file, Identity sum, List<String> types, List<FileRow.Fault> faults) {
-        return new FileRow(file.path(), file.kappa(), file.size(), file.mtimeNanos(), sum, List.copyOf(types), List.copyOf(faults));
     }
 
     // ---- keys ---------------------------------------------------------------------------------------------------------------
 
     private static byte[] typeKey(String internalName) { return new Codec.Writer(internalName.length() + 2).zstr(internalName).u8(0).toBytes(); }
+
+    /** The {@code O} key of a type: {@code zstr internalName}. */
+    private static byte[] typeKeyOf(String internalName) { return new Codec.Writer(internalName.length() + 1).zstr(internalName).toBytes(); }
 
     /** The {@code O} key of the type a fact belongs to: {@code zstr internalName}, the prefix of {@code m}. */
     private static byte[] ownerOf(byte[] m) {

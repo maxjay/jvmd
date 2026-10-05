@@ -82,6 +82,23 @@ public final class ContentTree {
         return acc;
     }
 
+    /** The entry with exactly this key, or null: one node read per level. */
+    public Entry get(Identity hash, Function<Identity, byte[]> reader, byte[] key) {
+        var bytes = reader.apply(hash);
+        int width = digest.width();
+        if (Node.level(bytes) == 0) {
+            for (var e : Node.entries(bytes, width)) if (Arrays.equals(e.key(), key)) return e;
+            return null;
+        }
+        // The child that can hold the key is the last one whose first key is not above it.
+        Node.Child holder = null;
+        for (var child : Node.children(bytes, width)) {
+            if (Arrays.compareUnsigned(child.first(), key) > 0) break;
+            holder = child;
+        }
+        return holder == null ? null : get(holder.hash(), reader, key);
+    }
+
     /** Every entry under {@code hash} in key order: one sequential read of the stored tree. */
     public void forEach(Identity hash, Function<Identity, byte[]> reader, java.util.function.Consumer<Entry> out) {
         var bytes = reader.apply(hash);

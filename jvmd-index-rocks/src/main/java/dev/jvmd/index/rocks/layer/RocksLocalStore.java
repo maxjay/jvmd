@@ -29,7 +29,8 @@ public final class RocksLocalStore implements LocalStore, AutoCloseable {
     @Override public void putModule(Identity projectKey, String module, byte[] value) { machine.put(LocalStore.moduleKey(projectKey, module), value); }
     @Override public void putRoute(Identity projectKey, String module, int scope, byte[] value) { machine.put(LocalStore.routeKey(projectKey, module, scope), value); }
     @Override public void putFile(Identity projectKey, String path, byte[] value) { machine.put(LocalStore.fileKey(projectKey, path), value); }
-    @Override public void putDisjoint(Identity leafSet, byte[] value) { machine.put(LocalStore.disjointKey(leafSet), value); }
+    @Override public void putDisjoint(Identity leafSetExt, byte[] value) { machine.put(LocalStore.disjointKey(leafSetExt), value); }
+    @Override public void putSibling(Identity leafSetSib, byte[] value) { machine.put(LocalStore.siblingKey(leafSetSib), value); }
     @Override public void putConflicts(Identity routeHash, byte[] value) { machine.put(LocalStore.conflictsKey(routeHash), value); }
     @Override public void putConsumer(Identity kappa, Identity routeHash, byte[] value) { machine.put(LocalStore.consumerKey(kappa, routeHash), value); }
     @Override public void putReverse(int kind, byte[] key, byte[] value) { machine.put(LocalStore.reverseKey(kind, key), value); }
@@ -57,7 +58,8 @@ public final class RocksLocalStore implements LocalStore, AutoCloseable {
     @Override public byte[] getModule(Identity projectKey, String module) { return machine.get(LocalStore.moduleKey(projectKey, module)); }
     @Override public byte[] getRoute(Identity projectKey, String module, int scope) { return machine.get(LocalStore.routeKey(projectKey, module, scope)); }
     @Override public byte[] getFile(Identity projectKey, String path) { return machine.get(LocalStore.fileKey(projectKey, path)); }
-    @Override public byte[] getDisjoint(Identity leafSet) { return machine.get(LocalStore.disjointKey(leafSet)); }
+    @Override public byte[] getDisjoint(Identity leafSetExt) { return machine.get(LocalStore.disjointKey(leafSetExt)); }
+    @Override public byte[] getSibling(Identity leafSetSib) { return machine.get(LocalStore.siblingKey(leafSetSib)); }
     @Override public byte[] getConflicts(Identity routeHash) { return machine.get(LocalStore.conflictsKey(routeHash)); }
     @Override public byte[] getConsumer(Identity kappa, Identity routeHash) { return machine.get(LocalStore.consumerKey(kappa, routeHash)); }
     @Override public byte[] getReverse(int kind, byte[] key) { return machine.get(LocalStore.reverseKey(kind, key)); }

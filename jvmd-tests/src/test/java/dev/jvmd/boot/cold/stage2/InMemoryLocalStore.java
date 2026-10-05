@@ -40,7 +40,8 @@ final class InMemoryLocalStore implements LocalStore {
     @Override public void putModule(Identity projectKey, String module, byte[] value) { put(LocalStore.moduleKey(projectKey, module), value); }
     @Override public void putRoute(Identity projectKey, String module, int scope, byte[] value) { put(LocalStore.routeKey(projectKey, module, scope), value); }
     @Override public void putFile(Identity projectKey, String path, byte[] value) { put(LocalStore.fileKey(projectKey, path), value); }
-    @Override public void putDisjoint(Identity leafSet, byte[] value) { put(LocalStore.disjointKey(leafSet), value); }
+    @Override public void putDisjoint(Identity leafSetExt, byte[] value) { put(LocalStore.disjointKey(leafSetExt), value); }
+    @Override public void putSibling(Identity leafSetSib, byte[] value) { put(LocalStore.siblingKey(leafSetSib), value); }
     @Override public void putConflicts(Identity routeHash, byte[] value) { put(LocalStore.conflictsKey(routeHash), value); }
     @Override public void putConsumer(Identity kappa, Identity routeHash, byte[] value) { put(LocalStore.consumerKey(kappa, routeHash), value); }
     @Override public void putReverse(int kind, byte[] key, byte[] value) { put(LocalStore.reverseKey(kind, key), value); }
@@ -80,7 +81,8 @@ final class InMemoryLocalStore implements LocalStore {
     @Override public byte[] getModule(Identity projectKey, String module) { return read("MOD", LocalStore.moduleKey(projectKey, module)); }
     @Override public byte[] getRoute(Identity projectKey, String module, int scope) { return read("RT", LocalStore.routeKey(projectKey, module, scope)); }
     @Override public byte[] getFile(Identity projectKey, String path) { return read("F", LocalStore.fileKey(projectKey, path)); }
-    @Override public byte[] getDisjoint(Identity leafSet) { return read("DD", LocalStore.disjointKey(leafSet)); }
+    @Override public byte[] getDisjoint(Identity leafSetExt) { return read("DD", LocalStore.disjointKey(leafSetExt)); }
+    @Override public byte[] getSibling(Identity leafSetSib) { return read("DS", LocalStore.siblingKey(leafSetSib)); }
     @Override public byte[] getConflicts(Identity routeHash) { return read("DC", LocalStore.conflictsKey(routeHash)); }
     @Override public byte[] getConsumer(Identity kappa, Identity routeHash) { return read("C", LocalStore.consumerKey(kappa, routeHash)); }
     @Override public byte[] getReverse(int kind, byte[] key) { return read("X", LocalStore.reverseKey(kind, key)); }

@@ -18,8 +18,10 @@ public interface LocalStore extends MachineStore {
     void putModule(Identity projectKey, String module, byte[] value);
     void putRoute(Identity projectKey, String module, int scope, byte[] value);
     void putFile(Identity projectKey, String path, byte[] value);
-    /** {@code DD|leafSet}: the disjoint part of a definer index, shared across projects. */
-    void putDisjoint(Identity leafSet, byte[] value);
+    /** {@code DD|leafSetExt}: the external disjoint definer index over JDK and jar leaves, shared across projects. */
+    void putDisjoint(Identity leafSetExt, byte[] value);
+    /** {@code DS|leafSetSib}: the sibling disjoint definer index over this project's leaves. */
+    void putSibling(Identity leafSetSib, byte[] value);
     /** {@code DC|routeHash}: the conflict table of a definer index, shared across projects. */
     void putConflicts(Identity routeHash, byte[] value);
     void putConsumer(Identity kappa, Identity routeHash, byte[] value);
@@ -40,7 +42,10 @@ public interface LocalStore extends MachineStore {
     byte[] getModule(Identity projectKey, String module);
     byte[] getRoute(Identity projectKey, String module, int scope);
     byte[] getFile(Identity projectKey, String path);
-    byte[] getDisjoint(Identity leafSet);
+    /** {@code DD|leafSetExt}, or null: a shared, derivable record, so a boot may read it before its root (4, step 2.7). */
+    byte[] getDisjoint(Identity leafSetExt);
+    /** {@code DS|leafSetSib}, or null: read like {@code DD|}. */
+    byte[] getSibling(Identity leafSetSib);
     byte[] getConflicts(Identity routeHash);
     byte[] getConsumer(Identity kappa, Identity routeHash);
     byte[] getReverse(int kind, byte[] key);
@@ -56,7 +61,8 @@ public interface LocalStore extends MachineStore {
         return join("RT|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
     }
     static byte[] fileKey(Identity projectKey, String path) { return join("F|", projectKey.view(), "|", path.getBytes(StandardCharsets.UTF_8)); }
-    static byte[] disjointKey(Identity leafSet) { return join("DD|", leafSet.view()); }
+    static byte[] disjointKey(Identity leafSetExt) { return join("DD|", leafSetExt.view()); }
+    static byte[] siblingKey(Identity leafSetSib) { return join("DS|", leafSetSib.view()); }
     static byte[] conflictsKey(Identity routeHash) { return join("DC|", routeHash.view()); }
     static byte[] consumerKey(Identity kappa, Identity routeHash) { return join("C|", kappa.view(), "|", routeHash.view()); }
     static byte[] reverseKey(int kind, byte[] key) { return join("X|", new byte[] {(byte) kind}, "|", key); }

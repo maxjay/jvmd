@@ -128,8 +128,8 @@ public final class Stage2 {
 
                 var leaves = new java.util.TreeMap<String, Identity>();
                 for (var module : model.modules()) {
-                    leaves.put(module.name() + "/main", boot.built.leaf(module.name(), LocalStore.MAIN));
-                    leaves.put(module.name() + "/test", boot.built.leaf(module.name(), LocalStore.TEST));
+                    leaves.put(module.name() + "/main", boot.built.leaf(module.name(), LocalStore.MAIN).k());
+                    leaves.put(module.name() + "/test", boot.built.leaf(module.name(), LocalStore.TEST).k());
                 }
                 var faults = new ArrayList<>(boot.faults);
                 java.util.Collections.sort(faults);
@@ -145,9 +145,9 @@ public final class Stage2 {
         for (var d : dependencies) route.add(d.module() != null ? new RouteEntry.Sibling(d.coordinate(), d.module()) : defaults.jar(d));
     }
 
-    /** The release javac ran at (C.1): the running feature version for a module that compiles with preview features. */
+    /** The release javac ran at (C.1, E.4), as the module descriptor records it. */
     private int effectiveRelease(ProjectModel.Module module) {
-        return module.javacOptions().contains("--enable-preview") || module.release() <= 0 ? jdkFeature : module.release();
+        return HeaderCompiler.effectiveRelease(module.release(), module.javacOptions().contains("--enable-preview"), jdkFeature);
     }
 
     /**

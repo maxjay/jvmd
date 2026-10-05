@@ -47,10 +47,10 @@ public final class Chunker {
     void addChild(Node.Child child) { add(child); }
 
     /**
-     * Finishes an interior chunker whose children came from a level-0 builder of the given level; returns null if it was never
-     * fed (the caller then has an empty list). A single child is the root, never wrapped.
+     * Finishes an interior chunker whose children came from a level-0 builder; returns null if it was never fed (the caller then has
+     * an empty list). A single child is the root, never wrapped.
      */
-    Root finishFrom(int childLevel) {
+    Root finishFrom() {
         if (parent == null && openChildren.size() == 1) {
             var only = openChildren.get(0);
             return new Root(only.hash(), only.sum(), only.count(), level - 1);

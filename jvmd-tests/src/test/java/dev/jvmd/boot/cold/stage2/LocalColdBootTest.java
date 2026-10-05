@@ -66,9 +66,11 @@ class LocalColdBootTest {
         Stage2Support.jar(repository, Fixtures.LIB_AB_15, Fixtures.libAB(true), List.of());
         Stage2Support.jar(repository, Fixtures.LIB_X, Fixtures.libX(), List.of());
         Stage2Support.jar(repository, Fixtures.LIB_T, Fixtures.libT(), List.of());
-        Stage2Support.jar(repository, "corp/rich/1/rich-1.jar", Fixtures.rich(), List.of());
+        // Built with --release, as Maven builds: javac then records the release as the version of every system module a descriptor requires.
+        var release = String.valueOf(Stage2Support.FEATURE);
+        Stage2Support.jar(repository, "corp/rich/1/rich-1.jar", Fixtures.rich(), List.of("--release", release));
         // The same API compiled with -parameters: equal r, and a different k because the tail differs (3.5).
-        Stage2Support.jar(repository, "corp/richp/1/richp-1.jar", Fixtures.rich(), List.of("-parameters"));
+        Stage2Support.jar(repository, "corp/richp/1/richp-1.jar", Fixtures.rich(), List.of("--release", release, "-parameters"));
         // Two jars that declare one class with one constant each: a file that inlines the constant resolves to a different fact in each.
         Stage2Support.jar(repository, "corp/p1/1/p1-1.jar", Map.of("ns/K.java", "package ns; public class K { public static final int VALUE = 1; }"), List.of());
         Stage2Support.jar(repository, "corp/p2/1/p2-1.jar", Map.of("ns/K.java", "package ns; public class K { public static final int VALUE = 2; }"), List.of());
@@ -159,7 +161,7 @@ class LocalColdBootTest {
             var files = new LinkedHashMap<String, String>();
             for (var e : Fixtures.rich().entrySet()) files.put("app/src/main/java/" + e.getKey(), e.getValue());
             Stage2Support.write(project, files);
-            var booted = boot(digest, Stage2Support.model(project, new Stage2Support.Mod("app", "corp:app:1", List.of())), 4);
+            var booted = boot(digest, Stage2Support.model(project, new Stage2Support.Mod("app", "corp:app:1", List.of()).withOptions("--release", String.valueOf(Stage2Support.FEATURE))), 4);
             var store = booted.store();
             assertThat(booted.result().faults()).as("faults").isEmpty();
 
@@ -200,18 +202,26 @@ class LocalColdBootTest {
                         r = sums.add(r, l.r());
                         elements.add(new Entry(k.bytes(), Entry.NONE, l.r()));
                     }
-                    var sorted = new ArrayList<>(bound.sequence());
-                    sorted.sort((a, b) -> Arrays.compareUnsigned(a.view(), b.view()));
-                    var hasher = digest.hasher();
-                    for (var k : sorted) hasher.update(k.view(), 0, k.view().length);
+                    // The leaf sets, recomputed here from the coordinates alone: a leaf bound through a sibling module is sibling, any other external.
+                    var ext = new java.util.TreeSet<Identity>();
+                    var sib = new java.util.TreeSet<Identity>();
+                    for (var binding : bound.bindings()) (built.containsKey(binding.entry().coordinate()) ? sib : ext).add(binding.k());
                     var fresh = new ContentList(digest).build(elements, DISCARD);
                     assertThat(stored.r()).as("R of %s/%d", module.name(), scope).isEqualTo(r);
-                    assertThat(stored.leafSet()).isEqualTo(hasher.finish());
+                    assertThat(stored.leafSetExt()).as("leafSetExt of %s/%d", module.name(), scope).isEqualTo(distinctDigest(digest, ext));
+                    assertThat(stored.leafSetSib()).as("leafSetSib of %s/%d", module.name(), scope).isEqualTo(distinctDigest(digest, sib));
                     assertThat(stored.routeHash()).isEqualTo(fresh.hash());
                     assertThat(bound.routeHash()).isEqualTo(stored.routeHash());
                 }
             }
         } finally { Stage2Support.delete(project); }
+    }
+
+    /** {@code Digest} of the sorted distinct keys, concatenated: how a leaf set is named. */
+    static Identity distinctDigest(Digest digest, java.util.SortedSet<Identity> leaves) {
+        var hasher = digest.hasher();
+        for (var k : leaves) hasher.update(k.view(), 0, k.view().length);
+        return hasher.finish();
     }
 
     // ---- 7.3.3 -------------------------------------------------------------------------------------------------------------
@@ -263,18 +273,28 @@ class LocalColdBootTest {
         var two = bind(digest, store, List.of(x, ab, rich), Bind.NONE);
         assertThat(two.routeHash()).as("a permutation changes routeHash").isNotEqualTo(one.routeHash());
         assertThat(two.r()).as("and leaves R").isEqualTo(one.r());
-        assertThat(two.leafSet()).as("and leafSet").isEqualTo(one.leafSet());
+        assertThat(two.leafSetExt()).as("and leafSetExt").isEqualTo(one.leafSetExt());
+        assertThat(two.leafSetSib()).as("and leafSetSib").isEqualTo(one.leafSetSib());
 
         var swapped = bind(digest, store, List.of(ab, x, richp), Bind.NONE);
         assertThat(swapped.r()).as("an API-identical leaf leaves R").isEqualTo(one.r());
-        assertThat(swapped.leafSet()).isNotEqualTo(one.leafSet());
+        assertThat(swapped.leafSetExt()).as("and changes leafSetExt").isNotEqualTo(one.leafSetExt());
         assertThat(swapped.routeHash()).isNotEqualTo(one.routeHash());
 
         var tree = new ContentTree(digest);
-        var before = DefinerIndex.build(digest, tree, one.sequence(), null, k -> leaf(digest, store, k), nodes(store), DISCARD);
-        var after = DefinerIndex.build(digest, tree, swapped.sequence(), null, k -> leaf(digest, store, k), nodes(store), DISCARD);
-        assertThat(after.disjoint().sum()).as("the disjoint index resolves every name identically").isEqualTo(before.disjoint().sum());
-        assertThat(after.disjoint().hash()).as("though it stores another k").isNotEqualTo(before.disjoint().hash());
+        var before = DefinerIndex.disjoint(digest, tree, fold(digest, store, one.external(), null), DISCARD);
+        var after = DefinerIndex.disjoint(digest, tree, fold(digest, store, swapped.external(), null), DISCARD);
+        assertThat(after.sum()).as("the disjoint index resolves every name identically").isEqualTo(before.sum());
+        assertThat(after.hash()).as("though it stores another k").isNotEqualTo(before.hash());
+    }
+
+    /** The definer state of a leaf set, folded from {@code base} (or nothing) over the stage 1 leaves of {@code store}. */
+    static DefinerIndex.State fold(Digest digest, InMemoryLocalStore store, List<Identity> leaves, DefinerIndex.State base) {
+        return fold(digest, leaf -> leaf(digest, store, leaf), nodes(store), leaves, base);
+    }
+
+    static DefinerIndex.State fold(Digest digest, Function<Identity, MachineLeaf> leafOf, Function<Identity, byte[]> reader, List<Identity> leaves, DefinerIndex.State base) {
+        return DefinerIndex.fold(new ContentTree(digest), leaves.stream().distinct().sorted().toList(), base, leafOf, reader);
     }
 
     // ---- 7.3.5 -------------------------------------------------------------------------------------------------------------
@@ -412,27 +432,43 @@ class LocalColdBootTest {
         Function<Identity, MachineLeaf> leafOf = k -> leaf(digest, store, k);
         var written = new TreeMapSink(); // the index nodes, so the conflict tables can be read back
         Function<Identity, byte[]> reader = h -> written.nodes.containsKey(h) ? written.nodes.get(h) : nodes(store).apply(h);
-        var abFirst = DefinerIndex.build(digest, tree, List.of(ab, x), null, leafOf, reader, written);
-        var xFirst = DefinerIndex.build(digest, tree, List.of(x, ab), null, leafOf, reader, written);
+        var none = fold(digest, leafOf, reader, List.of(), null);
 
-        var conflictsOne = entries(digest, abFirst.conflicts(), reader);
-        var conflictsTwo = entries(digest, xFirst.conflicts(), reader);
+        // Two external leaves that both declare ab.Util: it is in neither disjoint index's single-definer set, and is in the conflict table with the first leaf in route order.
+        var both = fold(digest, leafOf, reader, List.of(ab, x), null);
+        var abFirst = DefinerIndex.conflicts(digest, tree, both, none, List.of(ab, x), written);
+        var xFirst = DefinerIndex.conflicts(digest, tree, both, none, List.of(x, ab), written);
+        var conflictsOne = entries(digest, abFirst, reader);
+        var conflictsTwo = entries(digest, xFirst, reader);
         assertThat(conflictsOne).hasSize(1);
         assertThat(zstr(conflictsOne.get(0).key())).isEqualTo("ab/Util");
         assertThat(firstDefiner(conflictsOne.get(0), digest.width())).isEqualTo(ab);
         assertThat(firstDefiner(conflictsTwo.get(0), digest.width())).isEqualTo(x);
-        assertThat(xFirst.disjoint()).as("the disjoint part is byte-identical for a permuted route").isEqualTo(abFirst.disjoint());
+        var disjointOne = DefinerIndex.disjoint(digest, tree, fold(digest, leafOf, reader, List.of(ab, x), null), written);
+        var disjointTwo = DefinerIndex.disjoint(digest, tree, fold(digest, leafOf, reader, List.of(x, ab), null), written);
+        assertThat(disjointTwo).as("the disjoint part is byte-identical for a permuted route").isEqualTo(disjointOne);
+        assertThat(entries(digest, disjointOne, reader).stream().map(e -> zstr(e.key()))).as("shadowed types are not in it").doesNotContain("ab/Util").contains("x/Thing", "ab/Api");
 
-        // From a base by difference, adding and removing leaves, equals from nothing.
-        var grown = DefinerIndex.build(digest, tree, List.of(x, ab, t), abFirst.state(), leafOf, reader, written);
-        var scratch = DefinerIndex.build(digest, tree, List.of(x, ab, t), null, leafOf, reader, written);
-        assertThat(grown.disjoint()).isEqualTo(scratch.disjoint());
-        assertThat(grown.conflicts()).isEqualTo(scratch.conflicts());
-        var shrunk = DefinerIndex.build(digest, tree, List.of(ab), grown.state(), leafOf, reader, written);
-        var alone = DefinerIndex.build(digest, tree, List.of(ab), null, leafOf, reader, written);
-        assertThat(shrunk.disjoint()).isEqualTo(alone.disjoint());
-        assertThat(shrunk.conflicts()).as("removing x leaves ab as the only definer: no conflict left").isEqualTo(alone.conflicts());
-        assertThat(entries(digest, shrunk.conflicts(), reader)).isEmpty();
+        // The same type split across the two parts (a sibling module that shadows a jar's class) is a conflict too: the parts meet only there.
+        var external = fold(digest, leafOf, reader, List.of(ab), null);
+        var sibling = fold(digest, leafOf, reader, List.of(x), null);
+        var split = entries(digest, DefinerIndex.conflicts(digest, tree, external, sibling, List.of(ab, x), written), reader);
+        assertThat(split).hasSize(1);
+        assertThat(zstr(split.get(0).key())).isEqualTo("ab/Util");
+        assertThat(firstDefiner(split.get(0), digest.width())).isEqualTo(ab);
+        assertThat(firstDefiner(entries(digest, DefinerIndex.conflicts(digest, tree, external, sibling, List.of(x, ab), written), reader).get(0), digest.width())).isEqualTo(x);
+        assertThat(new DefinerIndex.Resolver(external, sibling, List.of(x, ab)).oSum(new dev.jvmd.core.tree.Codec.Writer().zstr("ab/Util").toBytes())).isNotNull();
+
+        // From a base by difference, adding and removing leaves, equals from nothing; a leaf listed twice is one leaf.
+        var grown = fold(digest, leafOf, reader, List.of(x, ab, t, ab), both);
+        var scratch = fold(digest, leafOf, reader, List.of(x, ab, t), null);
+        assertThat(DefinerIndex.disjoint(digest, tree, grown, written)).isEqualTo(DefinerIndex.disjoint(digest, tree, scratch, written));
+        assertThat(DefinerIndex.conflicts(digest, tree, grown, none, List.of(x, ab, t), written)).isEqualTo(DefinerIndex.conflicts(digest, tree, scratch, none, List.of(x, ab, t), written));
+        var shrunk = fold(digest, leafOf, reader, List.of(ab), grown);
+        var alone = fold(digest, leafOf, reader, List.of(ab), null);
+        assertThat(DefinerIndex.disjoint(digest, tree, shrunk, written)).isEqualTo(DefinerIndex.disjoint(digest, tree, alone, written));
+        assertThat(entries(digest, DefinerIndex.conflicts(digest, tree, shrunk, none, List.of(ab), written), reader)).as("removing x leaves ab as the only definer: no conflict left").isEmpty();
+        assertThat(entries(digest, DefinerIndex.conflicts(digest, tree, alone, none, List.of(ab, ab), written), reader)).as("a leaf is never in conflict with itself").isEmpty();
     }
 
     private static List<Entry> entries(Digest digest, Root root, Function<Identity, byte[]> reader) {
@@ -533,7 +569,7 @@ class LocalColdBootTest {
             var files = new LinkedHashMap<String, String>();
             for (var e : Fixtures.rich().entrySet()) files.put("rich/src/main/java/" + e.getKey(), e.getValue());
             Stage2Support.write(project, files);
-            var booted = boot(digest, Stage2Support.model(project, new Stage2Support.Mod("rich", "corp:rich:1", List.of())), 2);
+            var booted = boot(digest, Stage2Support.model(project, new Stage2Support.Mod("rich", "corp:rich:1", List.of()).withOptions("--release", String.valueOf(Stage2Support.FEATURE))), 2);
             var store = booted.store();
             var source = booted.result().leaves().get("rich/main");
             var entry = jar(digest, store, "corp:rich:1", "corp/rich/1/rich-1.jar");
@@ -555,8 +591,9 @@ class LocalColdBootTest {
         var project = multiProject();
         try {
             var booted = boot(digest, multiModel(project, false), 4);
-            assertThat(booted.store().readsBeforeRoot()).isNotEmpty().doesNotContainAnyElementsOf(List.of("MOD", "RT", "F", "DD", "DC", "C", "X", "RS", "S", "LROOT"));
-            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "ROOT");
+            // MACHINE (P, L, N, ROOT) and the shared derivable records (DD, DS, S: another project may have written them) may be read; nothing of the project's own.
+            assertThat(booted.store().readsBeforeRoot()).isNotEmpty().doesNotContainAnyElementsOf(List.of("MOD", "RT", "F", "DC", "C", "X", "RS", "LROOT"));
+            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "ROOT", "DD", "DS", "S");
             var events = booted.store().events();
             assertThat(events.indexOf("sync")).as("sync once, then the root").isLessThan(events.indexOf("putLocalRoot"));
             assertThat(events.stream().filter("sync"::equals).count()).isEqualTo(1);
@@ -584,6 +621,7 @@ class LocalColdBootTest {
             assertThat(first.projectKey()).as("the project keys do differ").isNotEqualTo(second.projectKey());
             assertThat(firstShared.keySet().stream().anyMatch(k -> k[0] == 'S')).as("stubs were written").isTrue();
             assertThat(firstShared.keySet().stream().anyMatch(k -> k[0] == 'D' && k[1] == 'D')).isTrue();
+            assertThat(firstShared.keySet().stream().anyMatch(k -> k[0] == 'D' && k[1] == 'S')).isTrue();
             assertThat(firstShared.keySet().stream().anyMatch(k -> k[0] == 'D' && k[1] == 'C')).isTrue();
         } finally { Stage2Support.delete(a); Stage2Support.delete(b); }
     }
@@ -609,7 +647,7 @@ class LocalColdBootTest {
             if (baseline.contains(k)) continue;
             if (k[0] == 'N' && k.length == 33 && indexNodes.contains(Identity.of(Arrays.copyOfRange(k, 1, k.length)))) continue;
             boolean node = k[0] == 'N' && k.length == 33, leaf = k[0] == 'L' && k.length == 33;
-            boolean tagged = k.length > 2 && k[1] == '|' && k[0] == 'S' || k.length > 3 && k[2] == '|' && (k[0] == 'D' && (k[1] == 'D' || k[1] == 'C'));
+            boolean tagged = k.length > 2 && k[1] == '|' && k[0] == 'S' || k.length > 3 && k[2] == '|' && (k[0] == 'D' && (k[1] == 'D' || k[1] == 'C' || k[1] == 'S'));
             if (node || leaf || tagged) out.put(k, e.getValue());
         }
         return out;
@@ -749,5 +787,194 @@ class LocalColdBootTest {
             assertThat(leaf.factCount()).as("Uses resolved Later through the indexed jar").isEqualTo(3);
             assertThat(late).exists();
         } finally { Stage2Support.delete(repo); Stage2Support.delete(project); }
+    }
+
+    // ---- 7.3.17 ------------------------------------------------------------------------------------------------------------
+
+    /**
+     * An edit does not touch the external index: change a declaration in sibling module {@code common} and boot again. Every
+     * {@code DD|} record is byte-identical; the {@code DS|} and {@code DC|} records of the routes that bind {@code common} changed;
+     * a route that does not bind it has the same definer records, key for key and byte for byte.
+     */
+    @ParameterizedTest @MethodSource("digests")
+    void invariant17_anEditDoesNotTouchTheExternalIndex(Digest digest) throws Exception {
+        var project = multiProject();
+        try {
+            var before = boot(digest, multiModel(project, false), 4);
+            var file = project.resolve("common/src/main/java/common/Base.java");
+            Files.writeString(file, Files.readString(file).replace("public abstract int run();", "public abstract int run(); public int extra() { return 1; }"));
+            var after = boot(digest, multiModel(project, false), 4);
+            assertThat(after.result().leaves().get("common/main")).as("the edit changed common's API").isNotEqualTo(before.result().leaves().get("common/main"));
+
+            var ddBefore = before.store().withPrefix("DD");
+            var ddAfter = after.store().withPrefix("DD");
+            assertThat(ddAfter.keySet()).as("the external indexes are the same set").containsExactlyElementsOf(ddBefore.keySet());
+            for (var e : ddBefore.entrySet()) assertThat(ddAfter.get(e.getKey())).as("DD record").isEqualTo(e.getValue());
+
+            for (var module : List.of("common", "server-a", "server-b", "tool")) {
+                for (int scope : new int[] {0, 1}) {
+                    var was = route(digest, before, module, scope);
+                    var is = route(digest, after, module, scope);
+                    boolean bindsCommon = module.startsWith("server-") || (module.equals("common") && scope == 1);
+                    assertThat(is.leafSetExt()).as("leafSetExt of %s/%d", module, scope).isEqualTo(was.leafSetExt());
+                    if (bindsCommon) {
+                        assertThat(is.leafSetSib()).as("leafSetSib of %s/%d", module, scope).isNotEqualTo(was.leafSetSib());
+                        assertThat(is.routeHash()).isNotEqualTo(was.routeHash());
+                        assertThat(after.store().get(LocalStore.siblingKey(is.leafSetSib()))).isNotNull();
+                        assertThat(after.store().get(LocalStore.conflictsKey(is.routeHash()))).isNotNull();
+                        assertThat(before.store().get(LocalStore.siblingKey(is.leafSetSib()))).as("a new sibling record").isNull();
+                        assertThat(before.store().get(LocalStore.conflictsKey(is.routeHash()))).as("a new conflict table").isNull();
+                    } else {
+                        assertThat(is.leafSetSib()).as("leafSetSib of %s/%d", module, scope).isEqualTo(was.leafSetSib());
+                        assertThat(is.routeHash()).isEqualTo(was.routeHash());
+                        assertThat(after.store().get(LocalStore.siblingKey(is.leafSetSib()))).isNotNull().isEqualTo(before.store().get(LocalStore.siblingKey(was.leafSetSib())));
+                        assertThat(after.store().get(LocalStore.conflictsKey(is.routeHash()))).isNotNull().isEqualTo(before.store().get(LocalStore.conflictsKey(was.routeHash())));
+                    }
+                }
+            }
+        } finally { Stage2Support.delete(project); }
+    }
+
+    // ---- 7.3.18 ------------------------------------------------------------------------------------------------------------
+
+    /**
+     * The header proof decides re-compilation. Change a type in {@code lib} that no declaration header in {@code app} mentions: every
+     * file's proof still holds against the new binding and {@code app}'s facts are byte-identical. Change a type that one header
+     * mentions: exactly that file's proof fails.
+     */
+    @ParameterizedTest @MethodSource("digests")
+    void invariant18_theHeaderProofDecidesRecompilation(Digest digest) throws Exception {
+        var project = Files.createTempDirectory("stage2-proof");
+        try {
+            Stage2Support.write(project, Map.of(
+                    "lib/src/main/java/lib/T1.java", "package lib; public class T1 { public int a() { return 1; } }",
+                    "lib/src/main/java/lib/T2.java", "package lib; public class T2 { public int b() { return 1; } }",
+                    "app/src/main/java/app/UsesT1.java", "package app; public class UsesT1 { public lib.T1 field; }",
+                    "app/src/main/java/app/UsesNothing.java", "package app; public class UsesNothing { public String s; }",
+                    "app/src/main/java/app/BodyOnly.java", "package app; public class BodyOnly { public int f() { return new lib.T2().b(); } }"));
+            var model = Stage2Support.model(project, new Stage2Support.Mod("lib", "corp:lib:1", List.of()),
+                    new Stage2Support.Mod("app", "corp:app:1", List.of(Stage2Support.Dep.module("corp:lib:1", "lib"))));
+            var base = boot(digest, model, 2);
+            var files = List.of("UsesT1", "UsesNothing", "BodyOnly");
+
+            var proofs = proofsOf(digest, base, files);
+            assertThat(proofs.get("UsesT1")).as("a header that names lib.T1").contains("lib/T1");
+            assertThat(proofs.get("UsesT1")).contains("java/lang/Object");
+            assertThat(proofs.get("UsesNothing")).as("a header that names only the JDK").contains("java/lang/String").doesNotContain("lib/T1", "lib/T2");
+            assertThat(proofs.get("BodyOnly")).as("a body mention is not a header mention").doesNotContain("lib/T2", "lib/T1");
+            for (var f : files) assertThat(holds(digest, base, base, f)).as("a proof holds against the binding it was made under: " + f).isTrue();
+
+            // lib.T2 is mentioned by no header of app: nothing of app's proofs fails and its facts are byte-identical.
+            var t2 = project.resolve("lib/src/main/java/lib/T2.java");
+            Files.writeString(t2, "package lib; public class T2 { public int b() { return 1; } public int c() { return 2; } }");
+            var changedT2 = boot(digest, model, 2);
+            assertThat(changedT2.result().leaves().get("lib/main")).as("lib's API did change").isNotEqualTo(base.result().leaves().get("lib/main"));
+            for (var f : files) assertThat(holds(digest, base, changedT2, f)).as("proof of " + f + " after changing T2").isTrue();
+            assertThat(changedT2.result().leaves().get("app/main")).as("app's facts are byte-identical").isEqualTo(base.result().leaves().get("app/main"));
+
+            // lib.T1 is mentioned by one header: exactly that file's proof fails.
+            Files.writeString(t2, "package lib; public class T2 { public int b() { return 1; } }");
+            Files.writeString(project.resolve("lib/src/main/java/lib/T1.java"), "package lib; public class T1 { public int a() { return 1; } public int z() { return 2; } }");
+            var changedT1 = boot(digest, model, 2);
+            for (var f : files) assertThat(holds(digest, base, changedT1, f)).as("proof of " + f + " after changing T1").isEqualTo(!f.equals("UsesT1"));
+        } finally { Stage2Support.delete(project); }
+    }
+
+    // ---- E.4 ---------------------------------------------------------------------------------------------------------------
+
+    /** A release javac cannot take is a substitution recorded in the descriptor, not a refusal of the boot. */
+    @ParameterizedTest @MethodSource("digests")
+    void aReleaseOutsideWhatJavacTakesIsClampedAndRecorded(Digest digest) throws Exception {
+        var project = Files.createTempDirectory("stage2-release");
+        try {
+            Stage2Support.write(project, Map.of("old/src/main/java/o/Old.java", "package o; public class Old { public int n; }",
+                    "future/src/main/java/f/Future.java", "package f; public class Future { public int n; }"));
+            var roots = List.of("old/src/main/java");
+            var old = new Stage2Support.Mod("old", "corp:old:1", 6, List.of(), roots, List.of(), List.of(), List.of());
+            var future = new Stage2Support.Mod("future", "corp:future:1", 99, List.of(), List.of("future/src/main/java"), List.of(), List.of(), List.of());
+            var booted = boot(digest, Stage2Support.model(project, old, future), 2);
+            assertThat(booted.result().faults()).isEmpty();
+            assertThat(leaf(digest, booted.store(), booted.result().leaves().get("old/main")).factCount()).isEqualTo(3);
+            assertThat(dev.jvmd.index.layer.local.ModuleRecord.decode(booted.store().get(LocalStore.moduleKey(booted.projectKey(), "old"))).release()).isEqualTo(8);
+            assertThat(dev.jvmd.index.layer.local.ModuleRecord.decode(booted.store().get(LocalStore.moduleKey(booted.projectKey(), "future"))).release()).isEqualTo(Stage2Support.FEATURE);
+        } finally { Stage2Support.delete(project); }
+    }
+
+    /** Stubs are a pure function of {@code k}: a record an earlier boot wrote is read, not synthesised again, and is the same bytes. */
+    @ParameterizedTest @MethodSource("digests")
+    void aStubRecordAnEarlierBootWroteIsReadNotRewritten(Digest digest) throws Exception {
+        var first = multiProject();
+        var second = Files.createTempDirectory("stage2-second-checkout");
+        try {
+            Stage2Support.write(second, Fixtures.multi());
+            var one = boot(digest, multiModel(first, false), 2);
+            var stubs = one.store().withPrefix("S");
+            assertThat(stubs).isNotEmpty();
+            // Boot the other checkout on top of the first one's store: the same sibling leaves, so the same stub records.
+            var machine = one.store();
+            var result = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 2, repository, ClassFacts::of).run(machine, ProjectModel.parse(multiModel(second, false)));
+            assertThat(result.faults()).isEmpty();
+            assertThat(machine.readsBeforeRoot()).contains("S");
+            assertThat(machine.withPrefix("S").keySet()).containsExactlyElementsOf(stubs.keySet());
+            for (var e : stubs.entrySet()) assertThat(machine.withPrefix("S").get(e.getKey())).isEqualTo(e.getValue());
+        } finally { Stage2Support.delete(first); Stage2Support.delete(second); }
+    }
+
+    /** Two modules with one API build one leaf, whichever job gets there first, and the modules that depend on either bind it. */
+    @ParameterizedTest @MethodSource("digests")
+    void twoModulesWithTheSameApiShareOneLeaf(Digest digest) throws Exception {
+        var project = Files.createTempDirectory("stage2-twins");
+        try {
+            var twin = "package t; public class Twin { public int n; }";
+            Stage2Support.write(project, Map.of("a/src/main/java/t/Twin.java", twin, "b/src/main/java/t/Twin.java", twin,
+                    "c/src/main/java/c/C.java", "package c; public class C { public t.Twin twin; }"));
+            var a = Stage2Support.Dep.module("corp:a:1", "a");
+            var b = Stage2Support.Dep.module("corp:b:1", "b");
+            var model = Stage2Support.model(project, new Stage2Support.Mod("a", "corp:a:1", List.of()), new Stage2Support.Mod("b", "corp:b:1", List.of()),
+                    new Stage2Support.Mod("c", "corp:c:1", List.of(a, b)), new Stage2Support.Mod("d", "corp:d:1", List.of(b, a)));
+            for (int round = 0; round < 3; round++) {
+                var booted = boot(digest, model, 8);
+                assertThat(booted.result().faults()).isEmpty();
+                assertThat(booted.result().leaves().get("a/main")).isEqualTo(booted.result().leaves().get("b/main"));
+                assertThat(leaf(digest, booted.store(), booted.result().leaves().get("c/main")).factCount()).isEqualTo(3);
+            }
+        } finally { Stage2Support.delete(project); }
+    }
+
+    /** The type keys in each file of {@code app}'s header proof. */
+    private static Map<String, List<String>> proofsOf(Digest digest, Booted booted, List<String> files) {
+        var out = new HashMap<String, List<String>>();
+        for (var f : files) out.put(f, row(digest, booted, f).headerProof().stream().map(FileRow.Proof::typeKey).toList());
+        return out;
+    }
+
+    private static FileRow row(Digest digest, Booted booted, String file) {
+        var path = "app/src/main/java/app/" + file + ".java";
+        return FileRow.decode(path, booted.store().get(LocalStore.fileKey(booted.projectKey(), path)), digest.width());
+    }
+
+    /**
+     * Whether every entry of {@code file}'s header proof in {@code old} still holds against the binding of {@code now}: each type is
+     * resolved again, through the leaves of app's route in order, and its {@code oSum} compared. Done here with no help from stage 2.
+     */
+    private static boolean holds(Digest digest, Booted old, Booted now, String file) {
+        var store = now.store();
+        var built = new HashMap<String, Identity>();
+        for (var m : now.model().modules()) built.put(m.coordinate(), now.result().leaves().get(m.name() + "/main"));
+        var bound = Bind.bind(digest, route(digest, now, "app", 0).entries(), Bind.NONE, built::get, k -> leaf(digest, store, k), DISCARD);
+        var leaves = new ArrayList<Identity>();
+        leaves.add(now.result().leaves().get("app/main")); // the module's own types come first
+        leaves.addAll(bound.sequence());
+        var tree = new ContentTree(digest);
+        for (var proof : row(digest, old, file).headerProof()) {
+            var key = new dev.jvmd.core.tree.Codec.Writer().zstr(proof.typeKey()).toBytes();
+            Identity current = null;
+            for (var k : leaves) {
+                var entry = tree.get(leaf(digest, store, k).oHash(), nodes(store), key);
+                if (entry != null) { current = entry.h(); break; }
+            }
+            if (!proof.oSum().equals(current)) return false;
+        }
+        return true;
     }
 }

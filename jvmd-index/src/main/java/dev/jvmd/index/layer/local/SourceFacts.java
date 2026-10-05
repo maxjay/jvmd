@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
@@ -92,6 +93,70 @@ public final class SourceFacts {
         var out = new Out();
         for (var type : declared) type(type, out);
         return new Result(List.copyOf(out.facts), List.copyOf(out.edges.values()), List.copyOf(out.typeKeys), List.copyOf(out.faults));
+    }
+
+    /**
+     * The module descriptor fact of a {@code module-info.java} (stage 1, A.4 item 10; stage 2, section 8 and E.3): names and flags read
+     * from the parsed directives, no resolution, so the file need not be entered. It is encoded as {@code ClassFacts} encodes
+     * {@code module-info.class}: type key {@code module-info}, kind 5, access {@code ACC_MODULE}, then the {@code Module} attribute.
+     * javac writes the implicit {@code requires java.base} first, as mandated, and a {@code requires_version} for every required module
+     * that has a version, which is the one thing here that is not in the file; {@code versionOf} supplies it.
+     *
+     * @param moduleVersion the {@code --module-version} the build passed, which javac records as this module's own version; or null
+     * @param versionOf     the version of a required module as javac would read it, or null
+     */
+    public Result ofModule(com.sun.source.tree.ModuleTree module, String moduleVersion, Function<String, String> versionOf) {
+        var out = new Out();
+        var res = new Codec.Writer();
+        res.u8(5).u16(ClassFile.ACC_MODULE).optStr(null).optStr(null).u32(0).u32(0).optStr(null).optStr(null).u32(0);
+        String name = module.getName().toString();
+        res.str(name).u16(module.getModuleType() == com.sun.source.tree.ModuleTree.ModuleKind.OPEN ? 0x0020 : 0).optStr(moduleVersion);
+
+        var requires = new ArrayList<Object[]>();
+        var exports = new ArrayList<com.sun.source.tree.ExportsTree>();
+        var opens = new ArrayList<com.sun.source.tree.OpensTree>();
+        var uses = new ArrayList<com.sun.source.tree.UsesTree>();
+        var provides = new ArrayList<com.sun.source.tree.ProvidesTree>();
+        boolean explicitBase = false;
+        for (var directive : module.getDirectives()) {
+            switch (directive) {
+                case com.sun.source.tree.RequiresTree r -> {
+                    String required = r.getModuleName().toString();
+                    explicitBase |= required.equals("java.base");
+                    requires.add(new Object[] {required, (r.isTransitive() ? 0x0020 : 0) | (r.isStatic() ? 0x0040 : 0)});
+                }
+                case com.sun.source.tree.ExportsTree e -> exports.add(e);
+                case com.sun.source.tree.OpensTree o -> opens.add(o);
+                case com.sun.source.tree.UsesTree u -> uses.add(u);
+                case com.sun.source.tree.ProvidesTree p -> provides.add(p);
+                default -> { }
+            }
+        }
+        if (!explicitBase) requires.add(0, new Object[] {"java.base", MANDATED});
+        res.u32(requires.size());
+        for (var r : requires) res.str((String) r[0]).u16((Integer) r[1]).optStr(versionOf.apply((String) r[0]));
+        res.u32(exports.size());
+        for (var e : exports) packageDirective(res, e.getPackageName().toString(), e.getModuleNames());
+        res.u32(opens.size());
+        for (var o : opens) packageDirective(res, o.getPackageName().toString(), o.getModuleNames());
+        res.u32(uses.size());
+        for (var u : uses) res.str(u.getServiceName().toString().replace('.', '/'));
+        res.u32(provides.size());
+        for (var p : provides) {
+            res.str(p.getServiceName().toString().replace('.', '/')).u32(p.getImplementationNames().size());
+            for (var implementation : p.getImplementationNames()) res.str(implementation.toString().replace('.', '/'));
+        }
+        var tail = new Codec.Writer().u32(0).u32(0).u32(0).u8(0).toBytes();
+        add(out, typeKey("module-info"), "module-info", res, tail);
+        out.typeKeys.add("module-info");
+        return new Result(List.copyOf(out.facts), List.of(), List.copyOf(out.typeKeys), List.of());
+    }
+
+    private static void packageDirective(Codec.Writer res, String packageName, List<? extends com.sun.source.tree.ExpressionTree> to) {
+        res.str(packageName.replace('.', '/')).u16(0);
+        if (to == null) { res.u32(0); return; }
+        res.u32(to.size());
+        for (var module : to) res.str(module.toString());
     }
 
     private static final class Out {

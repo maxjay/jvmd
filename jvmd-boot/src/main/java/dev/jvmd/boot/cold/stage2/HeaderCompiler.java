@@ -50,6 +50,8 @@ final class HeaderCompiler {
         String parseError;
         final List<TypeElement> declared = new ArrayList<>();
         final List<FileRow.Fault> faults = new ArrayList<>();
+        /** The module declaration of a {@code module-info.java}: parsed, never entered (E.3). Null for every other file. */
+        com.sun.source.tree.ModuleTree module;
 
         Unit(Source source) { this.source = source; }
 
@@ -92,6 +94,23 @@ final class HeaderCompiler {
         }
 
         @Override public CharSequence getCharContent(boolean ignoreEncodingErrors) { return text; }
+    }
+
+    /**
+     * The lowest source level the running javac accepts: JDK 25 answers {@code -source 7} and below with "no longer supported. Use 8 or
+     * later", while 8 works with {@code --system}. A module whose release is lower is compiled at this level, which accepts everything
+     * the older levels did.
+     */
+    static final int MINIMUM_SOURCE = 8;
+
+    /**
+     * The release javac runs at and the descriptor records (C.1, E.4): the running feature version for a module that compiles with
+     * preview features (preview requires it) or states no release, otherwise the model's release clamped to what the running javac
+     * accepts, so that a release it cannot take is a substitution and not a refusal of the boot.
+     */
+    static int effectiveRelease(int release, boolean preview, int feature) {
+        if (preview || release <= 0) return feature;
+        return Math.max(MINIMUM_SOURCE, Math.min(release, feature));
     }
 
     /**
@@ -139,7 +158,13 @@ final class HeaderCompiler {
                 } else throw new IllegalStateException("javac refused the module's options: " + d.getMessage(null));
             }
             var entered = new ArrayList<CompilationUnitTree>();
-            for (var tree : parsed) if (byUri.get(tree.getSourceFile().toUri()).parsed()) entered.add(tree);
+            for (var tree : parsed) {
+                var unit = byUri.get(tree.getSourceFile().toUri());
+                if (!unit.parsed()) continue;
+                // Classpath mode has no use for a module declaration: its descriptor fact is read from the parsed directives.
+                if (tree.getModule() != null) unit.module = tree.getModule();
+                else entered.add(tree);
+            }
             task.enter(entered);
 
             var trees = Trees.instance(task);
@@ -194,7 +219,7 @@ final class HeaderCompiler {
 
     /** Options that take an argument, and are dropped with it (C.1). */
     private static final Set<String> DROPPED_WITH_ARGUMENT = Set.of("-d", "-s", "-h", "-processor", "-processorpath", "--processor-path", "--release", "-source", "--source",
-            "-target", "--target", "-classpath", "-cp", "--class-path", "-sourcepath", "--source-path", "--module-path", "-p", "--system");
+            "-target", "--target", "--module-version", "-classpath", "-cp", "--class-path", "-sourcepath", "--source-path", "--module-path", "-p", "--system");
 
     /** The module's own options minus everything this task decides itself: output, processing, classpath, release and system. */
     static List<String> filtered(List<String> options) {

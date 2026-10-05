@@ -70,9 +70,9 @@ class RocksLocalBootTest {
             try (var store = Generation.of(indexDir, format).open()) {
                 var kinds = new TreeMap<String, Integer>();
                 for (var key : store.keys()) kinds.merge(kind(key), 1, Integer::sum);
-                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "S", "MOD", "RT", "F", "DD", "DC", "LROOT");
+                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "S", "MOD", "RT", "F", "DD", "DS", "DC", "LROOT");
                 assertThat(kinds).as("C|, X| and RS| are empty after a cold boot").doesNotContainKeys("C", "X", "RS");
-                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "S", "MOD", "RT", "F", "DD", "DC", "LROOT");
+                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "S", "MOD", "RT", "F", "DD", "DS", "DC", "LROOT");
                 assertThat(kinds.get("MOD")).isEqualTo(4);
                 assertThat(kinds.get("RT")).isEqualTo(8);
                 assertThat(kinds.get("F")).isEqualTo(Fixtures.multi().size());
@@ -90,7 +90,7 @@ class RocksLocalBootTest {
     private static String kind(byte[] key) {
         if (new String(key, StandardCharsets.US_ASCII).equals("ROOT")) return "ROOT";
         var text = new String(key, StandardCharsets.ISO_8859_1);
-        for (var tag : List.of("LROOT|", "MOD|", "RT|", "RS|", "DD|", "DC|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
+        for (var tag : List.of("LROOT|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
         if (key[0] == 'L' && key.length == 33) return "L";
         if (key[0] == 'N' && key.length == 33) return "N";
         if (key[0] == 'P') return "P";

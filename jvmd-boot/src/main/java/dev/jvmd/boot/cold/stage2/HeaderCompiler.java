@@ -160,8 +160,21 @@ final class HeaderCompiler {
 
         var compiler = ToolProvider.getSystemJavaCompiler();
         var diagnostics = new DiagnosticCollector<JavaFileObject>();
+        var processorOwners = host == null ? null : new java.util.IdentityHashMap<com.sun.tools.javac.util.JCDiagnostic, String>();
+        var processorMessages = host == null ? null : new ArrayList<dev.jvmd.index.layer.local.ProcessorRecords.Message>();
+        javax.tools.DiagnosticListener<JavaFileObject> listener = diagnostic -> {
+            diagnostics.report(diagnostic);
+            if (host == null) return;
+            String processor = processorOwners.get(rawDiagnostic(diagnostic));
+            if (processor == null && !diagnostic.getCode().contains(".proc.")) return;
+            // Snapshot when reported: a JCDiagnostic retains mutable javac trees whose end positions can change in later phases.
+            processorMessages.add(new dev.jvmd.index.layer.local.ProcessorRecords.Message(processor == null ? "" : processor,
+                    diagnostic.getSource() == null ? null : host.sourcePath(diagnostic.getSource().toUri()), diagnostic.getKind(),
+                    diagnostic.getPosition(), diagnostic.getStartPosition(), diagnostic.getEndPosition(), diagnostic.getLineNumber(),
+                    diagnostic.getColumnNumber(), diagnostic.getCode(), diagnostic.getMessage(Locale.ROOT)));
+        };
         var charset = charset(javacOptions);
-        var files = compiler.getStandardFileManager(diagnostics, Locale.ROOT, charset);
+        var files = compiler.getStandardFileManager(listener, Locale.ROOT, charset);
         var units = new ArrayList<Unit>(sources.size());
         var objects = new ArrayList<SourceObject>(sources.size());
         // javac hands its own wrappers back, so a file is recognised by its URI, never by the object it was given.
@@ -175,10 +188,25 @@ final class HeaderCompiler {
         }
         JavacTaskImpl task = null;
         try {
-            task = (JavacTaskImpl) compiler.getTask(null, files, diagnostics, options, null, objects);
+            task = (JavacTaskImpl) compiler.getTask(null, files, listener, options, null, objects);
             task.setLocale(Locale.ROOT);
             if (host != null) {
                 new ProcessorTrees(task.getContext(), host);
+                var log = com.sun.tools.javac.util.Log.instance(task.getContext());
+                host.diagnosticScope(new ProcessorHost.DiagnosticScope() {
+                    @Override public <T> T call(String processor, java.util.function.Supplier<T> action) {
+                        // Associate at emission time, before javac defers the message. Forward to the existing handler so
+                        // duplicate handling, warning suppression and error/warning limits retain native javac semantics.
+                        var handler = log.new DiagnosticHandler() {
+                            @Override public void report(com.sun.tools.javac.util.JCDiagnostic diagnostic) {
+                                processorOwners.put(diagnostic, processor);
+                                prev.report(diagnostic);
+                            }
+                        };
+                        try { return action.get(); }
+                        finally { log.popDiagnosticHandler(handler); }
+                    }
+                });
                 task.setProcessors(host.processors());
             }
             var generatedTrees = new ArrayList<CompilationUnitTree>();
@@ -222,8 +250,7 @@ final class HeaderCompiler {
             var generatedParseErrors = new java.util.HashMap<URI, String>();
             for (var diagnostic : diagnostics.getDiagnostics()) {
                 if (diagnostic.getKind() != Diagnostic.Kind.ERROR || diagnostic.getSource() == null) continue;
-                var raw = diagnostic instanceof com.sun.tools.javac.api.ClientCodeWrapper.DiagnosticSourceUnwrapper wrapped ? wrapped.d
-                        : diagnostic instanceof com.sun.tools.javac.util.JCDiagnostic d ? d : null;
+                var raw = rawDiagnostic(diagnostic);
                 if (raw != null && raw.isFlagSet(com.sun.tools.javac.util.JCDiagnostic.DiagnosticFlag.SYNTAX))
                     generatedParseErrors.merge(diagnostic.getSource().toUri(), message(diagnostic), (a, b) -> a + "; " + b);
             }
@@ -266,6 +293,7 @@ final class HeaderCompiler {
                     else unit.faults.add(new FileRow.Fault(typeKey(tree, klass), "duplicate class " + klass.getSimpleName()));
                 }
             }
+            if (host != null) host.diagnostics(new dev.jvmd.index.layer.local.ProcessorRecords.Diagnostics(processorMessages));
             return new Compiled(units, task.getElements(), task.getTypes(), trees, task, files);
         } catch (IOException e) {
             release(task, files);
@@ -278,6 +306,11 @@ final class HeaderCompiler {
 
     private static String message(Diagnostic<? extends JavaFileObject> diagnostic) {
         return diagnostic.getLineNumber() + ":" + diagnostic.getColumnNumber() + " " + diagnostic.getMessage(Locale.ROOT);
+    }
+
+    private static com.sun.tools.javac.util.JCDiagnostic rawDiagnostic(Diagnostic<? extends JavaFileObject> diagnostic) {
+        return diagnostic instanceof com.sun.tools.javac.api.ClientCodeWrapper.DiagnosticSourceUnwrapper wrapped ? wrapped.d
+                : diagnostic instanceof com.sun.tools.javac.util.JCDiagnostic raw ? raw : null;
     }
 
     /** C.1: forces completion of a type's header and members, so that everything javac resolves is resolved before facts are read. */

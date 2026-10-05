@@ -45,6 +45,10 @@ final class ModuleProcessing {
     }
 
     void finish(Map<String, FileRow> rows) {
+        boot.processingRecords.put(LocalStore.processorDiagnosticsKey(boot.projectKey, module.name(), scope), host.diagnostics().encode());
+        for (var message : host.diagnostics().messages()) if (message.kind() == javax.tools.Diagnostic.Kind.ERROR)
+            boot.faults.add((message.processorClass().isEmpty() ? "javac processing" : message.processorClass()) + ": "
+                    + (message.path() == null ? "" : message.path() + ":" + message.line() + ":" + message.column() + ": ") + message.text());
         var capabilities = new TreeMap<>(host.capabilities());
         boolean reusable = host.faults().isEmpty() && capabilities.values().stream().allMatch(ProcessorRecords.Capability::reusable);
         boot.faults.addAll(host.faults());

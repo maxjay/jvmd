@@ -58,6 +58,9 @@ public interface LocalStore extends MachineStore {
     static byte[] processorDomainKey(Identity projectKey, String module, int scope, String processorClass) {
         return join("PD|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope}, "|", processorClass.getBytes(StandardCharsets.UTF_8));
     }
+    static byte[] processorDiagnosticsKey(Identity projectKey, String module, int scope) {
+        return join("PDIAG|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
+    }
     static byte[] processorKey(Identity processorPathHash, String processorClass) {
         return join("PROC|", processorPathHash.view(), "|", processorClass.getBytes(StandardCharsets.UTF_8));
     }

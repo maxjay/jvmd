@@ -47,7 +47,7 @@ final class InMemoryLocalStore implements LocalStore {
         synchronized (records) { return records.get(key); }
     }
 
-    private static final List<String> LOCAL_TAGS = List.of("LROOT", "SL", "AL", "MOD", "RT", "F", "DD", "DS", "DC", "C", "X", "RS", "ST", "S", "PROC", "PD", "RES", "GEN", "GS");
+    private static final List<String> LOCAL_TAGS = List.of("LROOT", "SL", "AL", "MOD", "RT", "F", "DD", "DS", "DC", "C", "X", "RS", "ST", "S", "PROC", "PD", "PDIAG", "RES", "GEN", "GS");
 
     private static String kindOf(byte[] key) {
         if (Arrays.equals(key, MachineStore.ROOT_KEY)) return "ROOT";

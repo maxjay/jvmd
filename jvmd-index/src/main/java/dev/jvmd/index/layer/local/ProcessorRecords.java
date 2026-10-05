@@ -11,6 +11,33 @@ public final class ProcessorRecords {
     public static final int NONE = 0, ISOLATING = 1, AGGREGATING = 2;
     public static final int OVERLAY = 0, GENERATOR = 1, VIOLATED = 2;
 
+    /** A reported javac diagnostic, after javac's filtering; offsets retain Diagnostic.NOPOS (-1). */
+    public record Message(String processorClass, String path, javax.tools.Diagnostic.Kind kind, long position, long start, long end,
+                          long line, long column, String code, String text) { }
+
+    /** PDIAG is run output in LOCAL, never an input identity or a generated-file manifest. Order and duplicates are observable. */
+    public record Diagnostics(List<Message> messages) {
+        public Diagnostics { messages = List.copyOf(messages); }
+        public byte[] encode() {
+            var out = new Codec.Writer().u32(messages.size());
+            for (var message : messages) {
+                out.str(message.processorClass()).u8(message.path() == null ? 0 : 1);
+                if (message.path() != null) out.zstr(message.path());
+                out.u8(message.kind().ordinal()).i64(message.position()).i64(message.start()).i64(message.end())
+                        .i64(message.line()).i64(message.column()).str(message.code()).str(message.text());
+            }
+            return out.toBytes();
+        }
+        public static Diagnostics decode(byte[] bytes) {
+            var in = new Codec.Reader(bytes);
+            int count = in.count();
+            var messages = new ArrayList<Message>(count);
+            for (int i = 0; i < count; i++) messages.add(new Message(in.str(), in.u8() == 1 ? in.zstr() : null,
+                    javax.tools.Diagnostic.Kind.values()[in.u8()], in.i64(), in.i64(), in.i64(), in.i64(), in.i64(), in.str(), in.str()));
+            return new Diagnostics(messages);
+        }
+    }
+
     public record ConfigEntry(String path, Identity sum) {
         public void encode(Codec.Writer out) { out.zstr(path).id(sum); }
         public static ConfigEntry decode(Codec.Reader in, int width) { return new ConfigEntry(in.zstr(), in.id(width)); }

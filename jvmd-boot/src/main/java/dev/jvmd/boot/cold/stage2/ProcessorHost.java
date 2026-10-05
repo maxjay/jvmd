@@ -64,6 +64,15 @@ public final class ProcessorHost implements AutoCloseable {
     private final Map<String, List<ProcessorReads.Read>> modelReads = new TreeMap<>();
     private Wrapped active;
     private int internalReads;
+    private ProcessorRecords.Diagnostics diagnostics = new ProcessorRecords.Diagnostics(List.of());
+    public ProcessorRecords.Diagnostics diagnostics() { return diagnostics; }
+    void diagnostics(ProcessorRecords.Diagnostics diagnostics) { this.diagnostics = diagnostics; }
+    interface DiagnosticScope { <T> T call(String processor, java.util.function.Supplier<T> action); }
+    private static final DiagnosticScope DIRECT = new DiagnosticScope() {
+        @Override public <T> T call(String processor, java.util.function.Supplier<T> action) { return action.get(); }
+    };
+    private DiagnosticScope diagnosticScope = DIRECT;
+    void diagnosticScope(DiagnosticScope scope) { diagnosticScope = scope; }
 
     void syntaxRead(String operation) {
         if (active != null && internalReads == 0 && !TESTED_OVERLAYS.contains(active.name))
@@ -167,6 +176,7 @@ public final class ProcessorHost implements AutoCloseable {
         closedCapabilities = capabilities();
         closedDomains = domains();
         processors.clear(); // discard all javac Elements, Trees and processor instance state with this header compile
+        diagnosticScope = DIRECT;
         loader.close();
     }
 
@@ -187,7 +197,7 @@ public final class ProcessorHost implements AutoCloseable {
         private <T> T observe(java.util.function.Supplier<T> call) {
             var previous = active;
             active = this;
-            try { return call.get(); }
+            try { return diagnosticScope.call(name, call); }
             finally { active = previous; }
         }
         @Override public void init(ProcessingEnvironment environment) {

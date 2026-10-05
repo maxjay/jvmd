@@ -33,20 +33,21 @@ import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import com.sun.source.util.Trees;
+import com.sun.tools.javac.code.Attribute;
+import com.sun.tools.javac.code.Symbol;
 
 /**
  * {@code Φ_src} (stage 2, 3.1 and appendix C): the facts and edges of the declarations of one source file, as javac's {@code Enter}
  * and {@code MemberEnter} resolved them, encoded exactly as {@code ClassFacts} would encode the class file javac would emit for
- * them. A source module and its jar therefore have equal {@code r}, equal {@code O} sums, equal {@code N} and {@code E} roots
- * whenever their APIs are equal; {@code k} may differ, because the tail (parameter names, type annotations) depends on how the jar
- * was compiled.
+ * them. A source module and its jar therefore have equal {@code k} whenever their APIs are equal. Their independent {@code A}
+ * and {@code EA} trees also match when the compiler options match; {@code -parameters} can change {@code a}, never {@code k}.
  *
  * <p>Nothing here looks at a method body. A declaration whose header mentions a type that did not resolve is a declaration fault
  * (C.6): it yields no fact and is listed by key; the rest of the file produces facts.
  *
- * <p>Known gaps against a class file, none of which touches {@code r} for ordinary code: type annotations are not written to the
- * tail (they are not resolution facts), and an enum with constant bodies has no {@code PermittedSubclasses} here because javac
- * creates those anonymous classes only when it attributes the bodies.
+ * <p>Signature type annotations come from javac's completed symbols and their assigned positions. The retained annotations use
+ * the same codec and fact ownership as {@code ClassFacts}; {@code EA} is derived from those tail bytes. An enum with constant
+ * bodies has no {@code PermittedSubclasses} here because javac creates those anonymous classes only when it attributes the bodies.
  */
 public final class SourceFacts {
     /**
@@ -143,7 +144,7 @@ public final class SourceFacts {
         var descriptor = new Res.Module(module.getName().toString(), module.getModuleType() == com.sun.source.tree.ModuleTree.ModuleKind.OPEN ? 0x0020 : 0,
                 moduleVersion, requires, exports, opens, uses, provides);
         var res = new Res.Type(Res.Type.MODULE, ClassFile.ACC_MODULE, null, null, List.of(), List.of(), null, null, List.of(), List.of(), descriptor);
-        var tail = new Codec.Writer().u32(0).u32(0).u32(0).u8(0).toBytes();
+        var tail = Entry.NONE;
         add(out, Keys.typeKey("module-info"), "module-info", res.encode(), tail);
         out.typeKeys.add("module-info");
         return new Result(List.copyOf(out.facts), List.of(), List.of(), List.copyOf(out.typeKeys), List.of(), List.of());
@@ -252,14 +253,13 @@ public final class SourceFacts {
         }
         if (!errors.isEmpty()) return;
 
-        var res = new Res.Type(kindCode, access, signature, superName, interfaces, permits, host, outer, components, metas, null);
+        var res = new Res.Type(kindCode, access, signature, superName, interfaces, permits, host, outer, components, metas, null, warnings(type));
         add(out, key, Keys.simpleName(owner), res.encode(), tail(type, annotations, false, null));
         if (superName != null) edge(out, superName, Edges.EXTENDS, key);
         for (var i : interfaces) edge(out, i, Edges.IMPLEMENTS, key);
         for (var p : permits) edge(out, p, Edges.PERMITS, key);
         if (outer != null) edge(out, outer, Edges.ENCLOSES, key);
         for (var c : components) Edges.typeNames(c.descriptor(), c.signature(), n -> edge(out, n, Edges.RECORD_COMPONENT_TYPE, key));
-        annotationEdges(annotations, key, out);
     }
 
     // ---- members ---------------------------------------------------------------------------------------------------------
@@ -297,9 +297,8 @@ public final class SourceFacts {
             default -> throw new IllegalArgumentException("Unexpected constant " + constant.getClass());
         };
         var annotations = retained(field);
-        add(out, key, name, new Res.Field(flags & FIELD_ACCESS, signature, value).encode(), tail(field, annotations, false, null));
+        add(out, key, name, new Res.Field(flags & FIELD_ACCESS, signature, value, warnings(field)).encode(), tail(field, annotations, false, null));
         Edges.typeNames(desc, signature, n -> edge(out, n, Edges.FIELD_TYPE, key));
-        annotationEdges(annotations, key, out);
     }
 
     private void method(TypeElement owner, String ownerName, ExecutableElement method, Out out) {
@@ -332,11 +331,10 @@ public final class SourceFacts {
         var defaultValue = method.getDefaultValue();
         if (!errors.isEmpty()) { out.faults.add(fault(key, errors)); return; }
 
-        var res = new Res.Method(flags & METHOD_ACCESS, signature, thrown, defaultValue == null ? null : value(defaultValue, returnType));
+        var res = new Res.Method(flags & METHOD_ACCESS, signature, thrown, defaultValue == null ? null : value(defaultValue, returnType), warnings(method));
         var annotations = retained(method);
         add(out, key, name, res.encode(), tail(method, annotations, true, inner ? owner : null));
         Edges.method(desc.toString(), signature, thrown, (target, kind) -> edge(out, target, kind, key));
-        annotationEdges(annotations, key, out);
     }
 
     /**
@@ -536,20 +534,16 @@ public final class SourceFacts {
 
     // ---- edges (the same names ClassFacts reads out of descriptors and signatures) -----------------------------------------
 
-    private void annotationEdges(List<AnnotationMirror> retained, byte[] key, Out out) {
-        for (var a : retained) Edges.descriptorNames(descriptor(a.getAnnotationType(), new ArrayList<>()), n -> edge(out, n, Edges.ANNOTATION, key));
-    }
-
     private void edge(Out out, String target, int kind, byte[] source) {
         out.targets.add(target);
         var key = Keys.edgeKey(target, kind, source);
         out.edges.computeIfAbsent(key, k -> new Entry(k, Entry.NONE, digest.hash(k)));
     }
 
-    /** One fact: {@code e = u32 resLen || res || tail}, {@code h = Digest(res)}. */
+    /** LAYOUT 4: resolution and annotation projections have separate trees. */
     private void add(Out out, byte[] key, String simpleName, byte[] resBytes, byte[] tail) {
-        var e = new Codec.Writer(resBytes.length + tail.length + 4).u32(resBytes.length).raw(resBytes).raw(tail).toBytes();
-        out.facts.add(new Fact(key, e, digest.hash(resBytes), simpleName));
+        out.facts.add(Fact.of(digest, key, resBytes, tail, simpleName));
+        for (var descriptor : Ann.tailAnnotationTypes(tail)) Edges.descriptorNames(descriptor, n -> edge(out, n, Edges.ANNOTATION, key));
     }
 
     private static FileRow.Fault fault(byte[] key, List<String> errors) { return new FileRow.Fault(key, "cannot resolve " + String.join(", ", errors)); }
@@ -576,32 +570,66 @@ public final class SourceFacts {
         return out;
     }
 
-    /** Everything else ClassFacts keeps (A.4): annotations, type annotations, deprecation, and for methods parameter names. */
+    private Res.Warnings warnings(Element element) {
+        Ann deprecated = null, safeVarargs = null;
+        for (var a : element.getAnnotationMirrors()) {
+            String name = ((TypeElement) a.getAnnotationType().asElement()).getQualifiedName().toString();
+            if (name.equals("java.lang.Deprecated")) deprecated = annotation(a);
+            if (name.equals("java.lang.SafeVarargs")) safeVarargs = annotation(a);
+        }
+        return new Res.Warnings(elements.isDeprecated(element), deprecated, safeVarargs);
+    }
+
+    /** Annotation metadata outside the resolution projection. */
     private byte[] tail(Element element, List<AnnotationMirror> retained, boolean method, TypeElement innerOwner) {
         var out = new Codec.Writer();
         for (var wanted : new Retention[] {Retention.RUNTIME, Retention.CLASS}) {
             var chosen = new ArrayList<AnnotationMirror>();
-            for (var a : retained) if (retention(a) == wanted) chosen.add(a);
+            for (var a : retained) if (retention(a) == wanted && !Res.Warnings.reads(descriptor(a.getAnnotationType(), new ArrayList<>()))) chosen.add(a);
             var list = new ArrayList<Ann>(chosen.size());
             for (var a : chosen) list.add(annotation(a));
             Ann.encodeList(out, list);
         }
-        out.u32(0); // type annotations: not resolution facts, and javac's target info for them is attribution's business
-        out.u8(elements.isDeprecated(element) ? 1 : 0);
+        var typeAnnotations = typeAnnotations(element);
+        out.u32(typeAnnotations.size());
+        for (var a : typeAnnotations) {
+            var p = a.position;
+            int index = switch (p.type) {
+                case CLASS_EXTENDS, THROWS -> p.type_index;
+                default -> p.parameter_index;
+            };
+            var path = new Codec.Writer();
+            for (var step : p.location) path.u8(step.tag.tag).u8(step.arg);
+            annotation(a).encodeTypeAnnotation(out, p.type.targetTypeValue(), index, p.bound_index, path.toBytes());
+        }
         if (method) {
             var names = new ArrayList<String[]>();
-            if (parameters) {
-                if (innerOwner != null) names.add(new String[] {"this$0", String.valueOf(ClassFile.ACC_FINAL | MANDATED)});
-                for (var p : ((ExecutableElement) element).getParameters()) {
-                    int flags = (p.getModifiers().contains(Modifier.FINAL) ? ClassFile.ACC_FINAL : 0)
-                            | (elements.getOrigin(p) == Elements.Origin.MANDATED ? MANDATED : 0);
-                    names.add(new String[] {p.getSimpleName().toString(), String.valueOf(flags)});
+            var executable = (ExecutableElement) element;
+            boolean writeNames = parameters || executable.getKind() == ElementKind.CONSTRUCTOR && elements.isCanonicalConstructor(executable);
+            boolean requiredFlags = innerOwner != null || executable.getParameters().stream()
+                    .anyMatch(p -> (((Symbol) p).flags() & (ClassFile.ACC_SYNTHETIC | MANDATED)) != 0);
+            if (writeNames || requiredFlags) {
+                if (innerOwner != null) {
+                    // Lower's outer-instance parameter: private member classes use SYNTHETIC, others MANDATED.
+                    var enclosing = types.erasure(((Symbol) element).innermostAccessibleEnclosingClass().asType());
+                    int depth = 0;
+                    while (enclosing instanceof DeclaredType d && d.getEnclosingType() instanceof DeclaredType outer) {
+                        depth++;
+                        enclosing = outer;
+                    }
+                    int flags = ClassFile.ACC_FINAL | (innerOwner.getModifiers().contains(Modifier.PRIVATE) ? ClassFile.ACC_SYNTHETIC : MANDATED);
+                    names.add(new String[] {writeNames ? "this$" + depth : null, String.valueOf(flags)});
+                }
+                for (var p : executable.getParameters()) {
+                    int flags = (int) ((Symbol) p).flags() & (ClassFile.ACC_FINAL | ClassFile.ACC_SYNTHETIC | MANDATED);
+                    names.add(new String[] {writeNames ? p.getSimpleName().toString() : null, String.valueOf(flags)});
                 }
             }
             out.u32(names.size());
             for (var n : names) out.optStr(n[0]).u16(Integer.parseInt(n[1]));
         }
-        return out.toBytes();
+        var bytes = out.toBytes();
+        return Arrays.equals(bytes, new byte[bytes.length]) ? Entry.NONE : bytes;
     }
 
     private Ann annotation(AnnotationMirror a) {
@@ -609,6 +637,16 @@ public final class SourceFacts {
         for (var e : a.getElementValues().entrySet())
             elements.add(new Ann.Element(e.getKey().getSimpleName().toString(), value(e.getValue(), e.getKey().getReturnType())));
         return new Ann(descriptor(a.getAnnotationType(), new ArrayList<>()), elements);
+    }
+
+    /** Only declaration targets: code-local annotations are outside this projection. */
+    private List<Attribute.TypeCompound> typeAnnotations(Element element) {
+        var out = new ArrayList<Attribute.TypeCompound>();
+        for (var wanted : new Retention[] {Retention.RUNTIME, Retention.CLASS}) {
+            for (var a : ((Symbol) element).getRawTypeAttributes())
+                if (!a.position.type.isLocal() && retention(a) == wanted) out.add(a);
+        }
+        return out;
     }
 
     /** javac hands a byte, short or int constant over as the same Java type, so the tag comes from the element's declared type, not from the value. */

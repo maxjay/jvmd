@@ -65,6 +65,21 @@ public final class ContentTree {
         return range(root.hash(), reader, from, to, null, sums.zero());
     }
 
+    /** Sum over all keys beginning with prefix; all-FF prefixes have no finite upper bound. */
+    public Identity rangeSum(Identity root, Function<Identity, byte[]> reader, byte[] prefix) {
+        return range(root, reader, prefix, prefixEnd(prefix), null, sums.zero());
+    }
+
+    public static byte[] prefixEnd(byte[] prefix) {
+        for (int i = prefix.length - 1; i >= 0; i--) {
+            if ((prefix[i] & 0xFF) == 0xFF) continue;
+            var end = Arrays.copyOf(prefix, i + 1);
+            end[i]++;
+            return end;
+        }
+        return null;
+    }
+
     private Identity range(Identity hash, Function<Identity, byte[]> reader, byte[] from, byte[] to, byte[] nodeEnd, Identity acc) {
         var bytes = reader.apply(hash);
         int width = digest.width();

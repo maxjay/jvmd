@@ -38,9 +38,10 @@ final class MavenModelHelper {
      */
     static Model build(Path root, Path repository, int release) throws IOException, InterruptedException {
         var modules = modules(root, root, new ArrayList<>());
-        maven(root, "-Dmdep.includeScope=compile", "-Dmdep.outputFile=target/jvmd-classpath-main.txt");
+        maven(root, "-Dmdep.includeScope=compile", "-Dmdep.outputFile=target/jvmd-classpath-main.txt", "help:effective-pom", "-Doutput=" + root.resolve("target/jvmd-effective-pom.xml").toAbsolutePath());
         maven(root, "-Dmdep.includeScope=test", "-Dmdep.outputFile=target/jvmd-classpath-test.txt");
 
+        var effective = effectiveProjects(root.resolve("target/jvmd-effective-pom.xml"));
         var byClasses = new LinkedHashMap<Path, Module>();
         for (var m : modules) byClasses.put(m.classes().toAbsolutePath().normalize(), m);
         var json = new ObjectMapper();
@@ -59,13 +60,15 @@ final class MavenModelHelper {
             node.put("name", m.name()).put("coordinate", m.coordinate()).put("release", release).put("moduleInfo", false);
             // As the build passes them: the compiler plugin gives a module its project version as --module-version.
             var options = node.putArray("javacOptions");
-            for (var option : compilerOptions(root, m)) options.add(option);
+            var project = effective.get(m.coordinate());
+            if (project == null) throw new IOException("No effective Maven model for " + m.coordinate());
+            for (var option : compilerOptions(project)) options.add(option);
             if (Files.isRegularFile(m.directory().resolve("src/main/java/module-info.java")))
                 options.add("--module-version").add(m.coordinate().substring(m.coordinate().lastIndexOf(':') + 1));
             var scopes = node.putObject("scopes");
             var base = root.toAbsolutePath().normalize();
-            scope(scopes.putObject("main"), List.of(relative(base, m.directory().resolve("src/main/java")), relative(base, m.directory().resolve("target/generated-sources/annotations"))), mainEntries);
-            scope(scopes.putObject("test"), List.of(relative(base, m.directory().resolve("src/test/java")), relative(base, m.directory().resolve("target/generated-test-sources/test-annotations"))), testOnly);
+            scope(scopes.putObject("main"), sourceRoots(base, m, project, false), mainEntries);
+            scope(scopes.putObject("test"), sourceRoots(base, m, project, true), testOnly);
         }
         return new Model(json.writeValueAsBytes(doc), modules);
     }
@@ -74,17 +77,64 @@ final class MavenModelHelper {
      * What the compiler plugin passes for the language level, as the poms say it: {@code --release N} when the module (or its parent)
      * sets {@code maven.compiler.release}, {@code -source N -target N} when that property is empty and source and target are set.
      */
-    private static List<String> compilerOptions(Path root, Module module) throws IOException {
-        for (var pom : List.of(module.directory().resolve("pom.xml"), root.resolve("pom.xml"))) {
-            var properties = child(parse(pom).getDocumentElement(), "properties");
-            if (properties == null) continue;
-            var release = child(properties, "maven.compiler.release");
-            if (release != null && !release.getTextContent().trim().isEmpty()) return List.of("--release", release.getTextContent().trim());
-            var source = child(properties, "maven.compiler.source");
-            var target = child(properties, "maven.compiler.target");
-            if (release != null && source != null && target != null) return List.of("-source", source.getTextContent().trim(), "-target", target.getTextContent().trim());
+    private static Map<String, Element> effectiveProjects(Path file) throws IOException {
+        var result = new LinkedHashMap<String, Element>();
+        var document = parse(file).getDocumentElement();
+        var projects = document.getTagName().equals("project") ? List.of(document) : children(document, "project");
+        for (var project : projects) result.put(text(project, "groupId") + ":" + text(project, "artifactId") + ":" + text(project, "version"), project);
+        return result;
+    }
+
+    private static List<String> compilerOptions(Element project) {
+        var out = new ArrayList<String>();
+        var properties = child(project, "properties");
+        String release = text(properties, "maven.compiler.release");
+        if (release != null && !release.isBlank()) out.addAll(List.of("--release", release));
+        else {
+            String source = text(properties, "maven.compiler.source"), target = text(properties, "maven.compiler.target");
+            if (source != null) out.addAll(List.of("-source", source));
+            if (target != null) out.addAll(List.of("-target", target));
         }
-        return List.of();
+        var build = child(project, "build");
+        for (var plugin : children(child(build, "plugins"), "plugin")) {
+            if (!"maven-compiler-plugin".equals(text(plugin, "artifactId"))) continue;
+            var configuration = child(plugin, "configuration");
+            for (var arg : children(child(configuration, "compilerArgs"), "arg")) out.add(arg.getTextContent().trim());
+            if ("true".equals(text(configuration, "parameters"))) out.add("-parameters");
+            String debug = text(configuration, "debug"), level = text(configuration, "debuglevel");
+            if ("false".equals(debug)) out.add("-g:none");
+            else if (level != null) out.add("-g:" + level);
+            String encoding = text(configuration, "encoding");
+            if (encoding == null) encoding = text(properties, "project.build.sourceEncoding");
+            if (encoding != null) out.addAll(List.of("-encoding", encoding));
+        }
+        return out;
+    }
+
+    private static List<String> sourceRoots(Path base, Module module, Element project, boolean test) {
+        var roots = new java.util.LinkedHashSet<Path>();
+        var build = child(project, "build");
+        String standard = text(build, test ? "testSourceDirectory" : "sourceDirectory");
+        roots.add(standard == null ? module.directory().resolve(test ? "src/test/java" : "src/main/java") : Path.of(standard));
+        roots.add(module.directory().resolve(test ? "target/generated-test-sources/test-annotations" : "target/generated-sources/annotations"));
+        for (var plugin : children(child(build, "plugins"), "plugin")) {
+            if (!"build-helper-maven-plugin".equals(text(plugin, "artifactId"))) continue;
+            for (var execution : children(child(plugin, "executions"), "execution")) {
+                boolean addsSources = children(child(execution, "goals"), "goal").stream()
+                        .anyMatch(g -> g.getTextContent().trim().equals(test ? "add-test-source" : "add-source"));
+                if (!addsSources) continue;
+                for (var source : children(child(child(execution, "configuration"), "sources"), "source"))
+                    roots.add(module.directory().resolve(source.getTextContent().trim()).normalize());
+            }
+        }
+        return roots.stream().map(p -> relative(base, p)).toList();
+    }
+
+    private static List<Element> children(Element parent, String tag) {
+        var result = new ArrayList<Element>();
+        if (parent != null) for (var n = parent.getFirstChild(); n != null; n = n.getNextSibling())
+            if (n instanceof Element e && e.getTagName().equals(tag)) result.add(e);
+        return result;
     }
 
     private static String relative(Path base, Path path) { return base.relativize(path.toAbsolutePath().normalize()).toString().replace('\\', '/'); }
@@ -153,6 +203,7 @@ final class MavenModelHelper {
     }
 
     private static Element child(Element parent, String tag) {
+        if (parent == null) return null;
         for (Node n = parent.getFirstChild(); n != null; n = n.getNextSibling()) if (n instanceof Element e && e.getTagName().equals(tag)) return e;
         return null;
     }

@@ -71,7 +71,7 @@ class LocalColdBootTest {
         // Built with --release, as Maven builds: javac then records the release as the version of every system module a descriptor requires.
         var release = String.valueOf(Stage2Support.FEATURE);
         Stage2Support.jar(repository, "corp/rich/1/rich-1.jar", Fixtures.rich(), List.of("--release", release));
-        // The same API compiled with -parameters: equal r, and a different k because the tail differs (3.5).
+        // The same API compiled with -parameters: equal k, independent a differs.
         Stage2Support.jar(repository, "corp/richp/1/richp-1.jar", Fixtures.rich(), List.of("--release", release, "-parameters"));
         // Two jars that declare one class with one constant each: a file that inlines the constant resolves to a different fact in each.
         Stage2Support.jar(repository, "corp/p1/1/p1-1.jar", Map.of("ns/K.java", "package ns; public class K { public static final int VALUE = 1; }"), List.of());
@@ -118,11 +118,11 @@ class LocalColdBootTest {
         return Route.decode(b.store().get(LocalStore.routeKey(b.projectKey(), module, scope)), digest.width());
     }
 
-    static final RouteEntry.Jar LIB_AB = new RouteEntry.Jar("org.example:libAB:1.4.0", Fixtures.LIB_AB_14, null);
+    static final RouteEntry.Jar LIB_AB = new RouteEntry.Jar("org.example:libAB:1.4.0", Fixtures.LIB_AB_14, null, null);
 
     /** A jar entry with its MACHINE leaf. */
     static RouteEntry.Jar jar(Digest digest, InMemoryLocalStore store, String coordinate, String location) {
-        return new RouteEntry.Jar(coordinate, location, jarLeaf(digest, store, location));
+        return new RouteEntry.Jar(coordinate, location, jarLeaf(digest, store, location), MachineTree.decodePath(store.get(MachineStore.pathKey(location)), digest.width()).a());
     }
 
     static dev.jvmd.index.layer.local.Bound bind(Digest digest, InMemoryLocalStore store, List<RouteEntry> entries, Bind.Provider built) {
@@ -153,8 +153,8 @@ class LocalColdBootTest {
 
     /**
      * Source equals class. Compile the fixture with javac, index the class files with stage 1 and the sources with Φ_src: equal
-     * {@code r}, equal {@code O} sums, equal {@code N} and {@code E} roots. {@code k} may differ and is not compared: it covers
-     * the tail (parameter names, type annotations), which depends on how the jar was compiled and is not a resolution fact (C.7).
+     * {@code k}, equal {@code O} sums, equal {@code N} and {@code E} roots. Annotation identities may differ when the jar's
+     * parameter-name settings differ; they are outside the API leaf (LAYOUT 4).
      */
     @ParameterizedTest @MethodSource("digests")
     void invariant1_sourceEqualsClass(Digest digest) throws Exception {
@@ -173,6 +173,7 @@ class LocalColdBootTest {
                 assertThat(source.factCount()).as("facts vs " + location).isEqualTo(jar.factCount()).isGreaterThan(100);
                 assertThat(source.typeCount()).isEqualTo(jar.typeCount());
                 assertThat(source.r()).as("r vs " + location).isEqualTo(jar.r());
+                assertThat(source.k()).as("exact k vs " + location).isEqualTo(jar.k());
                 assertThat(source.oHash()).as("O root").isEqualTo(jar.oHash());
                 assertThat(treeSum(digest, store, source.oHash())).as("O sum").isEqualTo(treeSum(digest, store, jar.oHash()));
                 assertThat(source.nHash()).as("N root").isEqualTo(jar.nHash());
@@ -196,7 +197,7 @@ class LocalColdBootTest {
             for (var module : booted.model().modules()) {
                 for (int scope : new int[] {0, 1}) {
                     var stored = route(digest, booted, module.name(), scope);
-                    var bound = Bind.bind(digest, stored.entries(), Bind.NONE, built::get, k -> leaf(digest, store, k), DISCARD);
+                    var bound = Bind.bind(digest, stored.entries(), Bind.NONE, coordinate -> built.containsKey(coordinate) ? new Bind.Leaf(built.get(coordinate), Identity.zero(digest.width())) : null, k -> leaf(digest, store, k), DISCARD);
                     var r = sums.zero();
                     var elements = new ArrayList<Entry>();
                     for (var k : bound.sequence()) {
@@ -268,7 +269,8 @@ class LocalColdBootTest {
         var x = jar(digest, store, "org.example:libX:1.0", Fixtures.LIB_X);
         var rich = jar(digest, store, "corp:rich:1", "corp/rich/1/rich-1.jar");
         var richp = jar(digest, store, "corp:richp:1", "corp/richp/1/richp-1.jar");
-        assertThat(rich.defaultK()).as("same API, different tail: different k").isNotEqualTo(richp.defaultK());
+        assertThat(rich.defaultK()).as("same API, different tail: equal k").isEqualTo(richp.defaultK());
+        assertThat(rich.a()).as("parameter metadata has its own identity").isNotEqualTo(richp.a());
         assertThat(leaf(digest, store, rich.defaultK()).r()).isEqualTo(leaf(digest, store, richp.defaultK()).r());
 
         var one = bind(digest, store, List.of(ab, x, rich), Bind.NONE);
@@ -280,14 +282,15 @@ class LocalColdBootTest {
 
         var swapped = bind(digest, store, List.of(ab, x, richp), Bind.NONE);
         assertThat(swapped.r()).as("an API-identical leaf leaves R").isEqualTo(one.r());
-        assertThat(swapped.leafSetExt()).as("and changes leafSetExt").isNotEqualTo(one.leafSetExt());
-        assertThat(swapped.routeHash()).isNotEqualTo(one.routeHash());
+        assertThat(swapped.leafSetExt()).as("and preserves leafSetExt").isEqualTo(one.leafSetExt());
+        assertThat(swapped.routeHash()).isEqualTo(one.routeHash());
+        assertThat(swapped.aSequence()).isNotEqualTo(one.aSequence());
 
         var tree = new ContentTree(digest);
         var before = DefinerIndex.disjoint(digest, tree, fold(digest, store, one.external(), null), nodes(store), DISCARD);
         var after = DefinerIndex.disjoint(digest, tree, fold(digest, store, swapped.external(), null), nodes(store), DISCARD);
         assertThat(after.sum()).as("the disjoint index resolves every name identically").isEqualTo(before.sum());
-        assertThat(after.hash()).as("though it stores another k").isNotEqualTo(before.hash());
+        assertThat(after.hash()).as("the annotation-only swap stores the same k").isEqualTo(before.hash());
     }
 
     /** The definer state of a leaf set, folded from {@code base} (or nothing) over the stage 1 leaves of {@code store}. */
@@ -575,13 +578,26 @@ class LocalColdBootTest {
             var files = new LinkedHashMap<String, String>();
             for (var e : Fixtures.rich().entrySet()) files.put("rich/src/main/java/" + e.getKey(), e.getValue());
             Stage2Support.write(project, files);
-            var booted = boot(digest, Stage2Support.model(project, new Stage2Support.Mod("rich", "corp:rich:1", List.of()).withOptions("--release", String.valueOf(Stage2Support.FEATURE))), 2);
+            var machine = Stage2Support.machine(digest, repository).copy();
+            var jarKey = jarLeaf(digest, machine, "corp/rich/1/rich-1.jar");
+            Stubs.stubs(digest, new ContentTree(digest), leaf(digest, machine, jarKey), nodes(machine), new Stubs.Cache() {
+                public byte[] list(Identity k) { return machine.get(LocalStore.stubKey(k)); }
+                public byte[] type(Identity k) { return machine.get(LocalStore.stubTypeKey(k)); }
+                public void putList(Identity k, byte[] value) { machine.put(LocalStore.stubKey(k), value); }
+                public void putType(Identity k, byte[] value) { machine.put(LocalStore.stubTypeKey(k), value); }
+            });
+            machine.flush();
+            var booted = boot(digest, machine, repository, Stage2Support.model(project,
+                    new Stage2Support.Mod("rich", "corp:rich:1", List.of()).withOptions("--release", String.valueOf(Stage2Support.FEATURE))), 2);
             var store = booted.store();
+            assertThat(store.writes(MachineStore.leafKey(jarKey))).as("the source reuses L|k from the jar").isZero();
+            assertThat(store.writes(LocalStore.stubKey(jarKey))).as("S|k is reused across the substitution").isZero();
+            for (var key : machine.withPrefix("ST").keySet()) assertThat(store.writes(key)).as("per-type stub reuse").isZero();
             var source = booted.result().leaves().get("rich/main");
             var entry = jar(digest, store, "corp:rich:1", "corp/rich/1/rich-1.jar");
             var asJar = bind(digest, store, List.of(entry), Bind.NONE);
-            var asSource = bind(digest, store, List.of(entry), coordinate -> coordinate.equals("corp:rich:1") ? source : null);
-            assertThat(asSource.sequence()).as("bind yields another k").isNotEqualTo(asJar.sequence());
+            var asSource = bind(digest, store, List.of(entry), coordinate -> coordinate.equals("corp:rich:1") ? new Bind.Leaf(source, booted.result().annotations().get("rich/main")) : null);
+            assertThat(asSource.sequence()).as("jar-to-source swap preserves exact k").isEqualTo(asJar.sequence());
             assertThat(asSource.r()).as("and the same R").isEqualTo(asJar.r());
             var a = leaf(digest, store, asJar.sequence().get(0));
             var b = leaf(digest, store, asSource.sequence().get(0));
@@ -710,9 +726,9 @@ class LocalColdBootTest {
             for (var user : List.of(Fixtures.userOfRich(), Fixtures.brokenUserOfRich())) {
                 var real = compileAgainst(work.resolve("b-real"), user, realDir);
                 var stubbed = compileAgainst(work.resolve("b-stub"), user, stubDir);
-                if (user.containsKey("b/UseA.java")) assertThat(real.diagnostics).as("the good client compiles").isEmpty();
+                if (user.containsKey("b/UseA.java")) assertThat(real.diagnostics).as("the good client compiles").noneMatch(d -> d.startsWith("ERROR"));
                 else assertThat(real.diagnostics).as("the broken client has errors to compare").hasSizeGreaterThanOrEqualTo(6);
-                assertThat(stubbed.diagnostics).as("errors against stubs").isEqualTo(real.diagnostics);
+                assertThat(stubbed.diagnostics).as("errors and warnings against stubs").isEqualTo(real.diagnostics);
                 assertThat(stubbed.facts.keySet()).containsExactlyElementsOf(real.facts.keySet());
                 for (var e : real.facts.entrySet()) assertThat(stubbed.facts.get(e.getKey())).as("facts of " + e.getKey()).isEqualTo(e.getValue());
             }
@@ -725,7 +741,7 @@ class LocalColdBootTest {
         Stage2Support.delete(out);
         var src = Files.createDirectories(out.resolve("src"));
         var classes = Files.createDirectories(out.resolve("classes"));
-        var options = List.of("-proc:none", "-Xlint:-options", "-d", classes.toString(), "--class-path", classpath.toString());
+        var options = List.of("-proc:none", "-Xlint:all", "-Xlint:-options", "-d", classes.toString(), "--class-path", classpath.toString());
         var files = new ArrayList<Path>();
         for (var e : sources.entrySet()) {
             var file = src.resolve(e.getKey());
@@ -739,8 +755,7 @@ class LocalColdBootTest {
             compiler.getTask(null, fm, diagnostics, options, null, fm.getJavaFileObjectsFromPaths(files)).call();
         }
         var messages = new ArrayList<String>();
-        // Errors only: a deprecation warning comes from the tail (the Deprecated attribute), which a stub deliberately leaves out.
-        for (var d : diagnostics.getDiagnostics()) if (d.getKind() == javax.tools.Diagnostic.Kind.ERROR) messages.add(d.getKind() + " " + d.getCode() + " " + (d.getSource() == null ? "" : Path.of(d.getSource().toUri()).getFileName()) + ":" + d.getLineNumber() + " " + d.getMessage(null));
+        for (var d : diagnostics.getDiagnostics()) messages.add(d.getKind() + " " + d.getCode() + " " + (d.getSource() == null ? "" : Path.of(d.getSource().toUri()).getFileName()) + ":" + d.getLineNumber() + " " + d.getMessage(java.util.Locale.ROOT));
         var facts = new java.util.TreeMap<String, List<String>>();
         try (var walk = Files.walk(classes)) {
             for (var p : walk.filter(p -> p.toString().endsWith(".class")).toList()) {
@@ -748,7 +763,7 @@ class LocalColdBootTest {
                 try {
                     var cf = ClassFacts.of(Sha256.INSTANCE, Files.readAllBytes(p), name.substring(0, name.length() - ".class".length()));
                     var list = new ArrayList<String>();
-                    for (var f : cf.facts()) list.add(java.util.HexFormat.of().formatHex(f.m()) + "=" + java.util.HexFormat.of().formatHex(f.e()));
+                    for (var f : cf.facts()) list.add(java.util.HexFormat.of().formatHex(f.m()) + "=" + java.util.HexFormat.of().formatHex(f.res()));
                     facts.put(name, list);
                 } catch (ClassFacts.Fault fault) { facts.put(name, List.of("fault " + fault.getMessage())); }
             }
@@ -1413,7 +1428,7 @@ class LocalColdBootTest {
         var store = now.store();
         var built = new HashMap<String, Identity>();
         for (var m : now.model().modules()) built.put(m.coordinate(), now.result().leaves().get(m.name() + "/main"));
-        var bound = Bind.bind(digest, route(digest, now, "app", 0).entries(), Bind.NONE, built::get, k -> leaf(digest, store, k), DISCARD);
+        var bound = Bind.bind(digest, route(digest, now, "app", 0).entries(), Bind.NONE, coordinate -> built.containsKey(coordinate) ? new Bind.Leaf(built.get(coordinate), Identity.zero(digest.width())) : null, k -> leaf(digest, store, k), DISCARD);
         var leaves = new ArrayList<Identity>();
         leaves.add(now.result().leaves().get("app/main")); // the module's own types come first
         leaves.addAll(bound.sequence());

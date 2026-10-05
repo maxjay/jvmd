@@ -101,12 +101,12 @@ public final class Stage1 {
             var unreadable = seen.unreadableReason(observation);
             if (unreadable != null) {
                 // Not an archive, or not readable: the zero identity, no k, one fault naming the reason (B.5).
-                store.putPath(location.name(), MachineTree.encodePath(Identity.zero(digest.width()), null, location.size(), location.mtimeNanos(), List.of(unreadable)));
+                store.putPath(location.name(), MachineTree.encodePath(Identity.zero(digest.width()), null, null, location.size(), location.mtimeNanos(), List.of(unreadable)));
                 faults.add(location.name() + ": " + unreadable);
                 continue;
             }
             var skipped = seen.skipped(observation.bh());
-            store.putPath(location.name(), MachineTree.encodePath(observation.bh(), leaves.kFor(observation.bh()), location.size(), location.mtimeNanos(), skipped));
+            store.putPath(location.name(), MachineTree.encodePath(observation.bh(), leaves.kFor(observation.bh()), leaves.aFor(observation.bh()), location.size(), location.mtimeNanos(), skipped));
             for (var entry : skipped) faults.add(location.name() + ": " + entry);
         }
         store.flush();

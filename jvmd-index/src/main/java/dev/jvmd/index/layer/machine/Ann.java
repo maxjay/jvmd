@@ -45,6 +45,45 @@ public record Ann(String descriptor, List<Element> elements) {
         for (var a : annotations) a.encode(out);
     }
 
+    /** Existing signature type-annotation codec (A.4a); both producers supply the positions already computed by javac. */
+    public void encodeTypeAnnotation(Codec.Writer out, int target, int index, int bound, byte[] path) {
+        out.u8(target);
+        switch (target) {
+            case 0x00, 0x01, 0x16 -> out.u8(index);
+            case 0x10, 0x17 -> out.u16(index);
+            case 0x11, 0x12 -> out.u8(index).u8(bound);
+            case 0x13, 0x14, 0x15 -> { }
+            default -> throw new IllegalArgumentException("Not a signature type annotation: " + target);
+        }
+        out.u8(path.length / 2).raw(path);
+        encode(out);
+    }
+
+    /** EA is a function of the encoded tail, including the identical retention and warning filtering. */
+    public static java.util.Set<String> tailAnnotationTypes(byte[] tail) {
+        if (tail.length == 0) return java.util.Set.of();
+        var in = new Codec.Reader(tail);
+        var types = new java.util.TreeSet<String>();
+        for (int list = 0; list < 2; list++) {
+            int count = in.count();
+            for (int i = 0; i < count; i++) types.add(decode(in).descriptor());
+        }
+        int count = in.count();
+        for (int i = 0; i < count; i++) {
+            int target = in.u8();
+            switch (target) {
+                case 0x00, 0x01, 0x16 -> in.u8();
+                case 0x10, 0x11, 0x12, 0x17 -> in.u16();
+                case 0x13, 0x14, 0x15 -> { }
+                default -> throw new IllegalArgumentException("Not a signature type annotation: " + target);
+            }
+            in.raw(in.u8() * 2);
+            types.add(decode(in).descriptor());
+        }
+        // Parameter names follow, but do not supply annotation edges.
+        return types;
+    }
+
     public static void encode(Codec.Writer out, Val value) {
         switch (value) {
             case Val.Prim p -> {

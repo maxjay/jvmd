@@ -50,26 +50,27 @@ public final class MachineTree {
     }
 
     /**
-     * The {@code P|location} value (B.5): {@code id bh || opt<id> k || u64 size || i64 mtimeNanos || list<str> faults}. The faults
+     * The {@code P|location} value: {@code id bh || opt<id> k || opt<id> a || u64 size || i64 mtimeNanos || list<str> faults}. The faults
      * are the entry paths skipped in this location (A.7); an unreadable location has the zero {@code bh}, no {@code k} and one fault.
      */
-    public static byte[] encodePath(Identity bh, Identity kOrNull, long size, long mtimeNanos, List<String> faults) {
-        var out = new Codec.Writer(128).id(bh).optId(kOrNull).u64(size).i64(mtimeNanos).u32(faults.size());
+    public static byte[] encodePath(Identity bh, Identity kOrNull, Identity aOrNull, long size, long mtimeNanos, List<String> faults) {
+        var out = new Codec.Writer(128).id(bh).optId(kOrNull).optId(aOrNull).u64(size).i64(mtimeNanos).u32(faults.size());
         for (var fault : faults) out.str(fault);
         return out.toBytes();
     }
 
     /** A decoded {@code P|} value. */
-    public record PathRecord(Identity bh, Identity k, long size, long mtimeNanos, List<String> faults) { }
+    public record PathRecord(Identity bh, Identity k, Identity a, long size, long mtimeNanos, List<String> faults) { }
 
     public static PathRecord decodePath(byte[] value, int width) {
         var in = new Codec.Reader(value);
         var bh = in.id(width);
         var k = in.u8() == 1 ? in.id(width) : null;
+        var a = in.u8() == 1 ? in.id(width) : null;
         long size = in.u64(), mtime = in.i64();
         int n = in.count();
         var faults = new ArrayList<String>(n);
         for (int i = 0; i < n; i++) faults.add(in.str());
-        return new PathRecord(bh, k, size, mtime, List.copyOf(faults));
+        return new PathRecord(bh, k, a, size, mtime, List.copyOf(faults));
     }
 }

@@ -175,8 +175,7 @@ final class Boot implements AutoCloseable {
         return moduleFacts.computeIfAbsent(k, key -> {
             var entry = tree.get(key, this::node, Keys.typeKey("module-info"));
             if (entry == null) return Optional.empty();
-            var value = new Codec.Reader(entry.value());
-            var module = Res.Type.decode(value.raw(value.count())).module();
+            var module = Res.Type.decode(entry.value()).module();
             return module == null ? Optional.empty() : Optional.of(new String[] {module.name(), module.version()});
         });
     }

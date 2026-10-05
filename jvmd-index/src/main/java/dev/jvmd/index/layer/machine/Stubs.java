@@ -33,8 +33,8 @@ import java.util.function.Function;
 
 /**
  * Stubs (stage 2, 3.14, 5.2a, C.8 and B.10): class files synthesised from a leaf's {@code T}, with every declared member and
- * everything in its {@code res} and nothing else: no bodies, no annotations but the meta-annotations of an annotation type, no
- * parameter names. A method without {@code Code} is legal input to javac (it is what {@code ct.sym} is made of); stubs are
+ * everything in its {@code res}, including warning metadata and annotation-type meta-annotations. It reads no annotation tree
+ * and includes no executable bodies or parameter names. A method without {@code Code} is legal input to javac; stubs are
  * compile-time input and are never loaded by a JVM. A stub is a pure function of one type's {@code res}, so it is cached per type and shared.
  *
  * <p>What a stub lacks that javac needs would be a field of {@code res} that was classified as {@code tail}; invariant 7.3.14
@@ -112,8 +112,7 @@ public final class Stubs {
         tree.forEach(leaf.k(), reader, entry -> {
             var m = Keys.Member.decode(entry.key());
             var decl = decls.computeIfAbsent(m.owner(), o -> { var d = new TypeDecl(); d.owner = o; return d; });
-            var value = new Codec.Reader(entry.value());
-            byte[] res = value.raw((int) value.u32());
+            byte[] res = entry.value();
             switch (m.kind()) {
                 case Keys.TYPE -> decl.type = Res.Type.decode(res);
                 case Keys.FIELD -> decl.fields.add(new FieldDecl(m.name(), m.descriptor(), Res.Field.decode(res)));
@@ -205,12 +204,14 @@ public final class Stubs {
         for (var p : type.permits()) permits.add(internal(p));
         var metaAnnotations = new ArrayList<Annotation>();
         for (var meta : type.metas()) if (meta != null) metaAnnotations.add(annotation(meta));
+        for (var a : type.warnings().annotations()) metaAnnotations.add(annotation(a));
 
         final int classFlags = (access & (ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT
                 | ClassFile.ACC_ANNOTATION | ClassFile.ACC_ENUM)) | ((access & ClassFile.ACC_INTERFACE) == 0 ? ACC_SUPER : 0);
 
         return ClassFile.of().build(internal(decl.owner), cb -> {
             cb.withFlags(classFlags);
+            if (type.warnings().deprecated()) cb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
             if (superName != null) cb.withSuperclass(internal(superName));
             if (!interfaces.isEmpty()) cb.withInterfaceSymbols(interfaces);
             if (signature != null) cb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(signature)));
@@ -248,6 +249,8 @@ public final class Stubs {
         };
         cb.withField(decl.name(), ClassDesc.ofDescriptor(decl.descriptor()), fb -> {
             fb.withFlags(res.access());
+            if (res.warnings().deprecated()) fb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
+            if (!res.warnings().annotations().isEmpty()) fb.with(RuntimeVisibleAnnotationsAttribute.of(res.warnings().annotations().stream().map(Stubs::annotation).toList()));
             if (res.signature() != null) fb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(res.signature())));
             if (constant != null) fb.with(ConstantValueAttribute.of(constant));
         });
@@ -259,6 +262,8 @@ public final class Stubs {
         for (var t : res.thrown()) thrown.add(internal(t));
         AnnotationValue defaultValue = res.defaultValue() == null ? null : value(res.defaultValue());
         cb.withMethod(decl.name(), MethodTypeDesc.ofDescriptor(decl.descriptor()), res.access(), mb -> {
+            if (res.warnings().deprecated()) mb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
+            if (!res.warnings().annotations().isEmpty()) mb.with(RuntimeVisibleAnnotationsAttribute.of(res.warnings().annotations().stream().map(Stubs::annotation).toList()));
             if (res.signature() != null) mb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(res.signature())));
             if (!thrown.isEmpty()) mb.with(ExceptionsAttribute.ofSymbols(thrown));
             if (defaultValue != null) mb.with(AnnotationDefaultAttribute.of(defaultValue));

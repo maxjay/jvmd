@@ -253,8 +253,20 @@ final class HeaderCompiler {
             if (option.startsWith("-proc:") || option.startsWith("-implicit:") || option.startsWith("-Xplugin")) continue;
             int eq = option.indexOf('=');
             if (option.startsWith("--") && eq > 0 && DROPPED_WITH_ARGUMENT.contains(option.substring(0, eq))) continue;
+            // Header compilation is classpath mode: exports to the original named module must target this task's unnamed module.
+            if (option.equals("--add-exports") && i + 1 < options.size()) {
+                out.add(option);
+                out.add(unnamedExport(options.get(++i)));
+                continue;
+            }
+            if (option.startsWith("--add-exports=")) option = "--add-exports=" + unnamedExport(option.substring("--add-exports=".length()));
             out.add(option);
         }
         return out;
+    }
+
+    private static String unnamedExport(String value) {
+        int target = value.lastIndexOf('=');
+        return target < 0 ? value : value.substring(0, target + 1) + "ALL-UNNAMED";
     }
 }

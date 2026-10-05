@@ -3,6 +3,7 @@ package dev.jvmd.boot.cold.stage2;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.jvmd.core.hash.Identity;
+import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.digests.Sha256;
 import dev.jvmd.core.tree.ContentTree;
 import dev.jvmd.core.tree.Diff;
@@ -19,7 +20,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.function.Function;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The measurements of rule 9 on a real multi-module Maven project: header-compile wall time per thousand files, distinct leaf sets
@@ -29,13 +31,13 @@ import org.junit.jupiter.api.Test;
  */
 @Tag("benchmark")
 class Stage2Measurement {
+    static java.util.stream.Stream<Digest> digests() { return java.util.stream.Stream.of(Sha256.INSTANCE, new Digests.Sha3()); }
     /** The module descriptor fact of a leaf, in words: name, flags, and every directive. */
-    private static String describeModule(InMemoryLocalStore store, MachineLeaf leaf) {
-        var tree = new ContentTree(Sha256.INSTANCE);
+    private static String describeModule(Digest digest, InMemoryLocalStore store, MachineLeaf leaf) {
+        var tree = new ContentTree(digest);
         var e = tree.get(leaf.k(), h -> store.get(MachineStore.nodeKey(h)), dev.jvmd.index.layer.machine.Keys.typeKey("module-info"));
         if (e == null) return "none";
-        var v = new dev.jvmd.core.tree.Codec.Reader(e.value());
-        var module = dev.jvmd.index.layer.machine.Res.Type.decode(v.raw(v.count())).module();
+        var module = dev.jvmd.index.layer.machine.Res.Type.decode(e.value()).module();
         if (module == null) return "none";
         var sb = new StringBuilder(module.name());
         sb.append(" flags=").append(Integer.toHexString(module.flags())).append(module.version() == null ? "" : " version=" + module.version());
@@ -52,11 +54,11 @@ class Stage2Measurement {
         return text.length() > 90 ? text.substring(0, 90) : text;
     }
 
-    @Test void measure() throws Exception {
+    @ParameterizedTest @MethodSource("digests") void measure(Digest digest) throws Exception {
         var root = Path.of(System.getProperty("jvmd.stage2.project", Path.of("..").toAbsolutePath().normalize().toString())).toAbsolutePath().normalize();
-        var digest = Sha256.INSTANCE;
         var work = Files.createTempDirectory("stage2-measure");
         var report = new StringBuilder();
+        report.append("digest: ").append(digest.name()).append('\n');
         long mavenStarted = System.nanoTime();
         var model = MavenModelHelper.build(root, MavenProjectTest.repository(), Stage2Support.FEATURE);
         report.append("project: ").append(root).append('\n');
@@ -90,11 +92,17 @@ class Stage2Measurement {
         var maven = MavenProjectTest.outputLeaves(digest, model, work, classStore);
         Function<Identity, byte[]> reader = h -> { var a = machine.get(MachineStore.nodeKey(h)); return a != null ? a : classStore.get(MachineStore.nodeKey(h)); };
         int equal = 0, onlyModuleInfo = 0, total = 0;
+        var annotationDifferences = new ArrayList<String>();
         for (var e : maven.entrySet()) {
             var source = MachineLeaf.decode(machine.get(MachineStore.leafKey(result.leaves().get(e.getKey()))), digest.width());
             var expected = e.getValue();
             total++;
-            if (source.r().equals(expected.r())) {
+            var binaryA = dev.jvmd.index.layer.machine.MachineTree.decodePath(classStore.get(MachineStore.pathKey(e.getKey() + ".jar")), digest.width()).a();
+            if (!result.annotations().get(e.getKey()).equals(binaryA)) {
+                annotationDifferences.add(e.getKey());
+                report.append(annotationDifference(digest, e.getKey(), model, machine, result.annotations().get(e.getKey())));
+            }
+            if (source.k().equals(expected.k())) {
                 equal++;
                 report.append(String.format("  equal: %s (%d facts)%n", e.getKey(), source.factCount()));
                 continue;
@@ -108,16 +116,69 @@ class Stage2Measurement {
             boolean moduleOnly = keys.stream().allMatch(k -> k.contains("module-info"));
             if (moduleOnly) onlyModuleInfo++;
             if (keys.stream().anyMatch(k -> k.contains("module-info"))) {
-                report.append("    module (source): ").append(describeModule(machine, source)).append('\n');
-                report.append("    module (class) : ").append(describeModule(classStore, expected)).append('\n');
+                report.append("    module (source): ").append(describeModule(digest, machine, source)).append('\n');
+                report.append("    module (class) : ").append(describeModule(digest, classStore, expected)).append('\n');
             }
-            report.append(String.format("  r differs: %s (source %d facts, class output %d facts): %s%n", e.getKey(), source.factCount(), expected.factCount(),
+            report.append(String.format("  k differs: %s (source %d facts, class output %d facts): %s%n", e.getKey(), source.factCount(), expected.factCount(),
                     keys.stream().limit(4).toList()));
         }
-        report.append(String.format("source-vs-class r equality: %d of %d module scopes; %d more differ only by the module-info descriptor%n", equal, total, onlyModuleInfo));
+        report.append(String.format("source-vs-class k equality: %d of %d module scopes; %d more differ only by the module-info descriptor%n", equal, total, onlyModuleInfo));
+        report.append("annotation identity differences: ").append(annotationDifferences).append('\n');
         for (var f : result.faults().stream().limit(12).toList()) report.append("  fault: ").append(f).append('\n');
         System.out.println(report);
         Files.writeString(Path.of("target/stage2-measurement.txt"), report.toString());
+        Files.writeString(Path.of("target/stage2-measurement-" + digest.name() + ".txt"), report.toString());
         assertThat(machine.hasLocalRoot(Stage2.projectKey(digest, parsed))).isTrue();
+        assertThat(equal).as("every module scope has the same exact API key as its class files").isEqualTo(total);
+        assertThat(annotationDifferences).as("same compiler parameters imply equal annotation projections").isEmpty();
+    }
+
+    /** Diagnose A independently from the retained class-file facts; this is test instrumentation, not an a-key reader. */
+    private static String annotationDifference(Digest digest, String key, MavenModelHelper.Model model, InMemoryLocalStore source, Identity sourceA) throws Exception {
+        String module = key.substring(0, key.lastIndexOf('/'));
+        var output = model.modules().stream().filter(m -> m.name().equals(module)).findFirst().orElseThrow();
+        var directory = key.endsWith("/main") ? output.classes() : output.testClasses();
+        var tree = new ContentTree(digest);
+        var binary = new InMemoryLocalStore();
+        var facts = new ArrayList<dev.jvmd.index.layer.machine.Fact>();
+        try (var files = Files.walk(directory)) {
+            for (var path : files.filter(p -> p.toString().endsWith(".class")).sorted().toList()) {
+                String name = directory.relativize(path).toString().replace('\\', '/');
+                facts.addAll(ClassFacts.of(digest, Files.readAllBytes(path), name.substring(0, name.length() - 6)).facts());
+            }
+        }
+        facts.sort((a, b) -> java.util.Arrays.compareUnsigned(a.m(), b.m()));
+        var builder = new dev.jvmd.index.layer.machine.LeafBuilder(tree, binary);
+        // Recover the EA root from the separately indexed class bytes too.
+        try (var files = Files.walk(directory)) {
+            for (var path : files.filter(p -> p.toString().endsWith(".class")).sorted().toList()) {
+                String name = directory.relativize(path).toString().replace('\\', '/');
+                builder.edges(ClassFacts.of(digest, Files.readAllBytes(path), name.substring(0, name.length() - 6)).edges());
+            }
+        }
+        facts.forEach(builder::add);
+        builder.seal();
+        binary.flush();
+        for (var record : source.snapshot().entrySet()) {
+            if (record.getKey().length != digest.width() + 1 || record.getKey()[0] != 'N') continue;
+            var id = Identity.of(java.util.Arrays.copyOfRange(record.getKey(), 1, record.getKey().length));
+            if (!digest.hash(id.view(), builder.annotationEdges().hash().view()).equals(sourceA)) continue;
+            var expected = new ArrayList<dev.jvmd.core.tree.Entry>();
+            var actual = new ArrayList<dev.jvmd.core.tree.Entry>();
+            tree.forEach(builder.annotations().hash(), h -> binary.get(MachineStore.nodeKey(h)), expected::add);
+            tree.forEach(id, h -> source.get(MachineStore.nodeKey(h)), actual::add);
+            var wanted = new java.util.TreeMap<byte[], byte[]>(java.util.Arrays::compareUnsigned);
+            for (var e : expected) wanted.put(e.key(), e.value());
+            var report = new StringBuilder();
+            for (var e : actual) {
+                var value = wanted.remove(e.key());
+                if (!java.util.Arrays.equals(e.value(), value)) report.append("    tail ").append(describe(e.key())).append(" source=")
+                        .append(java.util.HexFormat.of().formatHex(e.value())).append(" binary=")
+                        .append(value == null ? "absent" : java.util.HexFormat.of().formatHex(value)).append('\n');
+            }
+            for (var name : wanted.keySet()) report.append("    binary-only tail ").append(describe(name)).append('\n');
+            return report.toString();
+        }
+        return "    EA differs for " + key + '\n';
     }
 }

@@ -44,7 +44,8 @@ import java.util.concurrent.ConcurrentSkipListMap;
 public final class Stage2 {
     /** What the boot did: the numbers of the one log line. {@code faults} are {@code path: declaration: reason}, and the classpath entries that bound to nothing. */
     public record Result(int modules, int sourceFiles, int parsedFiles, int sourceLeaves, int distinctLeafSets, int indexedOnTheSpot,
-                         long nodes, List<String> faults, long wallMillis, Root root, Map<String, Identity> leaves, Timings timings) { }
+                         long nodes, List<String> faults, long wallMillis, Root root, Map<String, Identity> leaves,
+                         Map<String, Identity> annotations, Timings timings) { }
 
     /** Where the time went, summed over jobs (so more than the wall time when jobs ran in parallel): the numbers of the cost model in 7.2. */
     public record Timings(long headerCompileMillis, long factsMillis, long definerIndexMillis, int externalFolds, int siblingFolds) { }
@@ -134,15 +135,18 @@ public final class Stage2 {
                 store.putLocalRoot(projectKey, LocalRoot.encode(digest, format, local, machineRoot, digest.hash(model.bytes())));
 
                 var leaves = new java.util.TreeMap<String, Identity>();
+                var annotations = new java.util.TreeMap<String, Identity>();
                 for (var module : model.modules()) {
                     leaves.put(module.name() + "/main", boot.built.leaf(module.name(), LocalStore.MAIN).k());
                     leaves.put(module.name() + "/test", boot.built.leaf(module.name(), LocalStore.TEST).k());
+                    annotations.put(module.name() + "/main", boot.built.a(module.name(), LocalStore.MAIN));
+                    annotations.put(module.name() + "/test", boot.built.a(module.name(), LocalStore.TEST));
                 }
                 var faults = new ArrayList<>(boot.faults);
                 java.util.Collections.sort(faults);
                 return new Result(model.modules().size(), boot.sourceFiles.get(), boot.parsedFiles.get(), boot.sourceLeaves.get(),
                         boot.indexMemo.distinctLeafSets(), defaults.indexedOnTheSpot(), boot.written.count(), List.copyOf(faults),
-                        (System.nanoTime() - started) / 1_000_000, local, leaves,
+                        (System.nanoTime() - started) / 1_000_000, local, Map.copyOf(leaves), Map.copyOf(annotations),
                         new Timings(boot.headerNanos.get() / 1_000_000, boot.factsNanos.get() / 1_000_000, boot.definerNanos.get() / 1_000_000,
                         boot.indexMemo.externalFolds(), boot.indexMemo.siblingFolds()));
             }

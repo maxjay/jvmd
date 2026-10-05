@@ -13,10 +13,13 @@ import java.util.function.Function;
 public final class Bind {
     private Bind() { }
 
+    /** The two independent identities a provider supplies. */
+    public record Leaf(Identity k, Identity a) { }
+
     /** A layer that may supply the leaf of a coordinate, by exact coordinate. */
     @FunctionalInterface public interface Provider {
         /** The leaf key, or null if this layer has none for the coordinate. */
-        Identity leafFor(String coordinate);
+        Leaf leafFor(String coordinate);
     }
 
     public static final Provider NONE = coordinate -> null;
@@ -30,19 +33,19 @@ public final class Bind {
     public static Bound bind(Digest digest, List<RouteEntry> entries, Provider session, Provider built, Function<Identity, MachineLeaf> leafOf, NodeSink sink) {
         var bindings = new ArrayList<Bound.Binding>(entries.size());
         for (var entry : entries) {
-            Identity k = session.leafFor(entry.coordinate());
+            Leaf leaf = session.leafFor(entry.coordinate());
             var origin = Bound.Origin.SESSION;
-            if (k == null) { k = built.leafFor(entry.coordinate()); origin = Bound.Origin.SIBLING; }
-            if (k == null) {
+            if (leaf == null) { leaf = built.leafFor(entry.coordinate()); origin = Bound.Origin.SIBLING; }
+            if (leaf == null) {
                 origin = Bound.Origin.EXTERNAL;
-                k = switch (entry) {
-                    case RouteEntry.Jar j -> j.defaultK();
-                    case RouteEntry.Jrt j -> j.k();
+                leaf = switch (entry) {
+                    case RouteEntry.Jar j -> j.defaultK() == null ? null : new Leaf(j.defaultK(), j.a());
+                    case RouteEntry.Jrt j -> new Leaf(j.k(), j.a());
                     case RouteEntry.Sibling s -> throw new IllegalStateException("Module " + s.module() + " is bound before it is built");
                 };
             }
-            if (k == null) continue; // a jar whose file is missing binds to nothing
-            bindings.add(new Bound.Binding(entry, k, origin));
+            if (leaf == null) continue; // a jar whose file is missing binds to nothing
+            bindings.add(new Bound.Binding(entry, leaf.k(), leaf.a(), origin));
         }
         var list = new ContentList(digest).builder(sink);
         var sequence = new ArrayList<Identity>(bindings.size());

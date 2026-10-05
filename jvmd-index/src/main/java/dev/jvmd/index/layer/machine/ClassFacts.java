@@ -122,9 +122,8 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                     };
                 }
                 var key = Keys.memberKey(owner, Keys.FIELD, name, desc);
-                add(key, name, new Res.Field(flags & FIELD_ACCESS, signature, value).encode(), tail(field, false));
+                add(key, name, new Res.Field(flags & FIELD_ACCESS, signature, value, warnings(field)).encode(), tail(field, false));
                 typeNames(desc, signature, n -> edge(n, FIELD_TYPE, key));
-                annotationEdges(field, key);
             }
             for (var method : cm.methods()) {
                 int flags = method.flags().flagsMask();
@@ -137,9 +136,8 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                 for (var t : thrown) thrownNames.add(t.asInternalName());
                 var def = method.findAttribute(Attributes.annotationDefault());
                 var key = Keys.memberKey(owner, Keys.METHOD, name, desc);
-                add(key, name, new Res.Method(flags & METHOD_ACCESS, signature, thrownNames, def.isPresent() ? value(def.get().defaultValue()) : null).encode(), tail(method, true));
+                add(key, name, new Res.Method(flags & METHOD_ACCESS, signature, thrownNames, def.isPresent() ? value(def.get().defaultValue()) : null, warnings(method)).encode(), tail(method, true));
                 Edges.method(desc, signature, thrownNames, (target, kind) -> edge(target, kind, key));
-                annotationEdges(method, key);
             }
             facts.sort((a, b) -> Arrays.compareUnsigned(a.m(), b.m()));
             return new ClassFacts(owner, List.copyOf(facts), List.copyOf(edges.values()));
@@ -196,14 +194,13 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                 if (module0.isPresent()) moduleRes = module(module0.get());
             }
             var res = new Res.Type(kind, access, signature, superclass.map(c -> c.asInternalName()).orElse(null), interfaces, permitNames,
-                    host.map(h -> h.nestHost().asInternalName()).orElse(null), outer, components, metas, moduleRes);
+                    host.map(h -> h.nestHost().asInternalName()).orElse(null), outer, components, metas, moduleRes, warnings(cm));
             add(key, Keys.simpleName(owner), res.encode(), tail(cm, false));
 
             superclass.ifPresent(s -> edge(s.asInternalName(), EXTENDS, key));
             for (var i : cm.interfaces()) edge(i.asInternalName(), IMPLEMENTS, key);
             for (var p : permits) edge(p.asInternalName(), PERMITS, key);
             if (outer != null) edge(outer, ENCLOSES, key);
-            annotationEdges(cm, key);
         }
 
         Res.Module module(ModuleAttribute m) {
@@ -234,26 +231,15 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                     requires, exports, opens, uses, provides);
         }
 
-        void annotationEdges(AttributedElement element, byte[] key) {
-            var visible = element.findAttribute(Attributes.runtimeVisibleAnnotations());
-            if (visible.isPresent()) for (var a : visible.get().annotations()) descriptorNames(a.className().stringValue(), n -> edge(n, ANNOTATION, key));
-            var invisible = element.findAttribute(Attributes.runtimeInvisibleAnnotations());
-            if (invisible.isPresent()) for (var a : invisible.get().annotations()) descriptorNames(a.className().stringValue(), n -> edge(n, ANNOTATION, key));
-            var typeVisible = element.findAttribute(Attributes.runtimeVisibleTypeAnnotations());
-            if (typeVisible.isPresent()) for (var t : typeVisible.get().annotations()) descriptorNames(t.annotation().className().stringValue(), n -> edge(n, ANNOTATION, key));
-            var typeInvisible = element.findAttribute(Attributes.runtimeInvisibleTypeAnnotations());
-            if (typeInvisible.isPresent()) for (var t : typeInvisible.get().annotations()) descriptorNames(t.annotation().className().stringValue(), n -> edge(n, ANNOTATION, key));
-        }
-
         void edge(String target, int kind, byte[] source) {
             var key = Keys.edgeKey(target, kind, source);
             edges.computeIfAbsent(key, k -> new Entry(k, Entry.NONE, digest.hash(k)));
         }
 
-        /** Adds one fact: {@code e = u32 resLen || res || tail}, {@code h = Digest(res)}. */
+        /** LAYOUT 4: the two projections are independent, and h binds the key. */
         void add(byte[] key, String simpleName, byte[] resBytes, byte[] tail) {
-            var e = new Codec.Writer(resBytes.length + tail.length + 4).u32(resBytes.length).raw(resBytes).raw(tail).toBytes();
-            facts.add(new Fact(key, e, digest.hash(resBytes), simpleName));
+            facts.add(Fact.of(digest, key, resBytes, tail, simpleName));
+            for (var descriptor : Ann.tailAnnotationTypes(tail)) descriptorNames(descriptor, n -> edge(n, ANNOTATION, key));
         }
     }
 
@@ -263,7 +249,19 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         return element.findAttribute(Attributes.signature()).map(s -> s.signature().stringValue()).orElse(null);
     }
 
-    /** Everything else stage 1 keeps (A.4): annotations, type annotations, deprecation, and for methods parameter names. */
+    private static Res.Warnings warnings(AttributedElement element) {
+        Ann deprecated = null, safeVarargs = null;
+        var annotations = new ArrayList<Annotation>();
+        element.findAttribute(Attributes.runtimeVisibleAnnotations()).ifPresent(a -> annotations.addAll(a.annotations()));
+        element.findAttribute(Attributes.runtimeInvisibleAnnotations()).ifPresent(a -> annotations.addAll(a.annotations()));
+        for (var a : annotations) {
+            if (a.className().stringValue().equals("Ljava/lang/Deprecated;")) deprecated = annotation(a);
+            if (a.className().stringValue().equals("Ljava/lang/SafeVarargs;")) safeVarargs = annotation(a);
+        }
+        return new Res.Warnings(element.findAttribute(Attributes.deprecated()).isPresent(), deprecated, safeVarargs);
+    }
+
+    /** Annotation metadata javac does not read during dependency resolution. */
     private static byte[] tail(AttributedElement element, boolean method) {
         var out = new Codec.Writer();
         var visible = element.findAttribute(Attributes.runtimeVisibleAnnotations());
@@ -277,19 +275,19 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         if (typeInvisible.isPresent()) types.addAll(typeInvisible.get().annotations());
         out.u32(types.size());
         for (var t : types) writeTypeAnnotation(out, t);
-        out.u8(element.findAttribute(Attributes.deprecated()).isPresent() ? 1 : 0);
         if (method) {
             var params = element.findAttribute(Attributes.methodParameters());
             var list = params.isPresent() ? params.get().parameters() : List.<java.lang.classfile.attribute.MethodParameterInfo>of();
             out.u32(list.size());
             for (var p : list) out.optStr(p.name().map(n -> n.stringValue()).orElse(null)).u16(p.flagsMask());
         }
-        return out.toBytes();
+        var bytes = out.toBytes();
+        return Arrays.equals(bytes, new byte[bytes.length]) ? Entry.NONE : bytes;
     }
 
     private static void writeAnnotations(Codec.Writer out, List<Annotation> annotations) {
         var list = new ArrayList<Ann>(annotations.size());
-        for (var a : annotations) list.add(annotation(a));
+        for (var a : annotations) if (!Res.Warnings.reads(a.className().stringValue())) list.add(annotation(a));
         Ann.encodeList(out, list);
     }
 
@@ -326,17 +324,17 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
     /** {@code typeAnnotation = u8 targetType || targetInfo || u8 pathLength || (u8 kind || u8 argumentIndex)[] || annotation} (A.4a). */
     private static void writeTypeAnnotation(Codec.Writer out, TypeAnnotation t) {
         var info = t.targetInfo();
-        out.u8(info.targetType().targetTypeValue());
-        switch (info) {
-            case TypeAnnotation.TypeParameterTarget p -> out.u8(p.typeParameterIndex());
-            case TypeAnnotation.SupertypeTarget s -> out.u16(s.supertypeIndex());
-            case TypeAnnotation.TypeParameterBoundTarget b -> out.u8(b.typeParameterIndex()).u8(b.boundIndex());
-            case TypeAnnotation.FormalParameterTarget f -> out.u8(f.formalParameterIndex());
-            case TypeAnnotation.ThrowsTarget th -> out.u16(th.throwsTargetIndex());
-            default -> { }
-        }
-        out.u8(t.targetPath().size());
-        for (var c : t.targetPath()) out.u8(c.typePathKind().tag()).u8(c.typeArgumentIndex());
-        annotation(t.annotation()).encode(out);
+        int index = switch (info) {
+            case TypeAnnotation.TypeParameterTarget p -> p.typeParameterIndex();
+            case TypeAnnotation.SupertypeTarget p -> p.supertypeIndex();
+            case TypeAnnotation.TypeParameterBoundTarget p -> p.typeParameterIndex();
+            case TypeAnnotation.FormalParameterTarget p -> p.formalParameterIndex();
+            case TypeAnnotation.ThrowsTarget p -> p.throwsTargetIndex();
+            default -> 0;
+        };
+        int bound = info instanceof TypeAnnotation.TypeParameterBoundTarget p ? p.boundIndex() : 0;
+        var path = new Codec.Writer();
+        for (var step : t.targetPath()) path.u8(step.typePathKind().tag()).u8(step.typeArgumentIndex());
+        annotation(t.annotation()).encodeTypeAnnotation(out, info.targetType().targetTypeValue(), index, bound, path.toBytes());
     }
 }

@@ -15,6 +15,30 @@ public final class Res {
     /** An annotation-type's meta-annotations, in this fixed order: {@code Retention, Target, Repeatable, Inherited, Documented}. */
     public static final List<String> META_ANNOTATIONS = List.of("Retention", "Target", "Repeatable", "Inherited", "Documented");
 
+    /** javac reads these attributes even when annotation processing is disabled. */
+    public record Warnings(boolean deprecated, Ann deprecation, Ann safeVarargs) {
+        public static final Warnings NONE = new Warnings(false, null, null);
+        public static boolean reads(String descriptor) {
+            return descriptor.equals("Ljava/lang/Deprecated;") || descriptor.equals("Ljava/lang/SafeVarargs;");
+        }
+        void encode(Codec.Writer out) {
+            out.u8(deprecated ? 1 : 0);
+            for (var a : new Ann[] {deprecation, safeVarargs}) {
+                out.u8(a == null ? 0 : 1);
+                if (a != null) a.encode(out);
+            }
+        }
+        static Warnings decode(Codec.Reader in) {
+            return new Warnings(in.u8() == 1, in.u8() == 1 ? Ann.decode(in) : null, in.u8() == 1 ? Ann.decode(in) : null);
+        }
+        public List<Ann> annotations() {
+            var out = new ArrayList<Ann>();
+            if (deprecation != null) out.add(deprecation);
+            if (safeVarargs != null) out.add(safeVarargs);
+            return List.copyOf(out);
+        }
+    }
+
     // ---- a type -------------------------------------------------------------------------------------------------------------
 
     public record Component(String name, String descriptor, String signature) { }
@@ -28,8 +52,13 @@ public final class Res {
      * @param module for a module descriptor (kind 5), the {@code Module} attribute; null if there is none
      */
     public record Type(int kind, int access, String signature, String superName, List<String> interfaces, List<String> permits,
-                       String nestHost, String outer, List<Component> components, List<Ann> metas, Module module) {
+                       String nestHost, String outer, List<Component> components, List<Ann> metas, Module module, Warnings warnings) {
         public static final int ANNOTATION = 4, MODULE = 5;
+
+        public Type(int kind, int access, String signature, String superName, List<String> interfaces, List<String> permits,
+                    String nestHost, String outer, List<Component> components, List<Ann> metas, Module module) {
+            this(kind, access, signature, superName, interfaces, permits, nestHost, outer, components, metas, module, Warnings.NONE);
+        }
 
         public byte[] encode() {
             var out = new Codec.Writer(128).u8(kind).u16(access).optStr(signature).optStr(superName);
@@ -41,7 +70,11 @@ public final class Res {
             out.u32(components.size());
             for (var c : components) out.str(c.name()).str(c.descriptor()).optStr(c.signature());
             if (kind == ANNOTATION) for (var meta : metas) { if (meta == null) out.u8(0); else { out.u8(1); meta.encode(out); } }
-            if (kind == MODULE && module != null) module.encode(out);
+            if (kind == MODULE) {
+                out.u8(module == null ? 0 : 1);
+                if (module != null) module.encode(out);
+            }
+            warnings.encode(out);
             return out.toBytes();
         }
 
@@ -57,8 +90,8 @@ public final class Res {
             for (int i = 0; i < n; i++) components.add(new Component(in.str(), in.str(), in.optStr()));
             var metas = new ArrayList<Ann>();
             if (kind == ANNOTATION) for (int i = 0; i < META_ANNOTATIONS.size(); i++) metas.add(in.u8() == 1 ? Ann.decode(in) : null);
-            Module module = kind == MODULE && in.remaining() > 0 ? Module.decode(in) : null;
-            return new Type(kind, access, signature, superName, interfaces, permits, nestHost, outer, List.copyOf(components), metas, module);
+            Module module = kind == MODULE && in.u8() == 1 ? Module.decode(in) : null;
+            return new Type(kind, access, signature, superName, interfaces, permits, nestHost, outer, List.copyOf(components), metas, module, Warnings.decode(in));
         }
     }
 
@@ -132,18 +165,22 @@ public final class Res {
      */
     public record Constant(int tag, long bits, String text) { }
 
-    /** {@code u16 access || opt<str> signature || opt<constant>}, a constant being {@code u8 tag || payload}. */
-    public record Field(int access, String signature, Constant constant) {
+    /** {@code u16 access || opt<str> signature || opt<constant> || warnings}, a constant being {@code u8 tag || payload}. */
+    public record Field(int access, String signature, Constant constant, Warnings warnings) {
+        public Field(int access, String signature, Constant constant) { this(access, signature, constant, Warnings.NONE); }
         public byte[] encode() {
             var out = new Codec.Writer(32).u16(access).optStr(signature);
-            if (constant == null) return out.u8(0).toBytes();
-            out.u8(1).u8(constant.tag());
-            switch (constant.tag()) {
-                case 3, 4 -> out.u32(constant.bits() & 0xFFFFFFFFL);
-                case 5, 6 -> out.u64(constant.bits());
-                case 8 -> out.str(constant.text());
-                default -> throw new IllegalArgumentException("Unexpected ConstantValue tag " + constant.tag());
+            out.u8(constant == null ? 0 : 1);
+            if (constant != null) {
+                out.u8(constant.tag());
+                switch (constant.tag()) {
+                    case 3, 4 -> out.u32(constant.bits() & 0xFFFFFFFFL);
+                    case 5, 6 -> out.u64(constant.bits());
+                    case 8 -> out.str(constant.text());
+                    default -> throw new IllegalArgumentException("Unexpected ConstantValue tag " + constant.tag());
+                }
             }
+            warnings.encode(out);
             return out.toBytes();
         }
 
@@ -151,7 +188,7 @@ public final class Res {
             var in = new Codec.Reader(res);
             int access = in.u16();
             String signature = in.optStr();
-            if (in.u8() == 0) return new Field(access, signature, null);
+            if (in.u8() == 0) return new Field(access, signature, null, Warnings.decode(in));
             int tag = in.u8();
             var constant = switch (tag) {
                 case 3, 4 -> new Constant(tag, in.u32(), null);
@@ -159,18 +196,20 @@ public final class Res {
                 case 8 -> new Constant(tag, 0, in.str());
                 default -> throw new IllegalArgumentException("Unexpected ConstantValue tag " + tag);
             };
-            return new Field(access, signature, constant);
+            return new Field(access, signature, constant, Warnings.decode(in));
         }
     }
 
     // ---- a method -----------------------------------------------------------------------------------------------------------
 
-    /** {@code u16 access || opt<str> signature || list<str> thrown || opt<value> annotationDefault}. */
-    public record Method(int access, String signature, List<String> thrown, Ann.Val defaultValue) {
+    /** {@code u16 access || opt<str> signature || list<str> thrown || opt<value> annotationDefault || warnings}. */
+    public record Method(int access, String signature, List<String> thrown, Ann.Val defaultValue, Warnings warnings) {
+        public Method(int access, String signature, List<String> thrown, Ann.Val defaultValue) { this(access, signature, thrown, defaultValue, Warnings.NONE); }
         public byte[] encode() {
             var out = new Codec.Writer(32).u16(access).optStr(signature).u32(thrown.size());
             for (var t : thrown) out.str(t);
             if (defaultValue == null) out.u8(0); else { out.u8(1); Ann.encode(out, defaultValue); }
+            warnings.encode(out);
             return out.toBytes();
         }
 
@@ -179,7 +218,7 @@ public final class Res {
             int access = in.u16();
             String signature = in.optStr();
             var thrown = strings(in);
-            return new Method(access, signature, thrown, in.u8() == 1 ? Ann.decodeValue(in) : null);
+            return new Method(access, signature, thrown, in.u8() == 1 ? Ann.decodeValue(in) : null, Warnings.decode(in));
         }
     }
 

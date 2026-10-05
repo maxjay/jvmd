@@ -38,6 +38,17 @@ public final class Keys {
     /** The {@code O} key of a type: {@code zstr internalName}, the prefix of every {@code m} of its facts. */
     public static byte[] ownerKey(String internalName) { return new Codec.Writer(internalName.length() + 1).zstr(internalName).toBytes(); }
 
+    /** Empty name selects the whole member kind; TYPE selects its single header fact. */
+    public static byte[] groupKey(String type, int kind, String name) {
+        var out = new Codec.Writer().zstr(type).u8(kind);
+        if (kind != TYPE && !name.isEmpty()) out.zstr(name);
+        return out.toBytes();
+    }
+
+    public static byte[] memberTypesKey(String type, String name) {
+        return (type + "$" + name).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
     /** The {@code O} key of the type a fact belongs to. */
     public static byte[] ownerKeyOf(byte[] m) { return Arrays.copyOf(m, nul(m) + 1); }
 
@@ -51,6 +62,8 @@ public final class Keys {
 
     /** The target of an {@code E} key. */
     public static String edgeTarget(byte[] edgeKey) { return ownerOf(edgeKey); }
+
+    public static int edgeKind(byte[] edgeKey) { return edgeKey[nul(edgeKey) + 1] & 0xFF; }
 
     /** The text after the last '/' and the last '$' (A.6). */
     public static String simpleName(String internalName) {

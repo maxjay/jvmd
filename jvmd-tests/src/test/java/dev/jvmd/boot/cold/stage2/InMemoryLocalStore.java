@@ -20,6 +20,7 @@ final class InMemoryLocalStore implements LocalStore {
     private TreeMap<byte[], byte[]> records = new TreeMap<>(Arrays::compareUnsigned);
     private final ThreadLocal<List<byte[][]>> pending = ThreadLocal.withInitial(ArrayList::new);
     private final List<String> events = Collections.synchronizedList(new ArrayList<>());
+    private final List<byte[]> recordWrites = Collections.synchronizedList(new ArrayList<>());
 
     InMemoryLocalStore copy() {
         var out = new InMemoryLocalStore();
@@ -27,7 +28,14 @@ final class InMemoryLocalStore implements LocalStore {
         return out;
     }
 
-    @Override public void put(byte[] key, byte[] value) { pending.get().add(new byte[][] {key, value}); }
+    @Override public void put(byte[] key, byte[] value) {
+        if (key[0] != 'N') recordWrites.add(key);
+        pending.get().add(new byte[][] {key, value});
+    }
+
+    long writes(byte[] key) {
+        synchronized (recordWrites) { return recordWrites.stream().filter(k -> Arrays.equals(k, key)).count(); }
+    }
 
     /** The record under a key, recorded by kind: the tag before the first {@code |} of a LOCAL key, or the one-byte tag of a MACHINE key. */
     @Override public byte[] get(byte[] key) {

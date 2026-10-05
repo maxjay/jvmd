@@ -50,7 +50,7 @@ final class ModuleJob {
 
     /** A file's row before its header proof, which needs the definer indexes of the route (3.18). Nothing of its bytes. */
     private record Pending(String path, long size, long mtimeNanos, Identity kappa, Identity sum, List<String> types, List<FileRow.Fault> faults,
-                           Set<String> headerTargets, List<String> constants) { }
+                           Set<String> headerTargets, List<String> constants, List<dev.jvmd.index.layer.local.HeaderProof.Absence> absences) { }
 
     /** What {@code Stage2} needs back: the leaf. Everything else is recorded in {@link Boot}. */
     MachineLeaf run(ProjectModel.Module module, int scope) throws IOException {
@@ -95,7 +95,7 @@ final class ModuleJob {
                 var kappa = unit.kappa == null ? sums.zero() : unit.kappa; // javac could not read it: the file is a parse fault
                 if (!unit.parsed()) {
                     pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sums.zero(), List.of(),
-                            List.of(new FileRow.Fault(new byte[0], unit.parseError)), Set.of(), List.of()));
+                            List.of(new FileRow.Fault(new byte[0], unit.parseError)), Set.of(), List.of(), List.of()));
                     continue;
                 }
                 // No boot-wide memo of a file's facts (2.6): the header proof in the file row is what lets a later layer keep them.
@@ -122,7 +122,8 @@ final class ModuleJob {
                 builder.edges(result.edges());
                 var types = new ArrayList<String>();
                 for (var type : result.typeKeys()) if (kept.contains(ByteBuffer.wrap(Keys.typeKey(type)))) types.add(type);
-                pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sum, types, faults, new TreeSet<>(result.headerTargets()), result.constantTargets()));
+                var absences = dev.jvmd.index.layer.local.ProofCollector.headerAbsences(unit.declared, compiled.trees, compiled.elements, compiled.types);
+                pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sum, types, faults, new TreeSet<>(result.headerTargets()), result.constantTargets(), absences));
             }
         }
 
@@ -145,7 +146,7 @@ final class ModuleJob {
         sink.flush();
 
         // 6. Register the leaf for the modules that depend on this one.
-        boot.built.register(module.name(), module.coordinate(), scope, leaf);
+        boot.built.register(module.name(), module.coordinate(), scope, leaf, builder.a());
 
         // 7. The definer indexes of this route, then the header proof of every file from what they resolve.
         long definerStarted = System.nanoTime();
@@ -159,7 +160,13 @@ final class ModuleJob {
             constants.removeAll(p.headerTargets());
             var all = new TreeSet<>(p.headerTargets());
             all.addAll(p.constants());
-            var row = new FileRow(p.path(), p.kappa(), p.size(), p.mtimeNanos(), p.sum(), List.copyOf(p.types()), List.copyOf(p.faults()), headerProof(all, own, resolver));
+            java.util.function.Function<String, MachineLeaf> definer = type -> {
+                if (own.containsKey(type)) return leaf;
+                var external = resolver.definer(type);
+                return external == null ? null : boot.leaf(external);
+            };
+            var absences = p.absences().stream().filter(a -> dev.jvmd.index.layer.local.HeaderProof.absent(a, boot.tree, definer, boot::node)).toList();
+            var row = new FileRow(p.path(), p.kappa(), p.size(), p.mtimeNanos(), p.sum(), List.copyOf(p.types()), List.copyOf(p.faults()), headerProof(all, own, resolver), leaf.r(), absences);
             boot.files.put(row.path(), row);
             var consumer = new ReverseIndex.Consumer(row.kappa(), bound.leafSetExt());
             var named = row.headerProof().stream().map(FileRow.Proof::typeKey).collect(Collectors.toSet());

@@ -149,6 +149,7 @@ final class ModuleJob {
         facts.sort((a, b) -> Arrays.compareUnsigned(a.m(), b.m()));
         for (var fact : facts) builder.add(fact);
         var k = builder.seal();
+        store.putAnnotationLeaf(builder.a(), new dev.jvmd.index.layer.machine.AnnotationLeaf(builder.annotations(), builder.annotationEdges()).encode());
 
         // The leaf: the first job to reach this key finds or writes it, and the others take that one (Built.once). A leaf MACHINE or an
         // earlier project already holds is not built again.

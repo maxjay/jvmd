@@ -6,14 +6,18 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * The store stage 1 codes against (stage 1, 9.1): nodes (through {@link NodeSink}), leaves, paths, the root, a sync and one read.
- * Four record kinds and nothing else: {@code L|k}, {@code N|hash}, {@code P|location}, {@code ROOT}.
+ * Records: {@code L|k}, {@code AL|a}, {@code N|hash}, {@code P|location}, {@code ROOT}.
  *
- * <p>{@link #write}, {@link #putLeaf} and {@link #putPath} buffer in the calling thread's batch and {@link #flush()} commits that
+ * <p>{@link #write}, {@link #putLeaf}, {@link #putAnnotationLeaf} and {@link #putPath} buffer in the calling thread's batch and {@link #flush()} commits that
  * thread's batch atomically, so each job's nodes land as one batch. {@link #putRoot} commits at once and is only called after
  * {@link #sync()}.
  */
 public interface MachineStore extends NodeSink {
     void putLeaf(Identity k, byte[] leaf);
+    /** Idempotent, content-addressed AL|a record, in the sealing job's batch. */
+    void putAnnotationLeaf(Identity a, byte[] roots);
+    /** Optional observation before global node deduplication, for per-tree build measurements. */
+    default void nodeBuilt(String tree, dev.jvmd.core.tree.Node node) { }
     void putPath(String location, byte[] value);
     void putRoot(byte[] value);
     void sync();
@@ -24,6 +28,9 @@ public interface MachineStore extends NodeSink {
     byte[] ROOT_KEY = "ROOT".getBytes(StandardCharsets.US_ASCII);
 
     static byte[] leafKey(Identity k) { return prefixed(0x4C, k.view()); }
+    static byte[] annotationLeafKey(Identity a) {
+        return new dev.jvmd.core.tree.Codec.Writer().raw("AL|".getBytes(StandardCharsets.US_ASCII)).id(a).toBytes();
+    }
     static byte[] nodeKey(Identity hash) { return prefixed(0x4E, hash.view()); }
     static byte[] pathKey(String location) { return prefixed(0x50, location.getBytes(StandardCharsets.UTF_8)); }
 

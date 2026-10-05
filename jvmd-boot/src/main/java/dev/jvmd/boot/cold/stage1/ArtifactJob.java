@@ -147,6 +147,7 @@ public final class ArtifactJob {
         seen.faults(bh, faults); // per location, into P| at commit
 
         var k = builder.seal();
+        store.putAnnotationLeaf(builder.a(), new dev.jvmd.index.layer.machine.AnnotationLeaf(builder.annotations(), builder.annotationEdges()).encode());
         if (!leaves.claim(k)) {
             leaves.attach(bh, k, builder.a());
             sink.flush();

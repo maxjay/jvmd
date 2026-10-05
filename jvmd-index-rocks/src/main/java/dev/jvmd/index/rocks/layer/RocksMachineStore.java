@@ -48,6 +48,7 @@ public final class RocksMachineStore implements MachineStore, AutoCloseable {
     @Override public void putLeaf(Identity k, byte[] leaf) {
         try { batches.get().put(MachineStore.leafKey(k), leaf); } catch (RocksDBException e) { throw failure(e); }
     }
+    @Override public void putAnnotationLeaf(Identity a, byte[] roots) { put(MachineStore.annotationLeafKey(a), roots); }
     @Override public void putPath(String location, byte[] value) {
         try { batches.get().put(MachineStore.pathKey(location), value); } catch (RocksDBException e) { throw failure(e); }
     }
@@ -82,7 +83,7 @@ public final class RocksMachineStore implements MachineStore, AutoCloseable {
     public byte[] get(byte[] key) {
         try { return db.get(key); } catch (RocksDBException e) { throw failure(e); }
     }
-    /** Every key in the store, in order: lets tests assert that exactly the four record kinds are on disk. */
+    /** Every key in the store, in order: lets tests assert that exactly the expected record kinds are on disk. */
     public java.util.List<byte[]> keys() {
         var out = new java.util.ArrayList<byte[]>();
         try (var it = db.newIterator()) { for (it.seekToFirst(); it.isValid(); it.next()) out.add(it.key()); }

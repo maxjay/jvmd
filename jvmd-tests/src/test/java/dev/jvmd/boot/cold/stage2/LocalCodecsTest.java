@@ -36,6 +36,14 @@ class LocalCodecsTest {
 
     private static Identity id(String s) { return D.hash(s.getBytes()); }
 
+    @Test void annotationAndSourceLeafRecordsRetainFullRoots() {
+        var binding = new dev.jvmd.index.layer.local.SourceLeaf(id("k"), id("a"));
+        assertThat(dev.jvmd.index.layer.local.SourceLeaf.decode(binding.encode(), D.width())).isEqualTo(binding);
+        var roots = new dev.jvmd.index.layer.machine.AnnotationLeaf(new Root(id("A"), id("A.sum"), 73, 2), new Root(id("EA"), id("EA.sum"), 16, 1));
+        assertThat(dev.jvmd.index.layer.machine.AnnotationLeaf.decode(roots.encode(), D.width())).isEqualTo(roots);
+        assertThat(roots.encode().length).isEqualTo(4 * D.width() + 10);
+    }
+
     @Test void processorRowsRetainConfigurationAbsencesAndSharedDerivationIdentity() {
         var configuration = List.of(new ProcessorRecords.ConfigEntry("src/p/lombok.config", dev.jvmd.core.hash.Sum.forWidth(D.width()).zero()),
                 new ProcessorRecords.ConfigEntry("lombok.config", id("configuration")));

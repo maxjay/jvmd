@@ -20,6 +20,7 @@ public final class RocksLocalStore implements LocalStore, AutoCloseable {
     @Override public void write(Node node) { machine.write(node); }
     @Override public void flush() { machine.flush(); }
     @Override public void putLeaf(Identity k, byte[] leaf) { machine.putLeaf(k, leaf); }
+    @Override public void putAnnotationLeaf(Identity a, byte[] roots) { machine.putAnnotationLeaf(a, roots); }
     @Override public void putPath(String location, byte[] value) { machine.putPath(location, value); }
     @Override public void putRoot(byte[] value) { machine.putRoot(value); }
     @Override public void sync() { machine.sync(); }

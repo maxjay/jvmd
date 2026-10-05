@@ -60,6 +60,20 @@ class SourceAnnotationProjectionTest {
     }
 
     @ParameterizedTest @MethodSource("cases")
+    void exactDollarNamesAndWarningStatesMatchBinary(Digest digest, boolean parameters) throws Exception {
+        compare(digest, parameters, false, """
+                package p;
+                @Deprecated(since="1", forRemoval=false) public class K {
+                    public static class Foo$Bar {}
+                    public static class Other { public static class Bar {} }
+                    @Deprecated(since="2", forRemoval=true) public int field;
+                    @Deprecated(since="3") @SafeVarargs public static <T> void call(T... values) {}
+                }
+                class Top$Level {}
+                """);
+    }
+
+    @ParameterizedTest @MethodSource("cases")
     void sourceExtractionDoesNotAttributeBodies(Digest digest, boolean parameters) throws Exception {
         compare(digest, parameters, true, """
                 package p;

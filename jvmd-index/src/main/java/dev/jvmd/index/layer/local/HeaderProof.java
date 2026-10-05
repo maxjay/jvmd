@@ -25,7 +25,7 @@ public final class HeaderProof {
     public static boolean absent(Absence entry, ContentTree tree, Function<String, MachineLeaf> definer, Function<Identity, byte[]> nodes) {
         var leaf = definer.apply(entry.type());
         if (entry.form() == 0) return leaf == null;
-        return leaf != null && tree.rangeSum(leaf.k(), nodes, entry.key()).equals(tree.sums().zero());
+        return leaf != null && tree.rangeSum(leaf.nHash(), nodes, entry.key()).equals(tree.sums().zero());
     }
 
     public static boolean valid(FileRow row, ContentTree tree, MachineLeaf own, Route route, Function<byte[], byte[]> records) {

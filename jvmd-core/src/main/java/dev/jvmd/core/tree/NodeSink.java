@@ -4,4 +4,6 @@ package dev.jvmd.core.tree;
 public interface NodeSink {
     void write(Node node);
     void flush();
+    /** Optional build instrumentation; naming a sink never changes a node's bytes or identity. */
+    default NodeSink named(String tree) { return this; }
 }

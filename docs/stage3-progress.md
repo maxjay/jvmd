@@ -1,6 +1,6 @@
 # Stage 3 implementation and evidence
 
-Specification: [jvmd-stage3-bodies.md](jvmd-stage3-bodies.md), supplied by Max on 2026-10-05.
+Specification snapshot: [jvmd-stage3-bodies.md](jvmd-stage3-bodies.md), authoritative **revision 123**, re-supplied by Max from `Downloads/jvmd-stage3-bodies.md` on 2026-10-05 at 22:50 BST. This is a verbatim snapshot, refreshed for this PR; the authoritative document and Max's explicit conversation clarifications take precedence. It is not independently maintained.
 Base: `617dbfd8`, Stage 2 (#58). Working branch: `feat/jvmd-stage-3`.
 The objective is the entire specification. None of the gates below is complete until its evidence is recorded.
 
@@ -41,7 +41,7 @@ Each PR must include the input-coverage audit from §2.2, sum semantics with per
 
 ## Specification questions to resolve with executable evidence
 
-- The independent whole-module javac oracle is explicitly required by invariant 1; the blanket ban on multi-source test tasks in §10 conflicts with that requirement. Production Attribute remains strictly one compilation unit; the independent oracle must use the required whole-module task.
+- **Resolved in revision 123:** production Attribute remains strictly one compilation unit; Do-not 5 explicitly permits the independent whole-module javac oracle required by invariant 1.
 - **Resolved by Max, 2026-10-05:** PD must use a first-class canonical processor-visible element projection, not file bytes, oSum or A. It includes kind/name/modifiers, all annotations (including SOURCE retention and values), type parameters/bounds, superclass/interfaces, member declarations/descriptors/signatures/throws/defaults/constants/parameter names, nesting, and source path. It excludes executable bodies, expression trees, locals and local classes. Store the projection as the PD value and use `Digest(elementKey || projection)` as h. A body-reading processor requires explicit body read proofs or is unsupported for reuse; never widen. Add direct body-versus-declaration/annotation mutation tests. Isolating GEN still contains κ_file; the blanket body-edit claim in §3.5 is narrowed accordingly.
 - Earlier review paragraphs contain superseded keys/identities; use the final definitions, codecs and E.5/F amendments, and record any remaining incompatibility instead of silently weakening guarantees.
 
@@ -68,6 +68,42 @@ mvn -B -pl jvmd-tests -am test '-Dtest=MachineColdBootTest,ClassMemoTest,Content
 
 Appendix A landed on main in [PR #59](https://github.com/maxjay/jvmd/pull/59), merge commit `20e825a3`, on 2026-10-05. GitHub's initial test job, manual dispatch and retry never acquired a hosted runner and were canceled without running code; the benchmark job failed for the same infrastructure reason. That limitation is recorded in the PR. Landing used the passing local 202-test gate plus the 8-case body-exclusion rerun, not a claimed CI pass. Body attribution, the two-sided javac read-set oracle and all Stage 3 result/driver invariants are still outstanding. `warm/` still contains only its original `package-info.java`.
 
+
+## PR 59 review corrections
+
+The review was submitted at 20:49 UTC, after PR 59 merged at 20:39 UTC. Its seven findings are tracked in this follow-up, separately from the unfinished Appendix F work.
+
+1. Persist `SL|projectKey|module|scope = k || a` with the module records and include it in LOCAL. Both sealers write `AL|a` containing the full A and EA Roots before API-leaf deduplication. Tests recover an unreferenced module entirely from committed records, reopen Rocks records, and preserve both annotation identities when two jars share k.
+2. Store exact InnerClasses `innerName` in Res.Type; source uses the completed element name. N is rekeyed as `zstr simpleName || kind || [TYPE: zstr outer-or-empty] || m`, preserving one entry and the same h per fact. Form-1 header absences read N. Dollar-name fixtures check direct versus nested names, top-level dollar identifiers, source/class parity and client compilation against stubs.
+3. Warning projection is three bytes: Deprecated attribute, deprecation state (absent/present/forRemoval), SafeVarargs presence. `since` and explicit false defaults do not move it. Tests include attribute-only deprecation and real-class/stub diagnostics at generic varargs call sites under `-Xlint:unchecked`.
+4. Package-valued heads of qualified header references now record package and inherited-member absences, without an answered-package exclusion. Package declarations and executable bodies are excluded. Adding p/java invalidates the qualified-header consumer only.
+5. Permutation tests compute the old unbound sum explicitly and prove it unchanged for constant-value, throws-list and two-owner member-set exchanges, while keyed member ranges, owner sums and r move.
+6. Controlled Stage 1 measurement runs the same harness at the pre-Appendix-A base and this head, with an exact path-to-byte-hash inventory and JDK image identity. Build callbacks identify T/N/E/O/A/EA/MACHINE nodes before global deduplication. The matching inventory/JDK identities, per-tree counts, raw reports and base instrumentation patch are in [layout4-review-measurements.md](layout4-review-measurements.md). Both digest runs passed at base and head with zero faults.
+7. This PR refreshes the repository snapshot verbatim to revision 123. The earlier source-annotation and processor-element/GEN-output-tree clarifications remain recorded in this progress document and the conversation; Appendix F is not changed by this follow-up. The snapshot still has inconsistent older F wording, which must be reconciled with those explicit clarifications when F resumes.
+
+The first new regressions failed in all eight expected cases (four defects, two digests). The expanded repair run passed 166 tests (`review-expanded.log`); later additions and instrumentation require the final gate below. Stage 3 is not complete.
+
+The revision-123 snapshot SHA-256 is `45df0d15f8e2a3dc305860721806e39b00575944838875dbfb5dd1a84162230a`, identical to the re-supplied Downloads file. Stage 2 C.1's add-exports rule is stated in the implementation audit without editing the authoritative snapshot.
+
+
+### Review correction final gate, 2026-10-05 22:59 BST
+
+**227 tests passed**, no failures/errors/skips, in 2m53s (`review-final-gate.log`). This includes both digest families, source/binary projection parity, exact-name and warning regressions, persisted roots, real/stub diagnostics, memory/Rocks stores, Maven integration and the project oracle. The controlled Stage 1 comparison separately passed two tests at base and two at head. No production code changed after these runs. Whitespace checks pass; warm remains untouched.
+
+The project oracle covers 13 modules, 26 scopes and 492 sources, with 91 jars indexed on the spot. Both digests have k equality in **26/26** scopes, no annotation identity differences and zero faults:
+
+| Digest | Wall ms | Header ms | Facts ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,351 | 3,107 | 1,152 | 124 | 22,135 |
+| SHA3-256 | 3,379 | 2,020 | 621 | 142 | 22,157 |
+
+Maven model/build time (26.4/25.9s) is excluded. Sampled used heap above baseline was 829/645 MB, without controlling intervening GC. The raw reports are [SHA-256](measurements/layout4-review-stage2-SHA-256.txt) and [SHA3-256](measurements/layout4-review-stage2-SHA3-256.txt).
+
+```powershell
+mvn -B -pl jvmd-tests -am test '-Dtest=MachineColdBootTest,ClassMemoTest,ContentTreeTest,ContentTreeEditTest,ZipReaderTest,RocksMachineBootTest,LocalColdBootTest,LocalCodecsTest,FactCodecsTest,RocksLocalBootTest,Layout4Test,HeaderAbsencesTest,SourceAnnotationProjectionTest,TailStrippingTest,StubProjectionTest,PersistedLeavesTest,MavenProjectTest,Stage2Measurement' '-DexcludedGroups=none' '-Djvmd.stage2.workers=4' '-Dsurefire.failIfNoSpecifiedTests=false'
+```
+
+
 ## Appendix F work in progress
 
 - Processor declaration projection tests were written first, then implemented from completed Elements/TypeMirrors. Both digests preserve PD on body/local-declaration edits and change it for SOURCE annotations, signature/bounds/parameter names/constants/enclosed declarations/source paths. Domain insertion is checked with Diff and conservation.
@@ -81,7 +117,7 @@ Appendix A landed on main in [PR #59](https://github.com/maxjay/jvmd/pull/59), m
 - A deliberately body-reading aggregate unwraps the native processing environment and calls Trees. That regression failed before the change. The native javac Trees instance now observes syntax escaping through getTree/getPath during processor execution; unproved syntax access disables generator reuse while generation continues. Verified Lombok overlays remain supported. This closes the tested native-Trees escape, not every possible use of reflection or compiler internals.
 - Full driver fixtures now cover Lombok configuration add/edit/delete at two directory depths (exact RES changes and affected file contexts/facts), same-API processor byte replacement (unchanged route/own leaves, changed processor identity and generated bytes), undeclared/multiple-origin violations, AutoValue, aggregate declaration/body/domain edits, output determinism and concurrency. An independent native javac header task also agrees with the wrapped Lombok task and compiled class facts. The expanded component gate passed 51 cases, followed by 28 processor/oracle cases after adding the explicit unsupported-driver fixtures (`stage3-processor-expanded-gate.log`, `stage3-processor-direct-oracle.log`).
 - Generated-source syntax diagnostics are classified with javac's SYNTAX flag after deferred processor diagnostics are released; malformed generated files have parse faults and no partial declaration facts. The focused repair plus locale/charset and existing fault-grain regressions passed 8 cases (`stage3-generated-fault-repair.log`). FORMAT pins the full runtime version; compiler inputs include explicit source encoding and selected processor names. Ordinary declaration faults still come from SourceFacts at declaration grain.
-- Appendix F is still incomplete: audit arbitrary Elements/Types queries, raw compiler access and standard Trees.instance(wrapper) compatibility; cover processors that produce no output on their first run and isolating derivations with zero outputs; retain processor-emitted diagnostics; finish the input/sum audit and measurements. A declared incremental capability alone is not evidence for unrecorded reads outside the source projection/header proof. No general reuse-soundness claim or PR B completion is made yet. The new F code is uncommitted and is not in PR #59; all Stage 3 body/result/driver work remains pending.
+- Appendix F is still incomplete: audit arbitrary Elements/Types queries, raw compiler access and standard Trees.instance(wrapper) compatibility; cover processors that produce no output on their first run and isolating derivations with zero outputs; retain processor-emitted diagnostics; finish the input/sum audit and measurements. A declared incremental capability alone is not evidence for unrecorded reads outside the source projection/header proof. No general reuse-soundness claim or PR B completion is made yet. The F code is checkpointed locally in f78b5f1a and is not in PR #59 or #60; all Stage 3 body/result/driver work remains pending.
 - **Resolved by Max:** GEN holds a ContentTree root over output-kind/path to content id, with key-bound entry hashes; GS stores generated source bytes by content id. Generated rows share the input derivation id. Exact output comparison uses root hashes and Diff; the natural output sum is not another dependency or key. Tests must prove clean-run determinism, shared blobs/nodes and exact correspondence between output Diff and generated-row changes.
 
 ### Appendix F regression checkpoint, 2026-10-05 22:15 BST
@@ -105,3 +141,8 @@ mvn -B -pl jvmd-tests -am test '-Dtest=MachineColdBootTest,ClassMemoTest,Content
 ### Appendix F model-query checkpoint
 
 The Elements/Types proxies now record resolved types, inherited declaration owners and negative getTypeElement probes. A synthetic isolating processor reads an unrelated dependency constant and tests a missing type; changing either updates its origin header proof and GEN identity. The real AutoValue trace includes Types.isAssignable and missing p.String/p.Override/p.Object probes. The focused Host/Read/Stage2 processor run passed 34 tests (`stage3-processor-query-proof.log`). This is still incomplete: per-output ownership of reads for multiple origins, direct Element/TypeMirror graph access and processor diagnostics remain unresolved. The current single-origin association is not claimed as general processor reuse soundness.
+
+
+PR 60 (https://github.com/maxjay/jvmd/pull/60), commit 1cd5be01, contains the review corrections. They are merged locally into feat/jvmd-stage-3 for continued work; GitHub review/CI and landing remain pending. The prior F implementation was preserved in the local checkpoint before integrating these fixes.
+
+After integrating the review corrections with the preserved processor checkpoint, **126 tests passed**, no failures/errors/skips (`stage3-review-integration.log`, 57s). This covers processor host/projection/configuration/GEN/model-read driver cases, updated codecs, header absences, exact source/class projections, persisted roots, stubs and permutation invariants. No claim of general processor-read completeness is made.

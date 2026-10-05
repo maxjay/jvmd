@@ -143,7 +143,7 @@ public final class SourceFacts {
         if (!explicitBase) requires.add(0, new Res.Requires("java.base", MANDATED, versionOf.apply("java.base")));
         var descriptor = new Res.Module(module.getName().toString(), module.getModuleType() == com.sun.source.tree.ModuleTree.ModuleKind.OPEN ? 0x0020 : 0,
                 moduleVersion, requires, exports, opens, uses, provides);
-        var res = new Res.Type(Res.Type.MODULE, ClassFile.ACC_MODULE, null, null, List.of(), List.of(), null, null, List.of(), List.of(), descriptor);
+        var res = new Res.Type(Res.Type.MODULE, ClassFile.ACC_MODULE, null, null, List.of(), List.of(), null, null, null, List.of(), List.of(), descriptor, Res.Warnings.NONE);
         var tail = Entry.NONE;
         add(out, Keys.typeKey("module-info"), "module-info", res.encode(), tail);
         out.typeKeys.add("module-info");
@@ -253,8 +253,8 @@ public final class SourceFacts {
         }
         if (!errors.isEmpty()) return;
 
-        var res = new Res.Type(kindCode, access, signature, superName, interfaces, permits, host, outer, components, metas, null, warnings(type));
-        add(out, key, Keys.simpleName(owner), res.encode(), tail(type, annotations, false, null));
+        var res = new Res.Type(kindCode, access, signature, superName, interfaces, permits, host, outer, outer == null ? null : type.getSimpleName().toString(), components, metas, null, warnings(type));
+        add(out, key, type.getSimpleName().toString(), res.encode(), tail(type, annotations, false, null));
         if (superName != null) edge(out, superName, Edges.EXTENDS, key);
         for (var i : interfaces) edge(out, i, Edges.IMPLEMENTS, key);
         for (var p : permits) edge(out, p, Edges.PERMITS, key);
@@ -577,7 +577,7 @@ public final class SourceFacts {
             if (name.equals("java.lang.Deprecated")) deprecated = annotation(a);
             if (name.equals("java.lang.SafeVarargs")) safeVarargs = annotation(a);
         }
-        return new Res.Warnings(elements.isDeprecated(element), deprecated, safeVarargs);
+        return Res.Warnings.of(elements.isDeprecated(element), deprecated, safeVarargs != null);
     }
 
     /** Annotation metadata outside the resolution projection. */

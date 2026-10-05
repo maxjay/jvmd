@@ -19,12 +19,18 @@ public final class Written {
 
     /** The sink every tree of this boot writes through: it drops a node whose hash was already written. */
     public NodeSink through(MachineStore store) {
+        return through(store, "unlabelled");
+    }
+
+    private NodeSink through(MachineStore store, String tree) {
         return new NodeSink() {
             @Override public void write(Node node) {
+                store.nodeBuilt(tree, node);
                 produced.incrementAndGet();
                 if (hashes.add(node.hash())) { nodes.incrementAndGet(); store.write(node); }
             }
             @Override public void flush() { store.flush(); }
+            @Override public NodeSink named(String name) { return through(store, name); }
         };
     }
 

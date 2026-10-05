@@ -392,6 +392,22 @@ class ProcessorStage2Test {
         assertThat(DefinerIndex.decodeRoot(annotationEdit.get(domainKey), digest.width()).sum()).isNotEqualTo(before.sum());
         assertThat(generated(annotationEdit, digest).genId()).isNotEqualTo(beforeId);
 
+        Files.writeString(file, source.replace("int body()", "/** Visible documentation. */ int body()"));
+        var commentEdit = original.copy();
+        assertThat(driver.run(commentEdit, model).faults()).isEmpty();
+        assertThat(DefinerIndex.decodeRoot(commentEdit.get(domainKey), digest.width()).sum()).isNotEqualTo(before.sum());
+        var documented = generated(commentEdit, digest);
+        assertThat(documented.genId()).isNotEqualTo(beforeId);
+        assertThat(documented.kappa()).isNotEqualTo(generated(original, digest).kappa());
+
+        Files.writeString(file, source.replace("int body()", "/** Visible documentation. */ int body()").replace("return 1;", "return 2;"));
+        var documentedBodyEdit = commentEdit.copy();
+        assertThat(driver.run(documentedBodyEdit, model).faults()).isEmpty();
+        assertThat(DefinerIndex.decodeRoot(documentedBodyEdit.get(domainKey), digest.width()))
+                .isEqualTo(DefinerIndex.decodeRoot(commentEdit.get(domainKey), digest.width()));
+        assertThat(generated(documentedBodyEdit, digest).genId()).isEqualTo(documented.genId());
+        assertThat(documentedBodyEdit.writes(LocalStore.generatedKey(documented.genId()))).isZero();
+
         Files.writeString(file, source.replace("class Other", "@Entity class Other"));
         var insertion = original.copy();
         assertThat(driver.run(insertion, model).faults()).isEmpty();
@@ -440,10 +456,16 @@ class ProcessorStage2Test {
                         if (done || annotations.isEmpty()) return false;
                         done = true;
                         var names = new TreeSet<String>();
-                        for (var annotation : annotations) for (var element : round.getElementsAnnotatedWith(annotation))
+                        int docs = 0;
+                        for (var annotation : annotations) for (var element : round.getElementsAnnotatedWith(annotation)) {
                             names.add(((TypeElement) element).getQualifiedName().toString());
+                            for (var member : element.getEnclosedElements()) {
+                                var comment = processingEnv.getElementUtils().getDocComment(member);
+                                if (comment != null) docs += comment.hashCode();
+                            }
+                        }
                         try (var out = processingEnv.getFiler().createSourceFile("p.Registry").openWriter()) {
-                            out.write("package p; public class Registry { public static final String NAMES = \\\"" + String.join(",", names) + "\\\"; }");
+                            out.write("package p; public class Registry { public static final String NAMES = \\\"" + String.join(",", names) + "\\\"; public static final int DOCS = " + docs + "; }");
                         } catch (java.io.IOException e) { throw new RuntimeException(e); }
                         return true;
                     }

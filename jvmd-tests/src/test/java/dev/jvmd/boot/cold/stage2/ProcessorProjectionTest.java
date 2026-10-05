@@ -49,6 +49,26 @@ class ProcessorProjectionTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void declarationDocCommentsAreObservableButOrdinaryAndBodyCommentsAreNot(Digest digest) throws Exception {
+        var before = project(digest, SOURCE, "p/E.java");
+        for (var changed : List.of(
+                SOURCE.replace("@Entity(\"x\")", "/** Entity documentation. */ @Entity(\"x\")"),
+                SOURCE.replace("public static final", "/** Constant documentation. */ public static final"),
+                SOURCE.replace("String method", "/** Method documentation. */ String method"),
+                SOURCE.replace("class Nested", "/** Nested documentation. */ class Nested"),
+                SOURCE.replace("int value;", "/** Field documentation. */ int value;"))) {
+            var after = project(digest, changed, "p/E.java");
+            assertThat(after.root.hash()).as(changed).isNotEqualTo(before.root.hash());
+            assertThat(after.root.sum()).as(changed).isNotEqualTo(before.root.sum());
+        }
+        assertThat(project(digest, SOURCE.replace("String method", "/* Ordinary comment. */ String method"), "p/E.java").root).isEqualTo(before.root);
+        assertThat(project(digest, SOURCE.replace("return \"old\";", "/** Local documentation. */ class Local {} return \"old\";"), "p/E.java").root).isEqualTo(before.root);
+        var documented = SOURCE.replace("String method", "/** First. */ String method");
+        assertThat(project(digest, documented.replace("First.", "Second."), "p/E.java").root)
+                .isNotEqualTo(project(digest, documented, "p/E.java").root);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void everyObservableDeclarationChangeMovesTheProjection(Digest digest) throws Exception {
         var before = project(digest, SOURCE, "p/E.java");
         for (var changed : List.of(

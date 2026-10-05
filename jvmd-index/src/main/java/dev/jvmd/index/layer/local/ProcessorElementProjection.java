@@ -26,8 +26,8 @@ import javax.lang.model.util.Types;
 
 /**
  * Appendix F's processor-visible source declarations. This is independent of the binary resolution and annotation projections:
- * SOURCE annotations, parameter names and declaration structure are observable here. Only completed Elements/TypeMirrors are
- * read; no Trees, initializer syntax, executable bodies or local declarations enter the projection.
+ * SOURCE annotations, parameter names, doc comments and declaration structure are observable here. Only the completed Element
+ * model and Elements API are read; no Trees, initializer syntax, executable bodies or local declarations enter the projection.
  */
 public final class ProcessorElementProjection {
     private final Elements elements;
@@ -60,6 +60,10 @@ public final class ProcessorElementProjection {
 
     private void declaration(Codec.Writer out, Element element) {
         out.str(element.getKind().name()).str(element.getSimpleName().toString());
+        // Preserve absence separately from an empty doc comment: Elements.getDocComment exposes both states.
+        var comment = elements.getDocComment(element);
+        out.u8(comment == null ? 0 : 1);
+        if (comment != null) out.str(comment);
         var modifiers = element.getModifiers().stream().map(Enum::name).sorted().toList();
         out.u32(modifiers.size());
         for (var modifier : modifiers) out.str(modifier);

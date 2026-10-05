@@ -37,7 +37,10 @@ public final class ProofCollector {
         packages.add("java/lang");
         var explicit = new HashSet<String>();
         var memberImports = new LinkedHashSet<String>();
+        var found = new LinkedHashSet<HeaderProof.Absence>();
         for (var imported : unit.getImports()) {
+            // Imports classify absolute package/type prefixes too; the main scanner deliberately skips imports.
+            packagePrefixes(TreePath.getPath(unit, imported.getQualifiedIdentifier()), trees, found);
             String name = imported.getQualifiedIdentifier().toString();
             if (name.endsWith(".*") && imported.getQualifiedIdentifier() instanceof MemberSelectTree selection) {
                 var owner = trees.getElement(TreePath.getPath(unit, selection.getExpression()));
@@ -49,7 +52,6 @@ public final class ProofCollector {
         String ownPackage = unit.getPackageName() == null ? "" : unit.getPackageName().toString().replace('.', '/');
         var own = new HashSet<String>();
         for (var declaration : declarations) ownTypes(declaration, elements, own);
-        var found = new LinkedHashSet<HeaderProof.Absence>();
         new TreePathScanner<Void, Void>() {
             @Override public Void visitImport(ImportTree node, Void p) { return null; }
             @Override public Void visitPackage(PackageTree node, Void p) { return null; }
@@ -77,6 +79,12 @@ public final class ProofCollector {
                 }
                 if (element instanceof VariableElement variable && variable.getConstantValue() != null) scan(node.getInitializer(), p);
                 return null;
+            }
+
+            @Override public Void visitMemberSelect(MemberSelectTree node, Void p) {
+                if (trees.getElement(getCurrentPath()) instanceof javax.lang.model.element.PackageElement pkg)
+                    found.add(new HeaderProof.Absence(0, pkg.getQualifiedName().toString().replace('.', '/'), ""));
+                return super.visitMemberSelect(node, p);
             }
 
             @Override public Void visitIdentifier(IdentifierTree node, Void p) {
@@ -116,6 +124,15 @@ public final class ProofCollector {
         }.scan(unit, null);
         return found.stream().sorted(Comparator.comparingInt(HeaderProof.Absence::form)
                 .thenComparing(HeaderProof.Absence::type).thenComparing(HeaderProof.Absence::name)).toList();
+    }
+
+    private static void packagePrefixes(TreePath path, Trees trees, Set<HeaderProof.Absence> into) {
+        while (path != null) {
+            if (trees.getElement(path) instanceof javax.lang.model.element.PackageElement pkg)
+                into.add(new HeaderProof.Absence(0, pkg.getQualifiedName().toString().replace('.', '/'), ""));
+            if (!(path.getLeaf() instanceof MemberSelectTree selection)) break;
+            path = new TreePath(path, selection.getExpression());
+        }
     }
 
     private static String qualified(String pkg, String name) { return pkg.isEmpty() ? name : pkg + "/" + name; }

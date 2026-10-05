@@ -1224,12 +1224,12 @@ class LocalColdBootTest {
         assertThat(bmp.compareTo(supplementary)).as("String order puts the supplementary one first").isGreaterThan(0);
         var oSum = digest.hash("o".getBytes());
         var typeKey = new dev.jvmd.core.tree.Codec.Writer().zstr("p/O").toBytes();
-        byte[] first = new dev.jvmd.core.tree.Codec.Writer().zstr(bmp).u16(9).toBytes();
-        byte[] second = new dev.jvmd.core.tree.Codec.Writer().zstr(supplementary).u16(8).toBytes();
+        byte[] first = new dev.jvmd.core.tree.Codec.Writer().zstr(bmp).optStr("\uFF21").u16(9).toBytes();
+        byte[] second = new dev.jvmd.core.tree.Codec.Writer().zstr(supplementary).optStr("\uD835\uDC00").u16(8).toBytes();
         var expected = digest.hash(typeKey, oSum.view(), first, second); // bytes order: EF.. before F0..
         var wrongOrder = digest.hash(typeKey, oSum.view(), second, first);
-        var a = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(bmp, 9), new Stubs.Member(supplementary, 8)));
-        var b = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(supplementary, 8), new Stubs.Member(bmp, 9)));
+        var a = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(bmp, "\uFF21", 9), new Stubs.Member(supplementary, "\uD835\uDC00", 8)));
+        var b = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(supplementary, "\uD835\uDC00", 8), new Stubs.Member(bmp, "\uFF21", 9)));
         assertThat(a).as("whatever order the members arrive in").isEqualTo(b);
         assertThat(a).isEqualTo(expected).isNotEqualTo(wrongOrder);
         assertThat(Stubs.stKey(digest, "p/O", oSum, List.of())).as("no members: exactly Digest(typeKey || oSum)").isEqualTo(digest.hash(typeKey, oSum.view()));

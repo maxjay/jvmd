@@ -80,7 +80,63 @@ class StubProjectionTest {
         assertThat(diagnostics(dir.resolve("deprecated-stub"), projected, "class Use { p.K field; }", "-Xlint:deprecation")).isEqualTo(real);
     }
 
+    @ParameterizedTest @MethodSource("digests")
+    void exactMemberInnerNameParticipatesInTheOuterStubCacheIdentity(Digest digest) throws Exception {
+        var classes = Stage2Support.compile(dir.resolve("renamed-inner"), Map.of("p/K.java",
+                "package p; public class K { public static class Foo {} }"), List.of(), List.of());
+        var changed = new java.util.TreeMap<String, byte[]>();
+        var cf = ClassFile.of();
+        for (var entry : classes.entrySet()) changed.put(entry.getKey(), cf.transformClass(cf.parse(entry.getValue()), (builder, element) -> {
+            if (element instanceof java.lang.classfile.attribute.InnerClassesAttribute inner) {
+                builder.with(java.lang.classfile.attribute.InnerClassesAttribute.of(inner.classes().stream().map(info ->
+                        info.innerClass().asInternalName().equals("p/K$Foo")
+                                ? java.lang.classfile.attribute.InnerClassInfo.of(info.innerClass().asSymbol(), info.outerClass().map(c -> c.asSymbol()),
+                                    java.util.Optional.of("Renamed"), info.flagsMask()) : info).toList()));
+            } else builder.with(element);
+        }));
+        var originalType = Res.Type.decode(ClassFacts.of(digest, classes.get("p/K$Foo.class"), "p/K$Foo").facts().getFirst().res());
+        var changedType = Res.Type.decode(ClassFacts.of(digest, changed.get("p/K$Foo.class"), "p/K$Foo").facts().getFirst().res());
+        assertThat(changedType.access()).isEqualTo(originalType.access());
+        assertThat(changedType.innerName()).isEqualTo("Renamed");
+        assertThat(ClassFacts.of(digest, changed.get("p/K.class"), "p/K").facts().stream().map(Fact::h).toList())
+                .as("the outer type's own resolution facts did not change")
+                .isEqualTo(ClassFacts.of(digest, classes.get("p/K.class"), "p/K").facts().stream().map(Fact::h).toList());
+        var lists = new java.util.HashMap<dev.jvmd.core.hash.Identity, byte[]>();
+        var types = new java.util.HashMap<dev.jvmd.core.hash.Identity, byte[]>();
+        var refs = new ArrayList<Stubs.Ref>();
+        var cache = new Stubs.Cache() {
+            @Override public byte[] list(dev.jvmd.core.hash.Identity key) { return lists.get(key); }
+            @Override public void putList(dev.jvmd.core.hash.Identity key, byte[] value) {
+                lists.put(key, value); refs.clear(); refs.addAll(Stubs.decodeList(value, digest.width()));
+            }
+            @Override public byte[] type(dev.jvmd.core.hash.Identity key) { return types.get(key); }
+            @Override public void putType(dev.jvmd.core.hash.Identity key, byte[] value) { types.put(key, value); }
+        };
+        var before = stubs(digest, classes, cache);
+        var oldKey = refs.stream().filter(r -> r.internalName().equals("p/K")).findFirst().orElseThrow().stKey();
+        var expected = stubs(digest, changed);
+        assertThat(expected.get("p/K.class")).isNotEqualTo(before.get("p/K.class"));
+        var after = stubs(digest, changed, cache);
+        var newKey = refs.stream().filter(r -> r.internalName().equals("p/K")).findFirst().orElseThrow().stKey();
+        assertThat(newKey).as("same binary name and flags, different exact inner name").isNotEqualTo(oldKey);
+        assertThat(after.get("p/K.class")).isEqualTo(expected.get("p/K.class"));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void stubMemberIdentityBindsTheNullableExactName(Digest digest) {
+        var own = digest.hash(new byte[] {1});
+        var named = Stubs.stKey(digest, "p/K", own, List.of(new Stubs.Member("p/K$Foo", "Foo", 9)));
+        var renamed = Stubs.stKey(digest, "p/K", own, List.of(new Stubs.Member("p/K$Foo", "Renamed", 9)));
+        var absent = Stubs.stKey(digest, "p/K", own, List.of(new Stubs.Member("p/K$Foo", null, 9)));
+        assertThat(named).isNotEqualTo(renamed).isNotEqualTo(absent);
+        assertThat(renamed).isNotEqualTo(absent);
+    }
+
     private Map<String, byte[]> stubs(Digest digest, Map<String, byte[]> classes) throws Exception {
+        return stubs(digest, classes, Stubs.Cache.NONE);
+    }
+
+    private Map<String, byte[]> stubs(Digest digest, Map<String, byte[]> classes, Stubs.Cache cache) throws Exception {
         var tree = new ContentTree(digest);
         var store = new InMemoryLocalStore();
         var builder = new LeafBuilder(tree, store);
@@ -97,7 +153,7 @@ class StubProjectionTest {
         store.flush();
         assertThat(tree.rangeSum(leaf.nHash(), h -> store.get(MachineStore.nodeKey(h)), new byte[0])).isEqualTo(leaf.r());
         var result = new java.util.TreeMap<String, byte[]>();
-        for (var stub : Stubs.stubs(digest, tree, leaf, h -> store.get(MachineStore.nodeKey(h)), Stubs.Cache.NONE))
+        for (var stub : Stubs.stubs(digest, tree, leaf, h -> store.get(MachineStore.nodeKey(h)), cache))
             result.put(stub.internalName() + ".class", stub.bytes());
         return result;
     }

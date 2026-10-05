@@ -59,7 +59,15 @@ Package-valued qualified-name heads now use the same candidate universe as on-de
 
 The controlled Stage 1 comparison, including exact inventory/JDK identities and per-tree build counts, is in [layout4-review-measurements.md](layout4-review-measurements.md). The earlier Stage 2 timing was not evidence for the requested Stage 1 comparison.
 
-The verbatim revision-123 snapshot still says an old unbound sum would preserve each individual x/y range in its introductory counterexample; that sentence is mathematically inaccurate. The executable counterexample asserts equality of the whole unbound sum, as invariant 25 and the review request specify. It does not claim equality of an individual old one-entry range. The snapshot also retains a T reference for member-type absences in A.1; the exact N rule from 2.3 and the review governs the implementation. These are snapshot inconsistencies, not alternative implementations.
+Revision 123 says an old unbound sum would preserve each individual x/y range in its introductory counterexample; that sentence is mathematically inaccurate. The executable counterexample asserts equality of the whole unbound sum, as invariant 25 and the review request specify. It does not claim equality of an individual old one-entry range. The 2026-10-06 review amendment repairs the separate T/N inconsistency throughout the authoritative document and its snapshot: form-1 reads N, independently of the enclosing type's oSum once global shortcuts fail.
+
+### Second full-diff review
+
+The ST key now binds the exact member projection emitted in the outer stub: sorted `zstr internalName || opt<str> innerName || u16 innerFlags`. It still excludes member oSum. A class-file transformation holds the member's binary name/flags and every outer resolution fact fixed while changing innerName; the uncached outer bytes change, its ST key changes, and a shared cache returns the new bytes. Null versus present names and unsigned-byte ordering are checked separately. Existing member-method edits still leave the outer key unchanged.
+
+Each package-valued MemberSelect in a header now records an exact form-0 absence; imports walk their package prefixes too. Tests cover q.r and q.r.s becoming types in either the own module or the route, qualified references and on-demand imports, with unrelated body-only users retaining valid header proofs. This follows recursive package/type classification in [JLS 6.5.2](https://docs.oracle.com/javase/specs/jls/se25/html/jls-6.html#jls-6.5.2) and [6.5.4.2](https://docs.oracle.com/javase/specs/jls/se25/html/jls-6.html#jls-6.5.4.2); no package-wide identity is added.
+
+The source/class annotation fixtures now independently build N, verify each root against its stored nodes, and compare Diff, hash and sum alongside k/A/EA/a. The adversarial dollar-name case therefore pins the changed by-name projection directly. A separate assertion shows Base.Foo insertion changes its N absence with oSum(Base) equal. The specification now dispatches Arrange/Valid by form and names the generic reverse range index X|G with form in the key; LIVE's N delta path is explicitly independent of its owner O delta. No Stage 3 production record is introduced in this correction.
 
 
 ### Stage 2 C.1 classpath-mode amendment

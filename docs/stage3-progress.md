@@ -1,6 +1,6 @@
 # Stage 3 implementation and evidence
 
-Specification snapshot: [jvmd-stage3-bodies.md](jvmd-stage3-bodies.md), authoritative **revision 123**, re-supplied by Max from `Downloads/jvmd-stage3-bodies.md` on 2026-10-05 at 22:50 BST. This is a verbatim snapshot, refreshed for this PR; the authoritative document and Max's explicit conversation clarifications take precedence. It is not independently maintained.
+Specification snapshot: [jvmd-stage3-bodies.md](jvmd-stage3-bodies.md), authoritative **revision 123 with the 2026-10-06 PR 60 review amendment**. Max re-supplied revision 123 from `Downloads/jvmd-stage3-bodies.md` on 2026-10-05 at 22:50 BST; his subsequent review supplied the amendment. The authoritative Downloads document and this snapshot were updated together. The authoritative document and Max's explicit conversation clarifications take precedence; this copy is not independently maintained.
 Base: `617dbfd8`, Stage 2 (#58). Working branch: `feat/jvmd-stage-3`.
 The objective is the entire specification. None of the gates below is complete until its evidence is recorded.
 
@@ -83,7 +83,7 @@ The review was submitted at 20:49 UTC, after PR 59 merged at 20:39 UTC. Its seve
 
 The first new regressions failed in all eight expected cases (four defects, two digests). The expanded repair run passed 166 tests (`review-expanded.log`); later additions and instrumentation require the final gate below. Stage 3 is not complete.
 
-The revision-123 snapshot SHA-256 is `45df0d15f8e2a3dc305860721806e39b00575944838875dbfb5dd1a84162230a`, identical to the re-supplied Downloads file. Stage 2 C.1's add-exports rule is stated in the implementation audit without editing the authoritative snapshot.
+Before the second review amendment below, the revision-123 snapshot SHA-256 was `45df0d15f8e2a3dc305860721806e39b00575944838875dbfb5dd1a84162230a`, identical to the re-supplied Downloads file. Stage 2 C.1's add-exports rule is stated in the implementation audit.
 
 
 ### Review correction final gate, 2026-10-05 22:59 BST
@@ -194,3 +194,27 @@ The expanded processor/configuration/output/environment/architecture gate passed
 A later focused **6-test** run passed (`stage3-model-mirrors.log`, 11s), adding native-versus-wrapped `MirroredTypeException` and `MirroredTypesException` checks for class-valued runtime annotations. Only import/comment cleanup and removal of an unused constructor followed the 84-case gate; no behavior changed before this focused run.
 
 This remains a checkpoint, not completion of the processor proof contract. The transcript is a fresh invocation observation, not yet a persisted independently replayable query proof. Batched isolating processors with multiple source origins still need sound assignment of observations to individual derivations; the existing single-origin rule does not solve that. Processor-internal identity hash codes, arbitrary native/reflection access, and standard Trees.instance(wrapper) compatibility are not claimed as solved. Appendix F's final input audit and measurements, and all Stage 3 body/result/driver work, remain pending. PR 60 remains open until Max explicitly approves merging it.
+
+### Second full-diff review gate, 2026-10-06 00:19 BST
+
+The two production defects each failed their new regression under both digests before repair (four expected failures, no errors, `review-second-red.log`). The final gate passed **237 tests**, with no failures/errors/skips, in 3m30s (`review-second-final-gate.log`).
+
+- ST binds exactly the direct-member InnerClasses projection, including nullable innerName and emitted flags. A transformed class file keeps binary name, flags and every outer fact unchanged while changing innerName; the outer key and bytes change, including with a populated shared cache. A method edit inside the member still preserves the outer key.
+- Package-valued MemberSelect prefixes and import prefixes contribute exact type absences. Introducing q.r or q.r.s in either the own module or a route provider invalidates qualified-header and on-demand-import consumers while the body-only consumer remains valid.
+- Source and binary builders independently build and verify N, comparing Diff, hash and sum in the dollar-name fixture and the other source annotation fixtures. The member-absence regression also proves Base.Foo insertion changes N with oSum(Base) equal.
+- The authoritative Downloads file and repository snapshot were amended together: Arrange/Valid dispatch T versus N; only T uses the owner oSum gate; X|G includes form; LIVE consumes Diff(N) independently of the owner O delta. This is explicitly revision 123 plus the 2026-10-06 review amendment, not a newly asserted upstream revision. Both files have SHA-256 `0287cd8fe43c009c3e94dc3b07bd32dfaca40d75cf4b12c260e7fd67403bb039`.
+
+The project oracle again covers 13 modules, 26 scopes and 492 sources, with 91 jars indexed on the spot. Both digests have k equality in **26/26** scopes, no annotation identity differences and zero faults:
+
+| Digest | Wall ms | Header ms | Facts ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,742 | 3,171 | 1,224 | 108 | 22,136 |
+| SHA3-256 | 5,712 | 4,105 | 1,369 | 282 | 22,153 |
+
+Maven model/build time (29.6/38.9s) is excluded. Sampled used heap above baseline was 682/1,407 MB, without controlling intervening GC. These sequential measurements are not a performance comparison. Raw reports: [SHA-256](measurements/layout4-review2-stage2-SHA-256.txt), [SHA3-256](measurements/layout4-review2-stage2-SHA3-256.txt). The controlled Stage 1 reports above remain the evidence for the original Appendix A tree-layout comparison.
+
+```powershell
+mvn -B -pl jvmd-tests -am test '-Dtest=MachineColdBootTest,ClassMemoTest,ContentTreeTest,ContentTreeEditTest,ZipReaderTest,RocksMachineBootTest,LocalColdBootTest,LocalCodecsTest,FactCodecsTest,RocksLocalBootTest,Layout4Test,HeaderAbsencesTest,SourceAnnotationProjectionTest,TailStrippingTest,StubProjectionTest,PersistedLeavesTest,MavenProjectTest,Stage2Measurement,ModuleArchitectureTest,ForbiddenIdentifiersTest' '-DexcludedGroups=none' '-Djvmd.stage2.workers=4' '-Dsurefire.failIfNoSpecifiedTests=false'
+```
+
+The previous hosted Tests and benchmark workflows passed at 08534aa2. Those runs do not cover this amendment; fresh exact-head CI is required. PR #60 remains open pending Max's explicit merge approval. Appendix F and Stage 3 body attribution remain unfinished, and warm remains untouched.

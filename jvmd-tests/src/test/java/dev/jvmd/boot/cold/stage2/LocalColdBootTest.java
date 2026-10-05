@@ -1322,6 +1322,40 @@ class LocalColdBootTest {
         assertSameEdges(digest, edit);
     }
 
+    /** A private constant is not a fact, but its initialiser folds into a public one: {@code A = lib.K.VALUE} (private), {@code B = A + 1}. */
+    @ParameterizedTest @MethodSource("digests")
+    void aPrivateConstantFeedingAPublicOneIsInTheProof(Digest digest) throws Exception {
+        var edit = edited(digest, with(NOTHING, Map.of(
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; }",
+                "app/src/main/java/app/Chain.java", "package app; public class Chain { private static final int A = lib.K.VALUE; public static final int B = A + 1; }")),
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; }");
+        assertKind8(digest, edit, "Chain", "lib/K", true);
+        assertSameEdges(digest, edit);
+    }
+
+    /** The same through a private constant used in a public annotation value. */
+    @ParameterizedTest @MethodSource("digests")
+    void aPrivateConstantInAnAnnotationValueIsInTheProof(Digest digest) throws Exception {
+        var edit = edited(digest, with(NOTHING, Map.of(
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; }",
+                "lib/src/main/java/lib/Foo.java", "package lib; public @interface Foo { int value(); }",
+                "app/src/main/java/app/Tagged.java", "package app; @lib.Foo(Tagged.A) public class Tagged { private static final int A = lib.K.VALUE; }")),
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; }");
+        assertKind8(digest, edit, "Tagged", "lib/K", true);
+        assertSameEdges(digest, edit);
+    }
+
+    /** Only a constant variable can fold (JLS 4.12.4): a final field of any other type is never scanned, so its initialiser is no dependency. */
+    @ParameterizedTest @MethodSource("digests")
+    void aFinalFieldThatCanNeverFoldIsNotInTheProof(Digest digest) throws Exception {
+        var edit = edited(digest, with(NOTHING, Map.of(
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; }",
+                "app/src/main/java/app/Boxed.java", "package app; public class Boxed { public static final Object O = lib.K.VALUE; private static final Integer P = lib.K.VALUE; public static final long OK = 5; }")),
+                "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; }");
+        assertThat(row(digest, edit.before(), "Boxed").headerProof()).extracting(FileRow.Proof::typeKey).doesNotContain("lib/K");
+        assertThat(holds(digest, edit.before(), edit.after(), "Boxed")).isTrue();
+    }
+
     /** Bodies are not declarations: a name resolved only inside a method, a lambda, an initialiser block or a non-final initialiser is not in the proof. */
     @ParameterizedTest @MethodSource("digests")
     void aNameResolvedOnlyInsideABodyIsNotInTheProof(Digest digest) throws Exception {

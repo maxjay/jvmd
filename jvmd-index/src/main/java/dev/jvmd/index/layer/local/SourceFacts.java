@@ -342,7 +342,9 @@ public final class SourceFacts {
     /**
      * Every type a declaration resolved a name through outside bodies (kind 8), whatever the declaration then did with it: one scanner
      * over the declaration's tree that skips method bodies, initialiser blocks, lambdas, nested type bodies (each nested type is a
-     * declaration of its own, scanned on its own) and the initialisers of non-final fields. Every resolved {@code TypeElement}, and the
+     * declaration of its own, scanned on its own) and the initialisers of every field that is not a constant variable (not final, or not
+     * of primitive or String type, so it can never fold). A private constant's initialiser is scanned, though the field is not a fact:
+     * it feeds public constants and annotation values. Every resolved {@code TypeElement}, and the
      * owner of every resolved {@code VariableElement}, is a target.
      *
      * <p>That covers the initialiser of a final field whether or not it folded today (javac attributes it for
@@ -373,10 +375,11 @@ public final class SourceFacts {
 
                 @Override public Void visitVariable(com.sun.source.tree.VariableTree node, Void p) {
                     var element = trees.getElement(getCurrentPath());
-                    if (element != null && element.getModifiers().contains(Modifier.PRIVATE)) return null;
-                    scan(node.getModifiers(), p);
-                    scan(node.getType(), p);
-                    if (element != null && element.getModifiers().contains(Modifier.FINAL)) scan(node.getInitializer(), p);
+                    // A private field is not a fact, so neither its modifiers nor its type are looked at; but its initialiser can fold into
+                    // the value of a public constant or an annotation value (B = A + 1, A private), so it is scanned like any other.
+                    if (element == null || !element.getModifiers().contains(Modifier.PRIVATE)) { scan(node.getModifiers(), p); scan(node.getType(), p); }
+                    // Only a constant variable can fold (JLS 4.12.4): final, of primitive or String type, with an initialiser.
+                    if (element != null && element.getModifiers().contains(Modifier.FINAL) && isConstantType(element.asType())) scan(node.getInitializer(), p);
                     return null;
                 }
 
@@ -387,6 +390,11 @@ public final class SourceFacts {
                 @Override public Void visitIdentifier(com.sun.source.tree.IdentifierTree node, Void p) { note(getCurrentPath()); return null; }
 
                 @Override public Void visitMemberSelect(com.sun.source.tree.MemberSelectTree node, Void p) { note(getCurrentPath()); return super.visitMemberSelect(node, p); }
+
+                private boolean isConstantType(TypeMirror type) {
+                    return type.getKind().isPrimitive()
+                            || (type instanceof DeclaredType d && d.asElement() instanceof TypeElement t && t.getQualifiedName().contentEquals("java.lang.String"));
+                }
 
                 private boolean isPrivate(com.sun.source.util.TreePath at) {
                     var element = trees.getElement(at);

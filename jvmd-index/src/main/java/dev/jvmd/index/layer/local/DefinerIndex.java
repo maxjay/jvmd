@@ -53,8 +53,23 @@ public final class DefinerIndex {
         final Map<String, List<Def>> counts;
         final Set<String> multi;
         final List<Identity> leaves;
+        /** The types whose definers differ from the state this one was folded from, and the disjoint tree of that state: an edit's input. */
+        final Set<String> touched;
+        final Root baseDisjoint;
+        private volatile Root disjoint;
 
-        State(Map<String, List<Def>> counts, Set<String> multi, List<Identity> leaves) { this.counts = counts; this.multi = multi; this.leaves = leaves; }
+        State(Map<String, List<Def>> counts, Set<String> multi, List<Identity> leaves, Set<String> touched, Root baseDisjoint) {
+            this.counts = counts;
+            this.multi = multi;
+            this.leaves = leaves;
+            this.touched = touched;
+            this.baseDisjoint = baseDisjoint;
+        }
+
+        /** The disjoint tree of this state, once it has been built or read; null before. A state is a base for another only after. */
+        public Root disjoint() { return disjoint; }
+
+        public void disjoint(Root root) { this.disjoint = root; }
 
         /** The sorted distinct leaf keys this state covers. */
         public List<Identity> leaves() { return leaves; }
@@ -75,13 +90,14 @@ public final class DefinerIndex {
 
         var counts = new HashMap<String, List<Def>>();
         var multi = new HashSet<String>();
+        var touched = new HashSet<String>();
         if (base != null) { counts.putAll(base.counts); multi.addAll(base.multi); }
         for (var k : removed) {
             tree.forEach(leafOf.apply(k).oHash(), reader, entry -> {
                 var key = text(entry.key());
                 var defs = new ArrayList<>(counts.get(key));
                 for (int i = 0; i < defs.size(); i++) if (defs.get(i).k().equals(k)) { defs.remove(i); break; }
-                put(counts, multi, key, defs);
+                put(counts, multi, touched, key, defs);
             });
         }
         for (var k : added) {
@@ -89,29 +105,47 @@ public final class DefinerIndex {
                 var key = text(entry.key());
                 var defs = new ArrayList<Def>(counts.getOrDefault(key, List.of()));
                 defs.add(new Def(k, entry.h()));
-                put(counts, multi, key, defs);
+                put(counts, multi, touched, key, defs);
             });
         }
-        return new State(counts, multi, List.copyOf(distinct));
+        return new State(counts, multi, List.copyOf(distinct), touched, base == null ? null : base.disjoint);
     }
 
-    private static void put(Map<String, List<Def>> counts, Set<String> multi, String key, List<Def> defs) {
+    private static void put(Map<String, List<Def>> counts, Set<String> multi, Set<String> touched, String key, List<Def> defs) {
+        touched.add(key);
         if (defs.isEmpty()) counts.remove(key); else counts.put(key, List.copyOf(defs));
         if (defs.size() > 1) multi.add(key); else multi.remove(key);
     }
 
-    /** The disjoint tree of a state: every type declared by exactly one of its leaves, {@code typeKey -> k}, {@code h = Digest(typeKey || oSum)}. */
-    public static Root disjoint(Digest digest, ContentTree tree, State state, NodeSink sink) {
+    /**
+     * The disjoint tree of a state: every type declared by exactly one of its leaves, {@code typeKey -> k}, {@code h = Digest(typeKey ||
+     * oSum)}. A state folded from another one edits that state's tree by the types the fold touched, O(changed types * depth) nodes
+     * ({@link ContentTree#apply}), and is the same tree a build over all its types would give; one folded from nothing is built.
+     *
+     * @param reader reads {@code N|hash}: the base tree's nodes
+     */
+    public static Root disjoint(Digest digest, ContentTree tree, State state, Function<Identity, byte[]> reader, NodeSink sink) {
+        if (state.baseDisjoint != null) {
+            var removed = new ArrayList<byte[]>(state.touched.size());
+            var added = new ArrayList<Entry>();
+            for (var type : state.touched) {
+                var key = type.getBytes(StandardCharsets.ISO_8859_1);
+                removed.add(key); // a key the base did not hold is a removal of nothing
+                var defs = state.counts.get(type);
+                if (defs != null && defs.size() == 1) added.add(entryOf(digest, key, defs.get(0)));
+            }
+            return tree.apply(state.baseDisjoint, removed, added, reader, sink);
+        }
         var entries = new ArrayList<Entry>();
         for (var e : state.counts.entrySet()) {
             if (e.getValue().size() != 1) continue;
-            var key = e.getKey().getBytes(StandardCharsets.ISO_8859_1);
-            var def = e.getValue().get(0);
-            entries.add(new Entry(key, def.k().bytes(), digest.hash(key, def.oSum().view())));
+            entries.add(entryOf(digest, e.getKey().getBytes(StandardCharsets.ISO_8859_1), e.getValue().get(0)));
         }
         entries.sort((a, b) -> Arrays.compareUnsigned(a.key(), b.key()));
         return tree.build(entries, sink);
     }
+
+    private static Entry entryOf(Digest digest, byte[] key, Def def) { return new Entry(key, def.k().bytes(), digest.hash(key, def.oSum().view())); }
 
     /**
      * The conflict table of a route: every type declared by more than one distinct leaf across both parts, {@code typeKey -> (first,

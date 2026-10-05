@@ -18,6 +18,9 @@ public record LocalRoot(String format, Root local, Identity machineRoot, Identit
         return new Codec.Writer(body.length + digest.width()).raw(body).id(digest.hash(body)).toBytes();
     }
 
+    /** The FORMAT a root was written under: its first field, read without verifying the rest. */
+    public static String formatOf(byte[] value) { return new Codec.Reader(value).str(); }
+
     /** Decodes and verifies the trailing digest. */
     public static LocalRoot decode(Digest digest, byte[] value) {
         int width = digest.width();

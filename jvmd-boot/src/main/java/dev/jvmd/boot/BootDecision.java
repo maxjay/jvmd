@@ -3,6 +3,7 @@ package dev.jvmd.boot;
 import dev.jvmd.boot.cold.stage1.Stage1;
 import dev.jvmd.boot.cold.stage2.Stage2;
 import dev.jvmd.index.layer.local.LocalFormat;
+import dev.jvmd.index.layer.local.LocalRoot;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.core.Config;
 import dev.jvmd.core.hash.digests.Sha256;
@@ -74,14 +75,14 @@ public final class BootDecision {
         int jdkFeature = Runtime.version().feature();
         var format = Format.of(digest, jdkFeature);
         var generation = Generation.of(indexDir, format);
-        if (!generation.hasRoot()) throw new IllegalStateException("MACHINE generation is not committed: " + generation.directory());
-        var local = generation.local(Stage2.projectKey(digest, model), LocalFormat.of(format));
-        if (local.hasLocalRoot()) {
-            LOG.log(System.Logger.Level.INFO, "local generation for {0} committed; warm boot not implemented, skipping", model.root());
-            return Optional.empty();
-        }
-        var stage2 = new Stage2(digest, new ContentTree(digest), jdkFeature, Runtime.getRuntime().availableProcessors(), repository, ClassFacts::of);
-        try (var store = local.createLocal()) {
+        // One open of the store answers everything: whether MACHINE is committed, whether this project is, and the boot itself.
+        try (var store = generation.openLocal()) {
+            var existing = store.getLocalRoot(Stage2.projectKey(digest, model));
+            if (existing != null && LocalRoot.formatOf(existing).equals(LocalFormat.of(format))) {
+                LOG.log(System.Logger.Level.INFO, "local generation for {0} committed; warm boot not implemented, skipping", model.root());
+                return Optional.empty();
+            }
+            var stage2 = new Stage2(digest, new ContentTree(digest), jdkFeature, Runtime.getRuntime().availableProcessors(), repository, ClassFacts::of);
             var result = stage2.run(store, model);
             log(result);
             return Optional.of(result);

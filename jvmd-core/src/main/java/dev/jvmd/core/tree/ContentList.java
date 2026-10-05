@@ -67,7 +67,7 @@ public final class ContentList {
 
         public Root finish() {
             close();
-            var root = upper.finishFrom();
+            var root = upper.finishUp();
             if (root != null) return root;
             var empty = Node.list(digest, sums, List.of());
             sink.write(empty);

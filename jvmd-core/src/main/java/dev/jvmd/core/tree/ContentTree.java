@@ -48,6 +48,16 @@ public final class ContentTree {
     }
 
     /**
+     * The tree that results from removing the keys {@code removed} from {@code base} and adding {@code added} (an entry whose key is
+     * already there replaces it), written to {@code sink}. It is the root a full {@link #build} over the new entries would give, because
+     * the shape is a function of the entry set, but it reads and writes the nodes along the changed paths and reuses every other
+     * subtree: O(d * depth) nodes for d changes, not the size of the tree. See {@link Edit}.
+     */
+    public Root apply(Root base, List<byte[]> removed, List<Entry> added, Function<Identity, byte[]> reader, NodeSink sink) {
+        return new Edit(this, removed, added, reader, sink).run(base);
+    }
+
+    /**
      * The sum of {@code h} over entries with {@code from <= key < to} (null bounds are open), reading O(depth) nodes: a child
      * wholly inside the range contributes its stored sum without being read.
      */

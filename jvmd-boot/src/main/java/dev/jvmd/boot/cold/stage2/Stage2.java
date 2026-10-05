@@ -45,7 +45,7 @@ public final class Stage2 {
                          long nodes, List<String> faults, long wallMillis, Root root, Map<String, Identity> leaves, Timings timings) { }
 
     /** Where the time went, summed over jobs (so more than the wall time when jobs ran in parallel): the numbers of the cost model in 7.2. */
-    public record Timings(int compiledFiles, long headerCompileMillis, long factsMillis, long definerIndexMillis) { }
+    public record Timings(int compiledFiles, long headerCompileMillis, long factsMillis, long definerIndexMillis, int externalFolds, int siblingFolds) { }
 
     private final Digest digest;
     private final ContentTree tree;
@@ -141,7 +141,8 @@ public final class Stage2 {
                 return new Result(model.modules().size(), model.modules().size() * 2, boot.sourceFiles.get(), boot.parsedFiles.get(), boot.sourceLeaves.get(),
                         boot.indexMemo.distinctLeafSets(), defaults.indexedOnTheSpot(), boot.written.count(), List.copyOf(faults),
                         (System.nanoTime() - started) / 1_000_000, local, leaves,
-                        new Timings(boot.compiledFiles.get(), boot.headerNanos.get() / 1_000_000, boot.factsNanos.get() / 1_000_000, boot.definerNanos.get() / 1_000_000));
+                        new Timings(boot.compiledFiles.get(), boot.headerNanos.get() / 1_000_000, boot.factsNanos.get() / 1_000_000, boot.definerNanos.get() / 1_000_000,
+                        boot.indexMemo.externalFolds(), boot.indexMemo.siblingFolds()));
             }
         }
     }

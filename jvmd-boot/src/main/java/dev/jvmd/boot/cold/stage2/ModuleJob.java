@@ -41,8 +41,11 @@ final class ModuleJob {
 
     ModuleJob(Boot boot) { this.boot = boot; }
 
+    /** A source file as the row records it: no bytes (they are read once, hashed, handed to javac, and let go). */
+    private record FileMeta(String path, long size, long mtimeNanos, Identity kappa) { }
+
     /** A file's row before its header proof, which needs the definer indexes of the route (3.18). */
-    private record Pending(SourceFile file, Identity sum, List<String> types, List<FileRow.Fault> faults, List<Entry> edges, List<String> constants) { }
+    private record Pending(FileMeta file, Identity sum, List<String> types, List<FileRow.Fault> faults, List<Entry> edges, List<String> constants) { }
 
     /** What {@code Stage2} needs back: the leaf. Everything else is recorded in {@link Boot}. */
     MachineLeaf run(ProjectModel.Module module, int scope) throws IOException {
@@ -66,9 +69,12 @@ final class ModuleJob {
         // 3. Header-compile the scope's source files. A module-info.java is parsed with the rest and never entered.
         var options = module.javacOptions();
         int release = HeaderCompiler.effectiveRelease(module.release(), options.contains("--enable-preview"), Runtime.version().feature());
-        var found = sources(module.scope(scope).sourceRoots());
         var toCompile = new ArrayList<HeaderCompiler.Source>();
-        for (var file : found) toCompile.add(new HeaderCompiler.Source(file.path(), file.bytes()));
+        var found = new ArrayList<FileMeta>();
+        for (var file : sources(module.scope(scope).sourceRoots())) {
+            toCompile.add(new HeaderCompiler.Source(file.path(), file.bytes()));
+            found.add(new FileMeta(file.path(), file.size(), file.mtimeNanos(), file.kappa()));
+        }
         boot.sourceFiles.addAndGet(found.size());
         var facts = new ArrayList<Fact>();
         var edges = new TreeMap<byte[], Entry>(Arrays::compareUnsigned);
@@ -78,10 +84,11 @@ final class ModuleJob {
         var compiled = HeaderCompiler.compile(toCompile, classpath, Path.of(boot.model.jdkHome()), release, options);
         boot.headerNanos.addAndGet(System.nanoTime() - headerStarted);
         boot.compiledFiles.addAndGet(toCompile.size());
+        toCompile.clear(); // the source bytes are not kept past the compile
         try (compiled) {
             var extract = new SourceFacts(digest, compiled.elements, compiled.types, compiled.trees, options.contains("-parameters"));
             var unitsByPath = new HashMap<String, HeaderCompiler.Unit>();
-            for (var u : compiled.units) unitsByPath.put(u.source.path(), u);
+            for (var u : compiled.units) unitsByPath.put(u.path, u);
             // 4. Each compilation unit, in path order.
             for (var file : found) {
                 var unit = unitsByPath.get(file.path());
@@ -255,23 +262,28 @@ final class ModuleJob {
         return new DefinerIndex.Resolver(external, sibling, bound.sequence());
     }
 
+    /**
+     * The state of one leaf set, and its disjoint record. Folded once per {@code (kind, key)} in the boot: the first job to ask claims it
+     * and the others wait for that fold ({@link IndexMemo#once}), so jobs whose routes share an external leaf set do not each fold it.
+     */
     private DefinerIndex.State state(IndexMemo.Kind kind, Identity key, List<Identity> leaves) {
-        var state = boot.indexMemo.stateFor(kind, key);
-        if (state == null) {
-            state = DefinerIndex.fold(boot.tree, leaves, boot.indexMemo.nearest(kind, leaves), boot::leaf, boot::node);
-            boot.indexMemo.put(kind, key, state);
-        }
-        if (boot.indexMemo.claimRecord(kind, key)) {
+        return boot.indexMemo.once(kind, key, () -> {
+            var state = DefinerIndex.fold(boot.tree, leaves, boot.indexMemo.nearest(kind, leaves), boot::leaf, boot::node);
             boolean external = kind == IndexMemo.Kind.EXTERNAL;
             var recordKey = external ? LocalStore.disjointKey(key) : LocalStore.siblingKey(key);
             var value = external ? boot.store.getDisjoint(key) : boot.store.getSibling(key);
-            if (value == null) {
-                value = DefinerIndex.encodeRoot(DefinerIndex.disjoint(boot.digest, boot.tree, state, boot.sink));
+            if (value != null) state.disjoint(DefinerIndex.decodeRoot(value, boot.digest.width()));
+            else {
+                // Edited from the nearest state's tree when there is one. Its nodes are read from the store, so they are committed first.
+                var root = DefinerIndex.disjoint(boot.digest, boot.tree, state, boot::node, boot.sink);
+                value = DefinerIndex.encodeRoot(root);
+                state.disjoint(root);
                 if (external) boot.store.putDisjoint(key, value); else boot.store.putSibling(key, value);
+                boot.sink.flush(); // another job may take this state as its base and read its tree
             }
             boot.definers.put(recordKey, value);
-        }
-        return state;
+            return state;
+        });
     }
 
     // ---- source files ------------------------------------------------------------------------------------------------------

@@ -284,8 +284,8 @@ class LocalColdBootTest {
         assertThat(swapped.routeHash()).isNotEqualTo(one.routeHash());
 
         var tree = new ContentTree(digest);
-        var before = DefinerIndex.disjoint(digest, tree, fold(digest, store, one.external(), null), DISCARD);
-        var after = DefinerIndex.disjoint(digest, tree, fold(digest, store, swapped.external(), null), DISCARD);
+        var before = DefinerIndex.disjoint(digest, tree, fold(digest, store, one.external(), null), nodes(store), DISCARD);
+        var after = DefinerIndex.disjoint(digest, tree, fold(digest, store, swapped.external(), null), nodes(store), DISCARD);
         assertThat(after.sum()).as("the disjoint index resolves every name identically").isEqualTo(before.sum());
         assertThat(after.hash()).as("though it stores another k").isNotEqualTo(before.hash());
     }
@@ -446,8 +446,8 @@ class LocalColdBootTest {
         assertThat(zstr(conflictsOne.get(0).key())).isEqualTo("ab/Util");
         assertThat(firstDefiner(conflictsOne.get(0), digest.width())).isEqualTo(ab);
         assertThat(firstDefiner(conflictsTwo.get(0), digest.width())).isEqualTo(x);
-        var disjointOne = DefinerIndex.disjoint(digest, tree, fold(digest, leafOf, reader, List.of(ab, x), null), written);
-        var disjointTwo = DefinerIndex.disjoint(digest, tree, fold(digest, leafOf, reader, List.of(x, ab), null), written);
+        var disjointOne = DefinerIndex.disjoint(digest, tree, fold(digest, leafOf, reader, List.of(ab, x), null), reader, written);
+        var disjointTwo = DefinerIndex.disjoint(digest, tree, fold(digest, leafOf, reader, List.of(x, ab), null), reader, written);
         assertThat(disjointTwo).as("the disjoint part is byte-identical for a permuted route").isEqualTo(disjointOne);
         assertThat(entries(digest, disjointOne, reader).stream().map(e -> zstr(e.key()))).as("shadowed types are not in it").doesNotContain("ab/Util").contains("x/Thing", "ab/Api");
 
@@ -461,14 +461,18 @@ class LocalColdBootTest {
         assertThat(firstDefiner(entries(digest, DefinerIndex.conflicts(digest, tree, external, sibling, List.of(x, ab), written), reader).get(0), digest.width())).isEqualTo(x);
         assertThat(new DefinerIndex.Resolver(external, sibling, List.of(x, ab)).oSum(new dev.jvmd.core.tree.Codec.Writer().zstr("ab/Util").toBytes())).isNotNull();
 
-        // From a base by difference, adding and removing leaves, equals from nothing; a leaf listed twice is one leaf.
+        // From a base by difference, adding and removing leaves, equals from nothing; a leaf listed twice is one leaf. The base has its tree,
+        // so the new disjoint tree is an edit of it (ContentTree.apply) and must be the tree a build over all its types gives.
+        both.disjoint(DefinerIndex.disjoint(digest, tree, both, reader, written));
         var grown = fold(digest, leafOf, reader, List.of(x, ab, t, ab), both);
         var scratch = fold(digest, leafOf, reader, List.of(x, ab, t), null);
-        assertThat(DefinerIndex.disjoint(digest, tree, grown, written)).isEqualTo(DefinerIndex.disjoint(digest, tree, scratch, written));
+        var grownTree = DefinerIndex.disjoint(digest, tree, grown, reader, written);
+        assertThat(grownTree).isEqualTo(DefinerIndex.disjoint(digest, tree, scratch, reader, written));
         assertThat(DefinerIndex.conflicts(digest, tree, grown, none, List.of(x, ab, t), written)).isEqualTo(DefinerIndex.conflicts(digest, tree, scratch, none, List.of(x, ab, t), written));
+        grown.disjoint(grownTree);
         var shrunk = fold(digest, leafOf, reader, List.of(ab), grown);
         var alone = fold(digest, leafOf, reader, List.of(ab), null);
-        assertThat(DefinerIndex.disjoint(digest, tree, shrunk, written)).isEqualTo(DefinerIndex.disjoint(digest, tree, alone, written));
+        assertThat(DefinerIndex.disjoint(digest, tree, shrunk, reader, written)).as("removing leaves, by edit").isEqualTo(DefinerIndex.disjoint(digest, tree, alone, reader, written));
         assertThat(entries(digest, DefinerIndex.conflicts(digest, tree, shrunk, none, List.of(ab), written), reader)).as("removing x leaves ab as the only definer: no conflict left").isEmpty();
         assertThat(entries(digest, DefinerIndex.conflicts(digest, tree, alone, none, List.of(ab, ab), written), reader)).as("a leaf is never in conflict with itself").isEmpty();
     }
@@ -1327,6 +1331,32 @@ class LocalColdBootTest {
                 "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; }");
         assertThat(row(digest, edit.before(), "Bodies").headerProof()).extracting(FileRow.Proof::typeKey).doesNotContain("lib/K");
         assertThat(holds(digest, edit.before(), edit.after(), "Bodies")).isTrue();
+    }
+
+    /**
+     * The external definer index of one leaf set is folded once per boot, however many jobs want it at the same moment: twelve modules
+     * whose routes share the JDK, on eight workers, fold it once; a second distinct external set (one jar more) is a second fold.
+     */
+    @ParameterizedTest @MethodSource("digests")
+    void modulesSharingAnExternalLeafSetFoldItOnce(Digest digest) throws Exception {
+        var project = Files.createTempDirectory("stage2-fold-once");
+        try {
+            var files = new LinkedHashMap<String, String>();
+            var mods = new ArrayList<Stage2Support.Mod>();
+            for (int i = 0; i < 12; i++) {
+                files.put("m" + i + "/src/main/java/p" + i + "/C.java", "package p" + i + "; public class C { public int n; }");
+                mods.add(new Stage2Support.Mod("m" + i, "corp:m" + i + ":1", List.of()));
+            }
+            Stage2Support.write(project, files);
+            var shared = boot(digest, Stage2Support.model(project, mods.toArray(Stage2Support.Mod[]::new)), 8);
+            assertThat(shared.result().timings().externalFolds()).as("one external leaf set, twelve modules, eight workers").isEqualTo(1);
+            assertThat(shared.result().timings().siblingFolds()).as("sibling sets: the empty one, and one per test route's own leaf").isGreaterThanOrEqualTo(1);
+
+            mods.set(0, new Stage2Support.Mod("m0", "corp:m0:1", List.of(Stage2Support.Dep.jar("org.example:libAB:1.4.0", Fixtures.LIB_AB_14))));
+            var two = boot(digest, Stage2Support.model(project, mods.toArray(Stage2Support.Mod[]::new)), 8);
+            assertThat(two.result().timings().externalFolds()).as("JDK, and JDK with one jar").isEqualTo(2);
+            assertThat(two.result().distinctLeafSets()).isEqualTo(two.result().timings().externalFolds() + two.result().timings().siblingFolds());
+        } finally { Stage2Support.delete(project); }
     }
 
     /** The type keys in each file of {@code app}'s header proof. */

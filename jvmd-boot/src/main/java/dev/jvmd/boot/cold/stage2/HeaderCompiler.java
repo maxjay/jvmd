@@ -46,14 +46,15 @@ final class HeaderCompiler {
 
     /** What javac made of one file. {@code declared} are the top-level types it owns; {@code faults} are the file-grain and duplicate faults. */
     static final class Unit {
-        final Source source;
+        /** The file's path, relative to the project root. The bytes are not kept: javac holds the text it parsed while the task is open, and no more. */
+        final String path;
         String parseError;
         final List<TypeElement> declared = new ArrayList<>();
         final List<FileRow.Fault> faults = new ArrayList<>();
         /** The module declaration of a {@code module-info.java}: parsed, never entered (E.3). Null for every other file. */
         com.sun.source.tree.ModuleTree module;
 
-        Unit(Source source) { this.source = source; }
+        Unit(String path) { this.path = path; }
 
         boolean parsed() { return parseError == null; }
     }
@@ -140,7 +141,7 @@ final class HeaderCompiler {
         // javac hands its own wrappers back, so a file is recognised by its URI, never by the object it was given.
         var byUri = new java.util.HashMap<URI, Unit>();
         for (var source : sources) {
-            var unit = new Unit(source);
+            var unit = new Unit(source.path());
             units.add(unit);
             var object = new SourceObject(uri(source.path()), new String(source.bytes(), charset));
             objects.add(object);

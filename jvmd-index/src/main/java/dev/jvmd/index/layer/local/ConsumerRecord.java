@@ -11,10 +11,11 @@ import java.util.List;
  *
  * <p>It is keyed by {@code (κ_file, leafSetExt)}, the stable part of the route, never by {@code routeHash}: that changes on every edit
  * in any sibling and would orphan every proof under it. Validity is decided by the proof's identities, not by the key. Kind 7 is the
- * header proof of 3.18, which stage 2 itself writes into the file rows and reverse-indexes.
+ * header proof of 3.18, which stage 2 itself writes into the file rows and reverse-indexes; kind 8 is the same for a type a constant
+ * initialiser resolved through, whose value is inlined into the file's facts.
  */
 public record ConsumerRecord(List<Dependency> dependencies) {
-    public static final int MEMBER = 1, OVERLOAD_GROUP = 2, TYPE = 3, PACKAGE = 4, NEGATIVE = 5, DEFINER = 6, HEADER = 7;
+    public static final int MEMBER = 1, OVERLOAD_GROUP = 2, TYPE = 3, PACKAGE = 4, NEGATIVE = 5, DEFINER = 6, HEADER = 7, CONSTANT = 8;
 
     /** {@code identity} is what was seen; {@code key} is the dependency's key bytes exactly as the reverse index keys them (B.9). */
     public record Dependency(int kind, Identity identity, byte[] key) { }
@@ -43,7 +44,7 @@ public record ConsumerRecord(List<Dependency> dependencies) {
         int zstrs = switch (kind) {
             case MEMBER -> 3; // m(f) = zstr owner || u8 kind || zstr name || zstr descriptor
             case OVERLOAD_GROUP -> 2;
-            case TYPE, PACKAGE, NEGATIVE, DEFINER, HEADER -> 1;
+            case TYPE, PACKAGE, NEGATIVE, DEFINER, HEADER, CONSTANT -> 1;
             default -> throw new IllegalArgumentException("Unknown dependency kind " + kind);
         };
         for (int z = 0; z < zstrs; z++) {

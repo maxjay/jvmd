@@ -26,7 +26,8 @@ public interface LocalStore extends MachineStore {
     void putConflicts(Identity routeHash, byte[] value);
     /** {@code C|κ_file|leafSetExt}. */
     void putConsumer(Identity kappa, Identity leafSetExt, byte[] value);
-    void putReverse(int kind, byte[] key, byte[] value);
+    /** {@code X|kind|key|projectKey}: this project's list of consumers of one identity (B.9). */
+    void putReverse(int kind, byte[] key, Identity projectKey, byte[] value);
     /** {@code RS|κ_file|leafSetExt}. */
     void putResult(Identity kappa, Identity leafSetExt, byte[] value);
     /** {@code S|k}: a leaf's list of its types' stubs (B.10). */
@@ -53,7 +54,7 @@ public interface LocalStore extends MachineStore {
     byte[] getSibling(Identity leafSetSib);
     byte[] getConflicts(Identity routeHash);
     byte[] getConsumer(Identity kappa, Identity leafSetExt);
-    byte[] getReverse(int kind, byte[] key);
+    byte[] getReverse(int kind, byte[] key, Identity projectKey);
     byte[] getResult(Identity kappa, Identity leafSetExt);
     /** {@code S|k}, or null: shared and derivable, so a boot may read it. */
     byte[] getStub(Identity k);
@@ -73,7 +74,13 @@ public interface LocalStore extends MachineStore {
     static byte[] siblingKey(Identity leafSetSib) { return join("DS|", leafSetSib.view()); }
     static byte[] conflictsKey(Identity routeHash) { return join("DC|", routeHash.view()); }
     static byte[] consumerKey(Identity kappa, Identity leafSetExt) { return join("C|", kappa.view(), "|", leafSetExt.view()); }
-    static byte[] reverseKey(int kind, byte[] key) { return join("X|", new byte[] {(byte) kind}, "|", key); }
+    /**
+     * {@code X|kind|key|projectKey}, the project key trailing as a fixed-width id: every project's entry for one dependency is under
+     * the prefix {@code X|kind|key}, which is the cross-project read, and no two projects share a key.
+     */
+    static byte[] reverseKey(int kind, byte[] key, Identity projectKey) { return join("X|", new byte[] {(byte) kind}, "|", key, projectKey.view()); }
+    /** The prefix of every project's entry for one dependency: a range read. */
+    static byte[] reversePrefix(int kind, byte[] key) { return join("X|", new byte[] {(byte) kind}, "|", key); }
     static byte[] resultKey(Identity kappa, Identity leafSetExt) { return join("RS|", kappa.view(), "|", leafSetExt.view()); }
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }
     static byte[] stubTypeKey(Identity stKey) { return join("ST|", stKey.view()); }

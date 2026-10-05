@@ -33,7 +33,7 @@ public final class RocksLocalStore implements LocalStore, AutoCloseable {
     @Override public void putSibling(Identity leafSetSib, byte[] value) { machine.put(LocalStore.siblingKey(leafSetSib), value); }
     @Override public void putConflicts(Identity routeHash, byte[] value) { machine.put(LocalStore.conflictsKey(routeHash), value); }
     @Override public void putConsumer(Identity kappa, Identity leafSetExt, byte[] value) { machine.put(LocalStore.consumerKey(kappa, leafSetExt), value); }
-    @Override public void putReverse(int kind, byte[] key, byte[] value) { machine.put(LocalStore.reverseKey(kind, key), value); }
+    @Override public void putReverse(int kind, byte[] key, Identity projectKey, byte[] value) { machine.put(LocalStore.reverseKey(kind, key, projectKey), value); }
     @Override public void putResult(Identity kappa, Identity leafSetExt, byte[] value) { machine.put(LocalStore.resultKey(kappa, leafSetExt), value); }
     @Override public void putStub(Identity k, byte[] value) { machine.put(LocalStore.stubKey(k), value); }
     @Override public void putStubType(Identity stKey, byte[] value) { machine.put(LocalStore.stubTypeKey(stKey), value); }
@@ -63,7 +63,7 @@ public final class RocksLocalStore implements LocalStore, AutoCloseable {
     @Override public byte[] getSibling(Identity leafSetSib) { return machine.get(LocalStore.siblingKey(leafSetSib)); }
     @Override public byte[] getConflicts(Identity routeHash) { return machine.get(LocalStore.conflictsKey(routeHash)); }
     @Override public byte[] getConsumer(Identity kappa, Identity leafSetExt) { return machine.get(LocalStore.consumerKey(kappa, leafSetExt)); }
-    @Override public byte[] getReverse(int kind, byte[] key) { return machine.get(LocalStore.reverseKey(kind, key)); }
+    @Override public byte[] getReverse(int kind, byte[] key, Identity projectKey) { return machine.get(LocalStore.reverseKey(kind, key, projectKey)); }
     @Override public byte[] getResult(Identity kappa, Identity leafSetExt) { return machine.get(LocalStore.resultKey(kappa, leafSetExt)); }
     @Override public byte[] getStub(Identity k) { return machine.get(LocalStore.stubKey(k)); }
     @Override public byte[] getStubType(Identity stKey) { return machine.get(LocalStore.stubTypeKey(stKey)); }

@@ -63,13 +63,15 @@ final class HeaderCompiler {
         final List<Unit> units;
         final Elements elements;
         final Types types;
+        final Trees trees;
         private final JavacTaskImpl task;
         private final StandardJavaFileManager files;
 
-        Compiled(List<Unit> units, Elements elements, Types types, JavacTaskImpl task, StandardJavaFileManager files) {
+        Compiled(List<Unit> units, Elements elements, Types types, Trees trees, JavacTaskImpl task, StandardJavaFileManager files) {
             this.units = units;
             this.elements = elements;
             this.types = types;
+            this.trees = trees;
             this.task = task;
             this.files = files;
         }
@@ -119,7 +121,7 @@ final class HeaderCompiler {
      */
     static Compiled compile(List<Source> sources, List<Path> classpath, Path jdkHome, int release, List<String> javacOptions) {
         // A scope with no source files has an empty leaf (appendix A); javac would call it an error.
-        if (sources.isEmpty()) return new Compiled(List.of(), null, null, null, null);
+        if (sources.isEmpty()) return new Compiled(List.of(), null, null, null, null, null);
         var options = new ArrayList<String>();
         options.addAll(List.of("-source", String.valueOf(release), "-Xlint:-options", "-proc:none", "-implicit:none"));
         options.add("--class-path");
@@ -182,7 +184,7 @@ final class HeaderCompiler {
                     else unit.faults.add(new FileRow.Fault(typeKey(tree, klass), "duplicate class " + klass.getSimpleName()));
                 }
             }
-            return new Compiled(units, task.getElements(), task.getTypes(), task, files);
+            return new Compiled(units, task.getElements(), task.getTypes(), trees, task, files);
         } catch (RuntimeException e) {
             release(task, files);
             throw e;

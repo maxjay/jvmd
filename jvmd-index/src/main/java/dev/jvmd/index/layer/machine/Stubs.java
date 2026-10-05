@@ -83,9 +83,12 @@ public final class Stubs {
      * and an edit regenerates the stubs of the types it changed and never the module's. A module descriptor has no stub: it is not a
      * type a member can be resolved in.
      *
-     * <p>One thing besides {@code res} is in a class file: an outer type's {@code InnerClasses} attribute, which is how javac finds its
-     * member types. Those are other types' facts, so their names and access are part of the outer type's key (only when it has
-     * members; a type without any has exactly the key {@code Digest(typeKey || oSum)}).
+     * <p>The key of a type is
+     * <pre>ST|Digest(typeKey || oSum || sorted (memberTypeKey || u16 flags))</pre>
+     * One thing besides {@code res} is in a class file: an outer type's {@code InnerClasses} attribute, which is how javac finds its member
+     * types. Those are other types' facts, so the outer type's key names its member types and their flags (the access bits of the
+     * member's own {@code res}) and nothing else about them: never a member's {@code oSum}, so that a change to a method of {@code Inner}
+     * changes {@code Inner}'s stub and not {@code Outer}'s. A type without member types has exactly the key {@code Digest(typeKey || oSum)}.
      */
     public static List<Stub> stubs(Digest digest, ContentTree tree, MachineLeaf leaf, Function<Identity, byte[]> reader, Cache cache) {
         var listed = cache.list(leaf.k());

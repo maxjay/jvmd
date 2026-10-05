@@ -834,14 +834,14 @@ class LocalColdBootTest {
             for (var row : rows.values()) {
                 for (var proof : row.headerProof()) {
                     var key = new dev.jvmd.core.tree.Codec.Writer().zstr(proof.typeKey()).toBytes();
-                    var stored = booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, key));
+                    var stored = booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, key, booted.projectKey()));
                     assertThat(stored).as("X|7|" + proof.typeKey()).isNotNull();
                     assertThat(ReverseIndex.decode(stored, digest.width()).consumers()).contains(new ReverseIndex.Consumer(row.kappa(), ext));
                 }
             }
-            var t1 = ReverseIndex.decode(booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, new dev.jvmd.core.tree.Codec.Writer().zstr("lib/T1").toBytes())), digest.width());
+            var t1 = ReverseIndex.decode(booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, new dev.jvmd.core.tree.Codec.Writer().zstr("lib/T1").toBytes(), booted.projectKey())), digest.width());
             assertThat(t1.consumers()).extracting(ReverseIndex.Consumer::kappa).containsExactly(rows.get("UsesT1").kappa());
-            var string = ReverseIndex.decode(booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, new dev.jvmd.core.tree.Codec.Writer().zstr("java/lang/String").toBytes())), digest.width());
+            var string = ReverseIndex.decode(booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, new dev.jvmd.core.tree.Codec.Writer().zstr("java/lang/String").toBytes(), booted.projectKey())), digest.width());
             assertThat(string.consumers()).extracting(ReverseIndex.Consumer::kappa).contains(rows.get("UsesNothing").kappa()).doesNotContain(rows.get("UsesT1").kappa());
             assertThat(booted.store().withPrefix("X").keySet()).as("only header entries: kind 7").allMatch(k -> k[2] == 7);
         } finally { Stage2Support.delete(project); }
@@ -1030,6 +1030,166 @@ class LocalColdBootTest {
                 assertThat(booted.result().leaves().get("a/main")).isEqualTo(booted.result().leaves().get("b/main"));
                 assertThat(leaf(digest, booted.store(), booted.result().leaves().get("c/main")).factCount()).isEqualTo(3);
             }
+        } finally { Stage2Support.delete(project); }
+    }
+
+    // ---- stub keys, X| keys, constants ---------------------------------------------------------------------------------------
+
+    /** The stub of every type of a source leaf, as {@code internal name -> ST key}, taken through a cache that records what it is given. */
+    private static Map<String, Identity> stubKeys(Digest digest, Booted booted, String leaf) {
+        var store = booted.store();
+        var lists = new HashMap<Identity, byte[]>();
+        var cache = new Stubs.Cache() {
+            @Override public byte[] list(Identity k) { return null; }
+            @Override public void putList(Identity k, byte[] value) { lists.put(k, value); }
+            @Override public byte[] type(Identity stKey) { return null; }
+            @Override public void putType(Identity stKey, byte[] value) { }
+        };
+        var k = booted.result().leaves().get(leaf);
+        Stubs.stubs(digest, new ContentTree(digest), leaf(digest, store, k), nodes(store), cache);
+        var out = new HashMap<String, Identity>();
+        for (var ref : Stubs.decodeList(lists.get(k), digest.width())) out.put(ref.internalName(), ref.stKey());
+        return out;
+    }
+
+    /**
+     * A method change in a member type changes the member's stub key and not its outer type's: the outer key names its members and their
+     * flags, never their {@code oSum}. A change to a member's flags does change the outer key, because the outer stub's
+     * {@code InnerClasses} entry carries them.
+     */
+    @ParameterizedTest @MethodSource("digests")
+    void aMethodChangeInAMemberTypeDoesNotChangeTheOuterTypesStubKey(Digest digest) throws Exception {
+        var project = Files.createTempDirectory("stage2-stubkey");
+        try {
+            var file = project.resolve("m/src/main/java/p/Outer.java");
+            var model = Stage2Support.model(project, new Stage2Support.Mod("m", "corp:m:1", List.of()));
+            Stage2Support.write(project, Map.of("m/src/main/java/p/Outer.java", "package p; public class Outer { public int o; public static class Inner { public int a() { return 1; } } }"));
+            var base = stubKeys(digest, boot(digest, model, 1), "m/main");
+            Files.writeString(file, "package p; public class Outer { public int o; public static class Inner { public int a() { return 1; } public int b() { return 2; } } }");
+            var method = stubKeys(digest, boot(digest, model, 1), "m/main");
+            assertThat(base).containsOnlyKeys("p/Outer", "p/Outer$Inner");
+            assertThat(method.get("p/Outer$Inner")).as("Inner changed").isNotEqualTo(base.get("p/Outer$Inner"));
+            assertThat(method.get("p/Outer")).as("Outer's stub key did not").isEqualTo(base.get("p/Outer"));
+
+            Files.writeString(file, "package p; public class Outer { public int o; public static final class Inner { public int a() { return 1; } } }");
+            var flags = stubKeys(digest, boot(digest, model, 1), "m/main");
+            assertThat(flags.get("p/Outer")).as("a flag of the member is in the outer's InnerClasses entry").isNotEqualTo(base.get("p/Outer"));
+        } finally { Stage2Support.delete(project); }
+    }
+
+    /**
+     * {@code X|kind|key|projectKey}: two projects that name one type write disjoint keys, both lists are intact, and the prefix
+     * {@code X|kind|key} is the cross-project read.
+     */
+    @ParameterizedTest @MethodSource("digests")
+    void twoProjectsNamingOneTypeWriteDisjointReverseKeys(Digest digest) throws Exception {
+        var first = Files.createTempDirectory("stage2-x-a");
+        var second = Files.createTempDirectory("stage2-x-b");
+        try {
+            Stage2Support.write(first, Map.of("a/src/main/java/a/A.java", "package a; public class A { public String s; }"));
+            Stage2Support.write(second, Map.of("b/src/main/java/b/B.java", "package b; public class B { public String t; }"));
+            var one = boot(digest, Stage2Support.model(first, new Stage2Support.Mod("a", "corp:a:1", List.of())), 1);
+            // The second project boots on the first one's store: the same machine, two LOCAL generations.
+            var parsed = ProjectModel.parse(Stage2Support.model(second, new Stage2Support.Mod("b", "corp:b:1", List.of())));
+            var store = one.store();
+            new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 1, repository, ClassFacts::of).run(store, parsed);
+            var otherKey = Stage2.projectKey(digest, parsed);
+
+            var type = new dev.jvmd.core.tree.Codec.Writer().zstr("java/lang/String").toBytes();
+            var prefix = LocalStore.reversePrefix(ConsumerRecord.HEADER, type);
+            var found = new java.util.TreeMap<byte[], byte[]>(Arrays::compareUnsigned);
+            for (var e : store.snapshot().entrySet()) if (e.getKey().length > prefix.length && Arrays.equals(Arrays.copyOf(e.getKey(), prefix.length), prefix)) found.put(e.getKey(), e.getValue());
+            assertThat(found).as("one X|7|java/lang/String entry per project, under one prefix").hasSize(2);
+            assertThat(found).containsKeys(LocalStore.reverseKey(ConsumerRecord.HEADER, type, one.projectKey()), LocalStore.reverseKey(ConsumerRecord.HEADER, type, otherKey));
+            for (var key : found.keySet()) assertThat(key.length).as("the project key trails, fixed width").isEqualTo(prefix.length + digest.width());
+
+            var rowA = FileRow.decode("a/src/main/java/a/A.java", store.get(LocalStore.fileKey(one.projectKey(), "a/src/main/java/a/A.java")), digest.width());
+            var rowB = FileRow.decode("b/src/main/java/b/B.java", store.get(LocalStore.fileKey(otherKey, "b/src/main/java/b/B.java")), digest.width());
+            var listA = ReverseIndex.decode(found.get(LocalStore.reverseKey(ConsumerRecord.HEADER, type, one.projectKey())), digest.width());
+            var listB = ReverseIndex.decode(found.get(LocalStore.reverseKey(ConsumerRecord.HEADER, type, otherKey)), digest.width());
+            assertThat(listA.consumers()).extracting(ReverseIndex.Consumer::kappa).containsExactly(rowA.kappa());
+            assertThat(listB.consumers()).extracting(ReverseIndex.Consumer::kappa).containsExactly(rowB.kappa());
+        } finally { Stage2Support.delete(first); Stage2Support.delete(second); }
+    }
+
+    /**
+     * A constant initialiser is part of the proof. {@code static final int N = lib.K.VALUE} inlines {@code K}'s value into the file's
+     * facts, but no {@code E} edge names {@code K}: stage 2 resolves it from the attributed initialiser (qualifier types, the owner of a
+     * constant field, a static-imported constant) and the file's proof names {@code K}, indexed as kind 8. Change only {@code K.VALUE}:
+     * the files that read it fail their proof and nothing else does.
+     */
+    @ParameterizedTest @MethodSource("digests")
+    void aConstantInitialiserIsPartOfTheProof(Digest digest) throws Exception {
+        var project = Files.createTempDirectory("stage2-constant");
+        try {
+            Stage2Support.write(project, Map.of(
+                    "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; }",
+                    "app/src/main/java/app/UsesConst.java", "package app; public class UsesConst { public static final int N = lib.K.VALUE; }",
+                    "app/src/main/java/app/UsesImport.java", "package app; import static lib.K.VALUE; public class UsesImport { public static final int M = VALUE + 1; }",
+                    "app/src/main/java/app/UsesNothing.java", "package app; public class UsesNothing { public String s; }"));
+            var model = Stage2Support.model(project, new Stage2Support.Mod("lib", "corp:lib:1", List.of()),
+                    new Stage2Support.Mod("app", "corp:app:1", List.of(Stage2Support.Dep.module("corp:lib:1", "lib"))));
+            var base = boot(digest, model, 2);
+            var files = List.of("UsesConst", "UsesImport", "UsesNothing");
+            var proofs = proofsOf(digest, base, files);
+            assertThat(proofs.get("UsesConst")).as("the qualifier's owner is in the proof").contains("lib/K");
+            assertThat(proofs.get("UsesImport")).as("so is the owner of a static-imported constant").contains("lib/K");
+            assertThat(proofs.get("UsesNothing")).doesNotContain("lib/K");
+
+            var key = new dev.jvmd.core.tree.Codec.Writer().zstr("lib/K").toBytes();
+            assertThat(base.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, key, base.projectKey()))).as("no header mentions K").isNull();
+            var kind8 = ReverseIndex.decode(base.store().get(LocalStore.reverseKey(ConsumerRecord.CONSTANT, key, base.projectKey())), digest.width());
+            assertThat(kind8.consumers()).extracting(ReverseIndex.Consumer::kappa).containsExactlyInAnyOrder(row(digest, base, "UsesConst").kappa(), row(digest, base, "UsesImport").kappa());
+
+            Files.writeString(project.resolve("lib/src/main/java/lib/K.java"), "package lib; public class K { public static final int VALUE = 2; }");
+            var changed = boot(digest, model, 2);
+            assertThat(holds(digest, base, changed, "UsesConst")).as("the file that reads K.VALUE fails its proof").isFalse();
+            assertThat(holds(digest, base, changed, "UsesImport")).isFalse();
+            assertThat(holds(digest, base, changed, "UsesNothing")).as("nothing else does").isTrue();
+            var before = FileRow.decode("x", base.store().get(LocalStore.fileKey(base.projectKey(), "app/src/main/java/app/UsesConst.java")), digest.width());
+            assertThat(leaf(digest, changed.store(), changed.result().leaves().get("app/main")).r()).as("and the facts did change").isNotEqualTo(leaf(digest, base.store(), base.result().leaves().get("app/main")).r());
+            assertThat(before.headerProof()).isNotEmpty();
+        } finally { Stage2Support.delete(project); }
+    }
+
+    /**
+     * Stubs emit {@code ConstantValue}: every constant field of a class file is a constant field of its stub, with the same value. (javac
+     * inlines constants into a client, so a stub without them would compile a client differently; this is the test that says it does not.)
+     */
+    @ParameterizedTest @MethodSource("digests")
+    void stubsEmitConstantValue(Digest digest) throws Exception {
+        var project = Files.createTempDirectory("stage2-stubconst");
+        try {
+            var files = new LinkedHashMap<String, String>();
+            for (var e : Fixtures.rich().entrySet()) files.put("a/src/main/java/" + e.getKey(), e.getValue());
+            Stage2Support.write(project, files);
+            var booted = boot(digest, Stage2Support.model(project, new Stage2Support.Mod("a", "corp:a:1", List.of()).withOptions("--release", String.valueOf(Stage2Support.FEATURE))), 1);
+            var store = booted.store();
+            var stubs = Stubs.stubs(digest, new ContentTree(digest), leaf(digest, store, booted.result().leaves().get("a/main")), nodes(store), Stubs.Cache.NONE);
+            var work = Files.createTempDirectory("stage2-stubconst-work");
+            try {
+                var real = Stage2Support.compile(work, Fixtures.rich(), List.of(), List.of());
+                var fromClass = new java.util.TreeMap<String, Object>();
+                for (var e : real.entrySet()) {
+                    if (e.getKey().equals("module-info.class")) continue;
+                    var model = java.lang.classfile.ClassFile.of().parse(e.getValue());
+                    for (var field : model.fields()) {
+                        if ((field.flags().flagsMask() & java.lang.classfile.ClassFile.ACC_PRIVATE) != 0) continue;
+                        var constant = field.findAttribute(java.lang.classfile.Attributes.constantValue());
+                        if (constant.isPresent()) fromClass.put(model.thisClass().asInternalName() + "." + field.fieldName().stringValue(), constant.get().constant().constantValue());
+                    }
+                }
+                var fromStub = new java.util.TreeMap<String, Object>();
+                for (var stub : stubs) {
+                    var model = java.lang.classfile.ClassFile.of().parse(stub.bytes());
+                    for (var field : model.fields()) {
+                        var constant = field.findAttribute(java.lang.classfile.Attributes.constantValue());
+                        if (constant.isPresent()) fromStub.put(model.thisClass().asInternalName() + "." + field.fieldName().stringValue(), constant.get().constant().constantValue());
+                    }
+                }
+                assertThat(fromClass).as("the fixture has constants of every kind").hasSizeGreaterThanOrEqualTo(9).containsKey("fx/Box.NAME").containsKey("fx/Box.BIG");
+                assertThat(fromStub).isEqualTo(fromClass);
+            } finally { Stage2Support.delete(work); }
         } finally { Stage2Support.delete(project); }
     }
 

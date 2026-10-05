@@ -32,6 +32,7 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
+import com.sun.source.util.Trees;
 
 /**
  * {@code Φ_src} (stage 2, 3.1 and appendix C): the facts and edges of the declarations of one source file, as javac's {@code Enter}
@@ -48,8 +49,12 @@ import javax.lang.model.util.Types;
  * creates those anonymous classes only when it attributes the bodies.
  */
 public final class SourceFacts {
-    /** What one file declares. {@code typeKeys} are internal names; each becomes an {@code O} key. */
-    public record Result(List<Fact> facts, List<Entry> edges, List<String> typeKeys, List<FileRow.Fault> faults) {
+    /**
+     * What one file declares. {@code typeKeys} are internal names; each becomes an {@code O} key. {@code constantTargets} are the types
+     * the initialisers of its constants resolved through (internal names): not edges, because a class file has none for them, but part of
+     * the file's proof, because the value they supply is inlined into its facts.
+     */
+    public record Result(List<Fact> facts, List<Entry> edges, List<String> typeKeys, List<FileRow.Fault> faults, List<String> constantTargets) {
         /** The {@code N} entries of this file: its facts keyed by simple name. */
         public List<Entry> byName() {
             var out = new ArrayList<Entry>(facts.size());
@@ -77,12 +82,14 @@ public final class SourceFacts {
     private final Elements elements;
     private final Types types;
     private final boolean parameters;
+    private final Trees trees;
 
     /**
      * @param parameters whether the module compiles with {@code -parameters}: parameter names are then in the tail, as javac writes them
      */
-    public SourceFacts(Digest digest, Elements elements, Types types, boolean parameters) {
+    public SourceFacts(Digest digest, Elements elements, Types types, Trees trees, boolean parameters) {
         this.digest = digest;
+        this.trees = trees;
         this.elements = elements;
         this.types = types;
         this.parameters = parameters;
@@ -92,7 +99,7 @@ public final class SourceFacts {
     public Result of(List<? extends TypeElement> declared) {
         var out = new Out();
         for (var type : declared) type(type, out);
-        return new Result(List.copyOf(out.facts), List.copyOf(out.edges.values()), List.copyOf(out.typeKeys), List.copyOf(out.faults));
+        return new Result(List.copyOf(out.facts), List.copyOf(out.edges.values()), List.copyOf(out.typeKeys), List.copyOf(out.faults), List.copyOf(out.constants));
     }
 
     /**
@@ -149,7 +156,7 @@ public final class SourceFacts {
         var tail = new Codec.Writer().u32(0).u32(0).u32(0).u8(0).toBytes();
         add(out, typeKey("module-info"), "module-info", res, tail);
         out.typeKeys.add("module-info");
-        return new Result(List.copyOf(out.facts), List.of(), List.copyOf(out.typeKeys), List.of());
+        return new Result(List.copyOf(out.facts), List.of(), List.copyOf(out.typeKeys), List.of(), List.of());
     }
 
     private static void packageDirective(Codec.Writer res, String packageName, List<? extends com.sun.source.tree.ExpressionTree> to) {
@@ -164,6 +171,7 @@ public final class SourceFacts {
         final TreeMap<byte[], Entry> edges = new TreeMap<>(Arrays::compareUnsigned);
         final List<String> typeKeys = new ArrayList<>();
         final List<FileRow.Fault> faults = new ArrayList<>();
+        final java.util.Set<String> constants = new java.util.TreeSet<>();
     }
 
     // ---- keys (the same bytes as ClassFacts) ----------------------------------------------------------------------------
@@ -326,6 +334,7 @@ public final class SourceFacts {
                 default -> throw new IllegalArgumentException("Unexpected constant " + constant.getClass());
             }
         }
+        if (constant != null) constantTargets(field, out.constants);
         var annotations = retained(field);
         add(out, key, name, res, tail(field, annotations, false, null));
         typeNames(desc, signature, n -> edge(out, n, FIELD_TYPE, key));
@@ -371,6 +380,32 @@ public final class SourceFacts {
         add(out, key, name, res, tail(method, annotations, true, inner ? owner : null));
         methodEdges(out, key, desc.toString(), signature, thrown);
         annotationEdges(annotations, key, out);
+    }
+
+    /**
+     * The types the initialiser of a constant resolved through: the qualifier types, the owner of every constant field it names, and so
+     * the owner of a static-imported constant. {@code getConstantValue()} has attributed the initialiser in place, so javac's symbols
+     * are on its tree and {@code Trees.getElement} reads them; nothing here attributes anything. The value of {@code ns.K.VALUE} is inlined
+     * into this file's {@code ConstantValue}, so while {@code K}'s resolution identity is unchanged the value is, and when it changes the
+     * file's facts may have: the file's proof names {@code K} (3.18).
+     */
+    private void constantTargets(VariableElement field, java.util.Set<String> into) {
+        try {
+            var path = trees.getPath(field);
+            if (path == null || !(path.getLeaf() instanceof com.sun.source.tree.VariableTree variable) || variable.getInitializer() == null) return;
+            new com.sun.source.util.TreePathScanner<Void, Void>() {
+                @Override public Void visitIdentifier(com.sun.source.tree.IdentifierTree node, Void p) { note(getCurrentPath()); return super.visitIdentifier(node, p); }
+                @Override public Void visitMemberSelect(com.sun.source.tree.MemberSelectTree node, Void p) { note(getCurrentPath()); return super.visitMemberSelect(node, p); }
+
+                private void note(com.sun.source.util.TreePath at) {
+                    Element element = trees.getElement(at);
+                    if (element instanceof VariableElement variable && variable.getEnclosingElement() instanceof TypeElement owner) element = owner;
+                    if (element instanceof TypeElement type && type.asType().getKind() != TypeKind.ERROR) into.add(binaryName(type));
+                }
+            }.scan(new com.sun.source.util.TreePath(path, variable.getInitializer()), null);
+        } catch (RuntimeException unreadable) {
+            // A tree javac did not attribute names nothing; the constant's own value is in res either way.
+        }
     }
 
     // ---- descriptors and signatures --------------------------------------------------------------------------------------

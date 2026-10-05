@@ -42,7 +42,7 @@ final class ModuleJob {
     ModuleJob(Boot boot) { this.boot = boot; }
 
     /** A file's row before its header proof, which needs the definer indexes of the route (3.18). */
-    private record Pending(SourceFile file, Identity sum, List<String> types, List<FileRow.Fault> faults, List<Entry> edges) { }
+    private record Pending(SourceFile file, Identity sum, List<String> types, List<FileRow.Fault> faults, List<Entry> edges, List<String> constants) { }
 
     /** What {@code Stage2} needs back: the leaf. Everything else is recorded in {@link Boot}. */
     MachineLeaf run(ProjectModel.Module module, int scope) throws IOException {
@@ -79,14 +79,14 @@ final class ModuleJob {
         boot.headerNanos.addAndGet(System.nanoTime() - headerStarted);
         boot.compiledFiles.addAndGet(toCompile.size());
         try (compiled) {
-            var extract = new SourceFacts(digest, compiled.elements, compiled.types, options.contains("-parameters"));
+            var extract = new SourceFacts(digest, compiled.elements, compiled.types, compiled.trees, options.contains("-parameters"));
             var unitsByPath = new HashMap<String, HeaderCompiler.Unit>();
             for (var u : compiled.units) unitsByPath.put(u.source.path(), u);
             // 4. Each compilation unit, in path order.
             for (var file : found) {
                 var unit = unitsByPath.get(file.path());
                 if (!unit.parsed()) {
-                    pending.add(new Pending(file, sums.zero(), List.of(), List.of(new FileRow.Fault(new byte[0], unit.parseError)), List.of()));
+                    pending.add(new Pending(file, sums.zero(), List.of(), List.of(new FileRow.Fault(new byte[0], unit.parseError)), List.of(), List.of()));
                     continue;
                 }
                 // No boot-wide memo of a file's facts (2.6): the header proof in the file row is what lets a later layer keep them.
@@ -95,7 +95,7 @@ final class ModuleJob {
                 if (unit.module != null) {
                     // The descriptor of the module's own main code; a test scope has none (its module is patched, not declared).
                     result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)))
-                            : new SourceFacts.Result(List.of(), List.of(), List.of(), List.of());
+                            : new SourceFacts.Result(List.of(), List.of(), List.of(), List.of(), List.of());
                 } else result = extract.of(unit.declared);
                 boot.factsNanos.addAndGet(System.nanoTime() - factsStarted);
                 boot.parsedFiles.incrementAndGet();
@@ -113,7 +113,7 @@ final class ModuleJob {
                 for (var edge : result.edges()) edges.putIfAbsent(edge.key(), edge);
                 var types = new ArrayList<String>();
                 for (var type : result.typeKeys()) if (kept.contains(ByteBuffer.wrap(typeKey(type)))) types.add(type);
-                pending.add(new Pending(file, sum, types, faults, result.edges()));
+                pending.add(new Pending(file, sum, types, faults, result.edges(), result.constantTargets()));
             }
         }
 
@@ -168,12 +168,19 @@ final class ModuleJob {
         var own = new HashMap<String, Identity>();
         for (var type : types) own.put(new String(type.key(), StandardCharsets.ISO_8859_1), type.h());
         for (var p : pending) {
+            // The types the headers mention (kind 7) and the types the constants resolved through (kind 8): one proof, two reverse entries.
+            var header = headerTargets(p.edges());
+            var constants = new TreeSet<>(p.constants());
+            constants.removeAll(header);
+            var all = new TreeSet<>(header);
+            all.addAll(p.constants());
             var row = new FileRow(p.file().path(), p.file().kappa(), p.file().size(), p.file().mtimeNanos(), p.sum(), List.copyOf(p.types()), List.copyOf(p.faults()),
-                    headerProof(p.edges(), own, resolver));
+                    headerProof(all, own, resolver));
             boot.files.put(row.path(), row);
-            for (var proof : row.headerProof())
-                boot.headerConsumers.computeIfAbsent(proof.typeKey(), t -> java.util.concurrent.ConcurrentHashMap.newKeySet())
-                        .add(new dev.jvmd.index.layer.local.ReverseIndex.Consumer(row.kappa(), bound.leafSetExt()));
+            var consumer = new dev.jvmd.index.layer.local.ReverseIndex.Consumer(row.kappa(), bound.leafSetExt());
+            var named = row.headerProof().stream().map(FileRow.Proof::typeKey).collect(java.util.stream.Collectors.toSet());
+            for (var type : header) if (named.contains(type)) boot.headerConsumers.computeIfAbsent(type, t -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(consumer);
+            for (var type : constants) if (named.contains(type)) boot.constantConsumers.computeIfAbsent(type, t -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(consumer);
             for (var fault : row.faults()) boot.faults.add(row.path() + ": " + (fault.m().length == 0 ? "" : describe(fault.m()) + ": ") + fault.reason());
         }
         sink.flush();
@@ -203,12 +210,8 @@ final class ModuleJob {
         return null;
     }
 
-    /**
-     * 3.18: for every type the file's headers mention (the targets of its {@code E} edges), the {@code oSum} of its definer under this
-     * binding. A type the module declares itself is its own definer; any other is resolved sibling, then external, then conflicts. A
-     * name nothing declares has no definer and no entry. Sorted by type key, so the row is a function of the file and the binding.
-     */
-    private static List<FileRow.Proof> headerProof(List<Entry> edges, Map<String, Identity> own, DefinerIndex.Resolver resolver) {
+    /** The type keys (internal names) a file's {@code E} edges point at: every type its declaration headers mention. */
+    private static java.util.Set<String> headerTargets(List<Entry> edges) {
         var targets = new TreeSet<String>();
         for (var edge : edges) {
             var key = edge.key();
@@ -216,6 +219,16 @@ final class ModuleJob {
             while (key[end] != 0) end++;
             targets.add(new String(key, 0, end, StandardCharsets.UTF_8));
         }
+        return targets;
+    }
+
+    /**
+     * 3.18: for every type the file's headers mention (the targets of its {@code E} edges), the {@code oSum} of its definer under this
+     * binding. A type the module declares itself is its own definer; any other is resolved sibling, then external, then conflicts. A
+     * name nothing declares has no definer and no entry. Sorted by type key, so the row is a function of the file and the binding. The
+     * targets are the headers' types and the types a constant initialiser resolved through: both are names the facts depend on.
+     */
+    private static List<FileRow.Proof> headerProof(java.util.Set<String> targets, Map<String, Identity> own, DefinerIndex.Resolver resolver) {
         var proof = new ArrayList<FileRow.Proof>(targets.size());
         for (var target : targets) {
             var key = typeKeyOf(target);

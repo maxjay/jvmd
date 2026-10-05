@@ -59,6 +59,8 @@ final class Boot implements AutoCloseable {
      * entries of {@code X|} (B.5, B.9). Without them, checking header proofs after an edit is a scan of every dependent's file row.
      */
     final Map<String, java.util.Set<dev.jvmd.index.layer.local.ReverseIndex.Consumer>> headerConsumers = new ConcurrentHashMap<>();
+    /** The same for a type only a constant initialiser resolved through (kind 8): its value is inlined into the file's facts. */
+    final Map<String, java.util.Set<dev.jvmd.index.layer.local.ReverseIndex.Consumer>> constantConsumers = new ConcurrentHashMap<>();
     /** {@code DD|}, {@code DS|} and {@code DC|} records this boot used: they are part of the LOCAL tree of the project that used them. */
     final ConcurrentSkipListMap<byte[], byte[]> definers = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);
     final ConcurrentLinkedQueue<String> faults = new ConcurrentLinkedQueue<>();

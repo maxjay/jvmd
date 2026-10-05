@@ -115,20 +115,11 @@ public final class Stage2 {
                     store.putFile(projectKey, row.path(), value);
                     records.put(LocalStore.fileKey(projectKey, row.path()), value);
                 }
-                // The kind 7 reverse entries of the header proofs, beside the file rows: X|7|typeKey -> the files that name it, sorted so that
-                // the record is a function of the project's content. X| carries no project key (B.9), so a project's entry for a type that
-                // another project also names is the whole entry as this boot saw it; merging with another project's entry is the reader's.
-                for (var e : new java.util.TreeMap<>(boot.headerConsumers).entrySet()) {
-                    var consumers = new ArrayList<>(e.getValue());
-                    consumers.sort((a, b) -> {
-                        int c = a.kappa().compareTo(b.kappa());
-                        return c != 0 ? c : a.leafSetExt().compareTo(b.leafSetExt());
-                    });
-                    var key = new dev.jvmd.core.tree.Codec.Writer(e.getKey().length() + 1).zstr(e.getKey()).toBytes();
-                    var value = new dev.jvmd.index.layer.local.ReverseIndex(consumers).encode();
-                    store.putReverse(dev.jvmd.index.layer.local.ConsumerRecord.HEADER, key, value);
-                    records.put(LocalStore.reverseKey(dev.jvmd.index.layer.local.ConsumerRecord.HEADER, key), value);
-                }
+                // The reverse entries of the header proofs, beside the file rows: X|7|typeKey|projectKey for the types the headers mention and
+                // X|8|typeKey|projectKey for those a constant resolved through, each this project's list of files, written once, no read. The
+                // project key trails, so every project's entry for a type is under the prefix X|kind|typeKey and no two projects share a key.
+                reverse(store, records, projectKey, dev.jvmd.index.layer.local.ConsumerRecord.HEADER, boot.headerConsumers);
+                reverse(store, records, projectKey, dev.jvmd.index.layer.local.ConsumerRecord.CONSTANT, boot.constantConsumers);
                 store.flush();
                 var entries = new ArrayList<Entry>(records.size());
                 for (var e : records.entrySet()) entries.add(new Entry(e.getKey(), Entry.NONE, digest.hash(e.getValue())));
@@ -152,6 +143,22 @@ public final class Stage2 {
                         (System.nanoTime() - started) / 1_000_000, local, leaves,
                         new Timings(boot.compiledFiles.get(), boot.headerNanos.get() / 1_000_000, boot.factsNanos.get() / 1_000_000, boot.definerNanos.get() / 1_000_000));
             }
+        }
+    }
+
+    /** One kind of reverse entries: per type, the project's consumers sorted, so the record is a function of the project's content. */
+    private static void reverse(LocalStore store, Map<byte[], byte[]> records, Identity projectKey, int kind,
+                                Map<String, java.util.Set<dev.jvmd.index.layer.local.ReverseIndex.Consumer>> byType) {
+        for (var e : new java.util.TreeMap<>(byType).entrySet()) {
+            var consumers = new ArrayList<>(e.getValue());
+            consumers.sort((a, b) -> {
+                int c = a.kappa().compareTo(b.kappa());
+                return c != 0 ? c : a.leafSetExt().compareTo(b.leafSetExt());
+            });
+            var key = new dev.jvmd.core.tree.Codec.Writer(e.getKey().length() + 1).zstr(e.getKey()).toBytes();
+            var value = new dev.jvmd.index.layer.local.ReverseIndex(consumers).encode();
+            store.putReverse(kind, key, projectKey, value);
+            records.put(LocalStore.reverseKey(kind, key, projectKey), value);
         }
     }
 

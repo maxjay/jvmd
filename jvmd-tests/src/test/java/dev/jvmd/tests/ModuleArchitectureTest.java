@@ -7,7 +7,7 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import static org.assertj.core.api.Assertions.*;
 
-/** Implements 12.6: actual compiled descriptors and class references enforce the javac-internals boundary. */
+/** Actual compiled descriptors and class references enforce the analyzer and cold-boot javac boundaries. */
 @Tag("phase-1")
 class ModuleArchitectureTest {
     @TempDir Path temp;
@@ -16,7 +16,7 @@ class ModuleArchitectureTest {
                 "core",Set.of("java.base","java.management","jdk.jfr","jdk.management","com.fasterxml.jackson.databind"),
                 "index",Set.of("java.base","dev.jvmd.core","java.compiler","jdk.compiler"),
                 "index-rocks",Set.of("java.base","dev.jvmd.index","rocksdbjni"),
-                "boot",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","dev.jvmd.index.rocks","java.logging"),
+                "boot",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","dev.jvmd.index.rocks","java.compiler","jdk.compiler","java.logging"),
                 "analyzer",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","java.compiler","jdk.compiler","java.management"),
                 "resolver",Set.of("java.base","dev.jvmd.core"),
                 "runtime",Set.of("java.base","dev.jvmd.core","jdk.jdi","java.compiler","jdk.compiler"),
@@ -30,11 +30,31 @@ class ModuleArchitectureTest {
             assertThat(descriptor.name()).isEqualTo("dev.jvmd."+entry.getKey().replace('-','.'));assertThat(descriptor.isAutomatic()).isFalse();assertThat(descriptor.isOpen()).isFalse();
             assertThat(descriptor.requires()).extracting(ModuleDescriptor.Requires::name).containsExactlyInAnyOrderElementsOf(entry.getValue());
             assertThat(descriptor.opens()).allMatch(open->open.isQualified()&&open.targets().equals(Set.of("com.fasterxml.jackson.databind")));
-            if(!entry.getKey().equals("analyzer"))try(var files=Files.walk(classes)) {
-                for(Path file:files.filter(p->p.toString().endsWith(".class")).toList())
-                    assertThat(new String(Files.readAllBytes(file),java.nio.charset.StandardCharsets.ISO_8859_1)).as(file.toString()).doesNotContain("com/sun/tools/javac/");
+            try(var files=Files.walk(classes)) {
+                for(Path file:files.filter(p->p.toString().endsWith(".class")).toList()) {
+                    String type=classes.relativize(file).toString().replace('\\','/').replaceFirst("\\.class$", "");
+                    if(!compilerInternalsAllowed(entry.getKey(),type))
+                        assertThat(new String(Files.readAllBytes(file),java.nio.charset.StandardCharsets.ISO_8859_1)).as(file.toString()).doesNotContain("com/sun/tools/javac/");
+                }
             }
         }
+    }
+
+    /** C.1 needs enter-without-attribute; A.4 reads completed TypeCompound positions from Symbol. No package-wide grant. */
+    static boolean compilerInternalsAllowed(String module, String type) {
+        int nested=type.indexOf('$');
+        String owner=nested<0?type:type.substring(0,nested);
+        return module.equals("analyzer")
+                || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage2/HeaderCompiler")
+                || module.equals("index")&&owner.equals("dev/jvmd/index/layer/local/SourceFacts");
+    }
+
+    @Test void coldBootCompilerAccessIsLimitedToTheTwoCompilerAdapters() {
+        assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage2/HeaderCompiler$SourceObject")).isTrue();
+        assertThat(compilerInternalsAllowed("index","dev/jvmd/index/layer/local/SourceFacts")).isTrue();
+        assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage2/ModuleJob")).isFalse();
+        assertThat(compilerInternalsAllowed("index","dev/jvmd/index/layer/local/SourceFactsExtra")).isFalse();
+        assertThat(compilerInternalsAllowed("core","dev/jvmd/index/layer/local/SourceFacts")).isFalse();
     }
     @Test void requiringThePublicCompilerModuleDoesNotGrantJavacInternals() throws Exception {
         Path source=Files.createDirectories(temp.resolve("source")),out=Files.createDirectories(temp.resolve("classes"));

@@ -102,3 +102,9 @@ Maven model/build time (26.4/25.9s) is excluded. Sampled used heap above baselin
 ```powershell
 mvn -B -pl jvmd-tests -am test '-Dtest=MachineColdBootTest,ClassMemoTest,ContentTreeTest,ContentTreeEditTest,ZipReaderTest,RocksMachineBootTest,LocalColdBootTest,LocalCodecsTest,FactCodecsTest,RocksLocalBootTest,Layout4Test,HeaderAbsencesTest,SourceAnnotationProjectionTest,TailStrippingTest,StubProjectionTest,PersistedLeavesTest,MavenProjectTest,Stage2Measurement' '-DexcludedGroups=none' '-Djvmd.stage2.workers=4' '-Dsurefire.failIfNoSpecifiedTests=false'
 ```
+
+### CI compiler-boundary correction
+
+The hosted run [37380049291](https://github.com/maxjay/jvmd/actions/runs/37380049291) compiled/assembled the runtime and passed the Phase 3 index gate, Rocks, compiler, processing and other executed feature gates. Its overall result failed: the older architecture guards allowed javac internals only in the analyzer and had not been updated for Stage 2's HeaderCompiler or Appendix A's Symbol/TypeCompound extraction in SourceFacts. The source and bytecode guards now share exact class grants for those two adapters (including their nested classes); no index/boot package-wide permission is granted. The boot descriptor expectation now includes its existing compiler dependencies. Positive/negative boundary assertions are included.
+
+That early failure skipped the step creating `runtime-downloads`; later always-run JBR/HotswapAgent steps then failed writing their downloads. Each now creates its own destination directory. **36 tests passed**, no failures/errors/skips (`review-ci-adapters.log`, 21s), including both architecture guards, source annotation projection and header absences. No production code changed. A new hosted run is required before claiming full CI success.

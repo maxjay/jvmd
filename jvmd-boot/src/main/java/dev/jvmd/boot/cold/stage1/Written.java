@@ -10,12 +10,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * {@code Written} (stage 1, 2.6; stage 2, 2.6): node hashes written this boot. A node is written once; every other write is a set
- * lookup. Stage 2 shares it, and adds the claim on a leaf key: true for exactly one caller per key, so an API already built this
- * boot (by an earlier module) is not built again.
+ * lookup. Stage 2 shares it.
  */
 public final class Written {
     private final Set<Identity> hashes = ConcurrentHashMap.newKeySet();
-    private final Set<Identity> leaves = ConcurrentHashMap.newKeySet();
     private final AtomicLong nodes = new AtomicLong();
     private final AtomicLong produced = new AtomicLong();
 
@@ -29,9 +27,6 @@ public final class Written {
             @Override public void flush() { store.flush(); }
         };
     }
-
-    /** True for exactly one caller per leaf key: that caller builds {@code N}, {@code E}, {@code O} and {@code L}. */
-    public boolean claimLeaf(Identity k) { return leaves.add(k); }
 
     public long count() { return nodes.get(); }
 

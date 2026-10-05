@@ -32,23 +32,18 @@ class Stage2Measurement {
     /** The module descriptor fact of a leaf, in words: name, flags, and every directive. */
     private static String describeModule(InMemoryLocalStore store, MachineLeaf leaf) {
         var tree = new ContentTree(Sha256.INSTANCE);
-        var e = tree.get(leaf.k(), h -> store.get(MachineStore.nodeKey(h)), new dev.jvmd.core.tree.Codec.Writer().zstr("module-info").u8(0).toBytes());
+        var e = tree.get(leaf.k(), h -> store.get(MachineStore.nodeKey(h)), dev.jvmd.index.layer.machine.Keys.typeKey("module-info"));
         if (e == null) return "none";
         var v = new dev.jvmd.core.tree.Codec.Reader(e.value());
-        var res = new dev.jvmd.core.tree.Codec.Reader(v.raw(v.count()));
-        res.u8(); res.u16();
-        for (int i = 0; i < 2; i++) if (res.u8() == 1) res.str();
-        for (int i = res.count(); i > 0; i--) res.str();
-        for (int i = res.count(); i > 0; i--) res.str();
-        for (int i = 0; i < 2; i++) if (res.u8() == 1) res.str();
-        for (int i = res.count(); i > 0; i--) { res.str(); res.str(); if (res.u8() == 1) res.str(); }
-        var sb = new StringBuilder(res.str());
-        sb.append(" flags=").append(Integer.toHexString(res.u16())).append(res.u8() == 1 ? " version=" + res.str() : "");
-        for (int i = res.count(); i > 0; i--) sb.append("; requires ").append(res.str()).append(' ').append(Integer.toHexString(res.u16())).append(res.u8() == 1 ? " v" + res.str() : "");
-        for (var kind : new String[] {"exports", "opens"})
-            for (int i = res.count(); i > 0; i--) { sb.append("; ").append(kind).append(' ').append(res.str()); res.u16(); for (int j = res.count(); j > 0; j--) sb.append(" to ").append(res.str()); }
-        for (int i = res.count(); i > 0; i--) sb.append("; uses ").append(res.str());
-        for (int i = res.count(); i > 0; i--) { sb.append("; provides ").append(res.str()); for (int j = res.count(); j > 0; j--) sb.append(" with ").append(res.str()); }
+        var module = dev.jvmd.index.layer.machine.Res.Type.decode(v.raw(v.count())).module();
+        if (module == null) return "none";
+        var sb = new StringBuilder(module.name());
+        sb.append(" flags=").append(Integer.toHexString(module.flags())).append(module.version() == null ? "" : " version=" + module.version());
+        for (var r : module.requires()) sb.append("; requires ").append(r.module()).append(' ').append(Integer.toHexString(r.flags())).append(r.version() == null ? "" : " v" + r.version());
+        for (var d : module.exports()) sb.append("; exports ").append(d.packageName()).append(d.to().isEmpty() ? "" : " to " + String.join(" to ", d.to()));
+        for (var d : module.opens()) sb.append("; opens ").append(d.packageName()).append(d.to().isEmpty() ? "" : " to " + String.join(" to ", d.to()));
+        for (var u : module.uses()) sb.append("; uses ").append(u);
+        for (var p : module.provides()) sb.append("; provides ").append(p.service()).append(" with ").append(String.join(" with ", p.with()));
         return sb.toString();
     }
 
@@ -70,14 +65,26 @@ class Stage2Measurement {
         var machine = Stage2Support.jdkOnly(digest).copy(); // the JDK only: every jar is indexed on the spot
         var parsed = ProjectModel.parse(model.json());
         int workers = Integer.getInteger("jvmd.stage2.workers", Runtime.getRuntime().availableProcessors());
+        // Peak used heap while the boot runs, sampled: with sources read lazily it should not follow the size of a module's source.
+        var peak = new java.util.concurrent.atomic.AtomicLong();
+        var sampling = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var sampler = Thread.ofPlatform().daemon().start(() -> {
+            var rt = Runtime.getRuntime();
+            while (sampling.get()) { peak.accumulateAndGet(rt.totalMemory() - rt.freeMemory(), Math::max); try { Thread.sleep(5); } catch (InterruptedException stop) { return; } }
+        });
+        System.gc();
+        long baseline = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
         var result = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, workers, MavenProjectTest.repository(), ClassFacts::of).run(machine, parsed);
+        sampling.set(false);
+        sampler.join();
+        report.append(String.format("peak heap during the boot (sampled): %d MB above a %d MB baseline%n", Math.max(0, peak.get() - baseline) >> 20, baseline >> 20));
 
         var t = result.timings();
-        report.append(String.format("modules=%d routes=%d source_files=%d compiled_files=%d parsed_files=%d source_leaves=%d%n",
-                result.modules(), result.routes(), result.sourceFiles(), t.compiledFiles(), result.parsedFiles(), result.sourceLeaves()));
+        report.append(String.format("modules=%d source_files=%d parsed_files=%d source_leaves=%d%n",
+                result.modules(), result.sourceFiles(), result.parsedFiles(), result.sourceLeaves()));
         report.append(String.format("workers=%d wall=%d ms  (jars indexed on the spot: %d; nodes written: %d; faults: %d)%n", workers, result.wallMillis(), result.indexedOnTheSpot(), result.nodes(), result.faults().size()));
-        report.append(String.format("header compile: %d ms summed over jobs = %.0f ms per thousand files%n", t.headerCompileMillis(), 1000.0 * t.headerCompileMillis() / Math.max(1, t.compiledFiles())));
-        report.append(String.format("facts (Φ_src): %d ms; definer indexes: %d ms for %d distinct leaf sets over %d routes%n", t.factsMillis(), t.definerIndexMillis(), result.distinctLeafSets(), result.routes()));
+        report.append(String.format("header compile: %d ms summed over jobs = %.0f ms per thousand files%n", t.headerCompileMillis(), 1000.0 * t.headerCompileMillis() / Math.max(1, result.sourceFiles())));
+        report.append(String.format("facts (Φ_src): %d ms; definer indexes: %d ms for %d distinct leaf sets over %d routes%n", t.factsMillis(), t.definerIndexMillis(), result.distinctLeafSets(), result.modules() * 2));
 
         var classStore = new InMemoryLocalStore();
         var maven = MavenProjectTest.outputLeaves(digest, model, work, classStore);

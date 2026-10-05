@@ -10,6 +10,7 @@ import dev.jvmd.core.tree.ContentTree;
 import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.index.layer.local.RouteEntry;
+import dev.jvmd.index.layer.machine.MachineStore;
 import dev.jvmd.index.layer.machine.MachineTree;
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -19,6 +20,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * {@code Defaults} (stage 2, 3.15 and step 1.3): a coordinate's default binding, the MACHINE leaf found through {@code P|location},
@@ -27,12 +31,14 @@ import java.util.Map;
  * leaf already present and pays nothing. A location that cannot be bound has no default; the entry then binds to nothing and the
  * boot notes it.
  *
- * <p>One thread: this is step 1, and the jobs of step 2 only read what it decided.
+ * <p>Step 1 runs on the calling thread, but the locations MACHINE does not have are indexed together, on {@code workers} threads, as
+ * stage 1 indexes its own: they are independent jobs. The jobs of step 2 only read what it decided.
  */
 final class Defaults implements AutoCloseable {
     private final Digest digest;
     private final ContentTree tree;
     private final int jdkFeature;
+    private final int workers;
     private final Path repository;
     private final Path jdkHome;
     private final LocalStore store;
@@ -44,10 +50,11 @@ final class Defaults implements AutoCloseable {
     private List<RouteEntry.Jrt> jdk;
     private int indexedOnTheSpot;
 
-    Defaults(Digest digest, ContentTree tree, int jdkFeature, Path repository, Path jdkHome, LocalStore store, Written written, Stage1.Parser parser) {
+    Defaults(Digest digest, ContentTree tree, int jdkFeature, int workers, Path repository, Path jdkHome, LocalStore store, Written written, Stage1.Parser parser) {
         this.digest = digest;
         this.tree = tree;
         this.jdkFeature = jdkFeature;
+        this.workers = workers;
         this.repository = repository;
         this.jdkHome = jdkHome;
         this.store = store;
@@ -73,11 +80,16 @@ final class Defaults implements AutoCloseable {
             if (k == null) missing = true; else found.put(name, k);
         }
         if (missing) {
+            var toIndex = new ArrayList<Enumerate.Location>();
             for (var location : Enumerate.jdk(jdkHome, digest, opened)) {
                 if (found.containsKey(location.module())) continue;
                 Identity k = lookup(location.name());
-                if (k == null) k = indexNow(location);
-                if (k == null) notes.add(location.name() + ": module could not be indexed"); else found.put(location.module(), k);
+                if (k != null) found.put(location.module(), k); else toIndex.add(location);
+            }
+            var indexed = indexAll(toIndex);
+            for (int i = 0; i < toIndex.size(); i++) {
+                var location = toIndex.get(i);
+                if (indexed.get(i) == null) notes.add(location.name() + ": module could not be indexed"); else found.put(location.module(), indexed.get(i));
             }
         }
         var out = new ArrayList<RouteEntry.Jrt>();
@@ -102,32 +114,69 @@ final class Defaults implements AutoCloseable {
         return names;
     }
 
+    /**
+     * Decides the default of every jar of the model at once: the ones MACHINE has are looked up, the others are indexed together on the
+     * pool. {@link #jar} then answers from what was decided.
+     */
+    void prepare(List<ProjectModel.Dependency> dependencies) throws IOException {
+        var toIndex = new ArrayList<Enumerate.Location>();
+        var queued = new java.util.HashSet<String>();
+        for (var dependency : dependencies) {
+            var location = dependency.location();
+            if (jars.containsKey(location) || queued.contains(location)) continue;
+            Identity k = lookup(location);
+            if (k == null) {
+                var file = repository.resolve(location);
+                if (!Files.isRegularFile(file)) notes.add(location + ": no such file under " + repository);
+                else { toIndex.add(Enumerate.jar(location, file)); queued.add(location); continue; }
+            }
+            jars.put(location, k);
+        }
+        var indexed = indexAll(toIndex);
+        for (int i = 0; i < toIndex.size(); i++) {
+            var location = toIndex.get(i).name();
+            if (indexed.get(i) == null) notes.add(location + ": not a readable archive");
+            jars.put(location, indexed.get(i));
+        }
+    }
+
     /** The jar entry of a dependency of the model. */
     RouteEntry.Jar jar(ProjectModel.Dependency dependency) throws IOException {
         var location = dependency.location();
-        if (jars.containsKey(location)) return new RouteEntry.Jar(dependency.coordinate(), location, jars.get(location));
-        Identity k = lookup(location);
-        if (k == null) {
-            var file = repository.resolve(location);
-            if (!Files.isRegularFile(file)) notes.add(location + ": no such file under " + repository);
-            else {
-                k = indexNow(Enumerate.jar(location, file));
-                if (k == null) notes.add(location + ": not a readable archive");
-            }
-        }
-        jars.put(location, k);
-        return new RouteEntry.Jar(dependency.coordinate(), location, k);
+        if (!jars.containsKey(location)) prepare(List.of(dependency));
+        return new RouteEntry.Jar(dependency.coordinate(), location, jars.get(location));
     }
 
     /** {@code P|location -> k}: null if MACHINE has no record, or its record has no leaf (an unreadable archive). */
     private Identity lookup(String location) {
-        var value = store.getPath(location);
+        var value = store.get(MachineStore.pathKey(location));
         return value == null ? null : MachineTree.decodePath(value, digest.width()).k();
     }
 
-    private Identity indexNow(Enumerate.Location location) {
-        indexedOnTheSpot++;
-        return ArtifactJob.index(digest, tree, jdkFeature, written, store, parser, location).k();
+    /** The leaf of each location, in order, indexed on the pool; null for one that is not a readable archive. */
+    private List<Identity> indexAll(List<Enumerate.Location> locations) {
+        indexedOnTheSpot += locations.size();
+        if (locations.isEmpty()) return List.of();
+        var out = new ArrayList<Identity>(locations.size());
+        int threads = Math.min(workers, locations.size());
+        if (threads <= 1) {
+            for (var location : locations) out.add(ArtifactJob.index(digest, tree, jdkFeature, written, store, parser, location).k());
+            return out;
+        }
+        var pool = Executors.newFixedThreadPool(threads, Thread.ofPlatform().name("jvmd-defaults-", 0).daemon(true).factory());
+        try {
+            var futures = new ArrayList<Future<Identity>>(locations.size());
+            for (var location : locations) futures.add(pool.submit(() -> ArtifactJob.index(digest, tree, jdkFeature, written, store, parser, location).k()));
+            for (var future : futures) out.add(future.get());
+            return out;
+        } catch (ExecutionException failed) {
+            if (failed.getCause() instanceof RuntimeException runtime) throw runtime;
+            if (failed.getCause() instanceof Error error) throw error;
+            throw new IllegalStateException("Indexing a location failed", failed.getCause());
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while indexing", interrupted);
+        } finally { pool.shutdownNow(); }
     }
 
     @Override public void close() {

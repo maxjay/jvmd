@@ -3,17 +3,17 @@ package dev.jvmd.index.layer.local;
 import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.tree.Codec;
 import dev.jvmd.core.tree.Entry;
+import dev.jvmd.index.layer.machine.Ann;
+import dev.jvmd.index.layer.machine.Edges;
 import dev.jvmd.index.layer.machine.Fact;
+import dev.jvmd.index.layer.machine.Keys;
+import dev.jvmd.index.layer.machine.Res;
 import java.lang.classfile.ClassFile;
-import java.lang.classfile.MethodSignature;
-import java.lang.classfile.Signature;
-import java.lang.constant.ClassDesc;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
@@ -50,11 +50,15 @@ import com.sun.source.util.Trees;
  */
 public final class SourceFacts {
     /**
-     * What one file declares. {@code typeKeys} are internal names; each becomes an {@code O} key. {@code constantTargets} are the types
-     * its declarations resolved a name through outside bodies (internal names, header targets included): not edges, because a class file
-     * has none for them, but part of the file's proof, because what they supply (an inlined constant, an annotation value) is in its facts.
+     * What one file declares. {@code typeKeys} are internal names; each becomes an {@code O} key. {@code headerTargets} are the targets of
+     * {@code edges}, sorted and distinct: every type its declaration headers mention. {@code constantTargets} are the types its declarations
+     * resolved a name through outside bodies (internal names, header targets included): not edges, because a class file has none for them,
+     * but part of the file's proof, because what they supply (an inlined constant, an annotation value) is in its facts.
      */
-    public record Result(List<Fact> facts, List<Entry> edges, List<String> typeKeys, List<FileRow.Fault> faults, List<String> constantTargets) {
+    public record Result(List<Fact> facts, List<Entry> edges, List<String> headerTargets, List<String> typeKeys, List<FileRow.Fault> faults,
+                         List<String> constantTargets) {
+        public static final Result NONE = new Result(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+
         /** The {@code N} entries of this file: its facts keyed by simple name. */
         public List<Entry> byName() {
             var out = new ArrayList<Entry>(facts.size());
@@ -63,9 +67,6 @@ public final class SourceFacts {
         }
     }
 
-    private static final int KIND_TYPE = 0, KIND_FIELD = 1, KIND_METHOD = 2;
-    private static final int EXTENDS = 1, IMPLEMENTS = 2, PERMITS = 3, ENCLOSES = 4, FIELD_TYPE = 5, PARAM_TYPE = 6, RETURN_TYPE = 7,
-            THROWS = 8, ANNOTATION = 9, RECORD_COMPONENT_TYPE = 10;
     private static final int TYPE_ACCESS = ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT
             | ClassFile.ACC_ANNOTATION | ClassFile.ACC_ENUM | ClassFile.ACC_MODULE;
     private static final int INNER_ACCESS = ClassFile.ACC_STATIC | ClassFile.ACC_PRIVATE | ClassFile.ACC_PROTECTED;
@@ -73,7 +74,6 @@ public final class SourceFacts {
             | ClassFile.ACC_VOLATILE | ClassFile.ACC_TRANSIENT | ClassFile.ACC_ENUM;
     private static final int METHOD_ACCESS = ClassFile.ACC_PUBLIC | ClassFile.ACC_PROTECTED | ClassFile.ACC_STATIC | ClassFile.ACC_FINAL
             | ClassFile.ACC_ABSTRACT | ClassFile.ACC_VARARGS;
-    private static final List<String> META_ANNOTATIONS = List.of("Retention", "Target", "Repeatable", "Inherited", "Documented");
     private static final int MANDATED = 0x8000;
 
     private enum Retention { SOURCE, CLASS, RUNTIME }
@@ -99,7 +99,8 @@ public final class SourceFacts {
     public Result of(List<? extends TypeElement> declared) {
         var out = new Out();
         for (var type : declared) type(type, out);
-        return new Result(List.copyOf(out.facts), List.copyOf(out.edges.values()), List.copyOf(out.typeKeys), List.copyOf(out.faults), List.copyOf(out.constants));
+        return new Result(List.copyOf(out.facts), List.copyOf(out.edges.values()), List.copyOf(out.targets), List.copyOf(out.typeKeys), List.copyOf(out.faults),
+                List.copyOf(out.constants));
     }
 
     /**
@@ -114,81 +115,53 @@ public final class SourceFacts {
      */
     public Result ofModule(com.sun.source.tree.ModuleTree module, String moduleVersion, Function<String, String> versionOf) {
         var out = new Out();
-        var res = new Codec.Writer();
-        res.u8(5).u16(ClassFile.ACC_MODULE).optStr(null).optStr(null).u32(0).u32(0).optStr(null).optStr(null).u32(0);
-        String name = module.getName().toString();
-        res.str(name).u16(module.getModuleType() == com.sun.source.tree.ModuleTree.ModuleKind.OPEN ? 0x0020 : 0).optStr(moduleVersion);
-
-        var requires = new ArrayList<Object[]>();
-        var exports = new ArrayList<com.sun.source.tree.ExportsTree>();
-        var opens = new ArrayList<com.sun.source.tree.OpensTree>();
-        var uses = new ArrayList<com.sun.source.tree.UsesTree>();
-        var provides = new ArrayList<com.sun.source.tree.ProvidesTree>();
+        var requires = new ArrayList<Res.Requires>();
+        var exports = new ArrayList<Res.Directive>();
+        var opens = new ArrayList<Res.Directive>();
+        var uses = new ArrayList<String>();
+        var provides = new ArrayList<Res.Provides>();
         boolean explicitBase = false;
         for (var directive : module.getDirectives()) {
             switch (directive) {
                 case com.sun.source.tree.RequiresTree r -> {
                     String required = r.getModuleName().toString();
                     explicitBase |= required.equals("java.base");
-                    requires.add(new Object[] {required, (r.isTransitive() ? 0x0020 : 0) | (r.isStatic() ? 0x0040 : 0)});
+                    requires.add(new Res.Requires(required, (r.isTransitive() ? 0x0020 : 0) | (r.isStatic() ? 0x0040 : 0), versionOf.apply(required)));
                 }
-                case com.sun.source.tree.ExportsTree e -> exports.add(e);
-                case com.sun.source.tree.OpensTree o -> opens.add(o);
-                case com.sun.source.tree.UsesTree u -> uses.add(u);
-                case com.sun.source.tree.ProvidesTree p -> provides.add(p);
+                case com.sun.source.tree.ExportsTree e -> exports.add(packageDirective(e.getPackageName().toString(), e.getModuleNames()));
+                case com.sun.source.tree.OpensTree o -> opens.add(packageDirective(o.getPackageName().toString(), o.getModuleNames()));
+                case com.sun.source.tree.UsesTree u -> uses.add(u.getServiceName().toString().replace('.', '/'));
+                case com.sun.source.tree.ProvidesTree p -> {
+                    var with = new ArrayList<String>();
+                    for (var implementation : p.getImplementationNames()) with.add(implementation.toString().replace('.', '/'));
+                    provides.add(new Res.Provides(p.getServiceName().toString().replace('.', '/'), with));
+                }
                 default -> { }
             }
         }
-        if (!explicitBase) requires.add(0, new Object[] {"java.base", MANDATED});
-        res.u32(requires.size());
-        for (var r : requires) res.str((String) r[0]).u16((Integer) r[1]).optStr(versionOf.apply((String) r[0]));
-        res.u32(exports.size());
-        for (var e : exports) packageDirective(res, e.getPackageName().toString(), e.getModuleNames());
-        res.u32(opens.size());
-        for (var o : opens) packageDirective(res, o.getPackageName().toString(), o.getModuleNames());
-        res.u32(uses.size());
-        for (var u : uses) res.str(u.getServiceName().toString().replace('.', '/'));
-        res.u32(provides.size());
-        for (var p : provides) {
-            res.str(p.getServiceName().toString().replace('.', '/')).u32(p.getImplementationNames().size());
-            for (var implementation : p.getImplementationNames()) res.str(implementation.toString().replace('.', '/'));
-        }
+        if (!explicitBase) requires.add(0, new Res.Requires("java.base", MANDATED, versionOf.apply("java.base")));
+        var descriptor = new Res.Module(module.getName().toString(), module.getModuleType() == com.sun.source.tree.ModuleTree.ModuleKind.OPEN ? 0x0020 : 0,
+                moduleVersion, requires, exports, opens, uses, provides);
+        var res = new Res.Type(Res.Type.MODULE, ClassFile.ACC_MODULE, null, null, List.of(), List.of(), null, null, List.of(), List.of(), descriptor);
         var tail = new Codec.Writer().u32(0).u32(0).u32(0).u8(0).toBytes();
-        add(out, typeKey("module-info"), "module-info", res, tail);
+        add(out, Keys.typeKey("module-info"), "module-info", res.encode(), tail);
         out.typeKeys.add("module-info");
-        return new Result(List.copyOf(out.facts), List.of(), List.copyOf(out.typeKeys), List.of(), List.of());
+        return new Result(List.copyOf(out.facts), List.of(), List.of(), List.copyOf(out.typeKeys), List.of(), List.of());
     }
 
-    private static void packageDirective(Codec.Writer res, String packageName, List<? extends com.sun.source.tree.ExpressionTree> to) {
-        res.str(packageName.replace('.', '/')).u16(0);
-        if (to == null) { res.u32(0); return; }
-        res.u32(to.size());
-        for (var module : to) res.str(module.toString());
+    private static Res.Directive packageDirective(String packageName, List<? extends com.sun.source.tree.ExpressionTree> to) {
+        var modules = new ArrayList<String>();
+        if (to != null) for (var module : to) modules.add(module.toString());
+        return new Res.Directive(packageName.replace('.', '/'), 0, modules);
     }
 
     private static final class Out {
         final List<Fact> facts = new ArrayList<>();
         final TreeMap<byte[], Entry> edges = new TreeMap<>(Arrays::compareUnsigned);
+        final java.util.Set<String> targets = new java.util.TreeSet<>();
         final List<String> typeKeys = new ArrayList<>();
         final List<FileRow.Fault> faults = new ArrayList<>();
         final java.util.Set<String> constants = new java.util.TreeSet<>();
-    }
-
-    // ---- keys (the same bytes as ClassFacts) ----------------------------------------------------------------------------
-
-    private static byte[] typeKey(String internalName) { return new Codec.Writer(internalName.length() + 2).zstr(internalName).u8(KIND_TYPE).toBytes(); }
-
-    private static byte[] memberKey(String internalName, int kind, String name, String descriptor) {
-        return new Codec.Writer(internalName.length() + name.length() + descriptor.length() + 6).zstr(internalName).u8(kind).zstr(name).zstr(descriptor).toBytes();
-    }
-
-    private static byte[] edgeKey(String target, int kind, byte[] source) {
-        return new Codec.Writer(target.length() + source.length + 2).zstr(target).u8(kind).raw(source).toBytes();
-    }
-
-    private static String simpleName(String internalName) {
-        int cut = Math.max(internalName.lastIndexOf('/'), internalName.lastIndexOf('$'));
-        return internalName.substring(cut + 1);
     }
 
     // ---- types -----------------------------------------------------------------------------------------------------------
@@ -197,7 +170,7 @@ public final class SourceFacts {
 
     private void type(TypeElement type, Out out) {
         String owner = binaryName(type);
-        byte[] key = typeKey(owner);
+        byte[] key = Keys.typeKey(owner);
         var errors = new ArrayList<String>();
         try {
             typeFact(type, owner, key, errors, out);
@@ -261,39 +234,31 @@ public final class SourceFacts {
         }
         String signature = classSignature(type, errors);
 
-        var res = new Codec.Writer();
-        res.u8(kindCode).u16(access).optStr(signature).optStr(superName);
-        res.u32(interfaces.size());
-        for (var i : interfaces) res.str(i);
-        res.u32(permits.size());
-        for (var p : permits) res.str(p);
-        res.optStr(host).optStr(outer);
-        var components = kindCode == 3 ? type.getRecordComponents() : List.<javax.lang.model.element.RecordComponentElement>of();
-        res.u32(components.size());
-        var componentTypes = new ArrayList<String[]>();
-        for (var rc : components) {
+        var recordComponents = kindCode == 3 ? type.getRecordComponents() : List.<javax.lang.model.element.RecordComponentElement>of();
+        var components = new ArrayList<Res.Component>();
+        for (var rc : recordComponents) {
             var t = rc.asType();
-            String desc = descriptor(t, errors), csig = signature(t, errors);
-            res.str(rc.getSimpleName().toString()).str(desc).optStr(csig);
-            componentTypes.add(new String[] {desc, csig});
+            components.add(new Res.Component(rc.getSimpleName().toString(), descriptor(t, errors), signature(t, errors)));
         }
         var annotations = retained(type);
-        if (kindCode == 4) {
-            for (var meta : META_ANNOTATIONS) {
+        var metas = new ArrayList<Ann>();
+        if (kindCode == Res.Type.ANNOTATION) {
+            for (var meta : Res.META_ANNOTATIONS) {
                 AnnotationMirror found = null;
                 for (var a : type.getAnnotationMirrors())
                     if (((TypeElement) a.getAnnotationType().asElement()).getQualifiedName().contentEquals("java.lang.annotation." + meta)) found = a;
-                if (found == null) res.u8(0); else { res.u8(1); annotation(res, found); }
+                metas.add(found == null ? null : annotation(found));
             }
         }
         if (!errors.isEmpty()) return;
 
-        add(out, key, simpleName(owner), res, tail(type, annotations, false, null));
-        if (superName != null) edge(out, superName, EXTENDS, key);
-        for (var i : interfaces) edge(out, i, IMPLEMENTS, key);
-        for (var p : permits) edge(out, p, PERMITS, key);
-        if (outer != null) edge(out, outer, ENCLOSES, key);
-        for (var c : componentTypes) typeNames(c[0], c[1], n -> edge(out, n, RECORD_COMPONENT_TYPE, key));
+        var res = new Res.Type(kindCode, access, signature, superName, interfaces, permits, host, outer, components, metas, null);
+        add(out, key, Keys.simpleName(owner), res.encode(), tail(type, annotations, false, null));
+        if (superName != null) edge(out, superName, Edges.EXTENDS, key);
+        for (var i : interfaces) edge(out, i, Edges.IMPLEMENTS, key);
+        for (var p : permits) edge(out, p, Edges.PERMITS, key);
+        if (outer != null) edge(out, outer, Edges.ENCLOSES, key);
+        for (var c : components) Edges.typeNames(c.descriptor(), c.signature(), n -> edge(out, n, Edges.RECORD_COMPONENT_TYPE, key));
         annotationEdges(annotations, key, out);
     }
 
@@ -314,31 +279,26 @@ public final class SourceFacts {
         var errors = new ArrayList<String>();
         String desc = descriptor(field.asType(), errors);
         String signature = signature(field.asType(), errors);
-        byte[] key = memberKey(ownerName, KIND_FIELD, name, desc);
+        byte[] key = Keys.memberKey(ownerName, Keys.FIELD, name, desc);
         if (!errors.isEmpty()) { out.faults.add(fault(key, errors)); return; }
 
-        var res = new Codec.Writer();
-        res.u16(flags & FIELD_ACCESS).optStr(signature);
         Object constant = field.getConstantValue();
-        if (constant == null) res.u8(0);
-        else {
-            res.u8(1);
-            switch (constant) {
-                case Boolean z -> res.u8(3).u32(z ? 1 : 0);
-                case Character c -> res.u8(3).u32(c);
-                case Byte b -> res.u8(3).u32(b.intValue() & 0xFFFFFFFFL);
-                case Short s -> res.u8(3).u32(s.intValue() & 0xFFFFFFFFL);
-                case Integer i -> res.u8(3).u32(i & 0xFFFFFFFFL);
-                case Float f -> res.u8(4).u32(Float.floatToRawIntBits(f) & 0xFFFFFFFFL);
-                case Long l -> res.u8(5).u64(l);
-                case Double d -> res.u8(6).u64(Double.doubleToRawLongBits(d));
-                case String s -> res.u8(8).str(s);
-                default -> throw new IllegalArgumentException("Unexpected constant " + constant.getClass());
-            }
-        }
+        Res.Constant value = switch (constant) {
+            case null -> null;
+            case Boolean z -> new Res.Constant(3, z ? 1 : 0, null);
+            case Character c -> new Res.Constant(3, c, null);
+            case Byte b -> new Res.Constant(3, b, null);
+            case Short s -> new Res.Constant(3, s, null);
+            case Integer i -> new Res.Constant(3, i, null);
+            case Float f -> new Res.Constant(4, Float.floatToRawIntBits(f), null);
+            case Long l -> new Res.Constant(5, l, null);
+            case Double d -> new Res.Constant(6, Double.doubleToRawLongBits(d), null);
+            case String s -> new Res.Constant(8, 0, s);
+            default -> throw new IllegalArgumentException("Unexpected constant " + constant.getClass());
+        };
         var annotations = retained(field);
-        add(out, key, name, res, tail(field, annotations, false, null));
-        typeNames(desc, signature, n -> edge(out, n, FIELD_TYPE, key));
+        add(out, key, name, new Res.Field(flags & FIELD_ACCESS, signature, value).encode(), tail(field, annotations, false, null));
+        Edges.typeNames(desc, signature, n -> edge(out, n, Edges.FIELD_TYPE, key));
         annotationEdges(annotations, key, out);
     }
 
@@ -367,19 +327,15 @@ public final class SourceFacts {
         var thrown = new ArrayList<String>();
         for (var t : method.getThrownTypes()) thrown.add(internalName(t, errors));
         String signature = methodSignature(method, constructor, errors);
-        byte[] key = memberKey(ownerName, KIND_METHOD, name, desc.toString());
+        byte[] key = Keys.memberKey(ownerName, Keys.METHOD, name, desc.toString());
         // A default value of an annotation element is part of its header: its type must have resolved too.
         var defaultValue = method.getDefaultValue();
         if (!errors.isEmpty()) { out.faults.add(fault(key, errors)); return; }
 
-        var res = new Codec.Writer();
-        res.u16(flags & METHOD_ACCESS).optStr(signature);
-        res.u32(thrown.size());
-        for (var t : thrown) res.str(t);
-        if (defaultValue != null) { res.u8(1); value(res, defaultValue, returnType); } else res.u8(0);
+        var res = new Res.Method(flags & METHOD_ACCESS, signature, thrown, defaultValue == null ? null : value(defaultValue, returnType));
         var annotations = retained(method);
-        add(out, key, name, res, tail(method, annotations, true, inner ? owner : null));
-        methodEdges(out, key, desc.toString(), signature, thrown);
+        add(out, key, name, res.encode(), tail(method, annotations, true, inner ? owner : null));
+        Edges.method(desc.toString(), signature, thrown, (target, kind) -> edge(out, target, kind, key));
         annotationEdges(annotations, key, out);
     }
 
@@ -572,74 +528,18 @@ public final class SourceFacts {
 
     // ---- edges (the same names ClassFacts reads out of descriptors and signatures) -----------------------------------------
 
-    private void methodEdges(Out out, byte[] key, String desc, String signature, List<String> thrown) {
-        int close = desc.indexOf(')');
-        descriptorNames(desc.substring(1, close), n -> edge(out, n, PARAM_TYPE, key));
-        descriptorNames(desc.substring(close + 1), n -> edge(out, n, RETURN_TYPE, key));
-        for (var t : thrown) edge(out, t, THROWS, key);
-        if (signature == null) return;
-        try {
-            var sig = MethodSignature.parseFrom(signature);
-            for (var tp : sig.typeParameters()) typeParamNames(tp, n -> edge(out, n, PARAM_TYPE, key));
-            for (var a : sig.arguments()) signatureNames(a, n -> edge(out, n, PARAM_TYPE, key));
-            signatureNames(sig.result(), n -> edge(out, n, RETURN_TYPE, key));
-            for (var t : sig.throwableSignatures()) signatureNames(t, n -> edge(out, n, THROWS, key));
-        } catch (RuntimeException malformed) {
-            // As in ClassFacts: a signature that cannot be read contributes no edges; the string itself is still in res.
-        }
-    }
-
-    private void typeNames(String descriptor, String signature, Consumer<String> out) {
-        descriptorNames(descriptor, out);
-        if (signature == null) return;
-        try { signatureNames(Signature.parseFrom(signature), out); } catch (RuntimeException malformed) { /* see methodEdges */ }
-    }
-
-    private static void descriptorNames(String descriptor, Consumer<String> out) {
-        for (int i = 0; i < descriptor.length(); i++) {
-            if (descriptor.charAt(i) == 'L') {
-                int end = descriptor.indexOf(';', i);
-                if (end < 0) return;
-                out.accept(descriptor.substring(i + 1, end));
-                i = end;
-            }
-        }
-    }
-
-    private static String internalName(ClassDesc desc) {
-        String d = desc.descriptorString();
-        return d.substring(1, d.length() - 1);
-    }
-
-    private static void signatureNames(Signature s, Consumer<String> out) {
-        switch (s) {
-            case Signature.ClassTypeSig c -> {
-                c.outerType().ifPresent(o -> signatureNames(o, out));
-                out.accept(internalName(c.classDesc()));
-                for (var arg : c.typeArgs()) if (arg instanceof Signature.TypeArg.Bounded b) signatureNames(b.boundType(), out);
-            }
-            case Signature.ArrayTypeSig a -> signatureNames(a.componentSignature(), out);
-            default -> { }
-        }
-    }
-
-    private static void typeParamNames(Signature.TypeParam tp, Consumer<String> out) {
-        tp.classBound().ifPresent(b -> signatureNames(b, out));
-        for (var b : tp.interfaceBounds()) signatureNames(b, out);
-    }
-
     private void annotationEdges(List<AnnotationMirror> retained, byte[] key, Out out) {
-        for (var a : retained) descriptorNames(descriptor(a.getAnnotationType(), new ArrayList<>()), n -> edge(out, n, ANNOTATION, key));
+        for (var a : retained) Edges.descriptorNames(descriptor(a.getAnnotationType(), new ArrayList<>()), n -> edge(out, n, Edges.ANNOTATION, key));
     }
 
     private void edge(Out out, String target, int kind, byte[] source) {
-        var key = edgeKey(target, kind, source);
+        out.targets.add(target);
+        var key = Keys.edgeKey(target, kind, source);
         out.edges.computeIfAbsent(key, k -> new Entry(k, Entry.NONE, digest.hash(k)));
     }
 
     /** One fact: {@code e = u32 resLen || res || tail}, {@code h = Digest(res)}. */
-    private void add(Out out, byte[] key, String simpleName, Codec.Writer res, byte[] tail) {
-        var resBytes = res.toBytes();
+    private void add(Out out, byte[] key, String simpleName, byte[] resBytes, byte[] tail) {
         var e = new Codec.Writer(resBytes.length + tail.length + 4).u32(resBytes.length).raw(resBytes).raw(tail).toBytes();
         out.facts.add(new Fact(key, e, digest.hash(resBytes), simpleName));
     }
@@ -674,8 +574,9 @@ public final class SourceFacts {
         for (var wanted : new Retention[] {Retention.RUNTIME, Retention.CLASS}) {
             var chosen = new ArrayList<AnnotationMirror>();
             for (var a : retained) if (retention(a) == wanted) chosen.add(a);
-            out.u32(chosen.size());
-            for (var a : chosen) annotation(out, a);
+            var list = new ArrayList<Ann>(chosen.size());
+            for (var a : chosen) list.add(annotation(a));
+            Ann.encodeList(out, list);
         }
         out.u32(0); // type annotations: not resolution facts, and javac's target info for them is attribution's business
         out.u8(elements.isDeprecated(element) ? 1 : 0);
@@ -695,46 +596,39 @@ public final class SourceFacts {
         return out.toBytes();
     }
 
-    /** {@code annotation = str typeDescriptor || u16 elementCount || (str name || value)[elementCount]} (A.4a). */
-    private void annotation(Codec.Writer out, AnnotationMirror a) {
-        var values = a.getElementValues();
-        out.str(descriptor(a.getAnnotationType(), new ArrayList<>())).u16(values.size());
-        for (var e : values.entrySet()) {
-            out.str(e.getKey().getSimpleName().toString());
-            value(out, e.getValue(), e.getKey().getReturnType());
-        }
+    private Ann annotation(AnnotationMirror a) {
+        var elements = new ArrayList<Ann.Element>();
+        for (var e : a.getElementValues().entrySet())
+            elements.add(new Ann.Element(e.getKey().getSimpleName().toString(), value(e.getValue(), e.getKey().getReturnType())));
+        return new Ann(descriptor(a.getAnnotationType(), new ArrayList<>()), elements);
     }
 
-    /**
-     * {@code value = u8 tag || payload} (A.4a). javac hands a byte, short or int constant over as the same Java type, so the tag
-     * comes from the element's declared type, not from the value.
-     */
-    private void value(Codec.Writer out, AnnotationValue v, TypeMirror expected) {
+    /** javac hands a byte, short or int constant over as the same Java type, so the tag comes from the element's declared type, not from the value. */
+    private Ann.Val value(AnnotationValue v, TypeMirror expected) {
         Object o = v.getValue();
-        switch (expected.getKind()) {
+        return switch (expected.getKind()) {
             case ARRAY -> {
                 var component = ((ArrayType) expected).getComponentType();
-                out.u8('[');
-                if (o instanceof List<?> list) {
-                    out.u16(list.size());
-                    for (var item : list) value(out, (AnnotationValue) item, component);
-                } else { out.u16(1); value(out, v, component); }
+                var values = new ArrayList<Ann.Val>();
+                if (o instanceof List<?> list) for (var item : list) values.add(value((AnnotationValue) item, component));
+                else values.add(value(v, component));
+                yield new Ann.Val.Array(values);
             }
-            case BOOLEAN -> out.u8('Z').u32((o instanceof Boolean z ? z : ((Number) o).intValue() != 0) ? 1 : 0);
-            case BYTE -> out.u8('B').u32(((Number) o).byteValue() & 0xFFFFFFFFL);
-            case CHAR -> out.u8('C').u32(o instanceof Character c ? c : ((Number) o).intValue() & 0xFFFF);
-            case SHORT -> out.u8('S').u32(((Number) o).shortValue() & 0xFFFFFFFFL);
-            case INT -> out.u8('I').u32(((Number) o).intValue() & 0xFFFFFFFFL);
-            case LONG -> out.u8('J').u64(((Number) o).longValue());
-            case FLOAT -> out.u8('F').u32(Float.floatToRawIntBits(((Number) o).floatValue()) & 0xFFFFFFFFL);
-            case DOUBLE -> out.u8('D').u64(Double.doubleToRawLongBits(((Number) o).doubleValue()));
+            case BOOLEAN -> new Ann.Val.Prim('Z', (o instanceof Boolean z ? z : ((Number) o).intValue() != 0) ? 1 : 0);
+            case BYTE -> new Ann.Val.Prim('B', ((Number) o).byteValue());
+            case CHAR -> new Ann.Val.Prim('C', o instanceof Character c ? c : ((Number) o).intValue() & 0xFFFF);
+            case SHORT -> new Ann.Val.Prim('S', ((Number) o).shortValue());
+            case INT -> new Ann.Val.Prim('I', ((Number) o).intValue());
+            case LONG -> new Ann.Val.Prim('J', ((Number) o).longValue());
+            case FLOAT -> new Ann.Val.Prim('F', Float.floatToRawIntBits(((Number) o).floatValue()));
+            case DOUBLE -> new Ann.Val.Prim('D', Double.doubleToRawLongBits(((Number) o).doubleValue()));
             default -> {
-                if (o instanceof String s) out.u8('s').str(s);
-                else if (o instanceof VariableElement constant) out.u8('e').str(descriptor(constant.asType(), new ArrayList<>())).str(constant.getSimpleName().toString());
-                else if (o instanceof TypeMirror t) out.u8('c').str(descriptor(t, new ArrayList<>()));
-                else if (o instanceof AnnotationMirror nested) { out.u8('@'); annotation(out, nested); }
-                else throw new IllegalArgumentException("Unexpected annotation value " + o);
+                if (o instanceof String s) yield new Ann.Val.Str(s);
+                if (o instanceof VariableElement constant) yield new Ann.Val.Enum(descriptor(constant.asType(), new ArrayList<>()), constant.getSimpleName().toString());
+                if (o instanceof TypeMirror t) yield new Ann.Val.Cls(descriptor(t, new ArrayList<>()));
+                if (o instanceof AnnotationMirror nested) yield new Ann.Val.Nested(annotation(nested));
+                throw new IllegalArgumentException("Unexpected annotation value " + o);
             }
-        }
+        };
     }
 }

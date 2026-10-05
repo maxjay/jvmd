@@ -9,58 +9,22 @@ import dev.jvmd.index.layer.machine.MachineStore;
  * records live in the same store as MACHINE's, under their own key prefixes; nodes of every tree and list are {@code N|hash} in
  * the one node space. A LOCAL generation is the key prefix {@code projectKey}, not a store of its own.
  *
- * <p>Puts buffer in the calling thread's batch and are committed by {@link #flush()}, as stage 1's. {@link #putLocalRoot} commits
- * at once and is called only after {@link #sync()}. Stage 2 itself calls only the MACHINE reads ({@link #getLeaf},
- * {@link #getNode}, {@link #getPath}, {@link #getMachineRoot}) before its root; the others are for warm boot and attribution.
+ * <p>One put and one get, over keys from the layout below: a record kind is a key function, not a method. {@link #put} buffers in the
+ * calling thread's batch and is committed by {@link #flush()}, as stage 1's. {@link #putLocalRoot} commits at once and is called only
+ * after {@link #sync()}. Stage 2 itself reads only MACHINE's records ({@code L|}, {@code N|}, {@code P|}, {@code ROOT}) and the shared,
+ * derivable ones ({@code DD|}, {@code DS|}, {@code S|}, {@code ST|}) before its root; the others are for warm boot and attribution.
  */
 public interface LocalStore extends MachineStore {
-    // ---- writes ----------------------------------------------------------------------------------------------------------
-    void putModule(Identity projectKey, String module, byte[] value);
-    void putRoute(Identity projectKey, String module, int scope, byte[] value);
-    void putFile(Identity projectKey, String path, byte[] value);
-    /** {@code DD|leafSetExt}: the external disjoint definer index over JDK and jar leaves, shared across projects. */
-    void putDisjoint(Identity leafSetExt, byte[] value);
-    /** {@code DS|leafSetSib}: the sibling disjoint definer index over this project's leaves. */
-    void putSibling(Identity leafSetSib, byte[] value);
-    /** {@code DC|routeHash}: the conflict table of a definer index, shared across projects. */
-    void putConflicts(Identity routeHash, byte[] value);
-    /** {@code C|κ_file|leafSetExt}. */
-    void putConsumer(Identity kappa, Identity leafSetExt, byte[] value);
-    /** {@code X|kind|key|projectKey}: this project's list of consumers of one identity (B.9). */
-    void putReverse(int kind, byte[] key, Identity projectKey, byte[] value);
-    /** {@code RS|κ_file|leafSetExt}. */
-    void putResult(Identity kappa, Identity leafSetExt, byte[] value);
-    /** {@code S|k}: a leaf's list of its types' stubs (B.10). */
-    void putStub(Identity k, byte[] value);
-    /** {@code ST|stKey}: one type's stub (B.10). */
-    void putStubType(Identity stKey, byte[] value);
+    /** Buffers one record under {@code key}. */
+    void put(byte[] key, byte[] value);
+
+    /** The record under {@code key}, or null. */
+    byte[] get(byte[] key);
+
     /** Commits at once. The previous root of this project, if any, is kept under {@code LROOT|projectKey|n} (9.1). */
     void putLocalRoot(Identity projectKey, byte[] value);
 
-    // ---- reads -----------------------------------------------------------------------------------------------------------
-    boolean hasLocalRoot(Identity projectKey);
-    byte[] getLeaf(Identity k);
-    byte[] getNode(Identity hash);
-    /** {@code P|location}, or null: the MACHINE record of one location. */
-    byte[] getPath(String location);
-    /** The {@code ROOT} record of MACHINE, or null. */
-    byte[] getMachineRoot();
-    byte[] getModule(Identity projectKey, String module);
-    byte[] getRoute(Identity projectKey, String module, int scope);
-    byte[] getFile(Identity projectKey, String path);
-    /** {@code DD|leafSetExt}, or null: a shared, derivable record, so a boot may read it before its root (4, step 2.7). */
-    byte[] getDisjoint(Identity leafSetExt);
-    /** {@code DS|leafSetSib}, or null: read like {@code DD|}. */
-    byte[] getSibling(Identity leafSetSib);
-    byte[] getConflicts(Identity routeHash);
-    byte[] getConsumer(Identity kappa, Identity leafSetExt);
-    byte[] getReverse(int kind, byte[] key, Identity projectKey);
-    byte[] getResult(Identity kappa, Identity leafSetExt);
-    /** {@code S|k}, or null: shared and derivable, so a boot may read it. */
-    byte[] getStub(Identity k);
-    /** {@code ST|stKey}, or null: shared and derivable, so a boot may read it. */
-    byte[] getStubType(Identity stKey);
-    byte[] getLocalRoot(Identity projectKey);
+    default boolean hasLocalRoot(Identity projectKey) { return get(localRootKey(projectKey)) != null; }
 
     // ---- key layout (section 4). Defined here so every implementation writes the same bytes. -------------------------------
     int MAIN = 0, TEST = 1;

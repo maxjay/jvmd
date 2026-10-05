@@ -48,11 +48,16 @@ public final class Stubs {
 
     private static final int ACC_SUPER = 0x20;
 
+    private record FieldDecl(String name, String descriptor, Res.Field res) { }
+
+    private record MethodDecl(String name, String descriptor, Res.Method res) { }
+
+    /** One type of a leaf with its members, decoded once. The entries of a leaf arrive in key order, which is the order members are written in. */
     private static final class TypeDecl {
         String owner;
-        byte[] res;
-        final TreeMap<byte[], byte[]> fields = new TreeMap<>(Arrays::compareUnsigned);
-        final TreeMap<byte[], byte[]> methods = new TreeMap<>(Arrays::compareUnsigned);
+        Res.Type type;
+        final List<FieldDecl> fields = new ArrayList<>();
+        final List<MethodDecl> methods = new ArrayList<>();
     }
 
     /** One entry of {@code S|k}: a type of the leaf and the key of its stub (B.10). */
@@ -105,33 +110,30 @@ public final class Stubs {
 
         var decls = new TreeMap<String, TypeDecl>();
         tree.forEach(leaf.k(), reader, entry -> {
-            var m = new Codec.Reader(entry.key());
-            String owner = zstr(m);
-            int kind = m.u8();
-            var decl = decls.computeIfAbsent(owner, o -> { var d = new TypeDecl(); d.owner = o; return d; });
+            var m = Keys.Member.decode(entry.key());
+            var decl = decls.computeIfAbsent(m.owner(), o -> { var d = new TypeDecl(); d.owner = o; return d; });
             var value = new Codec.Reader(entry.value());
             byte[] res = value.raw((int) value.u32());
-            switch (kind) {
-                case 0 -> decl.res = res;
-                case 1 -> decl.fields.put(entry.key(), res);
-                default -> decl.methods.put(entry.key(), res);
+            switch (m.kind()) {
+                case Keys.TYPE -> decl.type = Res.Type.decode(res);
+                case Keys.FIELD -> decl.fields.add(new FieldDecl(m.name(), m.descriptor(), Res.Field.decode(res)));
+                default -> decl.methods.add(new MethodDecl(m.name(), m.descriptor(), Res.Method.decode(res)));
             }
         });
 
         // The members of a type are the types whose outer class it is: the outer's InnerClasses attribute is how javac finds them.
         var members = new TreeMap<String, List<String>>();
         for (var decl : decls.values()) {
-            if (decl.res == null) continue;
-            String outer = outer(decl.res);
-            if (outer != null) members.computeIfAbsent(outer, o -> new ArrayList<>()).add(decl.owner);
+            if (decl.type == null || decl.type.outer() == null) continue;
+            members.computeIfAbsent(decl.type.outer(), o -> new ArrayList<>()).add(decl.owner);
         }
         var out = new ArrayList<Stub>();
         var refs = new ArrayList<Ref>();
         for (var decl : decls.values()) {
-            if (decl.res == null || decl.res[0] == 5) continue; // no type fact (not produced), or a module descriptor
-            var oSum = tree.get(leaf.oHash(), reader, new Codec.Writer(decl.owner.length() + 1).zstr(decl.owner).toBytes()).h();
+            if (decl.type == null || decl.type.kind() == Res.Type.MODULE) continue; // no type fact (not produced), or a module descriptor
+            var oSum = tree.get(leaf.oHash(), reader, Keys.ownerKey(decl.owner)).h();
             var memberTypes = new ArrayList<Member>();
-            for (var member : members.getOrDefault(decl.owner, List.of())) memberTypes.add(new Member(member, accessOf(decls.get(member).res)));
+            for (var member : members.getOrDefault(decl.owner, List.of())) memberTypes.add(new Member(member, decls.get(member).type.access()));
             var stKey = stKey(digest, decl.owner, oSum, memberTypes);
             var stored = cache.type(stKey);
             byte[] bytes;
@@ -156,7 +158,7 @@ public final class Stubs {
      * type without member types.
      */
     public static Identity stKey(Digest digest, String owner, Identity oSum, List<Member> members) {
-        var parts = new ArrayList<byte[]>(List.of(new Codec.Writer(owner.length() + 1).zstr(owner).toBytes(), oSum.view()));
+        var parts = new ArrayList<byte[]>(List.of(Keys.ownerKey(owner), oSum.view()));
         var sorted = new ArrayList<byte[]>();
         for (var member : members) sorted.add(new Codec.Writer(member.internalName().length() + 3).zstr(member.internalName()).u16(member.flags()).toBytes());
         // memberTypeKey is a zstr, so the NUL after the name ends it: comparing the whole parts compares the keys first.
@@ -182,30 +184,7 @@ public final class Stubs {
 
     // ---- one class -------------------------------------------------------------------------------------------------------
 
-    private static String zstr(Codec.Reader in) {
-        var out = new java.io.ByteArrayOutputStream();
-        for (int b; (b = in.u8()) != 0; ) out.write(b);
-        return out.toString(java.nio.charset.StandardCharsets.UTF_8);
-    }
-
-    private static String optStr(Codec.Reader in) { return in.u8() == 1 ? in.str() : null; }
-
     private static ClassDesc internal(String name) { return ClassDesc.ofInternalName(name); }
-
-    /** The outer class field of a type's {@code res}, without decoding the rest. */
-    private static String outer(byte[] res) {
-        var in = new Codec.Reader(res);
-        in.u8(); in.u16(); optStr(in); optStr(in);
-        for (int i = in.count(); i > 0; i--) in.str();
-        for (int i = in.count(); i > 0; i--) in.str();
-        optStr(in);
-        return optStr(in);
-    }
-
-    private static String simpleName(String internalName) {
-        int cut = Math.max(internalName.lastIndexOf('/'), internalName.lastIndexOf('$'));
-        return internalName.substring(cut + 1);
-    }
 
     /** The access flags a type's InnerClasses entry carries: its own modifiers as a member, from the class-level and inner bits of {@code res}. */
     private static int innerFlags(int access) {
@@ -217,21 +196,15 @@ public final class Stubs {
     }
 
     private static byte[] build(TypeDecl decl, List<String> memberTypes, Map<String, TypeDecl> all) {
-        var in = new Codec.Reader(decl.res);
-        int kind = in.u8();
-        int access = in.u16();
-        String signature = optStr(in);
-        String superName = optStr(in);
+        var type = decl.type;
+        int kind = type.kind(), access = type.access();
+        String signature = type.signature(), superName = type.superName(), host = type.nestHost(), outer = type.outer();
         var interfaces = new ArrayList<ClassDesc>();
-        for (int i = in.count(); i > 0; i--) interfaces.add(internal(in.str()));
+        for (var i : type.interfaces()) interfaces.add(internal(i));
         var permits = new ArrayList<ClassDesc>();
-        for (int i = in.count(); i > 0; i--) permits.add(internal(in.str()));
-        String host = optStr(in), outer = optStr(in);
-        int components = in.count();
-        var recordParts = new ArrayList<String[]>();
-        for (int i = 0; i < components; i++) recordParts.add(new String[] {in.str(), in.str(), optStr(in)});
+        for (var p : type.permits()) permits.add(internal(p));
         var metaAnnotations = new ArrayList<Annotation>();
-        if (kind == 4) for (int i = 0; i < 5; i++) if (in.u8() == 1) metaAnnotations.add(annotation(in));
+        for (var meta : type.metas()) if (meta != null) metaAnnotations.add(annotation(meta));
 
         final int classFlags = (access & (ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT
                 | ClassFile.ACC_ANNOTATION | ClassFile.ACC_ENUM)) | ((access & ClassFile.ACC_INTERFACE) == 0 ? ACC_SUPER : 0);
@@ -244,108 +217,84 @@ public final class Stubs {
             if (host != null) cb.with(NestHostAttribute.of(internal(host)));
             if (!permits.isEmpty()) cb.with(PermittedSubclassesAttribute.ofSymbols(permits));
             var inner = new ArrayList<InnerClassInfo>();
-            if (outer != null) inner.add(InnerClassInfo.of(internal(decl.owner), Optional.of(internal(outer)), Optional.of(simpleName(decl.owner)), innerFlags(access)));
+            if (outer != null) inner.add(InnerClassInfo.of(internal(decl.owner), Optional.of(internal(outer)), Optional.of(Keys.simpleName(decl.owner)), innerFlags(access)));
             for (var member : memberTypes) {
-                int memberAccess = accessOf(all.get(member).res);
-                inner.add(InnerClassInfo.of(internal(member), Optional.of(internal(decl.owner)), Optional.of(simpleName(member)), innerFlags(memberAccess)));
+                inner.add(InnerClassInfo.of(internal(member), Optional.of(internal(decl.owner)), Optional.of(Keys.simpleName(member)), innerFlags(all.get(member).type.access())));
             }
             if (!inner.isEmpty()) cb.with(InnerClassesAttribute.of(inner));
             if (kind == 3) {
                 var infos = new ArrayList<RecordComponentInfo>();
-                for (var part : recordParts) {
+                for (var part : type.components()) {
                     var attributes = new ArrayList<Attribute<?>>();
-                    if (part[2] != null) attributes.add(SignatureAttribute.of(cb.constantPool().utf8Entry(part[2])));
-                    infos.add(RecordComponentInfo.of(part[0], ClassDesc.ofDescriptor(part[1]), attributes));
+                    if (part.signature() != null) attributes.add(SignatureAttribute.of(cb.constantPool().utf8Entry(part.signature())));
+                    infos.add(RecordComponentInfo.of(part.name(), ClassDesc.ofDescriptor(part.descriptor()), attributes));
                 }
                 cb.with(RecordAttribute.of(infos));
             }
             if (!metaAnnotations.isEmpty()) cb.with(RuntimeVisibleAnnotationsAttribute.of(metaAnnotations));
-            for (var entry : decl.fields.entrySet()) field(cb, entry.getKey(), entry.getValue());
-            for (var entry : decl.methods.entrySet()) method(cb, entry.getKey(), entry.getValue());
+            for (var field : decl.fields) field(cb, field);
+            for (var method : decl.methods) method(cb, method);
         });
     }
 
-    private static int accessOf(byte[] res) {
-        var in = new Codec.Reader(res);
-        in.u8();
-        return in.u16();
-    }
-
-    private static void field(ClassBuilder cb, byte[] key, byte[] res) {
-        var m = new Codec.Reader(key);
-        zstr(m); m.u8();
-        String name = zstr(m), desc = zstr(m);
-        var in = new Codec.Reader(res);
-        int flags = in.u16();
-        String signature = optStr(in);
-        java.lang.constant.ConstantDesc constant = null;
-        if (in.u8() == 1) {
-            constant = switch (in.u8()) {
-                case 3 -> (int) in.u32();
-                case 4 -> Float.intBitsToFloat((int) in.u32());
-                case 5 -> in.u64();
-                case 6 -> Double.longBitsToDouble(in.u64());
-                case 8 -> in.str();
-                default -> throw new IllegalArgumentException("Unexpected ConstantValue tag");
-            };
-        }
-        final var value = constant;
-        cb.withField(name, ClassDesc.ofDescriptor(desc), fb -> {
-            fb.withFlags(flags);
-            if (signature != null) fb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(signature)));
-            if (value != null) fb.with(ConstantValueAttribute.of(value));
+    private static void field(ClassBuilder cb, FieldDecl decl) {
+        var res = decl.res();
+        java.lang.constant.ConstantDesc constant = res.constant() == null ? null : switch (res.constant().tag()) {
+            case 3 -> (int) res.constant().bits();
+            case 4 -> Float.intBitsToFloat((int) res.constant().bits());
+            case 5 -> res.constant().bits();
+            case 6 -> Double.longBitsToDouble(res.constant().bits());
+            default -> res.constant().text();
+        };
+        cb.withField(decl.name(), ClassDesc.ofDescriptor(decl.descriptor()), fb -> {
+            fb.withFlags(res.access());
+            if (res.signature() != null) fb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(res.signature())));
+            if (constant != null) fb.with(ConstantValueAttribute.of(constant));
         });
     }
 
-    private static void method(ClassBuilder cb, byte[] key, byte[] res) {
-        var m = new Codec.Reader(key);
-        zstr(m); m.u8();
-        String name = zstr(m), desc = zstr(m);
-        var in = new Codec.Reader(res);
-        int flags = in.u16();
-        String signature = optStr(in);
+    private static void method(ClassBuilder cb, MethodDecl decl) {
+        var res = decl.res();
         var thrown = new ArrayList<ClassDesc>();
-        for (int i = in.count(); i > 0; i--) thrown.add(internal(in.str()));
-        AnnotationValue defaultValue = in.u8() == 1 ? value(in) : null;
-        cb.withMethod(name, MethodTypeDesc.ofDescriptor(desc), flags, mb -> {
-            if (signature != null) mb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(signature)));
+        for (var t : res.thrown()) thrown.add(internal(t));
+        AnnotationValue defaultValue = res.defaultValue() == null ? null : value(res.defaultValue());
+        cb.withMethod(decl.name(), MethodTypeDesc.ofDescriptor(decl.descriptor()), res.access(), mb -> {
+            if (res.signature() != null) mb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(res.signature())));
             if (!thrown.isEmpty()) mb.with(ExceptionsAttribute.ofSymbols(thrown));
             if (defaultValue != null) mb.with(AnnotationDefaultAttribute.of(defaultValue));
         });
     }
 
-    // ---- the structural annotation encoding of A.4a, back to class-file values -----------------------------------------------
+    // ---- the structural annotation model of A.4a, as class-file values ----------------------------------------------------------
 
-    private static Annotation annotation(Codec.Reader in) {
-        var type = ClassDesc.ofDescriptor(in.str());
-        int n = in.u16();
-        var elements = new ArrayList<AnnotationElement>(n);
-        for (int i = 0; i < n; i++) elements.add(AnnotationElement.of(in.str(), value(in)));
-        return Annotation.of(type, elements);
+    private static Annotation annotation(Ann a) {
+        var elements = new ArrayList<AnnotationElement>(a.elements().size());
+        for (var element : a.elements()) elements.add(AnnotationElement.of(element.name(), value(element.value())));
+        return Annotation.of(ClassDesc.ofDescriptor(a.descriptor()), elements);
     }
 
-    private static AnnotationValue value(Codec.Reader in) {
-        int tag = in.u8();
-        return switch (tag) {
-            case 's' -> AnnotationValue.ofString(in.str());
-            case 'Z' -> AnnotationValue.ofBoolean(in.u32() != 0);
-            case 'B' -> AnnotationValue.ofByte((byte) in.u32());
-            case 'C' -> AnnotationValue.ofChar((char) in.u32());
-            case 'S' -> AnnotationValue.ofShort((short) in.u32());
-            case 'I' -> AnnotationValue.ofInt((int) in.u32());
-            case 'J' -> AnnotationValue.ofLong(in.u64());
-            case 'F' -> AnnotationValue.ofFloat(Float.intBitsToFloat((int) in.u32()));
-            case 'D' -> AnnotationValue.ofDouble(Double.longBitsToDouble(in.u64()));
-            case 'e' -> AnnotationValue.ofEnum(ClassDesc.ofDescriptor(in.str()), in.str());
-            case 'c' -> AnnotationValue.ofClass(ClassDesc.ofDescriptor(in.str()));
-            case '@' -> AnnotationValue.ofAnnotation(annotation(in));
-            case '[' -> {
-                int n = in.u16();
-                var values = new ArrayList<AnnotationValue>(n);
-                for (int i = 0; i < n; i++) values.add(value(in));
+    private static AnnotationValue value(Ann.Val v) {
+        return switch (v) {
+            case Ann.Val.Str s -> AnnotationValue.ofString(s.value());
+            case Ann.Val.Prim p -> switch (p.tag()) {
+                case 'Z' -> AnnotationValue.ofBoolean(p.bits() != 0);
+                case 'B' -> AnnotationValue.ofByte((byte) p.bits());
+                case 'C' -> AnnotationValue.ofChar((char) p.bits());
+                case 'S' -> AnnotationValue.ofShort((short) p.bits());
+                case 'I' -> AnnotationValue.ofInt((int) p.bits());
+                case 'J' -> AnnotationValue.ofLong(p.bits());
+                case 'F' -> AnnotationValue.ofFloat(Float.intBitsToFloat((int) p.bits()));
+                case 'D' -> AnnotationValue.ofDouble(Double.longBitsToDouble(p.bits()));
+                default -> throw new IllegalArgumentException("Unexpected annotation value tag " + p.tag());
+            };
+            case Ann.Val.Enum e -> AnnotationValue.ofEnum(ClassDesc.ofDescriptor(e.descriptor()), e.constant());
+            case Ann.Val.Cls c -> AnnotationValue.ofClass(ClassDesc.ofDescriptor(c.descriptor()));
+            case Ann.Val.Nested n -> AnnotationValue.ofAnnotation(annotation(n.annotation()));
+            case Ann.Val.Array a -> {
+                var values = new ArrayList<AnnotationValue>(a.values().size());
+                for (var item : a.values()) values.add(value(item));
                 yield AnnotationValue.ofArray(values);
             }
-            default -> throw new IllegalArgumentException("Unexpected annotation value tag " + tag);
         };
     }
 }

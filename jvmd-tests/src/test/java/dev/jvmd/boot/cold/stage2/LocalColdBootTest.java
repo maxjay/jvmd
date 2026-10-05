@@ -459,7 +459,7 @@ class LocalColdBootTest {
         assertThat(zstr(split.get(0).key())).isEqualTo("ab/Util");
         assertThat(firstDefiner(split.get(0), digest.width())).isEqualTo(ab);
         assertThat(firstDefiner(entries(digest, DefinerIndex.conflicts(digest, tree, external, sibling, List.of(x, ab), written), reader).get(0), digest.width())).isEqualTo(x);
-        assertThat(new DefinerIndex.Resolver(external, sibling, List.of(x, ab)).oSum(new dev.jvmd.core.tree.Codec.Writer().zstr("ab/Util").toBytes())).isNotNull();
+        assertThat(new DefinerIndex.Resolver(external, sibling, List.of(x, ab)).oSum("ab/Util")).isNotNull();
 
         // From a base by difference, adding and removing leaves, equals from nothing; a leaf listed twice is one leaf. The base has its tree,
         // so the new disjoint tree is an edit of it (ContentTree.apply) and must be the tree a build over all its types gives.

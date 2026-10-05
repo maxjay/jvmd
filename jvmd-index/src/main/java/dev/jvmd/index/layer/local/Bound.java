@@ -11,22 +11,13 @@ import java.util.List;
  * own definer index (3.6).
  *
  * @param bindings one per entry that bound to a leaf, in route order; an entry with nothing to bind to is absent
- * @param unbound  the coordinates of the entries that bound to nothing
+ * @param external the distinct external leaves, sorted by unsigned bytes: what the external definer index covers
+ * @param sibling  the distinct sibling leaves, sorted by unsigned bytes: what the sibling definer index covers
  */
-public record Bound(List<Binding> bindings, List<Identity> sequence, List<String> unbound, Identity routeHash, Identity r,
-                    Identity leafSetExt, Identity leafSetSib) {
+public record Bound(List<Binding> bindings, List<Identity> sequence, Identity routeHash, Identity r, Identity leafSetExt, Identity leafSetSib,
+                    List<Identity> external, List<Identity> sibling) {
     /** Which provider supplied a leaf (3.16). */
     public enum Origin { SESSION, SIBLING, EXTERNAL }
 
     public record Binding(RouteEntry entry, Identity k, Origin origin) { }
-
-    /** The distinct external leaves, sorted by unsigned bytes: what the external definer index covers. */
-    public List<Identity> external() { return distinct(false); }
-
-    /** The distinct sibling leaves, sorted by unsigned bytes: what the sibling definer index covers. */
-    public List<Identity> sibling() { return distinct(true); }
-
-    private List<Identity> distinct(boolean sibling) {
-        return bindings.stream().filter(b -> (b.origin() == Origin.SIBLING) == sibling).map(Binding::k).distinct().sorted().toList();
-    }
 }

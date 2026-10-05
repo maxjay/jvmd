@@ -6,7 +6,9 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import com.sun.tools.javac.api.JavacTaskImpl;
 import com.sun.tools.javac.main.JavaCompiler;
-import dev.jvmd.core.tree.Codec;
+import dev.jvmd.core.hash.Digest;
+import dev.jvmd.core.hash.Identity;
+import dev.jvmd.index.layer.machine.Keys;
 import dev.jvmd.index.layer.local.FileRow;
 import java.io.File;
 import java.io.IOException;
@@ -14,6 +16,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,13 +44,19 @@ import javax.tools.ToolProvider;
 final class HeaderCompiler {
     private HeaderCompiler() { }
 
-    /** One source file of the scope: its path relative to the project root, and its bytes. */
-    record Source(String path, byte[] bytes) { }
+    /** One source file of the scope: its path relative to the project root, and where to read it. */
+    record Source(String path, Path file) { }
 
     /** What javac made of one file. {@code declared} are the top-level types it owns; {@code faults} are the file-grain and duplicate faults. */
     static final class Unit {
-        /** The file's path, relative to the project root. The bytes are not kept: javac holds the text it parsed while the task is open, and no more. */
+        /** The file's path, relative to the project root. */
         final String path;
+        /**
+         * {@code κ_file} and the size of the bytes javac was given, taken when it read the file: the file is read once, here, hashed, decoded
+         * and handed over, and nothing of its text is kept by this code. Null if javac could not read the file.
+         */
+        Identity kappa;
+        long size;
         String parseError;
         final List<TypeElement> declared = new ArrayList<>();
         final List<FileRow.Fault> faults = new ArrayList<>();
@@ -88,15 +97,26 @@ final class HeaderCompiler {
         }
     }
 
+    /** A source file read when javac asks for it. The first read fixes the unit's {@code κ}; the text is returned and not kept. */
     private static final class SourceObject extends SimpleJavaFileObject {
-        final String text;
+        private final Unit unit;
+        private final Path file;
+        private final Charset charset;
+        private final Digest digest;
 
-        SourceObject(URI uri, String text) {
+        SourceObject(URI uri, Unit unit, Path file, Charset charset, Digest digest) {
             super(uri, Kind.SOURCE);
-            this.text = text;
+            this.unit = unit;
+            this.file = file;
+            this.charset = charset;
+            this.digest = digest;
         }
 
-        @Override public CharSequence getCharContent(boolean ignoreEncodingErrors) { return text; }
+        @Override public CharSequence getCharContent(boolean ignoreEncodingErrors) throws IOException {
+            var bytes = Files.readAllBytes(file);
+            if (unit.kappa == null) { unit.kappa = digest.hash(bytes); unit.size = bytes.length; }
+            return new String(bytes, charset);
+        }
     }
 
     /**
@@ -120,7 +140,7 @@ final class HeaderCompiler {
      * @param classpath jars and stub directories, in classpath order
      * @param release   the language level; with {@code --enable-preview} the caller has already made it the running feature version
      */
-    static Compiled compile(List<Source> sources, List<Path> classpath, Path jdkHome, int release, List<String> javacOptions) {
+    static Compiled compile(List<Source> sources, List<Path> classpath, Path jdkHome, int release, List<String> javacOptions, Digest digest) {
         // A scope with no source files has an empty leaf (appendix A); javac would call it an error.
         if (sources.isEmpty()) return new Compiled(List.of(), null, null, null, null, null);
         var options = new ArrayList<String>();
@@ -143,7 +163,7 @@ final class HeaderCompiler {
         for (var source : sources) {
             var unit = new Unit(source.path());
             units.add(unit);
-            var object = new SourceObject(uri(source.path()), new String(source.bytes(), charset));
+            var object = new SourceObject(uri(source.path()), unit, source.file(), charset, digest);
             objects.add(object);
             byUri.put(object.toUri(), unit);
         }
@@ -208,7 +228,7 @@ final class HeaderCompiler {
 
     private static byte[] typeKey(CompilationUnitTree unit, ClassTree klass) {
         String pkg = unit.getPackageName() == null ? "" : unit.getPackageName().toString().replace('.', '/') + "/";
-        return new Codec.Writer(64).zstr(pkg + klass.getSimpleName()).u8(0).toBytes();
+        return Keys.typeKey(pkg + klass.getSimpleName());
     }
 
     private static URI uri(String path) {

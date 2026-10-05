@@ -7,8 +7,8 @@ import dev.jvmd.core.tree.ContentTree;
 import dev.jvmd.core.tree.Entry;
 import dev.jvmd.core.tree.NodeSink;
 import dev.jvmd.core.tree.Root;
+import dev.jvmd.index.layer.machine.Keys;
 import dev.jvmd.index.layer.machine.MachineLeaf;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -45,8 +45,8 @@ public final class DefinerIndex {
     record Def(Identity k, Identity oSum) { }
 
     /**
-     * What a fold leaves behind for building the next one by difference: for each type key (as ISO-8859-1 text, whose order is the
-     * unsigned byte order) the leaves that declare it, the type keys declared by more than one leaf, and the sorted distinct leaves it
+     * What a fold leaves behind for building the next one by difference: for each type (by internal name; names become key bytes only
+     * where an entry is written) the leaves that declare it, the types declared by more than one leaf, and the sorted distinct leaves it
      * covers. Immutable: a derived state shares the lists of every type the difference did not touch.
      */
     public static final class State {
@@ -94,7 +94,7 @@ public final class DefinerIndex {
         if (base != null) { counts.putAll(base.counts); multi.addAll(base.multi); }
         for (var k : removed) {
             tree.forEach(leafOf.apply(k).oHash(), reader, entry -> {
-                var key = text(entry.key());
+                var key = Keys.ownerOf(entry.key());
                 var defs = new ArrayList<>(counts.get(key));
                 for (int i = 0; i < defs.size(); i++) if (defs.get(i).k().equals(k)) { defs.remove(i); break; }
                 put(counts, multi, touched, key, defs);
@@ -102,7 +102,7 @@ public final class DefinerIndex {
         }
         for (var k : added) {
             tree.forEach(leafOf.apply(k).oHash(), reader, entry -> {
-                var key = text(entry.key());
+                var key = Keys.ownerOf(entry.key());
                 var defs = new ArrayList<Def>(counts.getOrDefault(key, List.of()));
                 defs.add(new Def(k, entry.h()));
                 put(counts, multi, touched, key, defs);
@@ -129,7 +129,7 @@ public final class DefinerIndex {
             var removed = new ArrayList<byte[]>(state.touched.size());
             var added = new ArrayList<Entry>();
             for (var type : state.touched) {
-                var key = type.getBytes(StandardCharsets.ISO_8859_1);
+                var key = Keys.ownerKey(type);
                 removed.add(key); // a key the base did not hold is a removal of nothing
                 var defs = state.counts.get(type);
                 if (defs != null && defs.size() == 1) added.add(entryOf(digest, key, defs.get(0)));
@@ -139,7 +139,7 @@ public final class DefinerIndex {
         var entries = new ArrayList<Entry>();
         for (var e : state.counts.entrySet()) {
             if (e.getValue().size() != 1) continue;
-            entries.add(entryOf(digest, e.getKey().getBytes(StandardCharsets.ISO_8859_1), e.getValue().get(0)));
+            entries.add(entryOf(digest, Keys.ownerKey(e.getKey()), e.getValue().get(0)));
         }
         entries.sort((a, b) -> Arrays.compareUnsigned(a.key(), b.key()));
         return tree.build(entries, sink);
@@ -163,7 +163,7 @@ public final class DefinerIndex {
         for (var key : candidates) {
             var defs = resolver.definers(key);
             if (defs.size() < 2) continue;
-            var bytes = key.getBytes(StandardCharsets.ISO_8859_1);
+            var bytes = Keys.ownerKey(key);
             var value = new Codec.Writer(64 + defs.size() * digest.width()).id(defs.get(0).k()).u32(defs.size());
             for (var d : defs) value.id(d.k());
             entries.add(new Entry(bytes, value.toBytes(), digest.hash(bytes, defs.get(0).oSum().view())));
@@ -192,9 +192,9 @@ public final class DefinerIndex {
             return all;
         }
 
-        /** The {@code oSum} of the first definer of {@code typeKey} ({@code zstr internalName}), or null if no leaf of the route declares it. */
-        public Identity oSum(byte[] typeKey) {
-            var defs = definers(text(typeKey));
+        /** The {@code oSum} of the first definer of a type, or null if no leaf of the route declares it. */
+        public Identity oSum(String internalName) {
+            var defs = definers(internalName);
             return defs.isEmpty() ? null : defs.get(0).oSum();
         }
     }
@@ -217,8 +217,6 @@ public final class DefinerIndex {
         difference(a, b, removed, added);
         return removed.size() + added.size();
     }
-
-    private static String text(byte[] key) { return new String(key, StandardCharsets.ISO_8859_1); }
 
     /** B.4: {@code id root.hash || id root.sum || u32 count || u8 level}, the value of {@code DD|}, {@code DS|} and {@code DC|}. */
     public static byte[] encodeRoot(Root root) {

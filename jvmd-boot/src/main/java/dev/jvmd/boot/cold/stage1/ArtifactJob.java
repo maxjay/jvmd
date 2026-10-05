@@ -2,12 +2,10 @@ package dev.jvmd.boot.cold.stage1;
 
 import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.Identity;
-import dev.jvmd.core.tree.Codec;
 import dev.jvmd.core.tree.ContentTree;
-import dev.jvmd.core.tree.Entry;
 import dev.jvmd.core.tree.NodeSink;
 import dev.jvmd.index.layer.machine.ClassFacts;
-import dev.jvmd.index.layer.machine.MachineLeaf;
+import dev.jvmd.index.layer.machine.LeafBuilder;
 import dev.jvmd.index.layer.machine.MachineStore;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -17,7 +15,6 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -102,11 +99,7 @@ public final class ArtifactJob {
     }
 
     private void work(Enumerate.Location location) {
-        var sums = tree.sums();
-        var chunker = tree.chunker(sink);
-        var names = new ArrayList<Entry>();
-        var edges = new ArrayList<Entry>();
-        var types = new ArrayList<Entry>();
+        var builder = new LeafBuilder(tree, sink);
         var faults = new ArrayList<String>();
         Identity bh;
         // The arena owns the mapping; leaving this block releases the jar before N, E and O are built.
@@ -138,8 +131,6 @@ public final class ArtifactJob {
             }
 
             var scope = memo.open(location);
-            String owner = null;
-            var ownerSum = sums.zero();
             for (var item : classes) {
                 ClassFacts facts;
                 try {
@@ -149,44 +140,23 @@ public final class ArtifactJob {
                     continue;
                 }
                 if (facts.facts().isEmpty()) continue; // a local or anonymous class (stage 2, C.4): no facts, no type entry
-                if (!facts.ownerKey().equals(owner)) {
-                    if (owner != null) types.add(typeEntry(owner, ownerSum));
-                    owner = facts.ownerKey();
-                    ownerSum = sums.zero();
-                }
-                for (var fact : facts.facts()) {
-                    chunker.add(fact.entry());
-                    ownerSum = sums.add(ownerSum, fact.h());
-                }
-                names.addAll(facts.byName());
-                edges.addAll(facts.edges());
+                for (var fact : facts.facts()) builder.add(fact);
+                builder.edges(facts.edges());
             }
-            if (owner != null) types.add(typeEntry(owner, ownerSum));
         }
         seen.faults(bh, faults); // per location, into P| at commit
 
-        var tRoot = chunker.finish();
-        var k = tRoot.hash();
+        var k = builder.seal();
         if (!leaves.claim(k)) {
             leaves.attach(bh, k);
             sink.flush();
             return;
         }
 
-        names.sort((a, b) -> Arrays.compareUnsigned(a.key(), b.key()));
-        edges.sort((a, b) -> Arrays.compareUnsigned(a.key(), b.key()));
-        var nRoot = tree.build(names, sink);
-        var eRoot = tree.build(edges, sink);
-        var oRoot = tree.build(types, sink);
-        var leaf = new MachineLeaf(k, tRoot.sum(), nRoot.hash(), nRoot.level(), eRoot.hash(), eRoot.sum(), eRoot.level(), oRoot.hash(),
-                oRoot.level(), tRoot.count(), types.size(), eRoot.count());
+        var leaf = builder.build();
         // L is a function of k, so the winner writes it in its own batch, together with its nodes.
         store.putLeaf(k, leaf.encode());
         sink.flush();
         leaves.register(leaf, bh);
-    }
-
-    private static Entry typeEntry(String owner, Identity sum) {
-        return new Entry(new Codec.Writer(owner.length() + 1).zstr(owner).toBytes(), Entry.NONE, sum);
     }
 }

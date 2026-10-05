@@ -24,12 +24,11 @@ public final class Bind {
     /**
      * session over built over default. The list of bound {@code k} becomes a {@link ContentList}: {@code routeHash} is its root hash,
      * {@code R} its root sum ({@code Σ r}). {@code leafSetExt} and {@code leafSetSib} are the digests of the sorted distinct external
-     * and sibling {@code k}. An entry with no binding (a jar whose file is missing) is left out of the sequence and reported in
-     * {@link Bound#unbound()}; a sibling entry whose module has not been built is a bug in the build order and throws.
+     * and sibling {@code k}. An entry with no binding (a jar whose file is missing) is left out of the sequence; a sibling entry whose
+     * module has not been built is a bug in the build order and throws.
      */
     public static Bound bind(Digest digest, List<RouteEntry> entries, Provider session, Provider built, Function<Identity, MachineLeaf> leafOf, NodeSink sink) {
         var bindings = new ArrayList<Bound.Binding>(entries.size());
-        var unbound = new ArrayList<String>();
         for (var entry : entries) {
             Identity k = session.leafFor(entry.coordinate());
             var origin = Bound.Origin.SESSION;
@@ -42,7 +41,7 @@ public final class Bind {
                     case RouteEntry.Sibling s -> throw new IllegalStateException("Module " + s.module() + " is bound before it is built");
                 };
             }
-            if (k == null) { unbound.add(entry.coordinate()); continue; }
+            if (k == null) continue; // a jar whose file is missing binds to nothing
             bindings.add(new Bound.Binding(entry, k, origin));
         }
         var list = new ContentList(digest).builder(sink);
@@ -52,9 +51,13 @@ public final class Bind {
             list.add(binding.k().view(), leafOf.apply(binding.k()).r());
         }
         var root = list.finish();
-        var partial = new Bound(List.copyOf(bindings), List.copyOf(sequence), List.copyOf(unbound), root.hash(), root.sum(), null, null);
-        return new Bound(partial.bindings(), partial.sequence(), partial.unbound(), root.hash(), root.sum(),
-                leafSet(digest, partial.external()), leafSet(digest, partial.sibling()));
+        var external = distinct(bindings, false);
+        var sibling = distinct(bindings, true);
+        return new Bound(List.copyOf(bindings), List.copyOf(sequence), root.hash(), root.sum(), leafSet(digest, external), leafSet(digest, sibling), external, sibling);
+    }
+
+    private static List<Identity> distinct(List<Bound.Binding> bindings, boolean sibling) {
+        return bindings.stream().filter(b -> (b.origin() == Bound.Origin.SIBLING) == sibling).map(Bound.Binding::k).distinct().sorted().toList();
     }
 
     /** {@code Digest(sort(distinct(k)))} over the unsigned bytes: the same for any order of the same leaves, and a leaf listed twice is one leaf. */

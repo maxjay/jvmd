@@ -4,6 +4,7 @@ import dev.jvmd.boot.cold.stage1.Stage1;
 import dev.jvmd.boot.cold.stage2.Stage2;
 import dev.jvmd.index.layer.local.LocalFormat;
 import dev.jvmd.index.layer.local.LocalRoot;
+import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.core.Config;
 import dev.jvmd.core.hash.digests.Sha256;
@@ -77,7 +78,7 @@ public final class BootDecision {
         var generation = Generation.of(indexDir, format);
         // One open of the store answers everything: whether MACHINE is committed, whether this project is, and the boot itself.
         try (var store = generation.openLocal()) {
-            var existing = store.getLocalRoot(Stage2.projectKey(digest, model));
+            var existing = store.get(LocalStore.localRootKey(Stage2.projectKey(digest, model)));
             if (existing != null && LocalRoot.formatOf(existing).equals(LocalFormat.of(format))) {
                 LOG.log(System.Logger.Level.INFO, "local generation for {0} committed; warm boot not implemented, skipping", model.root());
                 return Optional.empty();
@@ -92,8 +93,8 @@ public final class BootDecision {
     private static void log(Stage2.Result r) {
         var prefix = new StringBuilder();
         for (byte b : r.root().hash().view()) { if (prefix.length() >= 16) break; prefix.append(String.format("%02x", b)); }
-        LOG.log(System.Logger.Level.INFO, "local cold boot: modules={0} routes={1} source_files={2} parsed_files={3} source_leaves={4} leaf_sets={5} indexed_on_the_spot={6} nodes={7} faults={8} wall_ms={9} root={10}",
-                String.valueOf(r.modules()), String.valueOf(r.routes()), String.valueOf(r.sourceFiles()), String.valueOf(r.parsedFiles()), String.valueOf(r.sourceLeaves()),
+        LOG.log(System.Logger.Level.INFO, "local cold boot: modules={0} source_files={1} parsed_files={2} source_leaves={3} leaf_sets={4} indexed_on_the_spot={5} nodes={6} faults={7} wall_ms={8} root={9}",
+                String.valueOf(r.modules()), String.valueOf(r.sourceFiles()), String.valueOf(r.parsedFiles()), String.valueOf(r.sourceLeaves()),
                 String.valueOf(r.distinctLeafSets()), String.valueOf(r.indexedOnTheSpot()), String.valueOf(r.nodes()), String.valueOf(r.faults().size()), String.valueOf(r.wallMillis()), prefix);
         if (!r.faults().isEmpty()) LOG.log(System.Logger.Level.WARNING, "local cold boot faults: {0}", String.join("; ", r.faults()));
     }

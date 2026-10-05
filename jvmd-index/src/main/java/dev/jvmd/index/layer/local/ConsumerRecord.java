@@ -40,18 +40,17 @@ public record ConsumerRecord(List<Dependency> dependencies) {
     }
 
     private static byte[] key(Codec.Reader in, int kind) {
-        var key = new java.io.ByteArrayOutputStream();
         int zstrs = switch (kind) {
             case MEMBER -> 3; // m(f) = zstr owner || u8 kind || zstr name || zstr descriptor
             case OVERLOAD_GROUP -> 2;
             case TYPE, PACKAGE, NEGATIVE, DEFINER, HEADER, CONSTANT -> 1;
             default -> throw new IllegalArgumentException("Unknown dependency kind " + kind);
         };
+        var key = new Codec.Writer(64);
         for (int z = 0; z < zstrs; z++) {
-            if (kind == MEMBER && z == 1) key.write(in.u8()); // the member kind byte sits between owner and name
-            for (int b; (b = in.u8()) != 0; ) key.write(b);
-            key.write(0);
+            if (kind == MEMBER && z == 1) key.u8(in.u8()); // the member kind byte sits between owner and name
+            key.zstr(in.zstr());
         }
-        return key.toByteArray();
+        return key.toBytes();
     }
 }

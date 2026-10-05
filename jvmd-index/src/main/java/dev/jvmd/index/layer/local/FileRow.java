@@ -44,19 +44,13 @@ public record FileRow(String path, Identity kappa, long size, long mtimeNanos, I
         var sum = in.id(width);
         int n = in.count();
         var types = new ArrayList<String>(n);
-        for (int i = 0; i < n; i++) types.add(zstr(in));
+        for (int i = 0; i < n; i++) types.add(in.zstr());
         int f = in.count();
         var faults = new ArrayList<Fault>(f);
         for (int i = 0; i < f; i++) faults.add(new Fault(in.lenBytes(), in.str()));
         int p = in.count();
         var proof = new ArrayList<Proof>(p);
-        for (int i = 0; i < p; i++) proof.add(new Proof(zstr(in), in.id(width)));
+        for (int i = 0; i < p; i++) proof.add(new Proof(in.zstr(), in.id(width)));
         return new FileRow(path, kappa, size, mtime, sum, List.copyOf(types), List.copyOf(faults), List.copyOf(proof));
-    }
-
-    private static String zstr(Codec.Reader in) {
-        var out = new java.io.ByteArrayOutputStream();
-        for (int b; (b = in.u8()) != 0; ) out.write(b);
-        return out.toString(java.nio.charset.StandardCharsets.UTF_8);
     }
 }

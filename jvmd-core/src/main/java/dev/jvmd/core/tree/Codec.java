@@ -86,5 +86,17 @@ public final class Codec {
         public String str() { return new String(raw(count()), StandardCharsets.UTF_8); }
         public Identity id(int width) { return Identity.of(raw(width)); }
         public byte[] lenBytes() { return raw(count()); }
+        /** {@code zstr}: UTF-8 bytes up to a 0x00, which is consumed and not part of the string. */
+        public String zstr() {
+            int start = position;
+            while (bytes[position] != 0) position++;
+            var out = new String(bytes, start, position - start, StandardCharsets.UTF_8);
+            position++;
+            return out;
+        }
+        /** {@code opt<str>}: a presence byte, then the string if it is 1. */
+        public String optStr() { return u8() == 1 ? str() : null; }
+        /** {@code opt<id>}. */
+        public Identity optId(int width) { return u8() == 1 ? id(width) : null; }
     }
 }

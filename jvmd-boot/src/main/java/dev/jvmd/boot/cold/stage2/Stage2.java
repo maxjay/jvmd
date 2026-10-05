@@ -13,6 +13,8 @@ import dev.jvmd.index.layer.local.ModuleRecord;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.index.layer.local.RouteEntry;
 import dev.jvmd.index.layer.machine.Format;
+import dev.jvmd.index.layer.machine.Keys;
+import dev.jvmd.index.layer.machine.MachineStore;
 import dev.jvmd.index.layer.machine.MachineTree;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -41,11 +43,11 @@ import java.util.concurrent.ConcurrentSkipListMap;
  */
 public final class Stage2 {
     /** What the boot did: the numbers of the one log line. {@code faults} are {@code path: declaration: reason}, and the classpath entries that bound to nothing. */
-    public record Result(int modules, int routes, int sourceFiles, int parsedFiles, int sourceLeaves, int distinctLeafSets, int indexedOnTheSpot,
+    public record Result(int modules, int sourceFiles, int parsedFiles, int sourceLeaves, int distinctLeafSets, int indexedOnTheSpot,
                          long nodes, List<String> faults, long wallMillis, Root root, Map<String, Identity> leaves, Timings timings) { }
 
     /** Where the time went, summed over jobs (so more than the wall time when jobs ran in parallel): the numbers of the cost model in 7.2. */
-    public record Timings(int compiledFiles, long headerCompileMillis, long factsMillis, long definerIndexMillis, int externalFolds, int siblingFolds) { }
+    public record Timings(long headerCompileMillis, long factsMillis, long definerIndexMillis, int externalFolds, int siblingFolds) { }
 
     private final Digest digest;
     private final ContentTree tree;
@@ -74,15 +76,19 @@ public final class Stage2 {
         long started = System.nanoTime();
         // Step 1: model and order, one thread.
         model.validate();
-        var order = Order.topological(model);
-        var machineRootBytes = store.getMachineRoot();
+        var order = Order.of(model);
+        var machineRootBytes = store.get(MachineStore.ROOT_KEY);
         if (machineRootBytes == null) throw new IllegalStateException("No committed MACHINE root to build LOCAL on");
         var machineRoot = MachineTree.decodeRoot(digest, machineRootBytes).digest();
         var projectKey = projectKey(digest, model);
 
         try (var boot = new Boot(digest, tree, store, model, projectKey, repository)) {
-            try (var defaults = new Defaults(digest, tree, jdkFeature, repository, Path.of(model.jdkHome()), store, boot.written, parser)) {
+            try (var defaults = new Defaults(digest, tree, jdkFeature, workers, repository, Path.of(model.jdkHome()), store, boot.written, parser)) {
                 var jdk = defaults.jdk();
+                var jars = new ArrayList<ProjectModel.Dependency>();
+                for (var module : model.modules())
+                    for (var scope : List.of(module.main(), module.test())) for (var d : scope.dependencies()) if (d.module() == null) jars.add(d);
+                defaults.prepare(jars);
                 for (var module : model.modules()) {
                     for (int scope : new int[] {LocalStore.MAIN, LocalStore.TEST}) {
                         var route = new ArrayList<RouteEntry>(jdk);
@@ -102,18 +108,14 @@ public final class Stage2 {
                 for (var module : model.modules()) {
                     var descriptor = new ModuleRecord(module.coordinate(), effectiveRelease(module), module.moduleInfo(), module.javacOptions(),
                             module.main().sourceRoots(), module.test().sourceRoots()).encode();
-                    store.putModule(projectKey, module.name(), descriptor);
-                    records.put(LocalStore.moduleKey(projectKey, module.name()), descriptor);
+                    put(store, records, LocalStore.moduleKey(projectKey, module.name()), descriptor);
                     for (int scope : new int[] {LocalStore.MAIN, LocalStore.TEST}) {
                         var route = boot.routes.get(Boot.routeKey(module.name(), scope)).encode();
-                        store.putRoute(projectKey, module.name(), scope, route);
-                        records.put(LocalStore.routeKey(projectKey, module.name(), scope), route);
+                        put(store, records, LocalStore.routeKey(projectKey, module.name(), scope), route);
                     }
                 }
                 for (var row : new java.util.TreeMap<>(boot.files).values()) {
-                    var value = row.encode();
-                    store.putFile(projectKey, row.path(), value);
-                    records.put(LocalStore.fileKey(projectKey, row.path()), value);
+                    put(store, records, LocalStore.fileKey(projectKey, row.path()), row.encode());
                 }
                 // The reverse entries of the header proofs, beside the file rows: X|7|typeKey|projectKey for the types the headers mention and
                 // X|8|typeKey|projectKey for those a constant resolved through, each this project's list of files, written once, no read. The
@@ -138,10 +140,10 @@ public final class Stage2 {
                 }
                 var faults = new ArrayList<>(boot.faults);
                 java.util.Collections.sort(faults);
-                return new Result(model.modules().size(), model.modules().size() * 2, boot.sourceFiles.get(), boot.parsedFiles.get(), boot.sourceLeaves.get(),
+                return new Result(model.modules().size(), boot.sourceFiles.get(), boot.parsedFiles.get(), boot.sourceLeaves.get(),
                         boot.indexMemo.distinctLeafSets(), defaults.indexedOnTheSpot(), boot.written.count(), List.copyOf(faults),
                         (System.nanoTime() - started) / 1_000_000, local, leaves,
-                        new Timings(boot.compiledFiles.get(), boot.headerNanos.get() / 1_000_000, boot.factsNanos.get() / 1_000_000, boot.definerNanos.get() / 1_000_000,
+                        new Timings(boot.headerNanos.get() / 1_000_000, boot.factsNanos.get() / 1_000_000, boot.definerNanos.get() / 1_000_000,
                         boot.indexMemo.externalFolds(), boot.indexMemo.siblingFolds()));
             }
         }
@@ -156,11 +158,16 @@ public final class Stage2 {
                 int c = a.kappa().compareTo(b.kappa());
                 return c != 0 ? c : a.leafSetExt().compareTo(b.leafSetExt());
             });
-            var key = new dev.jvmd.core.tree.Codec.Writer(e.getKey().length() + 1).zstr(e.getKey()).toBytes();
+            var key = Keys.ownerKey(e.getKey());
             var value = new dev.jvmd.index.layer.local.ReverseIndex(consumers).encode();
-            store.putReverse(kind, key, projectKey, value);
-            records.put(LocalStore.reverseKey(kind, key, projectKey), value);
+            put(store, records, LocalStore.reverseKey(kind, key, projectKey), value);
         }
+    }
+
+    /** One LOCAL record: buffered in the store, and in the set the project's tree is built over. */
+    private static void put(LocalStore store, Map<byte[], byte[]> records, byte[] key, byte[] value) {
+        store.put(key, value);
+        records.put(key, value);
     }
 
     private static void addAll(List<RouteEntry> route, Defaults defaults, List<ProjectModel.Dependency> dependencies) throws IOException {
@@ -176,13 +183,12 @@ public final class Stage2 {
      * Step 2: a module's job starts when the modules it depends on have finished; modules with nothing unbuilt in front of them run in
      * parallel on {@code workers} threads. A job failure that is not a file or declaration fault aborts the boot: no root.
      */
-    private void runInDependencyOrder(Boot boot, List<ProjectModel.Module> order) {
-        var dependencies = Order.dependencies(boot.model);
+    private void runInDependencyOrder(Boot boot, Order order) {
         ExecutorService pool = Executors.newFixedThreadPool(workers, Thread.ofPlatform().name("jvmd-stage2-", 0).daemon(true).factory());
         try {
             var futures = new LinkedHashMap<String, CompletableFuture<Void>>();
-            for (var module : order) {
-                var before = dependencies.get(module.name()).stream().map(futures::get).toArray(CompletableFuture[]::new);
+            for (var module : order.modules()) {
+                var before = order.dependencies().get(module.name()).stream().map(futures::get).toArray(CompletableFuture[]::new);
                 futures.put(module.name(), CompletableFuture.allOf(before).thenRunAsync(() -> {
                     try {
                         var job = new ModuleJob(boot);

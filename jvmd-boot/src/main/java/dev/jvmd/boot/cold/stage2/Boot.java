@@ -12,7 +12,10 @@ import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.index.layer.local.Route;
 import dev.jvmd.index.layer.local.RouteEntry;
+import dev.jvmd.index.layer.machine.Keys;
 import dev.jvmd.index.layer.machine.MachineLeaf;
+import dev.jvmd.index.layer.machine.MachineStore;
+import dev.jvmd.index.layer.machine.Res;
 import dev.jvmd.index.layer.machine.Stubs;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -64,7 +67,7 @@ final class Boot implements AutoCloseable {
     /** {@code DD|}, {@code DS|} and {@code DC|} records this boot used: they are part of the LOCAL tree of the project that used them. */
     final ConcurrentSkipListMap<byte[], byte[]> definers = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);
     final ConcurrentLinkedQueue<String> faults = new ConcurrentLinkedQueue<>();
-    final AtomicInteger sourceFiles = new AtomicInteger(), parsedFiles = new AtomicInteger(), sourceLeaves = new AtomicInteger(), compiledFiles = new AtomicInteger();
+    final AtomicInteger sourceFiles = new AtomicInteger(), parsedFiles = new AtomicInteger(), sourceLeaves = new AtomicInteger();
     /** Summed over jobs, so with several workers they exceed the wall time: header compilation (parse, enter, member completion), Φ_src, and definer indexes. */
     final AtomicLong headerNanos = new AtomicLong(), factsNanos = new AtomicLong(), definerNanos = new AtomicLong();
     private final ConcurrentHashMap<Identity, MachineLeaf> machineLeaves = new ConcurrentHashMap<>();
@@ -94,7 +97,7 @@ final class Boot implements AutoCloseable {
         var sibling = built.byKey(k);
         if (sibling != null) return sibling;
         return machineLeaves.computeIfAbsent(k, key -> {
-            var bytes = store.getLeaf(key);
+            var bytes = store.get(MachineStore.leafKey(key));
             if (bytes == null) throw new IllegalStateException("No leaf for a bound key");
             return MachineLeaf.decode(bytes, digest.width());
         });
@@ -102,7 +105,7 @@ final class Boot implements AutoCloseable {
 
     /** {@code N|hash}: a MACHINE read. */
     byte[] node(Identity hash) {
-        var bytes = store.getNode(hash);
+        var bytes = store.get(MachineStore.nodeKey(hash));
         if (bytes == null) throw new IllegalStateException("No node for a stored hash");
         return bytes;
     }
@@ -116,10 +119,10 @@ final class Boot implements AutoCloseable {
         return stubDirs.computeIfAbsent(k, key -> {
             try {
                 var stubs = Stubs.stubs(digest, tree, leaf(key), this::node, new Stubs.Cache() {
-                    @Override public byte[] list(Identity k) { return store.getStub(k); }
-                    @Override public void putList(Identity k, byte[] value) { store.putStub(k, value); }
-                    @Override public byte[] type(Identity stKey) { return store.getStubType(stKey); }
-                    @Override public void putType(Identity stKey, byte[] value) { store.putStubType(stKey, value); }
+                    @Override public byte[] list(Identity k) { return store.get(LocalStore.stubKey(k)); }
+                    @Override public void putList(Identity k, byte[] value) { store.put(LocalStore.stubKey(k), value); }
+                    @Override public byte[] type(Identity stKey) { return store.get(LocalStore.stubTypeKey(stKey)); }
+                    @Override public void putType(Identity stKey, byte[] value) { store.put(LocalStore.stubTypeKey(stKey), value); }
                 });
                 if (stubRoot == null) synchronized (this) { if (stubRoot == null) stubRoot = Files.createTempDirectory("jvmd-stubs-"); }
                 var dir = Files.createTempDirectory(stubRoot, "s");
@@ -170,22 +173,13 @@ final class Boot implements AutoCloseable {
     /** {name, version} of the module descriptor fact in leaf {@code k}, if it has one: a point read of {@code T} at {@code module-info}. */
     private Optional<String[]> moduleFact(Identity k) {
         return moduleFacts.computeIfAbsent(k, key -> {
-            var entry = tree.get(key, this::node, new Codec.Writer(16).zstr("module-info").u8(0).toBytes());
+            var entry = tree.get(key, this::node, Keys.typeKey("module-info"));
             if (entry == null) return Optional.empty();
             var value = new Codec.Reader(entry.value());
-            var res = new Codec.Reader(value.raw(value.count()));
-            res.u8(); res.u16(); optStr(res); optStr(res);
-            for (int i = res.count(); i > 0; i--) res.str();
-            for (int i = res.count(); i > 0; i--) res.str();
-            optStr(res); optStr(res);
-            for (int i = res.count(); i > 0; i--) { res.str(); res.str(); optStr(res); }
-            String name = res.str();
-            res.u16();
-            return Optional.of(new String[] {name, optStr(res)});
+            var module = Res.Type.decode(value.raw(value.count())).module();
+            return module == null ? Optional.empty() : Optional.of(new String[] {module.name(), module.version()});
         });
     }
-
-    private static String optStr(Codec.Reader in) { return in.u8() == 1 ? in.str() : null; }
 
     @Override public void close() {
         try { if (jrt != null && jrt != FileSystems.getFileSystem(java.net.URI.create("jrt:/"))) jrt.close(); } catch (IOException | RuntimeException ignored) { /* nothing to recover */ }

@@ -2,12 +2,10 @@ package dev.jvmd.boot.cold.stage1;
 
 import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.Identity;
-import dev.jvmd.core.tree.Codec;
 import dev.jvmd.core.tree.ContentTree;
-import dev.jvmd.core.tree.Entry;
 import dev.jvmd.core.tree.NodeSink;
 import dev.jvmd.index.layer.machine.ClassFacts;
-import dev.jvmd.index.layer.machine.MachineLeaf;
+import dev.jvmd.index.layer.machine.LeafBuilder;
 import dev.jvmd.index.layer.machine.MachineStore;
 import java.io.IOException;
 import java.lang.foreign.Arena;
@@ -17,7 +15,6 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -28,7 +25,23 @@ import java.util.List;
  * <p>There are no runtime checks of the sums: {@code sum(T)}, {@code sum(N)} and {@code sum(O)} are the same additions in the
  * same ring, so a check would compare a value with itself computed twice. They are invariants of the test suite (7.3).
  */
-final class ArtifactJob {
+public final class ArtifactJob {
+    /** What indexing one location gave: its leaf key, or null if it is not a readable archive, and the entries skipped in it. */
+    public record Indexed(Identity k, List<String> faults) { }
+
+    /**
+     * Indexes one location into the shared node space and returns its leaf key (stage 2, 3.15): the same {@code L|k} and nodes a
+     * MACHINE boot would write for these bytes. No {@code P|} is written: that record describes MACHINE's own commit.
+     */
+    public static Indexed index(Digest digest, ContentTree tree, int jdkFeature, Written written, MachineStore store, Stage1.Parser parser, Enumerate.Location location) {
+        var seen = new Seen();
+        var leaves = new Leaves();
+        new ArtifactJob(digest, tree, jdkFeature, seen, leaves, written, store, parser, new ClassMemo(digest, List.of(location))).run(location);
+        var observation = seen.all().get(0);
+        if (seen.unreadableReason(observation) != null) return new Indexed(null, List.of(seen.unreadableReason(observation)));
+        return new Indexed(leaves.kFor(observation.bh()), seen.skipped(observation.bh()));
+    }
+
     /** Copy-and-digest chunk when hashing a mapped jar. One per worker thread; it sizes a copy, not a limit on anything. */
     private static final int HASH_CHUNK = 1 << 20;
 
@@ -86,11 +99,7 @@ final class ArtifactJob {
     }
 
     private void work(Enumerate.Location location) {
-        var sums = tree.sums();
-        var chunker = tree.chunker(sink);
-        var names = new ArrayList<Entry>();
-        var edges = new ArrayList<Entry>();
-        var types = new ArrayList<Entry>();
+        var builder = new LeafBuilder(tree, sink);
         var faults = new ArrayList<String>();
         Identity bh;
         // The arena owns the mapping; leaving this block releases the jar before N, E and O are built.
@@ -122,8 +131,6 @@ final class ArtifactJob {
             }
 
             var scope = memo.open(location);
-            String owner = null;
-            var ownerSum = sums.zero();
             for (var item : classes) {
                 ClassFacts facts;
                 try {
@@ -132,44 +139,24 @@ final class ArtifactJob {
                     faults.add(item.path());
                     continue;
                 }
-                if (!facts.ownerKey().equals(owner)) {
-                    if (owner != null) types.add(typeEntry(owner, ownerSum));
-                    owner = facts.ownerKey();
-                    ownerSum = sums.zero();
-                }
-                for (var fact : facts.facts()) {
-                    chunker.add(fact.entry());
-                    ownerSum = sums.add(ownerSum, fact.h());
-                }
-                names.addAll(facts.byName());
-                edges.addAll(facts.edges());
+                if (facts.facts().isEmpty()) continue; // a local or anonymous class (stage 2, C.4): no facts, no type entry
+                for (var fact : facts.facts()) builder.add(fact);
+                builder.edges(facts.edges());
             }
-            if (owner != null) types.add(typeEntry(owner, ownerSum));
         }
         seen.faults(bh, faults); // per location, into P| at commit
 
-        var tRoot = chunker.finish();
-        var k = tRoot.hash();
+        var k = builder.seal();
         if (!leaves.claim(k)) {
             leaves.attach(bh, k);
             sink.flush();
             return;
         }
 
-        names.sort((a, b) -> Arrays.compareUnsigned(a.key(), b.key()));
-        edges.sort((a, b) -> Arrays.compareUnsigned(a.key(), b.key()));
-        var nRoot = tree.build(names, sink);
-        var eRoot = tree.build(edges, sink);
-        var oRoot = tree.build(types, sink);
-        var leaf = new MachineLeaf(k, tRoot.sum(), nRoot.hash(), nRoot.level(), eRoot.hash(), eRoot.sum(), eRoot.level(), oRoot.hash(),
-                oRoot.level(), tRoot.count(), types.size(), eRoot.count());
+        var leaf = builder.build();
         // L is a function of k, so the winner writes it in its own batch, together with its nodes.
         store.putLeaf(k, leaf.encode());
         sink.flush();
         leaves.register(leaf, bh);
-    }
-
-    private static Entry typeEntry(String owner, Identity sum) {
-        return new Entry(new Codec.Writer(owner.length() + 1).zstr(owner).toBytes(), Entry.NONE, sum);
     }
 }

@@ -48,6 +48,16 @@ public final class ContentTree {
     }
 
     /**
+     * The tree that results from removing the keys {@code removed} from {@code base} and adding {@code added} (an entry whose key is
+     * already there replaces it), written to {@code sink}. It is the root a full {@link #build} over the new entries would give, because
+     * the shape is a function of the entry set, but it reads and writes the nodes along the changed paths and reuses every other
+     * subtree: O(d * depth) nodes for d changes, not the size of the tree. See {@link Edit}.
+     */
+    public Root apply(Root base, List<byte[]> removed, List<Entry> added, Function<Identity, byte[]> reader, NodeSink sink) {
+        return new Edit(this, removed, added, reader, sink).run(base);
+    }
+
+    /**
      * The sum of {@code h} over entries with {@code from <= key < to} (null bounds are open), reading O(depth) nodes: a child
      * wholly inside the range contributes its stored sum without being read.
      */
@@ -80,6 +90,31 @@ public final class ContentTree {
             acc = range(child.hash(), reader, from, to, end, acc);
         }
         return acc;
+    }
+
+    /** The entry with exactly this key, or null: one node read per level. */
+    public Entry get(Identity hash, Function<Identity, byte[]> reader, byte[] key) {
+        var bytes = reader.apply(hash);
+        int width = digest.width();
+        if (Node.level(bytes) == 0) {
+            for (var e : Node.entries(bytes, width)) if (Arrays.equals(e.key(), key)) return e;
+            return null;
+        }
+        // The child that can hold the key is the last one whose first key is not above it.
+        Node.Child holder = null;
+        for (var child : Node.children(bytes, width)) {
+            if (Arrays.compareUnsigned(child.first(), key) > 0) break;
+            holder = child;
+        }
+        return holder == null ? null : get(holder.hash(), reader, key);
+    }
+
+    /** Every entry under {@code hash} in key order: one sequential read of the stored tree. */
+    public void forEach(Identity hash, Function<Identity, byte[]> reader, java.util.function.Consumer<Entry> out) {
+        var bytes = reader.apply(hash);
+        int width = digest.width();
+        if (Node.level(bytes) == 0) { for (var e : Node.entries(bytes, width)) out.accept(e); return; }
+        for (var child : Node.children(bytes, width)) forEach(child.hash(), reader, out);
     }
 
     /** Recomputes every hash, sum and count under the root from the stored bytes; throws if any disagrees. */

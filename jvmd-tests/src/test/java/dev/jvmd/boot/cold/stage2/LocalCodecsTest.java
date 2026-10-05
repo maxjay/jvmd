@@ -1,0 +1,145 @@
+package dev.jvmd.boot.cold.stage2;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import dev.jvmd.core.hash.Identity;
+import dev.jvmd.core.hash.digests.Sha256;
+import dev.jvmd.core.tree.Codec;
+import dev.jvmd.core.tree.ContentList;
+import dev.jvmd.core.tree.ContentTree;
+import dev.jvmd.core.tree.Entry;
+import dev.jvmd.core.tree.Node;
+import dev.jvmd.core.tree.Root;
+import dev.jvmd.index.layer.local.ConsumerRecord;
+import dev.jvmd.index.layer.local.Coordinate;
+import dev.jvmd.index.layer.local.FileRow;
+import dev.jvmd.index.layer.local.LocalRoot;
+import dev.jvmd.index.layer.local.ModuleRecord;
+import dev.jvmd.index.layer.local.ProjectModel;
+import dev.jvmd.index.layer.local.ResultRecord;
+import dev.jvmd.index.layer.local.ReverseIndex;
+import dev.jvmd.index.layer.local.Route;
+import dev.jvmd.index.layer.local.RouteEntry;
+import dev.jvmd.index.layer.machine.Stubs;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+/** The codecs of appendix B round-trip, the list marker tells a route from a sorted set (B.2), and the model's validation faults are faults. */
+@Tag("phase-3")
+class LocalCodecsTest {
+    private static final Sha256 D = Sha256.INSTANCE;
+
+    private static Identity id(String s) { return D.hash(s.getBytes()); }
+
+    @Test void routesAndRecordsRoundTrip() {
+        var route = new Route(List.of(new RouteEntry.Jrt("jrt:/java.base", "java.base", id("jdk")), new RouteEntry.Jar("g:a:1", "g/a/1/a-1.jar", id("jar")),
+                new RouteEntry.Jar("g:missing:1", "g/missing/1/missing-1.jar", null), new RouteEntry.Sibling("g:b:1", "b")), id("hash"), id("R"), id("ext"), id("sib"));
+        var back = Route.decode(route.encode(), 32);
+        assertThat(back.entries()).isEqualTo(route.entries());
+        assertThat(back.routeHash()).isEqualTo(route.routeHash());
+        assertThat(back.r()).isEqualTo(route.r());
+        assertThat(back.leafSetExt()).isEqualTo(route.leafSetExt());
+        assertThat(back.leafSetSib()).isEqualTo(route.leafSetSib());
+
+        var module = new ModuleRecord("g:a:1", 21, true, List.of("-parameters", "--enable-preview"), List.of("src/main/java"), List.of());
+        assertThat(ModuleRecord.decode(module.encode())).isEqualTo(module);
+
+        // A fault's m carries NULs of its own, so it is length-prefixed; a parse fault has an empty m.
+        var m = new Codec.Writer().zstr("p/Owner").u8(1).zstr("field").zstr("I").toBytes();
+        var row = new FileRow("m/src/main/java/p/Owner.java", id("kappa"), 123, 456_789_000_000L, id("sum"), List.of("p/Owner", "p/Owner$Inner"),
+                List.of(new FileRow.Fault(m, "cannot resolve Foo"), new FileRow.Fault(new byte[0], "1:2 expected ';'")),
+                List.of(new FileRow.Proof("java/lang/Object", id("o")), new FileRow.Proof("p/Other", id("p"))));
+        var rowBack = FileRow.decode(row.path(), row.encode(), 32);
+        assertThat(rowBack.typeKeys()).isEqualTo(row.typeKeys());
+        assertThat(rowBack.faults().get(0).m()).isEqualTo(m);
+        assertThat(rowBack.faults().get(1).m()).isEmpty();
+        assertThat(rowBack.faults().get(1).reason()).isEqualTo("1:2 expected ';'");
+        assertThat(rowBack.headerProof()).isEqualTo(row.headerProof());
+        assertThat(rowBack.sum()).isEqualTo(row.sum());
+        assertThat(rowBack.size()).isEqualTo(123);
+        assertThat(rowBack.mtimeNanos()).isEqualTo(456_789_000_000L);
+    }
+
+    @Test void consumersReverseIndexAndResultsRoundTrip() {
+        var member = new Codec.Writer().zstr("p/T").u8(2).zstr("m").zstr("(I)V").toBytes();
+        var overload = new Codec.Writer().zstr("p/T").zstr("m").toBytes();
+        var type = new Codec.Writer().zstr("p/T").toBytes();
+        var consumer = new ConsumerRecord(List.of(new ConsumerRecord.Dependency(ConsumerRecord.MEMBER, id("h"), member),
+                new ConsumerRecord.Dependency(ConsumerRecord.OVERLOAD_GROUP, id("o"), overload), new ConsumerRecord.Dependency(ConsumerRecord.TYPE, id("t"), type),
+                new ConsumerRecord.Dependency(ConsumerRecord.PACKAGE, id("p"), new Codec.Writer().zstr("p").toBytes()),
+                new ConsumerRecord.Dependency(ConsumerRecord.NEGATIVE, id("n"), new Codec.Writer().zstr("Foo").toBytes()),
+                new ConsumerRecord.Dependency(ConsumerRecord.DEFINER, id("d"), type),
+                new ConsumerRecord.Dependency(ConsumerRecord.HEADER, id("x"), type)));
+        var back = ConsumerRecord.decode(consumer.encode(), 32);
+        assertThat(back.dependencies()).hasSize(7);
+        for (int i = 0; i < 7; i++) {
+            assertThat(back.dependencies().get(i).kind()).isEqualTo(consumer.dependencies().get(i).kind());
+            assertThat(back.dependencies().get(i).identity()).isEqualTo(consumer.dependencies().get(i).identity());
+            assertThat(back.dependencies().get(i).key()).isEqualTo(consumer.dependencies().get(i).key());
+        }
+        var reverse = new ReverseIndex(List.of(new ReverseIndex.Consumer(id("k1"), id("r1")), new ReverseIndex.Consumer(id("k2"), id("r2"))));
+        assertThat(ReverseIndex.decode(reverse.encode(), 32).consumers()).isEqualTo(reverse.consumers());
+        var result = new ResultRecord(1, List.of(new ResultRecord.Diagnostic(1, 5, 9, "compiler.err.x", "boom")),
+                List.of(new ResultRecord.Reference(1, 4, ConsumerRecord.TYPE, id("t"), type)), List.of(new ResultRecord.ClassFile("p/T", id("bytes"))));
+        var resultBack = ResultRecord.decode(result.encode(), 32);
+        assertThat(resultBack.diagnostics()).isEqualTo(result.diagnostics());
+        assertThat(resultBack.references().get(0).key()).isEqualTo(type);
+        assertThat(resultBack.classFiles()).isEqualTo(result.classFiles());
+    }
+
+    @Test void theLocalRootIsVerifiedByItsTrailingDigest() {
+        var root = new Root(id("tree"), id("sum"), 17, 2);
+        var bytes = LocalRoot.encode(D, "FORMAT;local=1;javac=25", root, id("machine"), id("model"));
+        var back = LocalRoot.decode(D, bytes);
+        assertThat(back.format()).isEqualTo("FORMAT;local=1;javac=25");
+        assertThat(back.local()).isEqualTo(root);
+        assertThat(back.machineRoot()).isEqualTo(id("machine"));
+        assertThat(back.modelHash()).isEqualTo(id("model"));
+        bytes[bytes.length - 40] ^= 1;
+        assertThatThrownBy(() -> LocalRoot.decode(D, bytes)).hasMessageContaining("digest");
+    }
+
+    @Test void aListNodeIsNeverMistakenForATreeNode() {
+        var elements = new ArrayList<Entry>();
+        for (int i = 0; i < 3; i++) elements.add(new Entry(id("e" + i).bytes(), Entry.NONE, id("h" + i)));
+        var nodes = new LocalColdBootTest.TreeMapSink();
+        var list = new ContentList(D).build(elements, nodes);
+        var tree = new ContentTree(D).build(elements.stream().sorted((a, b) -> Identity.of(a.key()).compareTo(Identity.of(b.key()))).toList(), nodes);
+        var listNode = nodes.nodes.get(list.hash());
+        var treeNode = nodes.nodes.get(tree.hash());
+        assertThat(Node.marker(listNode)).isEqualTo(1);
+        assertThat(Node.marker(treeNode)).isEqualTo(0);
+        assertThat(list.hash()).as("equal content, different identity").isNotEqualTo(tree.hash());
+        assertThat(Node.elements(listNode, 32)).extracting(Entry::key).containsExactlyElementsOf(elements.stream().map(Entry::key).toList());
+        assertThatThrownBy(() -> Node.entries(listNode, 32)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> Node.elements(treeNode, 32)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void stubsRoundTripThroughTheirRecord() {
+        var refs = List.of(new Stubs.Ref("p/A", id("a")), new Stubs.Ref("p/A$B", id("b")));
+        assertThat(Stubs.decodeList(Stubs.encodeList(refs), 32)).isEqualTo(refs);
+    }
+
+    @Test void theModelsValidationFaultsAreFaults() throws Exception {
+        var root = Files.createTempDirectory("stage2-model");
+        try {
+            var dep = Stage2Support.Dep.module("g:b:1", "missing");
+            assertThatThrownBy(() -> ProjectModel.parse(Stage2Support.model(root, new Stage2Support.Mod("a", "g:a:1", List.of(dep)))).validate())
+                    .isInstanceOf(ProjectModel.Fault.class).hasMessageContaining("missing");
+            assertThatThrownBy(() -> ProjectModel.parse(Stage2Support.model(root, new Stage2Support.Mod("a", "g:a:1", List.of()), new Stage2Support.Mod("a", "g:c:1", List.of()))).validate())
+                    .isInstanceOf(ProjectModel.Fault.class).hasMessageContaining("Duplicate");
+            assertThatThrownBy(() -> ProjectModel.parse(Stage2Support.model(root, new Stage2Support.Mod("a", "g:a", List.of()))).validate())
+                    .isInstanceOf(ProjectModel.Fault.class).hasMessageContaining("three parts");
+            assertThatThrownBy(() -> ProjectModel.parse(new String(Stage2Support.model(root, new Stage2Support.Mod("a", "g:a:1", List.of()))).replace(Stage2Support.JDK.toString().replace('\\', '/'), root.toString().replace('\\', '/')).getBytes()).validate())
+                    .isInstanceOf(ProjectModel.Fault.class).hasMessageContaining("lib/modules");
+            assertThatThrownBy(() -> ProjectModel.parse("{\"root\":\"x\",\"jdkHome\":\"y\",\"modules\":[{\"name\":\"a\",\"coordinate\":\"g:a:1\",\"scopes\":{\"main\":{\"dependencies\":[{\"coordinate\":\"g:b:1\"}]}}}]}".getBytes()))
+                    .isInstanceOf(ProjectModel.Fault.class).hasMessageContaining("exactly one of location and module");
+            assertThat(Coordinate.parse("g:a:1")).isEqualTo(new Coordinate("g", "a", "1"));
+            assertThatThrownBy(() -> Coordinate.parse("g:a")).isInstanceOf(IllegalArgumentException.class);
+        } finally { Stage2Support.delete(root); }
+    }
+}

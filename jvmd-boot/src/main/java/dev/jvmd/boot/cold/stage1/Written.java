@@ -8,14 +8,17 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** {@code Written} (stage 1, 2.6): node hashes written this boot. A node is written once; every other write is a set lookup. */
-final class Written {
+/**
+ * {@code Written} (stage 1, 2.6; stage 2, 2.6): node hashes written this boot. A node is written once; every other write is a set
+ * lookup. Stage 2 shares it.
+ */
+public final class Written {
     private final Set<Identity> hashes = ConcurrentHashMap.newKeySet();
     private final AtomicLong nodes = new AtomicLong();
     private final AtomicLong produced = new AtomicLong();
 
     /** The sink every tree of this boot writes through: it drops a node whose hash was already written. */
-    NodeSink through(MachineStore store) {
+    public NodeSink through(MachineStore store) {
         return new NodeSink() {
             @Override public void write(Node node) {
                 produced.incrementAndGet();
@@ -25,8 +28,8 @@ final class Written {
         };
     }
 
-    long count() { return nodes.get(); }
+    public long count() { return nodes.get(); }
 
     /** Every node any tree produced, including those dropped because an equal node was already written: produced - count is the sharing. */
-    long produced() { return produced.get(); }
+    public long produced() { return produced.get(); }
 }

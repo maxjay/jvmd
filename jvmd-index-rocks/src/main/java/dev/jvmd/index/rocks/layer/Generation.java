@@ -47,6 +47,23 @@ public final class Generation {
         return new RocksMachineStore(directory, true);
     }
 
+    /**
+     * The committed MACHINE store, opened once and writable, as a LOCAL store (stage 2, 2.5 and 9.1): LOCAL records live in the same
+     * RocksDB under their own key prefixes, so a LOCAL generation is a key prefix and not a store of its own. The caller asks the one
+     * open store whether the project is committed ({@code LocalStore.getLocalRoot}) and boots into it if not.
+     *
+     * @throws IllegalStateException if this generation has no committed MACHINE root
+     */
+    public RocksLocalStore openLocal() {
+        if (!Files.isDirectory(directory)) throw new IllegalStateException("MACHINE generation is not committed: " + directory);
+        var machine = new RocksMachineStore(directory, false);
+        if (!machine.hasRoot()) {
+            machine.close();
+            throw new IllegalStateException("MACHINE generation is not committed: " + directory);
+        }
+        return new RocksLocalStore(machine);
+    }
+
     private static void deleteRecursively(Path root) throws IOException {
         try (var walk = Files.walk(root)) {
             for (var path : walk.sorted(Comparator.reverseOrder()).toList()) Files.delete(path);

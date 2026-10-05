@@ -5,6 +5,7 @@ module dev.jvmd.index {
     requires jdk.compiler;
     exports dev.jvmd.index;
     exports dev.jvmd.index.layer.machine;
+    exports dev.jvmd.index.layer.local;
     uses dev.jvmd.index.IndexStorageProvider;
     opens dev.jvmd.index to com.fasterxml.jackson.databind;
 }

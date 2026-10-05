@@ -148,6 +148,12 @@ class ProcessorEmptyOutputTest {
                         for (var annotation : annotations) for (var input : round.getElementsAnnotatedWith(annotation))
                             for (var member : input.getEnclosedElements()) if (member.getSimpleName().contentEquals("VALUE")) {
                                 try {
+                                    // Deliberately escape the public model wrapper, as compiler-internal processors can.
+                                    var delegate = processingEnv.getClass().getDeclaredField("delegate");
+                                    delegate.setAccessible(true);
+                                    var nativeEnvironment = (ProcessingEnvironment) delegate.get(processingEnv);
+                                    member = nativeEnvironment.getElementUtils().getTypeElement("p.Input").getEnclosedElements().stream()
+                                        .filter(e -> e.getSimpleName().contentEquals("VALUE")).findFirst().orElseThrow();
                                     member.getClass().getMethod("setData", Object.class).invoke(member, Integer.valueOf(2));
                                     if (!Integer.valueOf(2).equals(((VariableElement)member).getConstantValue())) throw new AssertionError("mutation failed");
                                     processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE, "observed changed constant");

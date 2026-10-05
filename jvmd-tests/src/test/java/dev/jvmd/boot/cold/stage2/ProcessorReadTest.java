@@ -81,10 +81,136 @@ class ProcessorReadTest {
         return store.withPrefix("F").values().stream().map(bytes -> FileRow.decode("", bytes, digest.width())).filter(FileRow::generated).findFirst().orElseThrow();
     }
 
+    @ParameterizedTest @MethodSource("digests")
+    void annotationReachedThroughTheElementGraphChangesGenerationWithoutChangingTheApi(Digest digest) throws Exception {
+        var work = dir.resolve("graph-processor");
+        var source = """
+                package fixture;
+                import java.util.*;
+                import javax.annotation.processing.*;
+                import javax.lang.model.*;
+                import javax.lang.model.element.*;
+                @SupportedAnnotationTypes("*")
+                public class Graph extends AbstractProcessor {
+                    boolean done;
+                    public SourceVersion getSupportedSourceVersion() { return SourceVersion.latestSupported(); }
+                    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
+                        if (done || round.processingOver()) return false;
+                        done = true;
+                        var input = round.getRootElements().stream().filter(e -> e.getSimpleName().contentEquals("Input")).findFirst().orElseThrow();
+                        var api = processingEnv.getElementUtils().getTypeElement("ext.Api");
+                        var field = api.getEnclosedElements().stream().filter(e -> e.getSimpleName().contentEquals("field")).findFirst().orElseThrow();
+                        var annotation = field.getAnnotationMirrors().getFirst();
+                        var value = annotation.getElementValues().values().iterator().next().getValue();
+                        try (var out = processingEnv.getFiler().createSourceFile("p.Result", input).openWriter()) {
+                            out.write("package p; public class Result { public static final int VALUE = " + value + "; }");
+                        } catch (java.io.IOException e) { throw new RuntimeException(e); }
+                        return false;
+                    }
+                }
+                """;
+        var entries = new java.util.LinkedHashMap<>(Stage2Support.compile(work, Map.of("fixture/Graph.java", source), List.of(), List.of()));
+        entries.put("META-INF/services/javax.annotation.processing.Processor", Stage2Support.text("fixture.Graph\n"));
+        entries.put("META-INF/gradle/incremental.annotation.processors", Stage2Support.text("fixture.Graph,isolating\n"));
+        var processor = Stage2Support.pack(work.resolve("processor.jar"), entries);
+        var api = dir.resolve("graph-api.jar");
+        Files.copy(annotatedApi(1), api);
+        String input = "m/src/main/java/p/Input.java";
+        Stage2Support.write(dir, Map.of(input, "package p; public class Input {}"));
+        var model = model(processor, api);
+        var project = Stage2.projectKey(digest, model);
+        var driver = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 1, dir, ClassFacts::of);
+        var first = Stage2Support.jdkOnly(digest).copy();
+        assertThat(driver.run(first, model).faults()).isEmpty();
+        var before = generated(first, digest);
+        var originalProof = FileRow.decode(input, first.get(LocalStore.fileKey(project, input)), digest.width()).headerProof();
+
+        Files.copy(annotatedApi(2), api, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        var second = first.copy();
+        assertThat(driver.run(second, model).faults()).isEmpty();
+        assertThat(FileRow.decode(input, second.get(LocalStore.fileKey(project, input)), digest.width()).headerProof()).isEqualTo(originalProof);
+        var after = generated(second, digest);
+        assertThat(after.genId()).isNotEqualTo(before.genId());
+        assertThat(new String(second.get(LocalStore.generatedSourceKey(after.kappa())), java.nio.charset.StandardCharsets.UTF_8)).contains("VALUE = 2;");
+
+        var repeat = second.copy();
+        assertThat(driver.run(repeat, model).faults()).isEmpty();
+        assertThat(generated(repeat, digest).genId()).isEqualTo(after.genId());
+        assertThat(repeat.writes(LocalStore.generatedKey(after.genId()))).isZero();
+    }
+
+    private Path annotatedApi(int value) throws Exception {
+        var work = dir.resolve("graph-api-" + value);
+        return Stage2Support.pack(work.resolve("api.jar"), Stage2Support.compile(work, Map.of(
+                "ext/Label.java", "package ext; public @interface Label { int value(); }",
+                "ext/Api.java", "package ext; public class Api { @Label(" + value + ") public String field; }"), List.of(), List.of()));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void aggregateQueriesSourceAnnotationsOutsideItsDomainWithoutDependingOnBodies(Digest digest) throws Exception {
+        var work = dir.resolve("aggregate-graph");
+        var source = """
+                package fixture;
+                import java.util.*;
+                import javax.annotation.processing.*;
+                import javax.lang.model.*;
+                import javax.lang.model.element.*;
+                @SupportedAnnotationTypes("p.Trigger")
+                public class SourceGraph extends AbstractProcessor {
+                    boolean done;
+                    public SourceVersion getSupportedSourceVersion() { return SourceVersion.latestSupported(); }
+                    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
+                        if (done || round.processingOver()) return false;
+                        done = true;
+                        var api = processingEnv.getElementUtils().getTypeElement("p.Other");
+                        var field = api.getEnclosedElements().stream().filter(e -> e.getSimpleName().contentEquals("field")).findFirst().orElseThrow();
+                        var annotation = field.getAnnotationMirrors().getFirst();
+                        var value = annotation.getElementValues().values().iterator().next().getValue();
+                        try (var out = processingEnv.getFiler().createSourceFile("p.Result").openWriter()) {
+                            out.write("package p; public class Result { public static final int VALUE = " + value + "; }");
+                        } catch (java.io.IOException e) { throw new RuntimeException(e); }
+                        return true;
+                    }
+                }
+                """;
+        var entries = new java.util.LinkedHashMap<>(Stage2Support.compile(work, Map.of("fixture/SourceGraph.java", source), List.of(), List.of()));
+        entries.put("META-INF/services/javax.annotation.processing.Processor", Stage2Support.text("fixture.SourceGraph\n"));
+        entries.put("META-INF/gradle/incremental.annotation.processors", Stage2Support.text("fixture.SourceGraph,aggregating\n"));
+        var processor = Stage2Support.pack(work.resolve("processor.jar"), entries);
+        String input = "m/src/main/java/p/Input.java", other = "m/src/main/java/p/Other.java";
+        String otherSource = "package p; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE) "
+                + "@interface Label { int value(); } class Other { @Label(1) String field; int body() { return 1; } }";
+        Stage2Support.write(dir, Map.of(input, "package p; @interface Trigger {} @Trigger class Input {}", other, otherSource));
+        var model = model(processor, null);
+        var project = Stage2.projectKey(digest, model);
+        var domainKey = LocalStore.processorDomainKey(project, "m", 0, "fixture.SourceGraph");
+        var driver = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 1, dir, ClassFacts::of);
+        var first = Stage2Support.jdkOnly(digest).copy();
+        assertThat(driver.run(first, model).faults()).isEmpty();
+        var before = generated(first, digest);
+        var beforeRow = FileRow.decode(other, first.get(LocalStore.fileKey(project, other)), digest.width());
+
+        Files.writeString(dir.resolve(other), otherSource.replace("@Label(1)", "@Label(2)"));
+        var second = first.copy();
+        assertThat(driver.run(second, model).faults()).isEmpty();
+        assertThat(second.get(domainKey)).isEqualTo(first.get(domainKey));
+        assertThat(FileRow.decode(other, second.get(LocalStore.fileKey(project, other)), digest.width()).sum()).isEqualTo(beforeRow.sum());
+        var after = generated(second, digest);
+        assertThat(after.genId()).isNotEqualTo(before.genId());
+        assertThat(new String(second.get(LocalStore.generatedSourceKey(after.kappa())), java.nio.charset.StandardCharsets.UTF_8)).contains("VALUE = 2;");
+
+        Files.writeString(dir.resolve(other), otherSource.replace("@Label(1)", "@Label(2)").replace("return 1;", "return 2;"));
+        var body = second.copy();
+        assertThat(driver.run(body, model).faults()).isEmpty();
+        assertThat(body.get(domainKey)).isEqualTo(second.get(domainKey));
+        assertThat(generated(body, digest).genId()).isEqualTo(after.genId());
+        assertThat(body.writes(LocalStore.generatedKey(after.genId()))).isZero();
+    }
+
     private ProjectModel model(Path processor, Path api) throws Exception {
         var json = new com.fasterxml.jackson.databind.ObjectMapper();
         var doc = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(Stage2Support.model(dir,
-                new Stage2Support.Mod("m", "g:m:1", List.of(Stage2Support.Dep.jar("g:api:1", api.toString())))));
+                new Stage2Support.Mod("m", "g:m:1", api == null ? List.of() : List.of(Stage2Support.Dep.jar("g:api:1", api.toString())))));
         var processing = ((com.fasterxml.jackson.databind.node.ObjectNode) doc.withArray("modules").get(0)).putObject("processing");
         processing.putArray("path").addObject().put("coordinate", "g:processor:1").put("location", processor.toString());
         return ProjectModel.parse(json.writeValueAsBytes(doc));

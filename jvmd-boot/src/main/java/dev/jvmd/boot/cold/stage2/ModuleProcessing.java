@@ -124,7 +124,8 @@ final class ModuleProcessing {
     }
 
     private Identity aggregateId(String processor, Root domain) {
-        return boot.digest.hash(new Codec.Writer().str(processor).id(host.pathHash()).id(optionsHash).id(domain.sum()).toBytes());
+        return boot.digest.hash(new Codec.Writer().str(processor).id(host.pathHash()).id(optionsHash).id(domain.sum())
+                .lenBytes(host.modelProof(processor, null)).toBytes());
     }
 
     private Identity isolatingId(String processor, String origin, Map<String, FileRow> rows) {
@@ -139,6 +140,7 @@ final class ModuleProcessing {
         for (var absence : row.absences()) proof.put(absence.key(), boot.tree.sums().zero());
         input.u32(proof.size());
         for (var observation : proof.entrySet()) input.lenBytes(observation.getKey()).id(observation.getValue());
+        input.lenBytes(host.modelProof(processor, origin));
         return boot.digest.hash(input.toBytes());
     }
 }

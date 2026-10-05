@@ -19,12 +19,12 @@ final class ProcessorTrees extends JavacTrees {
 
     @Override public JCTree getTree(Element element, AnnotationMirror annotation, AnnotationValue value) {
         host.syntaxRead("Trees.getTree");
-        return super.getTree(element, annotation, value);
+        return super.getTree(ProcessorReads.nativeObject(element), ProcessorReads.nativeObject(annotation), ProcessorReads.nativeObject(value));
     }
 
     @Override public TreePath getPath(Element element, AnnotationMirror annotation, AnnotationValue value) {
         // Even a path to a declaration exposes its whole compilation unit and therefore executable bodies.
         host.syntaxRead("Trees.getPath");
-        return super.getPath(element, annotation, value);
+        return super.getPath(ProcessorReads.nativeObject(element), ProcessorReads.nativeObject(annotation), ProcessorReads.nativeObject(value));
     }
 }

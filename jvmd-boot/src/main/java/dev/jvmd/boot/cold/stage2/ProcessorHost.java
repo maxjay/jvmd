@@ -61,6 +61,7 @@ public final class ProcessorHost implements AutoCloseable {
     private java.util.function.Function<URI, String> sourcePaths = URI::toString;
     private Map<String, ProcessorRecords.Capability> closedCapabilities;
     private Map<String, List<Entry>> closedDomains;
+    private Map<String, List<URI>> closedInputs;
     private final Map<String, List<ProcessorReads.Read>> modelReads = new TreeMap<>();
     private Wrapped active;
     private int internalReads;
@@ -155,7 +156,7 @@ public final class ProcessorHost implements AutoCloseable {
         var reads = new ArrayList<ProcessorReads.Read>();
         for (var processor : processors) {
             if (processor.declared != ProcessorRecords.ISOLATING || TESTED_OVERLAYS.contains(processor.name)) continue;
-            var origins = outputs.stream().filter(o -> o.processorClass().equals(processor.name)).flatMap(o -> o.origins().stream()).distinct().toList();
+            var origins = List.copyOf(processor.inputs);
             if (origins.size() == 1 && origins.getFirst().equals(origin)) reads.addAll(modelReads.getOrDefault(processor.name, List.of()));
         }
         return List.copyOf(reads);
@@ -172,9 +173,17 @@ public final class ProcessorHost implements AutoCloseable {
         for (var processor : processors) if (processor.declared == ProcessorRecords.AGGREGATING) out.put(processor.name, List.copyOf(processor.domain.values()));
         return Map.copyOf(out);
     }
+    /** Source units actually returned by RoundEnvironment queries, plus explicit Filer origins. Includes empty derivations. */
+    public Map<String, List<URI>> inputs() {
+        if (closedInputs != null) return closedInputs;
+        var out = new TreeMap<String, List<URI>>();
+        for (var processor : processors) out.put(processor.name, List.copyOf(processor.inputs));
+        return Map.copyOf(out);
+    }
     @Override public void close() throws IOException {
         closedCapabilities = capabilities();
         closedDomains = domains();
+        closedInputs = inputs();
         processors.clear(); // discard all javac Elements, Trees and processor instance state with this header compile
         diagnosticScope = DIRECT;
         loader.close();
@@ -186,10 +195,10 @@ public final class ProcessorHost implements AutoCloseable {
         int declared;
         final boolean dynamic;
         int observed = ProcessorRecords.OVERLAY;
-        boolean created;
         Trees trees;
         ProcessorElementProjection projection;
         final TreeMap<byte[], Entry> domain = new TreeMap<>(Arrays::compareUnsigned);
+        final Set<URI> inputs = new java.util.TreeSet<>();
         Wrapped(Processor delegate, int declared) {
             this.delegate = delegate; this.name = delegate.getClass().getName(); this.dynamic = declared == 3; this.declared = dynamic ? 0 : declared;
         }
@@ -213,8 +222,14 @@ public final class ProcessorHost implements AutoCloseable {
                 if (isolating != aggregating) declared = isolating ? ProcessorRecords.ISOLATING : ProcessorRecords.AGGREGATING;
             }
             if (declared == ProcessorRecords.NONE) unsupported("no resolved incremental processor declaration");
+            else if (observed != ProcessorRecords.VIOLATED && !TESTED_OVERLAYS.contains(name)) observed = ProcessorRecords.GENERATOR;
         }
         @Override public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
+            var declarations = new java.util.IdentityHashMap<Element, byte[]>();
+            if (!TESTED_OVERLAYS.contains(name)) for (var root : round.getRootElements()) {
+                var origin = origin(root);
+                if (origin != null) declarations.put(root, projection.of(root, sourcePath(origin)));
+            }
             if (declared == ProcessorRecords.AGGREGATING) {
                 for (var annotation : annotations) for (var element : round.getElementsAnnotatedWith(annotation)) {
                     var path = trees.getPath(element);
@@ -224,15 +239,47 @@ public final class ProcessorHost implements AutoCloseable {
                     domain.put(key, new Entry(key, value, digest.hash(key, value)));
                 }
             }
-            boolean claimed = observe(() -> delegate.process(annotations, round));
-            if (round.processingOver() && !created && observed != ProcessorRecords.GENERATOR && !TESTED_OVERLAYS.contains(name)) unsupported("no tested overlay capability");
+            boolean claimed = observe(() -> delegate.process(annotations, new RecordingRound(round, this)));
+            for (var entry : declarations.entrySet()) {
+                var origin = origin(entry.getKey());
+                if (origin == null || !Arrays.equals(entry.getValue(), projection.of(entry.getKey(), sourcePath(origin))))
+                    unsupported("source declaration mutation requires a tested overlay capability");
+            }
             return claimed;
+        }
+        URI origin(Element element) {
+            internalReads++;
+            try {
+                var path = trees.getPath(element);
+                return path == null ? null : path.getCompilationUnit().getSourceFile().toUri();
+            } finally { internalReads--; }
         }
         @Override public Set<String> getSupportedOptions() { return observe(delegate::getSupportedOptions); }
         @Override public Set<String> getSupportedAnnotationTypes() { return observe(delegate::getSupportedAnnotationTypes); }
         @Override public SourceVersion getSupportedSourceVersion() { return observe(delegate::getSupportedSourceVersion); }
         @Override public Iterable<? extends Completion> getCompletions(Element element, AnnotationMirror annotation, ExecutableElement member, String userText) {
             return observe(() -> delegate.getCompletions(element, annotation, member, userText));
+        }
+    }
+
+    private final class RecordingRound implements RoundEnvironment {
+        final RoundEnvironment delegate;
+        final Wrapped processor;
+        RecordingRound(RoundEnvironment delegate, Wrapped processor) { this.delegate = delegate; this.processor = processor; }
+        private Set<? extends Element> record(Set<? extends Element> elements) {
+            for (var element : elements) {
+                var origin = processor.origin(element);
+                if (origin == null) processor.unsupported("round element has no source origin");
+                else processor.inputs.add(origin);
+            }
+            return elements;
+        }
+        @Override public boolean processingOver() { return delegate.processingOver(); }
+        @Override public boolean errorRaised() { return delegate.errorRaised(); }
+        @Override public Set<? extends Element> getRootElements() { return record(delegate.getRootElements()); }
+        @Override public Set<? extends Element> getElementsAnnotatedWith(TypeElement annotation) { return record(delegate.getElementsAnnotatedWith(annotation)); }
+        @Override public Set<? extends Element> getElementsAnnotatedWith(Class<? extends java.lang.annotation.Annotation> annotation) {
+            return record(delegate.getElementsAnnotatedWith(annotation));
         }
     }
 
@@ -259,16 +306,12 @@ public final class ProcessorHost implements AutoCloseable {
         private List<URI> origins(Element[] elements) {
             var result = new ArrayList<URI>();
             for (var element : elements) {
-                com.sun.source.util.TreePath path;
-                internalReads++;
-                try { path = processor.trees.getPath(element); }
-                finally { internalReads--; }
-                if (path == null) processor.unsupported("origin has no compilation unit");
-                else result.add(path.getCompilationUnit().getSourceFile().toUri());
+                var origin = processor.origin(element);
+                if (origin == null) processor.unsupported("origin has no compilation unit");
+                else { result.add(origin); processor.inputs.add(origin); }
             }
             if (processor.declared == ProcessorRecords.ISOLATING && elements.length != 1)
                 processor.unsupported("isolating output has " + elements.length + " originating elements");
-            processor.created = true;
             if (processor.observed != ProcessorRecords.VIOLATED) processor.observed = ProcessorRecords.GENERATOR;
             return List.copyOf(result);
         }

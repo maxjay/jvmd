@@ -67,9 +67,14 @@ final class ModuleProcessing {
         var ids = new TreeMap<String, Identity>();
         var origins = new TreeMap<String, String>();
         if (reusable) for (var e : capabilities.entrySet()) {
-            if (e.getValue().declared() == ProcessorRecords.AGGREGATING && e.getValue().observed() == ProcessorRecords.GENERATOR) {
+            if (e.getValue().observed() != ProcessorRecords.GENERATOR) continue;
+            if (e.getValue().declared() == ProcessorRecords.AGGREGATING) {
                 var id = aggregateId(e.getKey(), domains.get(e.getKey()));
                 byDerivation.put(id, new ArrayList<>()); // the empty output set is an exact manifest too
+                processorByDerivation.put(id, e.getKey());
+            } else for (var uri : host.inputs().getOrDefault(e.getKey(), List.of())) {
+                var id = isolatingId(e.getKey(), boot.sourcePath(uri), rows);
+                byDerivation.put(id, new ArrayList<>());
                 processorByDerivation.put(id, e.getKey());
             }
         }
@@ -80,23 +85,9 @@ final class ModuleProcessing {
             if (!reusable) continue;
             var capability = capabilities.get(output.processorClass());
             Identity id;
-            var input = new Codec.Writer().str(output.processorClass()).id(host.pathHash()).id(optionsHash);
             if (capability.declared() == ProcessorRecords.AGGREGATING) {
                 id = aggregateId(output.processorClass(), domains.get(output.processorClass()));
-            } else {
-                var row = origin == null ? null : rows.get(origin);
-                if (row == null) throw new IllegalStateException("Recorded generator origin has no file row: " + origin);
-                input.zstr(origin).id(row.kappa());
-                var configuration = context(origin).configuration();
-                input.u32(configuration.size());
-                for (var observation : configuration) observation.encode(input);
-                var proof = new TreeMap<byte[], Identity>(java.util.Arrays::compareUnsigned);
-                for (var observation : row.headerProof()) proof.put(Keys.typeKey(observation.typeKey()), observation.oSum());
-                for (var absence : row.absences()) proof.put(absence.key(), boot.tree.sums().zero());
-                input.u32(proof.size());
-                for (var observation : proof.entrySet()) input.lenBytes(observation.getKey()).id(observation.getValue());
-                id = boot.digest.hash(input.toBytes());
-            }
+            } else id = isolatingId(output.processorClass(), origin, rows);
             ids.put(e.getKey(), id);
             processorByDerivation.put(id, output.processorClass());
             byDerivation.computeIfAbsent(id, ignored -> new ArrayList<>()).add(new GeneratedOutputs.Output(0, output.name(), output.bytes()));
@@ -134,5 +125,20 @@ final class ModuleProcessing {
 
     private Identity aggregateId(String processor, Root domain) {
         return boot.digest.hash(new Codec.Writer().str(processor).id(host.pathHash()).id(optionsHash).id(domain.sum()).toBytes());
+    }
+
+    private Identity isolatingId(String processor, String origin, Map<String, FileRow> rows) {
+        var row = origin == null ? null : rows.get(origin);
+        if (row == null) throw new IllegalStateException("Recorded generator origin has no file row: " + origin);
+        var input = new Codec.Writer().str(processor).id(host.pathHash()).id(optionsHash).zstr(origin).id(row.kappa());
+        var configuration = context(origin).configuration();
+        input.u32(configuration.size());
+        for (var observation : configuration) observation.encode(input);
+        var proof = new TreeMap<byte[], Identity>(java.util.Arrays::compareUnsigned);
+        for (var observation : row.headerProof()) proof.put(Keys.typeKey(observation.typeKey()), observation.oSum());
+        for (var absence : row.absences()) proof.put(absence.key(), boot.tree.sums().zero());
+        input.u32(proof.size());
+        for (var observation : proof.entrySet()) input.lenBytes(observation.getKey()).id(observation.getValue());
+        return boot.digest.hash(input.toBytes());
     }
 }

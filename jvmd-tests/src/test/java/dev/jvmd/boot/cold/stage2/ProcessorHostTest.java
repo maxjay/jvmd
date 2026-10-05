@@ -178,7 +178,7 @@ class ProcessorHostTest {
         var processor = generator("isolating", false);
         var file = dir.resolve("src/p/Input.java");
         Files.createDirectories(file.getParent());
-        Files.writeString(file, "package p; public class Input { void body() { unknown(); } }");
+        Files.writeString(file, "package p; public class Input { Generated value; void body() { unknown(); } }");
         try (var host = new ProcessorHost(List.of(processor), List.of(), digest, dir.resolve("generated"));
              var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("src/p/Input.java", file)), List.of(),
                      Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest, host)) {
@@ -189,6 +189,8 @@ class ProcessorHostTest {
             assertThat(new String(output.bytes(), java.nio.charset.StandardCharsets.UTF_8)).contains("class Generated");
             assertThat(compiled.units).hasSize(2);
             assertThat(compiled.units.stream().flatMap(u -> u.declared.stream()).map(t -> t.getQualifiedName().toString())).contains("p.Generated");
+            assertThat(compiled.elements.getTypeElement("p.Input").getEnclosedElements().stream()
+                    .filter(e -> e.getSimpleName().contentEquals("value")).findFirst().orElseThrow().asType().toString()).isEqualTo("p.Generated");
             assertThat(host.capabilities().get("fixture.Generator").observed()).isEqualTo(1);
             assertThat(host.faults()).isEmpty();
         }

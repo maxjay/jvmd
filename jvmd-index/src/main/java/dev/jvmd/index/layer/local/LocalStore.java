@@ -24,10 +24,15 @@ public interface LocalStore extends MachineStore {
     void putSibling(Identity leafSetSib, byte[] value);
     /** {@code DC|routeHash}: the conflict table of a definer index, shared across projects. */
     void putConflicts(Identity routeHash, byte[] value);
-    void putConsumer(Identity kappa, Identity routeHash, byte[] value);
+    /** {@code C|κ_file|leafSetExt}. */
+    void putConsumer(Identity kappa, Identity leafSetExt, byte[] value);
     void putReverse(int kind, byte[] key, byte[] value);
-    void putResult(Identity kappa, Identity routeHash, byte[] value);
+    /** {@code RS|κ_file|leafSetExt}. */
+    void putResult(Identity kappa, Identity leafSetExt, byte[] value);
+    /** {@code S|k}: a leaf's list of its types' stubs (B.10). */
     void putStub(Identity k, byte[] value);
+    /** {@code ST|stKey}: one type's stub (B.10). */
+    void putStubType(Identity stKey, byte[] value);
     /** Commits at once. The previous root of this project, if any, is kept under {@code LROOT|projectKey|n} (9.1). */
     void putLocalRoot(Identity projectKey, byte[] value);
 
@@ -47,10 +52,13 @@ public interface LocalStore extends MachineStore {
     /** {@code DS|leafSetSib}, or null: read like {@code DD|}. */
     byte[] getSibling(Identity leafSetSib);
     byte[] getConflicts(Identity routeHash);
-    byte[] getConsumer(Identity kappa, Identity routeHash);
+    byte[] getConsumer(Identity kappa, Identity leafSetExt);
     byte[] getReverse(int kind, byte[] key);
-    byte[] getResult(Identity kappa, Identity routeHash);
+    byte[] getResult(Identity kappa, Identity leafSetExt);
+    /** {@code S|k}, or null: shared and derivable, so a boot may read it. */
     byte[] getStub(Identity k);
+    /** {@code ST|stKey}, or null: shared and derivable, so a boot may read it. */
+    byte[] getStubType(Identity stKey);
     byte[] getLocalRoot(Identity projectKey);
 
     // ---- key layout (section 4). Defined here so every implementation writes the same bytes. -------------------------------
@@ -64,10 +72,11 @@ public interface LocalStore extends MachineStore {
     static byte[] disjointKey(Identity leafSetExt) { return join("DD|", leafSetExt.view()); }
     static byte[] siblingKey(Identity leafSetSib) { return join("DS|", leafSetSib.view()); }
     static byte[] conflictsKey(Identity routeHash) { return join("DC|", routeHash.view()); }
-    static byte[] consumerKey(Identity kappa, Identity routeHash) { return join("C|", kappa.view(), "|", routeHash.view()); }
+    static byte[] consumerKey(Identity kappa, Identity leafSetExt) { return join("C|", kappa.view(), "|", leafSetExt.view()); }
     static byte[] reverseKey(int kind, byte[] key) { return join("X|", new byte[] {(byte) kind}, "|", key); }
-    static byte[] resultKey(Identity kappa, Identity routeHash) { return join("RS|", kappa.view(), "|", routeHash.view()); }
+    static byte[] resultKey(Identity kappa, Identity leafSetExt) { return join("RS|", kappa.view(), "|", leafSetExt.view()); }
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }
+    static byte[] stubTypeKey(Identity stKey) { return join("ST|", stKey.view()); }
     static byte[] localRootKey(Identity projectKey) { return join("LROOT|", projectKey.view()); }
     /** A kept previous root; {@code n} counts from 1, oldest first. */
     static byte[] localRootHistoryKey(Identity projectKey, int n) {

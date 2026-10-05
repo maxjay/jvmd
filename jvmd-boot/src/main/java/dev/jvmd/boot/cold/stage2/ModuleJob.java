@@ -74,7 +74,6 @@ final class ModuleJob {
         var edges = new TreeMap<byte[], Entry>(Arrays::compareUnsigned);
         var pending = new ArrayList<Pending>();
         var seen = new HashSet<ByteBuffer>();
-        var optionsKey = digest.hash((String.join("\0", options) + "\0" + release).getBytes(StandardCharsets.UTF_8));
         long headerStarted = System.nanoTime();
         var compiled = HeaderCompiler.compile(toCompile, classpath, Path.of(boot.model.jdkHome()), release, options);
         boot.headerNanos.addAndGet(System.nanoTime() - headerStarted);
@@ -90,18 +89,16 @@ final class ModuleJob {
                     pending.add(new Pending(file, sums.zero(), List.of(), List.of(new FileRow.Fault(new byte[0], unit.parseError)), List.of()));
                     continue;
                 }
-                var result = boot.fileMemo.get(file.kappa(), bound.routeHash(), optionsKey);
-                if (result == null) {
-                    long factsStarted = System.nanoTime();
-                    if (unit.module != null) {
-                        // The descriptor of the module's own main code; a test scope has none (its module is patched, not declared).
-                        result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)))
-                                : new SourceFacts.Result(List.of(), List.of(), List.of(), List.of());
-                    } else result = extract.of(unit.declared);
-                    boot.factsNanos.addAndGet(System.nanoTime() - factsStarted);
-                    boot.fileMemo.put(file.kappa(), bound.routeHash(), optionsKey, result);
-                    boot.parsedFiles.incrementAndGet();
-                }
+                // No boot-wide memo of a file's facts (2.6): the header proof in the file row is what lets a later layer keep them.
+                long factsStarted = System.nanoTime();
+                SourceFacts.Result result;
+                if (unit.module != null) {
+                    // The descriptor of the module's own main code; a test scope has none (its module is patched, not declared).
+                    result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)))
+                            : new SourceFacts.Result(List.of(), List.of(), List.of(), List.of());
+                } else result = extract.of(unit.declared);
+                boot.factsNanos.addAndGet(System.nanoTime() - factsStarted);
+                boot.parsedFiles.incrementAndGet();
                 var faults = new ArrayList<>(result.faults());
                 faults.addAll(unit.faults);
                 var sum = sums.zero();
@@ -174,6 +171,9 @@ final class ModuleJob {
             var row = new FileRow(p.file().path(), p.file().kappa(), p.file().size(), p.file().mtimeNanos(), p.sum(), List.copyOf(p.types()), List.copyOf(p.faults()),
                     headerProof(p.edges(), own, resolver));
             boot.files.put(row.path(), row);
+            for (var proof : row.headerProof())
+                boot.headerConsumers.computeIfAbsent(proof.typeKey(), t -> java.util.concurrent.ConcurrentHashMap.newKeySet())
+                        .add(new dev.jvmd.index.layer.local.ReverseIndex.Consumer(row.kappa(), bound.leafSetExt()));
             for (var fault : row.faults()) boot.faults.add(row.path() + ": " + (fault.m().length == 0 ? "" : describe(fault.m()) + ": ") + fault.reason());
         }
         sink.flush();

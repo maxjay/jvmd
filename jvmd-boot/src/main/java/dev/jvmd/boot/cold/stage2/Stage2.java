@@ -42,7 +42,7 @@ import java.util.concurrent.ConcurrentSkipListMap;
 public final class Stage2 {
     /** What the boot did: the numbers of the one log line. {@code faults} are {@code path: declaration: reason}, and the classpath entries that bound to nothing. */
     public record Result(int modules, int routes, int sourceFiles, int parsedFiles, int sourceLeaves, int distinctLeafSets, int indexedOnTheSpot,
-                         long nodes, List<String> faults, long wallMillis, Root root, Map<String, Identity> leaves, int memoEntries, Timings timings) { }
+                         long nodes, List<String> faults, long wallMillis, Root root, Map<String, Identity> leaves, Timings timings) { }
 
     /** Where the time went, summed over jobs (so more than the wall time when jobs ran in parallel): the numbers of the cost model in 7.2. */
     public record Timings(int compiledFiles, long headerCompileMillis, long factsMillis, long definerIndexMillis) { }
@@ -115,6 +115,20 @@ public final class Stage2 {
                     store.putFile(projectKey, row.path(), value);
                     records.put(LocalStore.fileKey(projectKey, row.path()), value);
                 }
+                // The kind 7 reverse entries of the header proofs, beside the file rows: X|7|typeKey -> the files that name it, sorted so that
+                // the record is a function of the project's content. X| carries no project key (B.9), so a project's entry for a type that
+                // another project also names is the whole entry as this boot saw it; merging with another project's entry is the reader's.
+                for (var e : new java.util.TreeMap<>(boot.headerConsumers).entrySet()) {
+                    var consumers = new ArrayList<>(e.getValue());
+                    consumers.sort((a, b) -> {
+                        int c = a.kappa().compareTo(b.kappa());
+                        return c != 0 ? c : a.leafSetExt().compareTo(b.leafSetExt());
+                    });
+                    var key = new dev.jvmd.core.tree.Codec.Writer(e.getKey().length() + 1).zstr(e.getKey()).toBytes();
+                    var value = new dev.jvmd.index.layer.local.ReverseIndex(consumers).encode();
+                    store.putReverse(dev.jvmd.index.layer.local.ConsumerRecord.HEADER, key, value);
+                    records.put(LocalStore.reverseKey(dev.jvmd.index.layer.local.ConsumerRecord.HEADER, key), value);
+                }
                 store.flush();
                 var entries = new ArrayList<Entry>(records.size());
                 for (var e : records.entrySet()) entries.add(new Entry(e.getKey(), Entry.NONE, digest.hash(e.getValue())));
@@ -135,7 +149,7 @@ public final class Stage2 {
                 java.util.Collections.sort(faults);
                 return new Result(model.modules().size(), model.modules().size() * 2, boot.sourceFiles.get(), boot.parsedFiles.get(), boot.sourceLeaves.get(),
                         boot.indexMemo.distinctLeafSets(), defaults.indexedOnTheSpot(), boot.written.count(), List.copyOf(faults),
-                        (System.nanoTime() - started) / 1_000_000, local, leaves, boot.fileMemo.size(),
+                        (System.nanoTime() - started) / 1_000_000, local, leaves,
                         new Timings(boot.compiledFiles.get(), boot.headerNanos.get() / 1_000_000, boot.factsNanos.get() / 1_000_000, boot.definerNanos.get() / 1_000_000));
             }
         }

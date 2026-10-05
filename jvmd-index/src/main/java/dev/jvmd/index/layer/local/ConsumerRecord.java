@@ -8,9 +8,13 @@ import java.util.List;
 /**
  * The {@code C|} record (stage 2, B.5): the proof of one file's result, every identity attribution resolved against, at the
  * tightest kind that covers the use. Written by attribution, not by a cold boot. No kind's identity involves {@code k} (3.5).
+ *
+ * <p>It is keyed by {@code (κ_file, leafSetExt)}, the stable part of the route, never by {@code routeHash}: that changes on every edit
+ * in any sibling and would orphan every proof under it. Validity is decided by the proof's identities, not by the key. Kind 7 is the
+ * header proof of 3.18, which stage 2 itself writes into the file rows and reverse-indexes.
  */
 public record ConsumerRecord(List<Dependency> dependencies) {
-    public static final int MEMBER = 1, OVERLOAD_GROUP = 2, TYPE = 3, PACKAGE = 4, NEGATIVE = 5, DEFINER = 6;
+    public static final int MEMBER = 1, OVERLOAD_GROUP = 2, TYPE = 3, PACKAGE = 4, NEGATIVE = 5, DEFINER = 6, HEADER = 7;
 
     /** {@code identity} is what was seen; {@code key} is the dependency's key bytes exactly as the reverse index keys them (B.9). */
     public record Dependency(int kind, Identity identity, byte[] key) { }
@@ -39,7 +43,7 @@ public record ConsumerRecord(List<Dependency> dependencies) {
         int zstrs = switch (kind) {
             case MEMBER -> 3; // m(f) = zstr owner || u8 kind || zstr name || zstr descriptor
             case OVERLOAD_GROUP -> 2;
-            case TYPE, PACKAGE, NEGATIVE, DEFINER -> 1;
+            case TYPE, PACKAGE, NEGATIVE, DEFINER, HEADER -> 1;
             default -> throw new IllegalArgumentException("Unknown dependency kind " + kind);
         };
         for (int z = 0; z < zstrs; z++) {

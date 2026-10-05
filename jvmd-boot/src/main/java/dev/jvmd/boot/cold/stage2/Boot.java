@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Everything the jobs of one boot share and nothing that outlives it (stage 2, 2.6 and 6): {@code Built}, {@code Written},
- * {@code FileMemo}, {@code IndexMemo}, the records to be written, the stub directories javac reads sibling modules from, and the
+ * {@code IndexMemo}, the records to be written, the stub directories javac reads sibling modules from, and the
  * counters of the log line. None of it is written except through the store.
  */
 final class Boot implements AutoCloseable {
@@ -48,13 +48,17 @@ final class Boot implements AutoCloseable {
     final Written written = new Written();
     final NodeSink sink;
     final Built built = new Built();
-    final FileMemo fileMemo = new FileMemo();
     final IndexMemo indexMemo = new IndexMemo();
     /** The routes as step 1 resolved them: {@code module \0 scope -> entries}. */
     final Map<String, List<RouteEntry>> entries = new ConcurrentHashMap<>();
     /** The bound routes as the jobs wrote them. */
     final Map<String, Route> routes = new ConcurrentHashMap<>();
     final Map<String, FileRow> files = new ConcurrentHashMap<>();
+    /**
+     * For each type key (an internal name) the files whose header proof names it, each under the external part of its route: the kind 7
+     * entries of {@code X|} (B.5, B.9). Without them, checking header proofs after an edit is a scan of every dependent's file row.
+     */
+    final Map<String, java.util.Set<dev.jvmd.index.layer.local.ReverseIndex.Consumer>> headerConsumers = new ConcurrentHashMap<>();
     /** {@code DD|}, {@code DS|} and {@code DC|} records this boot used: they are part of the LOCAL tree of the project that used them. */
     final ConcurrentSkipListMap<byte[], byte[]> definers = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);
     final ConcurrentLinkedQueue<String> faults = new ConcurrentLinkedQueue<>();
@@ -102,19 +106,19 @@ final class Boot implements AutoCloseable {
     }
 
     /**
-     * A directory of the stub class files of leaf {@code k}, made on first use (3.14). The stubs are {@code S|k}, shared across
-     * projects and a pure function of {@code k}: a record some earlier boot wrote is read, and only a missing one is synthesised and written.
+     * A directory of the stub class files of leaf {@code k}, made on first use (3.14). A stub is {@code ST|Digest(typeKey || oSum)},
+     * one type's, shared across leaves and projects, and {@code S|k} is the leaf's list of them: both are read first, and only a type
+     * whose stub is missing is synthesised and written, so an edit costs the types it changed and not the module.
      */
     Path stubDir(Identity k) {
         return stubDirs.computeIfAbsent(k, key -> {
             try {
-                var cached = store.getStub(key);
-                List<Stubs.Stub> stubs;
-                if (cached != null) stubs = Stubs.decode(cached);
-                else {
-                    stubs = Stubs.stubs(tree, leaf(key), this::node);
-                    store.putStub(key, Stubs.encode(stubs));
-                }
+                var stubs = Stubs.stubs(digest, tree, leaf(key), this::node, new Stubs.Cache() {
+                    @Override public byte[] list(Identity k) { return store.getStub(k); }
+                    @Override public void putList(Identity k, byte[] value) { store.putStub(k, value); }
+                    @Override public byte[] type(Identity stKey) { return store.getStubType(stKey); }
+                    @Override public void putType(Identity stKey, byte[] value) { store.putStubType(stKey, value); }
+                });
                 if (stubRoot == null) synchronized (this) { if (stubRoot == null) stubRoot = Files.createTempDirectory("jvmd-stubs-"); }
                 var dir = Files.createTempDirectory(stubRoot, "s");
                 for (var stub : stubs) {

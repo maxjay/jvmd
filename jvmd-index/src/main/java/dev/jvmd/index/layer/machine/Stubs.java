@@ -1,5 +1,6 @@
 package dev.jvmd.index.layer.machine;
 
+import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.tree.Codec;
 import dev.jvmd.core.tree.ContentTree;
@@ -34,7 +35,7 @@ import java.util.function.Function;
  * Stubs (stage 2, 3.14, 5.2a, C.8 and B.10): class files synthesised from a leaf's {@code T}, with every declared member and
  * everything in its {@code res} and nothing else: no bodies, no annotations but the meta-annotations of an annotation type, no
  * parameter names. A method without {@code Code} is legal input to javac (it is what {@code ct.sym} is made of); stubs are
- * compile-time input and are never loaded by a JVM. A stub is a pure function of {@code k}, so it is cached by {@code k} and shared.
+ * compile-time input and are never loaded by a JVM. A stub is a pure function of one type's {@code res}, so it is cached per type and shared.
  *
  * <p>What a stub lacks that javac needs would be a field of {@code res} that was classified as {@code tail}; invariant 7.3.14
  * (compiling against stubs gives the same result as against the real class files) is where that would surface.
@@ -54,8 +55,51 @@ public final class Stubs {
         final TreeMap<byte[], byte[]> methods = new TreeMap<>(Arrays::compareUnsigned);
     }
 
-    /** One stub per type of the leaf, in type key order. A module descriptor has no stub: it is not a type a member can be resolved in. */
-    public static List<Stub> stubs(ContentTree tree, MachineLeaf leaf, Function<Identity, byte[]> reader) {
+    /** One entry of {@code S|k}: a type of the leaf and the key of its stub (B.10). */
+    public record Ref(String internalName, Identity stKey) { }
+
+    /**
+     * Where stubs are kept (5.2a): {@code S|k}, a leaf's list of {@link Ref}, and {@code ST|stKey}, one type's stub. Both are shared,
+     * derivable records. A cache may drop anything; a stub it lacks is synthesised again.
+     */
+    public interface Cache {
+        /** No cache: every stub is synthesised and nothing is kept. */
+        Cache NONE = new Cache() {
+            @Override public byte[] list(Identity k) { return null; }
+            @Override public void putList(Identity k, byte[] value) { }
+            @Override public byte[] type(Identity stKey) { return null; }
+            @Override public void putType(Identity stKey, byte[] value) { }
+        };
+
+        byte[] list(Identity k);
+        void putList(Identity k, byte[] value);
+        byte[] type(Identity stKey);
+        void putType(Identity stKey, byte[] value);
+    }
+
+    /**
+     * One stub per type of the leaf, in type key order (5.2a). A stub is a function of one type's {@code res}, which is what its
+     * {@code oSum} identifies, so it is cached per type by {@code Digest(typeKey || oSum)}: shared across leaves, projects and time,
+     * and an edit regenerates the stubs of the types it changed and never the module's. A module descriptor has no stub: it is not a
+     * type a member can be resolved in.
+     *
+     * <p>One thing besides {@code res} is in a class file: an outer type's {@code InnerClasses} attribute, which is how javac finds its
+     * member types. Those are other types' facts, so their names and access are part of the outer type's key (only when it has
+     * members; a type without any has exactly the key {@code Digest(typeKey || oSum)}).
+     */
+    public static List<Stub> stubs(Digest digest, ContentTree tree, MachineLeaf leaf, Function<Identity, byte[]> reader, Cache cache) {
+        var listed = cache.list(leaf.k());
+        if (listed != null) {
+            var out = new ArrayList<Stub>();
+            boolean complete = true;
+            for (var ref : decodeList(listed, digest.width())) {
+                var bytes = cache.type(ref.stKey());
+                if (bytes == null) { complete = false; break; }
+                out.add(new Stub(ref.internalName(), new Codec.Reader(bytes).lenBytes()));
+            }
+            if (complete) return out;
+        }
+
         var decls = new TreeMap<String, TypeDecl>();
         tree.forEach(leaf.k(), reader, entry -> {
             var m = new Codec.Reader(entry.key());
@@ -79,25 +123,41 @@ public final class Stubs {
             if (outer != null) members.computeIfAbsent(outer, o -> new ArrayList<>()).add(decl.owner);
         }
         var out = new ArrayList<Stub>();
+        var refs = new ArrayList<Ref>();
         for (var decl : decls.values()) {
             if (decl.res == null || decl.res[0] == 5) continue; // no type fact (not produced), or a module descriptor
-            out.add(new Stub(decl.owner, build(decl, members.getOrDefault(decl.owner, List.of()), decls)));
+            var typeKey = new Codec.Writer(decl.owner.length() + 1).zstr(decl.owner).toBytes();
+            var oSum = tree.get(leaf.oHash(), reader, typeKey).h();
+            var parts = new ArrayList<byte[]>(List.of(typeKey, oSum.view()));
+            for (var member : members.getOrDefault(decl.owner, List.of()))
+                parts.add(new Codec.Writer(member.length() + 3).zstr(member).u16(accessOf(decls.get(member).res)).toBytes());
+            var stKey = digest.hash(parts.toArray(byte[][]::new));
+            var stored = cache.type(stKey);
+            byte[] bytes;
+            if (stored != null) bytes = new Codec.Reader(stored).lenBytes();
+            else {
+                bytes = build(decl, members.getOrDefault(decl.owner, List.of()), decls);
+                cache.putType(stKey, new Codec.Writer(bytes.length + 4).lenBytes(bytes).toBytes());
+            }
+            out.add(new Stub(decl.owner, bytes));
+            refs.add(new Ref(decl.owner, stKey));
         }
+        cache.putList(leaf.k(), encodeList(refs));
         return out;
     }
 
-    /** B.10: {@code u32 count || (str internalName || u32 len || classBytes)[count]}. */
-    public static byte[] encode(List<Stub> stubs) {
-        var out = new Codec.Writer(1024).u32(stubs.size());
-        for (var s : stubs) out.str(s.internalName()).lenBytes(s.bytes());
+    /** B.10: {@code S|k = u32 count || (str internalName || id stKey)[count]}. */
+    public static byte[] encodeList(List<Ref> refs) {
+        var out = new Codec.Writer(64 + refs.size() * 64).u32(refs.size());
+        for (var r : refs) out.str(r.internalName()).id(r.stKey());
         return out.toBytes();
     }
 
-    public static List<Stub> decode(byte[] bytes) {
+    public static List<Ref> decodeList(byte[] bytes, int width) {
         var in = new Codec.Reader(bytes);
         int n = in.count();
-        var out = new ArrayList<Stub>(n);
-        for (int i = 0; i < n; i++) out.add(new Stub(in.str(), in.lenBytes()));
+        var out = new ArrayList<Ref>(n);
+        for (int i = 0; i < n; i++) out.add(new Ref(in.str(), in.id(width)));
         return List.copyOf(out);
     }
 

@@ -7,14 +7,15 @@ import java.util.List;
 
 /**
  * The {@code X|} record (stage 2, B.9): the consumers of one identity, keyed by the dependency's key bytes so that a changed type
- * is one range read. Written by attribution beside each consumer record, not by a cold boot.
+ * is one range read. Attribution writes it beside each consumer record; stage 2 writes the kind 7 (header) entries beside the file rows.
  */
 public record ReverseIndex(List<Consumer> consumers) {
-    public record Consumer(Identity kappa, Identity routeHash) { }
+    /** A consumer is a file under the stable part of the route it was resolved under (B.9). */
+    public record Consumer(Identity kappa, Identity leafSetExt) { }
 
     public byte[] encode() {
         var out = new Codec.Writer(8 + consumers.size() * 64).u32(consumers.size());
-        for (var c : consumers) out.id(c.kappa()).id(c.routeHash());
+        for (var c : consumers) out.id(c.kappa()).id(c.leafSetExt());
         return out.toBytes();
     }
 

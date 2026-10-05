@@ -72,10 +72,11 @@ class LocalCodecsTest {
                 new ConsumerRecord.Dependency(ConsumerRecord.OVERLOAD_GROUP, id("o"), overload), new ConsumerRecord.Dependency(ConsumerRecord.TYPE, id("t"), type),
                 new ConsumerRecord.Dependency(ConsumerRecord.PACKAGE, id("p"), new Codec.Writer().zstr("p").toBytes()),
                 new ConsumerRecord.Dependency(ConsumerRecord.NEGATIVE, id("n"), new Codec.Writer().zstr("Foo").toBytes()),
-                new ConsumerRecord.Dependency(ConsumerRecord.DEFINER, id("d"), type)));
+                new ConsumerRecord.Dependency(ConsumerRecord.DEFINER, id("d"), type),
+                new ConsumerRecord.Dependency(ConsumerRecord.HEADER, id("x"), type)));
         var back = ConsumerRecord.decode(consumer.encode(), 32);
-        assertThat(back.dependencies()).hasSize(6);
-        for (int i = 0; i < 6; i++) {
+        assertThat(back.dependencies()).hasSize(7);
+        for (int i = 0; i < 7; i++) {
             assertThat(back.dependencies().get(i).kind()).isEqualTo(consumer.dependencies().get(i).kind());
             assertThat(back.dependencies().get(i).identity()).isEqualTo(consumer.dependencies().get(i).identity());
             assertThat(back.dependencies().get(i).key()).isEqualTo(consumer.dependencies().get(i).key());
@@ -119,10 +120,8 @@ class LocalCodecsTest {
     }
 
     @Test void stubsRoundTripThroughTheirRecord() {
-        var stubs = List.of(new Stubs.Stub("p/A", new byte[] {1, 2, 3}), new Stubs.Stub("p/A$B", new byte[] {4}));
-        var back = Stubs.decode(Stubs.encode(stubs));
-        assertThat(back).extracting(Stubs.Stub::internalName).containsExactly("p/A", "p/A$B");
-        assertThat(back.get(0).bytes()).containsExactly(1, 2, 3);
+        var refs = List.of(new Stubs.Ref("p/A", id("a")), new Stubs.Ref("p/A$B", id("b")));
+        assertThat(Stubs.decodeList(Stubs.encodeList(refs), 32)).isEqualTo(refs);
     }
 
     @Test void theModelsValidationFaultsAreFaults() throws Exception {

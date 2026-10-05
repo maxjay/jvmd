@@ -43,10 +43,11 @@ final class InMemoryLocalStore implements LocalStore {
     @Override public void putDisjoint(Identity leafSetExt, byte[] value) { put(LocalStore.disjointKey(leafSetExt), value); }
     @Override public void putSibling(Identity leafSetSib, byte[] value) { put(LocalStore.siblingKey(leafSetSib), value); }
     @Override public void putConflicts(Identity routeHash, byte[] value) { put(LocalStore.conflictsKey(routeHash), value); }
-    @Override public void putConsumer(Identity kappa, Identity routeHash, byte[] value) { put(LocalStore.consumerKey(kappa, routeHash), value); }
+    @Override public void putConsumer(Identity kappa, Identity leafSetExt, byte[] value) { put(LocalStore.consumerKey(kappa, leafSetExt), value); }
     @Override public void putReverse(int kind, byte[] key, byte[] value) { put(LocalStore.reverseKey(kind, key), value); }
-    @Override public void putResult(Identity kappa, Identity routeHash, byte[] value) { put(LocalStore.resultKey(kappa, routeHash), value); }
+    @Override public void putResult(Identity kappa, Identity leafSetExt, byte[] value) { put(LocalStore.resultKey(kappa, leafSetExt), value); }
     @Override public void putStub(Identity k, byte[] value) { put(LocalStore.stubKey(k), value); }
+    @Override public void putStubType(Identity stKey, byte[] value) { put(LocalStore.stubTypeKey(stKey), value); }
 
     @Override public void flush() {
         var batch = pending.get();
@@ -84,10 +85,11 @@ final class InMemoryLocalStore implements LocalStore {
     @Override public byte[] getDisjoint(Identity leafSetExt) { return read("DD", LocalStore.disjointKey(leafSetExt)); }
     @Override public byte[] getSibling(Identity leafSetSib) { return read("DS", LocalStore.siblingKey(leafSetSib)); }
     @Override public byte[] getConflicts(Identity routeHash) { return read("DC", LocalStore.conflictsKey(routeHash)); }
-    @Override public byte[] getConsumer(Identity kappa, Identity routeHash) { return read("C", LocalStore.consumerKey(kappa, routeHash)); }
+    @Override public byte[] getConsumer(Identity kappa, Identity leafSetExt) { return read("C", LocalStore.consumerKey(kappa, leafSetExt)); }
     @Override public byte[] getReverse(int kind, byte[] key) { return read("X", LocalStore.reverseKey(kind, key)); }
-    @Override public byte[] getResult(Identity kappa, Identity routeHash) { return read("RS", LocalStore.resultKey(kappa, routeHash)); }
+    @Override public byte[] getResult(Identity kappa, Identity leafSetExt) { return read("RS", LocalStore.resultKey(kappa, leafSetExt)); }
     @Override public byte[] getStub(Identity k) { return read("S", LocalStore.stubKey(k)); }
+    @Override public byte[] getStubType(Identity stKey) { return read("ST", LocalStore.stubTypeKey(stKey)); }
     @Override public byte[] getLocalRoot(Identity projectKey) { return read("LROOT", LocalStore.localRootKey(projectKey)); }
 
     /** Every read, by kind, up to the first putLocalRoot (or all of them if none): what invariant 11 inspects. */

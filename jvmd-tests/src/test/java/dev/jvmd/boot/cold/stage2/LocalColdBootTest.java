@@ -16,10 +16,12 @@ import dev.jvmd.core.tree.NodeSink;
 import dev.jvmd.core.tree.Root;
 import dev.jvmd.index.layer.local.Bind;
 import dev.jvmd.index.layer.local.DefinerIndex;
+import dev.jvmd.index.layer.local.ConsumerRecord;
 import dev.jvmd.index.layer.local.FileRow;
 import dev.jvmd.index.layer.local.LocalRoot;
 import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
+import dev.jvmd.index.layer.local.ReverseIndex;
 import dev.jvmd.index.layer.local.Route;
 import dev.jvmd.index.layer.local.RouteEntry;
 import dev.jvmd.index.layer.machine.ClassFacts;
@@ -591,9 +593,9 @@ class LocalColdBootTest {
         var project = multiProject();
         try {
             var booted = boot(digest, multiModel(project, false), 4);
-            // MACHINE (P, L, N, ROOT) and the shared derivable records (DD, DS, S: another project may have written them) may be read; nothing of the project's own.
+            // MACHINE (P, L, N, ROOT) and the shared derivable records (DD, DS, S, ST: another project may have written them) may be read; nothing of the project's own.
             assertThat(booted.store().readsBeforeRoot()).isNotEmpty().doesNotContainAnyElementsOf(List.of("MOD", "RT", "F", "DC", "C", "X", "RS", "LROOT"));
-            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "ROOT", "DD", "DS", "S");
+            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "ROOT", "DD", "DS", "S", "ST");
             var events = booted.store().events();
             assertThat(events.indexOf("sync")).as("sync once, then the root").isLessThan(events.indexOf("putLocalRoot"));
             assertThat(events.stream().filter("sync"::equals).count()).isEqualTo(1);
@@ -619,7 +621,8 @@ class LocalColdBootTest {
             assertThat(secondShared.keySet()).containsExactlyElementsOf(firstShared.keySet());
             for (var e : firstShared.entrySet()) assertThat(secondShared.get(e.getKey())).isEqualTo(e.getValue());
             assertThat(first.projectKey()).as("the project keys do differ").isNotEqualTo(second.projectKey());
-            assertThat(firstShared.keySet().stream().anyMatch(k -> k[0] == 'S')).as("stubs were written").isTrue();
+            assertThat(firstShared.keySet().stream().anyMatch(k -> k[0] == 'S' && k[1] == '|')).as("a leaf's stub list was written").isTrue();
+            assertThat(firstShared.keySet().stream().anyMatch(k -> k[0] == 'S' && k[1] == 'T')).as("per-type stubs were written").isTrue();
             assertThat(firstShared.keySet().stream().anyMatch(k -> k[0] == 'D' && k[1] == 'D')).isTrue();
             assertThat(firstShared.keySet().stream().anyMatch(k -> k[0] == 'D' && k[1] == 'S')).isTrue();
             assertThat(firstShared.keySet().stream().anyMatch(k -> k[0] == 'D' && k[1] == 'C')).isTrue();
@@ -647,7 +650,7 @@ class LocalColdBootTest {
             if (baseline.contains(k)) continue;
             if (k[0] == 'N' && k.length == 33 && indexNodes.contains(Identity.of(Arrays.copyOfRange(k, 1, k.length)))) continue;
             boolean node = k[0] == 'N' && k.length == 33, leaf = k[0] == 'L' && k.length == 33;
-            boolean tagged = k.length > 2 && k[1] == '|' && k[0] == 'S' || k.length > 3 && k[2] == '|' && (k[0] == 'D' && (k[1] == 'D' || k[1] == 'C' || k[1] == 'S'));
+            boolean tagged = k.length > 2 && k[1] == '|' && k[0] == 'S' || k.length > 3 && k[0] == 'S' && k[1] == 'T' && k[2] == '|' || k.length > 3 && k[2] == '|' && (k[0] == 'D' && (k[1] == 'D' || k[1] == 'C' || k[1] == 'S'));
             if (node || leaf || tagged) out.put(k, e.getValue());
         }
         return out;
@@ -679,12 +682,26 @@ class LocalColdBootTest {
                 Files.write(file, e.getValue());
             }
             var stubDir = work.resolve("stubs");
-            for (var stub : Stubs.stubs(new ContentTree(digest), source, nodes(store))) {
+            var kept = new HashMap<Identity, byte[]>();
+            var lists = new HashMap<Identity, byte[]>();
+            var cache = new Stubs.Cache() {
+                @Override public byte[] list(Identity k) { return lists.get(k); }
+                @Override public void putList(Identity k, byte[] value) { lists.put(k, value); }
+                @Override public byte[] type(Identity stKey) { return kept.get(stKey); }
+                @Override public void putType(Identity stKey, byte[] value) { kept.put(stKey, value); }
+            };
+            var synthesised = Stubs.stubs(digest, new ContentTree(digest), source, nodes(store), cache);
+            for (var stub : synthesised) {
                 var file = stubDir.resolve(stub.internalName() + ".class");
                 Files.createDirectories(file.getParent());
                 Files.write(file, stub.bytes());
             }
-            assertThat(Stubs.decode(Stubs.encode(Stubs.stubs(new ContentTree(digest), source, nodes(store))))).hasSameSizeAs(Stubs.stubs(new ContentTree(digest), source, nodes(store)));
+            // A second request is served from the cache, per type, and is the same bytes.
+            var again = Stubs.stubs(digest, new ContentTree(digest), source, nodes(store), cache);
+            assertThat(again).hasSameSizeAs(synthesised);
+            for (int i = 0; i < again.size(); i++) assertThat(again.get(i).bytes()).isEqualTo(synthesised.get(i).bytes());
+            assertThat(kept).as("one ST record per type").hasSize(synthesised.size());
+            assertThat(Stubs.stubs(digest, new ContentTree(digest), source, nodes(store), Stubs.Cache.NONE)).hasSameSizeAs(synthesised);
 
             for (var user : List.of(Fixtures.userOfRich(), Fixtures.brokenUserOfRich())) {
                 var real = compileAgainst(work.resolve("b-real"), user, realDir);
@@ -737,9 +754,45 @@ class LocalColdBootTest {
 
     // ---- 7.3.15 ------------------------------------------------------------------------------------------------------------
 
-    /** The memo key is the route: one file's bytes in two modules that resolve a star-imported name differently are two entries and two facts. */
+    /**
+     * Stable keys for proofs and results. Change a declaration in {@code common}: the {@code routeHash} of {@code server-a}'s route
+     * changes, and every {@code C|} and {@code RS|} key of its files does not, because they are keyed by {@code (κ_file, leafSetExt)}.
+     * Of the stubs, only the changed type's {@code ST|} record is new: every other type whose {@code oSum} did not change keeps its stub.
+     */
     @ParameterizedTest @MethodSource("digests")
-    void invariant15_theMemoKeyIsTheRoute(Digest digest) throws Exception {
+    void invariant15_keysOfProofsAndResultsAreStable(Digest digest) throws Exception {
+        var project = multiProject();
+        try {
+            var before = boot(digest, multiModel(project, false), 4);
+            var file = project.resolve("common/src/main/java/common/Base.java");
+            Files.writeString(file, Files.readString(file).replace("public abstract int run();", "public abstract int run(); public int extra() { return 1; }"));
+            var after = boot(digest, multiModel(project, false), 4);
+
+            var was = route(digest, before, "server-a", 0);
+            var is = route(digest, after, "server-a", 0);
+            assertThat(is.routeHash()).as("the route of server-a changed").isNotEqualTo(was.routeHash());
+            assertThat(is.leafSetExt()).as("its external part did not").isEqualTo(was.leafSetExt());
+            for (var path : List.of("server-a/src/main/java/a/Server.java")) {
+                var row = FileRow.decode(path, before.store().get(LocalStore.fileKey(before.projectKey(), path)), digest.width());
+                var again = FileRow.decode(path, after.store().get(LocalStore.fileKey(after.projectKey(), path)), digest.width());
+                assertThat(again.kappa()).isEqualTo(row.kappa());
+                assertThat(LocalStore.consumerKey(again.kappa(), is.leafSetExt())).as("C| key").isEqualTo(LocalStore.consumerKey(row.kappa(), was.leafSetExt()));
+                assertThat(LocalStore.resultKey(again.kappa(), is.leafSetExt())).as("RS| key").isEqualTo(LocalStore.resultKey(row.kappa(), was.leafSetExt()));
+                assertThat(LocalStore.consumerKey(again.kappa(), is.routeHash())).as("keyed by the route it would have moved").isNotEqualTo(LocalStore.consumerKey(row.kappa(), was.routeHash()));
+            }
+
+            // Stubs: one type changed, so one ST| record is new. The stub of every unchanged type (server-a's, bound as a sibling by its test route) is the same record.
+            var oldStubs = before.store().withPrefix("ST").keySet();
+            var newStubs = new ArrayList<byte[]>();
+            for (var key : after.store().withPrefix("ST").keySet()) if (!oldStubs.contains(key)) newStubs.add(key);
+            assertThat(newStubs).as("ST| records new after editing one type").hasSize(1);
+            assertThat(after.store().withPrefix("ST").keySet()).as("the same types have stubs, all but one under the same key").hasSameSizeAs(oldStubs);
+        } finally { Stage2Support.delete(project); }
+    }
+
+    /** One file's bytes under two routes that resolve a name differently are two facts: nothing is shared by content alone. */
+    @ParameterizedTest @MethodSource("digests")
+    void theSameBytesResolveDifferentlyUnderDifferentRoutes(Digest digest) throws Exception {
         var project = Files.createTempDirectory("stage2-project");
         try {
             var text = "package use; public class User { public static final int N = ns.K.VALUE; }";
@@ -751,12 +804,46 @@ class LocalColdBootTest {
             var m2 = leaf(digest, booted.store(), booted.result().leaves().get("m2/main"));
             assertThat(m1.k()).as("the same bytes, resolved differently").isNotEqualTo(m2.k());
             assertThat(m1.r()).isNotEqualTo(m2.r());
-            assertThat(booted.result().memoEntries()).as("one memo entry per route").isEqualTo(2);
-            assertThat(booted.result().parsedFiles()).isEqualTo(2);
+            assertThat(booted.result().parsedFiles()).as("every file is taken through Φ_src: there is no memo").isEqualTo(2);
             var one = FileRow.decode("m1/src/main/java/use/User.java", booted.store().get(LocalStore.fileKey(booted.projectKey(), "m1/src/main/java/use/User.java")), digest.width());
             var two = FileRow.decode("m2/src/main/java/use/User.java", booted.store().get(LocalStore.fileKey(booted.projectKey(), "m2/src/main/java/use/User.java")), digest.width());
             assertThat(one.kappa()).as("one content key").isEqualTo(two.kappa());
             assertThat(one.sum()).isNotEqualTo(two.sum());
+        } finally { Stage2Support.delete(project); }
+    }
+
+    /**
+     * The header proof is reverse-indexed: {@code X|7|typeKey} names the files whose proof contains the type, under the external part of
+     * their route, so that after an edit the files to re-check are one read away and not a scan of every file row.
+     */
+    @ParameterizedTest @MethodSource("digests")
+    void theHeaderProofIsReverseIndexed(Digest digest) throws Exception {
+        var project = Files.createTempDirectory("stage2-proof");
+        try {
+            Stage2Support.write(project, Map.of(
+                    "lib/src/main/java/lib/T1.java", "package lib; public class T1 { public int a() { return 1; } }",
+                    "app/src/main/java/app/UsesT1.java", "package app; public class UsesT1 { public lib.T1 field; }",
+                    "app/src/main/java/app/UsesNothing.java", "package app; public class UsesNothing { public String s; }"));
+            var model = Stage2Support.model(project, new Stage2Support.Mod("lib", "corp:lib:1", List.of()),
+                    new Stage2Support.Mod("app", "corp:app:1", List.of(Stage2Support.Dep.module("corp:lib:1", "lib"))));
+            var booted = boot(digest, model, 2);
+            var ext = route(digest, booted, "app", 0).leafSetExt();
+            var rows = new HashMap<String, FileRow>();
+            for (var name : List.of("UsesT1", "UsesNothing")) rows.put(name, row(digest, booted, name));
+
+            for (var row : rows.values()) {
+                for (var proof : row.headerProof()) {
+                    var key = new dev.jvmd.core.tree.Codec.Writer().zstr(proof.typeKey()).toBytes();
+                    var stored = booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, key));
+                    assertThat(stored).as("X|7|" + proof.typeKey()).isNotNull();
+                    assertThat(ReverseIndex.decode(stored, digest.width()).consumers()).contains(new ReverseIndex.Consumer(row.kappa(), ext));
+                }
+            }
+            var t1 = ReverseIndex.decode(booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, new dev.jvmd.core.tree.Codec.Writer().zstr("lib/T1").toBytes())), digest.width());
+            assertThat(t1.consumers()).extracting(ReverseIndex.Consumer::kappa).containsExactly(rows.get("UsesT1").kappa());
+            var string = ReverseIndex.decode(booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, new dev.jvmd.core.tree.Codec.Writer().zstr("java/lang/String").toBytes())), digest.width());
+            assertThat(string.consumers()).extracting(ReverseIndex.Consumer::kappa).contains(rows.get("UsesNothing").kappa()).doesNotContain(rows.get("UsesT1").kappa());
+            assertThat(booted.store().withPrefix("X").keySet()).as("only header entries: kind 7").allMatch(k -> k[2] == 7);
         } finally { Stage2Support.delete(project); }
     }
 
@@ -908,15 +995,20 @@ class LocalColdBootTest {
         try {
             Stage2Support.write(second, Fixtures.multi());
             var one = boot(digest, multiModel(first, false), 2);
-            var stubs = one.store().withPrefix("S");
+            var stubs = new java.util.TreeMap<byte[], byte[]>(Arrays::compareUnsigned);
+            stubs.putAll(one.store().withPrefix("S"));
+            stubs.putAll(one.store().withPrefix("ST"));
             assertThat(stubs).isNotEmpty();
             // Boot the other checkout on top of the first one's store: the same sibling leaves, so the same stub records.
             var machine = one.store();
             var result = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 2, repository, ClassFacts::of).run(machine, ProjectModel.parse(multiModel(second, false)));
             assertThat(result.faults()).isEmpty();
-            assertThat(machine.readsBeforeRoot()).contains("S");
-            assertThat(machine.withPrefix("S").keySet()).containsExactlyElementsOf(stubs.keySet());
-            for (var e : stubs.entrySet()) assertThat(machine.withPrefix("S").get(e.getKey())).isEqualTo(e.getValue());
+            assertThat(machine.readsBeforeRoot()).contains("S", "ST");
+            var after = new java.util.TreeMap<byte[], byte[]>(Arrays::compareUnsigned);
+            after.putAll(machine.withPrefix("S"));
+            after.putAll(machine.withPrefix("ST"));
+            assertThat(after.keySet()).containsExactlyElementsOf(stubs.keySet());
+            for (var e : stubs.entrySet()) assertThat(after.get(e.getKey())).isEqualTo(e.getValue());
         } finally { Stage2Support.delete(first); Stage2Support.delete(second); }
     }
 

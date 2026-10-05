@@ -115,8 +115,11 @@ public final class DefinerIndex {
 
     /**
      * The conflict table of a route: every type declared by more than one distinct leaf across both parts, {@code typeKey -> (first,
-     * all)} with {@code first} the earliest in {@code sequence}, {@code h = Digest(typeKey || first.oSum)}. Only the types that are
-     * multiple in one part or present in the sibling part can be in conflict, so only those are looked at.
+     * all)} with {@code first} the earliest in {@code sequence}, {@code h = Digest(typeKey || first.oSum)}.
+     *
+     * <p>It is computed by probing: every sibling type is looked up in the external state, O(project types), and the external state is
+     * never iterated. The only other candidates are the types some part already knows to be multiple, which each state maintains as a
+     * set while it is folded (a handful in practice), so a conflict inside the external part is found without walking its types.
      */
     public static Root conflicts(Digest digest, ContentTree tree, State external, State sibling, List<Identity> sequence, NodeSink sink) {
         var resolver = new Resolver(external, sibling, sequence);

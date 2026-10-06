@@ -137,7 +137,7 @@ final class ModuleProcessing {
         for (var observation : configuration) observation.encode(input);
         var proof = new TreeMap<byte[], Identity>(java.util.Arrays::compareUnsigned);
         for (var observation : row.headerProof()) proof.put(new Codec.Writer().u8(0).raw(observation.range().key()).toBytes(), observation.sum());
-        for (var absence : row.absences()) proof.put(new Codec.Writer().u8(absence.form() + 1).raw(absence.key()).toBytes(), boot.tree.sums().zero());
+        for (var absence : row.absences()) proof.put(new Codec.Writer().u8(absence.form() == 0 ? 2 : 1).raw(absence.key()).toBytes(), boot.tree.sums().zero());
         input.u32(proof.size());
         for (var observation : proof.entrySet()) input.lenBytes(observation.getKey()).id(observation.getValue());
         input.lenBytes(host.modelProof(processor, origin));

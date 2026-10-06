@@ -44,8 +44,20 @@ public interface LocalStore extends MachineStore {
     static byte[] disjointKey(Identity leafSetExt) { return join("DD|", leafSetExt.view()); }
     static byte[] siblingKey(Identity leafSetSib) { return join("DS|", leafSetSib.view()); }
     static byte[] conflictsKey(Identity routeHash) { return join("DC|", routeHash.view()); }
-    static byte[] consumerKey(Identity kappa, Identity leafSetExt) { return join("C|", kappa.view(), "|", leafSetExt.view()); }
-    static byte[] resultKey(Identity kappa, Identity leafSetExt) { return join("RS|", kappa.view(), "|", leafSetExt.view()); }
+    static byte[] proofKey(Identity projectKey, String path) { return join("C|", projectKey.view(), "|", path.getBytes(StandardCharsets.UTF_8)); }
+    static byte[] resultKey(Identity aci) { return join("RS|", aci.view()); }
+    static byte[] classFileKey(Identity content) { return join("CF|", content.view()); }
+    static byte[] usesKey(Identity aci) { return join("U|", aci.view()); }
+    static byte[] outputKey(Identity projectKey, String module, int scope) {
+        return join("OUT|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
+    }
+    static byte[] materialisedKey(Identity projectKey, String module, int scope, Identity directory) {
+        return join("MAT|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope}, "|", directory.view());
+    }
+    static byte[] bodiesRootKey(Identity projectKey) { return join("BROOT|", projectKey.view()); }
+    static byte[] bodiesRootHistoryKey(Identity projectKey, int n) {
+        return join("BROOT|", projectKey.view(), "|", new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes());
+    }
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }
     static byte[] stubTypeKey(Identity stKey) { return join("ST|", stKey.view()); }
     static byte[] generatedKey(Identity derivation) { return join("GEN|", derivation.view()); }

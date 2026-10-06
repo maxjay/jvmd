@@ -308,7 +308,7 @@ The collector records what javac's own symbol tells it; it never re-resolves. Lo
 
 ```
 Valid(proof, route, own, f) -> bool:                                                      // own = the module's current leaf for this scope
-    if proof.proc != none and proof.proc != processorContext(f): return false              // processor, options or a configuration file on f's chain moved;
+    if proof.proc != processorContext(f): return false                                    // includes addition/removal of the processor path, options or configuration;
                                                                                               // checked before any shortcut, because it moves nothing in routeHash or ownR
     if route.routeHash == proof.routeHash and own.r == proof.ownR: return true               // nothing in the universe moved
     if route.DD.sum == proof.ddSum and route.DS.sum == proof.dsSum and route.DC.sum == proof.dcSum
@@ -326,7 +326,8 @@ Valid(proof, route, own, f) -> bool:                                            
         if rangeSum(own.O, e.key) != 0 or rangeSum(D, e.key) != 0: return false               // the type appeared in the module or on the route
     return true
 
-processorContext(f) = (processorPathHash, optionsHash, [(path, rangeSum(RES|projectKey, path)) for path in configChain(f)])   // compared as a tuple; zero = no file in that directory
+processorContext(f) = none when the module has no processor path, otherwise
+                      (processorPathHash, optionsHash, [(path, rangeSum(RES|projectKey, path)) for path in configChain(f)])   // compared as a tuple; zero = no file in that directory
 ```
 
 Cost after processor-context validation: the routeHash/ownR header shortcut, then the three definer sums plus ownR. If both shortcuts fail, each referenced type needs one definer lookup and one oSum comparison; T ranges need reads only when that oSum moved, while every N range needs an independent range read. Never a walk of `T`, never a per-leaf step. The root sums of the definer indexes are the projection this question needs; their root hashes (the first draft) move on every `k` and would have discarded the shortcut on every unrelated API edit.
@@ -698,7 +699,7 @@ configProof(f)        = ordered (zstr path || id sum) over configChain(f)   // s
 ACI                   = Digest(str basename || id κ_file || id optionsHash || opt<proc> || (key bytes || id sum) for each proof entry, sorted)   // never routeHash, index sums or ownR
 ```
 
-`attributed` is 1 when javac reported no error. Class files are listed for every type `f` declares, nested, local and anonymous included, in internal-name order. Positions are offsets into the file's bytes as javac reports them.
+`attributed` is 1 when javac reported no error. Class files are listed for every type `f` declares, nested, local and anonymous included, in internal-name order. Diagnostic order and repeated messages are retained. Positions are javac's UTF-16 character offsets into the decoded source, not byte offsets. The u32 value 0xFFFFFFFF represents Diagnostic.NOPOS (-1); other values retain their unsigned offset. This matters for supplementary characters and non-UTF-8 source encodings.
 
 ### B.3 Reverse
 
@@ -709,13 +710,15 @@ X|D|typeKey|projectKey|path = (empty)
 
 The prefix `X|G|u8 form || zstr t` selects consumers of that form in t; the union of the form-0 and form-1 prefixes is every range consumer of t; `X|G|u8 form || zstr t || u8 kind || zstr name` every consumer of one range; the trailing `projectKey` and `path` narrow to one project and one file. One record per consumer, so a file joining or leaving a range is one entry in the LOCAL tree and a hot range (`Object.toString`) is never rewritten as a list.
 
+Body consumers are members of the committed BROOT tree, not merely raw storage keys and not members of LROOT. Diff(T/N/D) maps changed keys to X|G/X|D prefixes and seeks those prefixes without scanning C or F records. Cached per-project BROOT membership filters unreachable keys from old body generations. A BROOT that names an older LROOT is still the source of old consumers while the caller validates the delta against the new LOCAL state; staleness must not hide the consumers that need checking.
+
 ### B.4 Uses
 
 ```
 U|ACI                 = list<(u8 tree || key bytes || list<(u32 start || u32 end)>)>
 ```
 
-The same keys as the proof's groups and absences, each with the offset ranges in `f` where javac resolved through it. Derivable; outside the LOCAL tree.
+Tree 0 is T, tree 1 is N, tree 2 is D. For T/N, the remaining key is `zstr type || u8 kind || zstr name`; for D it is `zstr type`. Thus the complete uses key is the proof range key (including form), or `u8 2 || zstr absentType`. The same namespaced keys and their expected sums, including zero for D, are sorted in ACI. Each use has sorted distinct UTF-16 offset ranges in `f` where javac resolved through it. Derivable; outside the bodies tree.
 
 ### B.5 Output and materialised
 
@@ -729,7 +732,7 @@ MAT|projectKey|module|scope|dirHash = the OUT value last written to the director
 ### B.6 FORMAT
 
 ```
-FORMAT = <stage 2 FORMAT with layout=4 and javac=<Runtime.version().toString()>>;bodies=1;locale=root
+FORMAT = <current LOCAL FORMAT, including full javac runtime version and locale=root>;bodies=1
 ```
 
 `bodies=1` is the version of these codecs. A different FORMAT is a cold boot.

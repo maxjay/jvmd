@@ -16,7 +16,6 @@ import dev.jvmd.core.tree.NodeSink;
 import dev.jvmd.core.tree.Root;
 import dev.jvmd.index.layer.local.Bind;
 import dev.jvmd.index.layer.local.DefinerIndex;
-import dev.jvmd.index.layer.local.ConsumerRecord;
 import dev.jvmd.index.layer.local.FileRow;
 import dev.jvmd.index.layer.local.LocalRoot;
 import dev.jvmd.index.layer.local.LocalStore;
@@ -775,12 +774,12 @@ class LocalColdBootTest {
     // ---- 7.3.15 ------------------------------------------------------------------------------------------------------------
 
     /**
-     * Stable keys for proofs and results. Change a declaration in {@code common}: the {@code routeHash} of {@code server-a}'s route
-     * changes, and every {@code C|} and {@code RS|} key of its files does not, because they are keyed by {@code (κ_file, leafSetExt)}.
+     * Stable paths for proofs. Change a declaration in {@code common}: the {@code routeHash} of {@code server-a}'s route
+     * changes, while its {@code C|project|path} key remains stable. Result identities belong to body attribution's actual reads.
      * Of the stubs, only the changed type's {@code ST|} record is new: every other type whose {@code oSum} did not change keeps its stub.
      */
     @ParameterizedTest @MethodSource("digests")
-    void invariant15_keysOfProofsAndResultsAreStable(Digest digest) throws Exception {
+    void invariant15_proofPathsAndUnchangedStubsStayStable(Digest digest) throws Exception {
         var project = multiProject();
         try {
             var before = boot(digest, multiModel(project, false), 4);
@@ -796,9 +795,9 @@ class LocalColdBootTest {
                 var row = FileRow.decode(path, before.store().get(LocalStore.fileKey(before.projectKey(), path)), digest.width());
                 var again = FileRow.decode(path, after.store().get(LocalStore.fileKey(after.projectKey(), path)), digest.width());
                 assertThat(again.kappa()).isEqualTo(row.kappa());
-                assertThat(LocalStore.consumerKey(again.kappa(), is.leafSetExt())).as("C| key").isEqualTo(LocalStore.consumerKey(row.kappa(), was.leafSetExt()));
-                assertThat(LocalStore.resultKey(again.kappa(), is.leafSetExt())).as("RS| key").isEqualTo(LocalStore.resultKey(row.kappa(), was.leafSetExt()));
-                assertThat(LocalStore.consumerKey(again.kappa(), is.routeHash())).as("keyed by the route it would have moved").isNotEqualTo(LocalStore.consumerKey(row.kappa(), was.routeHash()));
+                assertThat(LocalStore.proofKey(after.projectKey(), path)).as("C|project|path key")
+                        .isEqualTo(LocalStore.proofKey(before.projectKey(), path));
+                assertThat(after.store().withPrefix("RS")).as("Stage 2 writes no body results").isEmpty();
             }
 
             // Stubs: one type changed, so one ST| record is new. The stub of every unchanged type (server-a's, bound as a sibling by its test route) is the same record.

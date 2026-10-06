@@ -1,0 +1,95 @@
+package dev.jvmd.boot.cold.stage2;
+
+import dev.jvmd.core.hash.Digest;
+import dev.jvmd.core.hash.Identity;
+import dev.jvmd.core.hash.digests.Sha256;
+import dev.jvmd.core.tree.Codec;
+import dev.jvmd.core.tree.ContentTree;
+import dev.jvmd.core.tree.Diff;
+import dev.jvmd.core.tree.Entry;
+import dev.jvmd.index.layer.local.*;
+import dev.jvmd.index.layer.machine.Keys;
+import dev.jvmd.index.layer.machine.MachineStore;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** B.3 fan-out from actual ContentTree deltas; no scan of stored proofs or source rows. */
+@Tag("phase-3")
+class BodyReverseTest {
+    static Stream<Digest> digests() { return Stream.of(Sha256.INSTANCE, new Digests.Sha3()); }
+
+    @ParameterizedTest @MethodSource("digests")
+    void semanticDeltasFindRangeWholeKindNAndDConsumersInTheBodiesGeneration(Digest digest) {
+        var store = new InMemoryLocalStore();
+        var tree = new ContentTree(digest);
+        var a = digest.hash(new byte[] {1}); var b = digest.hash(new byte[] {2});
+        var method = new ReverseIndex.Dependency(ReverseIndex.T, "q/Base", Keys.METHOD, "get");
+        var whole = new ReverseIndex.Dependency(ReverseIndex.T, "q/Base", Keys.METHOD, "");
+        var nested = new ReverseIndex.Dependency(ReverseIndex.N, "q/Base", Keys.TYPE, "Foo");
+        var missing = new ReverseIndex.Dependency(ReverseIndex.D, "q/Missing", Keys.TYPE, "");
+        var other = new ReverseIndex.Dependency(ReverseIndex.T, "q/Base", Keys.METHOD, "unread");
+        byte[] first = ReverseIndex.bodyKey(method, a, "src/A.java"), second = ReverseIndex.bodyKey(method, a, "test/A.java");
+        byte[] overriding = ReverseIndex.bodyKey(whole, a, "src/Override.java"), unrelated = ReverseIndex.bodyKey(other, a, "src/Other.java");
+        byte[] named = ReverseIndex.bodyKey(nested, b, "src/N.java"), absent = ReverseIndex.bodyKey(missing, b, "src/D.java");
+        publish(digest, tree, store, a, List.of(first, second, overriding, unrelated));
+        publish(digest, tree, store, b, List.of(named, absent));
+        // A raw stale key and a header key with the same spelling are not body consumers.
+        store.put(ReverseIndex.bodyKey(method, a, "stale/Old.java"), Entry.NONE);
+        store.put(method.key(a, "header/Only.java"), Entry.NONE);
+        store.flush();
+        var t = delta(digest, tree, store, Keys.memberKey("q/Base", Keys.METHOD, "get", "()Ljava/lang/Number;"), true);
+        var n = delta(digest, tree, store, new Codec.Writer().zstr("Foo").u8(Keys.TYPE).zstr("q/Base").raw(Keys.typeKey("q/Base$Foo")).toBytes(), false);
+        var d = delta(digest, tree, store, Keys.ownerKey("q/Missing"), false);
+        var rootReadsA = store.watchReads(LocalStore.bodiesRootKey(a));
+        var rootReadsB = store.watchReads(LocalStore.bodiesRootKey(b));
+        int start = store.events().size();
+        assertThat(ReverseIndex.bodyCandidates(digest, store, t, n, d)).containsExactlyInAnyOrder(
+                new ReverseIndex.Consumer(a, "src/A.java"), new ReverseIndex.Consumer(a, "test/A.java"), new ReverseIndex.Consumer(a, "src/Override.java"),
+                new ReverseIndex.Consumer(b, "src/N.java"), new ReverseIndex.Consumer(b, "src/D.java"));
+        assertThat(store.events().subList(start, store.events().size())).doesNotContain("read:F", "read:C", "prefix:F", "prefix:C", "read:LROOT");
+        assertThat(rootReadsA.get()).isEqualTo(1);
+        assertThat(rootReadsB.get()).isEqualTo(1);
+        assertThat(store.get(first)).isEmpty();
+        assertThat(first).startsWith(ReverseIndex.bodyPrefix(method));
+
+        // Publishing a new body set removes consumers through tree membership, without deleting unrelated raw storage.
+        publish(digest, tree, store, a, List.of(second, overriding, unrelated));
+        assertThat(store.get(first)).isEmpty();
+        assertThat(ReverseIndex.bodyConsumers(digest, store, method)).containsExactly(new ReverseIndex.Consumer(a, "test/A.java"));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void allProofRangesAndExpectedZerosProduceSeparateEmptyConsumerKeys(Digest digest) {
+        var id = digest.hash(new byte[] {1}); var zero = Identity.zero(digest.width());
+        var proof = new Proof(new Proof.Header(id, id, id, id, id, null), List.of(new Proof.Type("p/Base", id, List.of(
+                new Proof.Entry(new Proof.Range(Proof.T, "p/Base", Keys.FIELD, "missing"), zero),
+                new Proof.Entry(new Proof.Range(Proof.N, "p/Base", Keys.TYPE, "missing"), zero)))), List.of("p/Missing"));
+        var dependencies = ReverseIndex.dependencies(proof);
+        assertThat(dependencies).hasSize(3);
+        assertThat(dependencies.stream().map(d -> java.util.HexFormat.of().formatHex(ReverseIndex.bodyKey(d, id, "src/A.java"))).distinct()).hasSize(3);
+        for (var dependency : dependencies)
+            assertThat(ReverseIndex.bodyKey(dependency, id, "src/A.java")).isNotEqualTo(ReverseIndex.bodyKey(dependency, id, "test/A.java"));
+    }
+
+    private static void publish(Digest digest, ContentTree tree, InMemoryLocalStore store, Identity project, List<byte[]> keys) {
+        var entries = keys.stream().sorted(Arrays::compareUnsigned).map(key -> new Entry(key, Entry.NONE, digest.hash(Entry.NONE))).toList();
+        for (var key : keys) store.put(key, Entry.NONE);
+        var root = tree.build(entries, store);
+        var local = digest.hash(new byte[] {7});
+        store.put(LocalStore.bodiesRootKey(project), new BodiesRoot("test;bodies=1", root.hash(), local, local, local).encode());
+        store.flush();
+    }
+
+    private static Diff.Result delta(Digest digest, ContentTree tree, InMemoryLocalStore store, byte[] key, boolean existing) {
+        var before = tree.build(existing ? List.of(new Entry(key, Entry.NONE, digest.hash(key, new byte[] {1}))) : List.of(), store);
+        var after = tree.build(List.of(new Entry(key, Entry.NONE, digest.hash(key, new byte[] {2}))), store);
+        store.flush();
+        return Diff.trees(digest, before, after, h -> store.get(MachineStore.nodeKey(h)));
+    }
+}

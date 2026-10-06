@@ -11,7 +11,6 @@ import dev.jvmd.core.tree.ContentTree;
 import dev.jvmd.core.tree.Entry;
 import dev.jvmd.core.tree.Node;
 import dev.jvmd.core.tree.Root;
-import dev.jvmd.index.layer.local.ConsumerRecord;
 import dev.jvmd.index.layer.local.Coordinate;
 import dev.jvmd.index.layer.local.FileRow;
 import dev.jvmd.index.layer.local.LocalRoot;
@@ -94,31 +93,15 @@ class LocalCodecsTest {
         assertThat(rowBack.mtimeNanos()).isEqualTo(456_789_000_000L);
     }
 
-    @Test void consumersReverseIndexAndResultsRoundTrip() {
-        var member = new Codec.Writer().zstr("p/T").u8(2).zstr("m").zstr("(I)V").toBytes();
-        var overload = new Codec.Writer().zstr("p/T").zstr("m").toBytes();
-        var type = new Codec.Writer().zstr("p/T").toBytes();
-        var consumer = new ConsumerRecord(List.of(new ConsumerRecord.Dependency(ConsumerRecord.MEMBER, id("h"), member),
-                new ConsumerRecord.Dependency(ConsumerRecord.OVERLOAD_GROUP, id("o"), overload), new ConsumerRecord.Dependency(ConsumerRecord.TYPE, id("t"), type),
-                new ConsumerRecord.Dependency(ConsumerRecord.PACKAGE, id("p"), new Codec.Writer().zstr("p").toBytes()),
-                new ConsumerRecord.Dependency(ConsumerRecord.NEGATIVE, id("n"), new Codec.Writer().zstr("Foo").toBytes()),
-                new ConsumerRecord.Dependency(ConsumerRecord.DEFINER, id("d"), type),
-                new ConsumerRecord.Dependency(ConsumerRecord.HEADER, id("x"), type)));
-        var back = ConsumerRecord.decode(consumer.encode(), 32);
-        assertThat(back.dependencies()).hasSize(7);
-        for (int i = 0; i < 7; i++) {
-            assertThat(back.dependencies().get(i).kind()).isEqualTo(consumer.dependencies().get(i).kind());
-            assertThat(back.dependencies().get(i).identity()).isEqualTo(consumer.dependencies().get(i).identity());
-            assertThat(back.dependencies().get(i).key()).isEqualTo(consumer.dependencies().get(i).key());
-        }
+    @Test void reversePathsAndStage3ResultReferencesRoundTrip() {
         var dependency = new ReverseIndex.Dependency(ReverseIndex.T, "p/T", 1, "value");
         assertThat(dependency.key(id("project"), "src/T.java")).startsWith(dependency.prefix());
         assertThat(dependency.key(id("project"), "src/T.java")).isNotEqualTo(dependency.key(id("project"), "test/T.java"));
-        var result = new ResultRecord(1, List.of(new ResultRecord.Diagnostic(1, 5, 9, "compiler.err.x", "boom")),
-                List.of(new ResultRecord.Reference(1, 4, ConsumerRecord.TYPE, id("t"), type)), List.of(new ResultRecord.ClassFile("p/T", id("bytes"))));
+        var result = new ResultRecord(false, List.of(new ResultRecord.ClassFile("p/T", id("bytes"))),
+                List.of(new ResultRecord.Diagnostic(0, 5, 9, "compiler.err.x", "boom")));
         var resultBack = ResultRecord.decode(result.encode(), 32);
         assertThat(resultBack.diagnostics()).isEqualTo(result.diagnostics());
-        assertThat(resultBack.references().get(0).key()).isEqualTo(type);
+        assertThat(resultBack.attributed()).isFalse();
         assertThat(resultBack.classFiles()).isEqualTo(result.classFiles());
     }
 

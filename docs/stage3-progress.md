@@ -399,3 +399,25 @@ mvn -B -pl jvmd-tests -am test '-Dtest=DefinerStateTest,MachineColdBootTest,Clas
 ```
 
 The Stage 3 Downloads authority and tracked snapshot are byte-identical, SHA-256 `57be59903b1b70fc09c6f4b6f3b95582203d43238609c50fa2f4eca155e36aba`. The previous authority is retained at `C:\Users\Max\Downloads\jvmd-stage3-bodies.before-processor-replay.md`. Revision stays 123 with the dated amendment. The Stage 2 authority is unchanged. No future processor invocation skip or general processor input audit is claimed by the replay gate; those admission/reuse boundaries must remain explicit while completing the active goal.
+
+
+### Body proof, result records and reverse lookup foundations
+
+Stage 3 now has `Proof`/`Arrange` with symmetric processor-context validation, route/index shortcuts, per-type T descent and independent N-range validation. ACI binds the source basename, bytes, options, processor context and sorted exact T/N/D key/sum observations; it excludes the shortcut identities. Real Stage 2 fixtures prove unread-member stability, constant/overload invalidation, own-first shadowing, nested-type arrival despite unchanged outer oSum, and the three-root-read shortcut after jar repackaging. These tests supply collected ranges explicitly; they do not claim the body collector exists yet.
+
+The unused legacy ConsumerRecord and kappa/leaf-set result keys are replaced on the Stage 3 branch by C/project/path, RS/ACI, CF/content, U/ACI and BROOT records. Diagnostics preserve ordering, repeats and NOPOS. A javac regression with a supplementary Unicode character established UTF-16 character offsets, correcting the specification's byte-offset wording. Uses retain separate T/N/D keys and canonical spans outside the bodies tree. Body reverse lookup seeks exact X prefixes and checks BROOT membership, including the stale bodies root after a LOCAL recommit; it never scans file/proof rows. Tests cover raw stale keys, two paths with shared observations, changed whole/named ranges, N/D arrivals and one root read per project.
+
+Generated-source chains retain the immediate generated origin's derivation across rounds; four regression cases under both digests cover this and replay-only processor AssertionError. That error now rejects reusable GEN admission while retaining native generated rows. T/N/D namespaces in isolating input identities are canonicalized to 0/1/2. No processor invocation skipping or general external-input admission is claimed.
+
+Focused gates passed 14, 142 (clean build), and 15 tests. The final frozen gate `stage3-body-foundation-frozen-gate.log` passed **399 tests, zero failures/errors/skips**, in 4m45s. Java sources were frozen throughout. The Maven oracle covered **13 modules, 26 scopes, 522 sources**, 93 on-the-spot jars and 22 distinct states; both digests gave **26/26 exact source/class k matches, no annotation differences and zero faults**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 5,603 | 3,820 | 1,776 | 159 | 24,947 |
+| SHA3-256 | 6,502 | 4,112 | 1,945 | 305 | 24,973 |
+
+Maven model/build time (34.0/33.2s) is excluded. Sampled heap above baseline was 710/1,961 MB with uncontrolled GC; these sequential timings are not a speed comparison. Raw reports: [SHA-256](measurements/stage3-body-foundation-SHA-256.txt), [SHA3-256](measurements/stage3-body-foundation-SHA3-256.txt).
+
+The specification now states UTF-16/NOPOS positions, symmetric processor-context checking before shortcuts, exact U/ACI namespaces, BROOT membership for body reverse lookup, and bodies FORMAT derived from LOCAL plus `;bodies=1`. Downloads and the tracked snapshot are byte-identical, SHA-256 `c1c854a0f5eb77d081bebe2b8e819f502a3e5966a233c2e7818d298184f18965`. The prior Downloads copy is retained as `jvmd-stage3-bodies.before-body-records.md`; revision remains 123 with its dated amendment. The Stage 2 authority is unchanged.
+
+PR #60 remains merged at f6472306 after its merge-critical fixes. PR #61 remains a separate draft at 66d27412 with successful Tests/benchmarks; no merge approval has been extended to it. The later PR #60 Linux distribution cleanup failure remains unresolved. Next: actual reusable javac pool, attributed-tree collector, per-file Attribute, output materialisation and Stage3 driver with the full invariants. Warm remains untouched and the active implementation goal is incomplete.

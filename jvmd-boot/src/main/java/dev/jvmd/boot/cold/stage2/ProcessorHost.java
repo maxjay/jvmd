@@ -211,7 +211,7 @@ public final class ProcessorHost implements AutoCloseable {
                             processor.reads, origin, processor.origins::get, charset, expected);
                     processor.isolated.put(origin, result);
                     proofs.put(sourcePath(origin), result.proof());
-                } catch (ReflectiveOperationException | IOException | RuntimeException | LinkageError failure) {
+                } catch (ReflectiveOperationException | IOException | RuntimeException | LinkageError | AssertionError failure) {
                     processor.unsupported("cannot prove isolated origin " + sourcePath(origin) + ": " + failure);
                     proofs.clear(); processor.isolated.clear();
                     break;

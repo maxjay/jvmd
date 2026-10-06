@@ -35,6 +35,7 @@ public final class Stage3 {
     public record File(String path,Attribute.Computed computed) { }
     public record Scope(List<File> files,Root output,List<ProcessorRecords.Message> aggregateDiagnostics,int descriptorEmissions) {
         public Scope {files=List.copyOf(files);aggregateDiagnostics=List.copyOf(aggregateDiagnostics);}
+        public List<Diagnostics.Message> diagnostics() {return Diagnostics.assemble(files,aggregateDiagnostics);}
     }
     public record Result(Identity project,BodiesRoot bodies,Map<String,Scope> scopes,int files,List<String> faults,long wallMillis) {
         public Result {scopes=java.util.Collections.unmodifiableMap(new TreeMap<>(scopes));faults=List.copyOf(faults);}

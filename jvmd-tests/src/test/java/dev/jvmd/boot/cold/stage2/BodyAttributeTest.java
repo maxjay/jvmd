@@ -85,7 +85,7 @@ class BodyAttributeTest {
             files.setLocationFromPaths(StandardLocation.CLASS_PATH,List.of());
             files.setLocationFromPaths(StandardLocation.SOURCE_PATH,List.of());
             files.setLocationFromPaths(StandardLocation.CLASS_OUTPUT,List.of(output));
-            var task=compiler.getTask(null,files,listener,state.options().javac(),null,files.getJavaFileObjectsFromPaths(state.files().values()));
+            var task=compiler.getTask(null,files,listener,state.options().javac(),null,canonicalNames(files.getJavaFileObjectsFromPaths(state.files().values())));
             task.setLocale(Locale.ROOT);task.call();
         }
         var classes=new TreeMap<String,byte[]>();
@@ -132,8 +132,22 @@ class BodyAttributeTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void diagnosticNotesShareAcrossLocationsUnderTheSameACI(Digest digest) throws Exception {
+        var state=boot(digest,Map.of("p/App.java","package p; public class App { int x(){return new java.util.Date().getYear();} }"),List.of());
+        try(var pool=new Pool(state.configuration(),1)) {
+            var attribute=state.attribute(pool);var first=run(state,attribute,"p/App.java");
+            assertThat(first.result().diagnostics()).anyMatch(d->d.code().equals("compiler.note.deprecated.filename"));
+            assertThat(first.result().diagnostics()).isEqualTo(oracle(state).messages());
+            var relocated=attribute.run(state.rows().get("p/App.java"),dir.resolve("another/project/App.java").toUri(),Files.readAllBytes(state.files().get("p/App.java")));
+            assertThat(relocated.aci()).isEqualTo(first.aci());
+            assertThat(relocated.result()).isEqualTo(first.result());
+            assertThat(first.result().diagnostics().getFirst().message()).startsWith("App.java ");
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void bodyErrorsAndWarningsKeepNativeOrderTextAndUtf16Positions(Digest digest) throws Exception {
-        String source="package p; public class App { String emoji=\"😀\"; int f(){ Old.call(); return missing; } }";
+        String source="package p; public class App { String emoji=\"ðŸ˜€\"; int f(){ Old.call(); return missing; } }";
         var state=boot(digest,Map.of("p/App.java",source,"p/Old.java","package p; public class Old { @Deprecated(forRemoval=true) public static void call(){} }"),List.of("-Xlint:all"));
         var expected=oracle(state);assertThat(expected.messages()).anyMatch(d -> d.kind()==0).anyMatch(d -> d.kind()==1);
         try(var pool=new Pool(state.configuration(),1)) {
@@ -147,7 +161,7 @@ class BodyAttributeTest {
 
     @ParameterizedTest @MethodSource("digests")
     void stringConstantsFromOwnStubsProduceExactNativeClassBytes(Digest digest) throws Exception {
-        String literal = "\\uD800|\\uDC00|\\uD83D\\uDE00|\\0|\\n|café";
+        String literal = "\\uD800|\\uDC00|\\uD83D\\uDE00|\\0|\\n|cafÃ©";
         var state = boot(digest, Map.of("p/Constants.java", "package p; public class Constants { public static final String VALUE=\""+literal+"\"; }",
                 "p/Label.java", "package p; public @interface Label { String value() default \""+literal+"\"; }",
                 "p/App.java", "package p; @Label(Constants.VALUE) public class App { public String value(){return Constants.VALUE;} public static final String COPIED=Constants.VALUE; }"),
@@ -201,7 +215,7 @@ class BodyAttributeTest {
         var output=new ArrayList<byte[]>();
         for(var options:List.of(List.of("-g:none","-encoding","UTF-8"),List.of("-g","-parameters","-encoding","UTF-8"),
                 List.of("-g","-parameters","-encoding","ISO-8859-1"))) {
-            var state=boot(digest,Map.of("p/App.java","package p; public class App { public String value(int x){ return \"café\"+x; } }"),options);
+            var state=boot(digest,Map.of("p/App.java","package p; public class App { public String value(int x){ return \"cafÃ©\"+x; } }"),options);
             var expected=oracle(state);
             try(var pool=new Pool(state.configuration(),1)) {
                 var result=run(state,state.attribute(pool),"p/App.java");
@@ -249,7 +263,7 @@ class BodyAttributeTest {
     @ParameterizedTest @MethodSource("digests")
     void malformedSnapshotPersistsItsNativeEncodingErrorAndNoClassFiles(Digest digest) throws Exception {
         var bytes=new java.io.ByteArrayOutputStream();
-        bytes.writeBytes("package p; public class App { String emoji=\"😀\"; String x=\"".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        bytes.writeBytes("package p; public class App { String emoji=\"ðŸ˜€\"; String x=\"".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         bytes.write(0xff);bytes.writeBytes("\"; }".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var state=bootBytes(digest,Map.of("p/App.java",bytes.toByteArray()),List.of("-encoding","UTF-8"));
         var expected=oracle(state);
@@ -273,4 +287,13 @@ class BodyAttributeTest {
             assertThat(state.store().recordWriteCount()).isEqualTo(writes);
         } finally { Locale.setDefault(previous); }
     }
+    /** Native javac oracle with the same explicit diagnostic filename policy; no production formatter is used. */
+    private static List<javax.tools.JavaFileObject> canonicalNames(Iterable<? extends javax.tools.JavaFileObject> inputs) {
+        var result=new ArrayList<javax.tools.JavaFileObject>();
+        for(var input:inputs)result.add(new javax.tools.ForwardingJavaFileObject<javax.tools.JavaFileObject>(input) {
+            @Override public String getName() { return Path.of(toUri()).getFileName().toString(); }
+        });
+        return result;
+    }
+
 }

@@ -88,6 +88,11 @@ public final class Pool implements AutoCloseable {
         }
     }
 
+    /** Uses the bound compiler's resources for a derived scope note, with the same fixed locale as task diagnostics. */
+    static String localizedMessage(String code) {
+        return com.sun.tools.javac.util.JavacMessages.instance(new Context()).getLocalizedString(Locale.ROOT,code);
+    }
+
     public Key key() { return configuration.key(); }
     public Configuration configuration() { return configuration; }
 
@@ -97,6 +102,20 @@ public final class Pool implements AutoCloseable {
         var source = new ByteSource(uri,bytes);
         try { return withTask(source,diagnostics,action); }
         finally { source.manager = null; }
+    }
+
+    /** Only the rendered message changes. Source identity/URI and processor-visible file objects remain native. */
+    private record MessageDiagnostic(javax.tools.Diagnostic<? extends JavaFileObject> nativeDiagnostic, String message)
+            implements javax.tools.Diagnostic<JavaFileObject> {
+        @Override public Kind getKind() { return nativeDiagnostic.getKind(); }
+        @Override public JavaFileObject getSource() { return nativeDiagnostic.getSource(); }
+        @Override public long getPosition() { return nativeDiagnostic.getPosition(); }
+        @Override public long getStartPosition() { return nativeDiagnostic.getStartPosition(); }
+        @Override public long getEndPosition() { return nativeDiagnostic.getEndPosition(); }
+        @Override public long getLineNumber() { return nativeDiagnostic.getLineNumber(); }
+        @Override public long getColumnNumber() { return nativeDiagnostic.getColumnNumber(); }
+        @Override public String getCode() { return nativeDiagnostic.getCode(); }
+        @Override public String getMessage(Locale locale) { return message; }
     }
 
     private static final class ByteSource extends SimpleJavaFileObject {
@@ -239,10 +258,29 @@ public final class Pool implements AutoCloseable {
         <T> Completed<T> run(JavaFileObject source, DiagnosticListener<? super JavaFileObject> diagnostics,
                              Function<JavacTask, T> action) {
             files.outputs.clear();
+            var formatter = new java.util.concurrent.atomic.AtomicReference<com.sun.tools.javac.util.BasicDiagnosticFormatter>();
+            DiagnosticListener<JavaFileObject> report = diagnostic -> {
+                if (diagnostics == null) return;
+                var nativeDiagnostic = diagnostic instanceof com.sun.tools.javac.api.ClientCodeWrapper.DiagnosticSourceUnwrapper wrapped ? wrapped.d
+                        : diagnostic instanceof com.sun.tools.javac.util.JCDiagnostic raw ? raw : null;
+                var current = formatter.get();
+                if (nativeDiagnostic == null || current == null) diagnostics.report(diagnostic);
+                else diagnostics.report(new MessageDiagnostic(diagnostic, current.formatMessage(nativeDiagnostic, Locale.ROOT)));
+            };
             try {
-                var result = tasksPool.getTask(new StringWriter(), files, diagnostics == null ? diagnostic -> { } : diagnostics, configuration.options(), null, List.of(source), task -> {
+                var result = tasksPool.getTask(new StringWriter(), files, report, configuration.options(), null, List.of(source), task -> {
                     task.setLocale(Locale.ROOT);
                     var context = ((JavacTaskImpl) task).getContext();
+                    formatter.set(new com.sun.tools.javac.util.BasicDiagnosticFormatter(com.sun.tools.javac.util.Options.instance(context),
+                            com.sun.tools.javac.util.JavacMessages.instance(context)) {
+                        @Override protected String formatArgument(com.sun.tools.javac.util.JCDiagnostic diagnostic, Object argument, Locale locale) {
+                            if (argument instanceof JavaFileObject file && file.getKind() == JavaFileObject.Kind.SOURCE) {
+                                var path=file.toUri().getPath();
+                                if (path!=null) return path.substring(path.lastIndexOf('/')+1);
+                            }
+                            return super.formatArgument(diagnostic,argument,locale);
+                        }
+                    });
                     if (context != previous) { contexts++; previous = context; evicted.clear(); HierarchyReads.install(context); }
                     if (source instanceof ByteSource input) {
                         var manager=files.decoder();manager.setContext(context);input.manager=manager;

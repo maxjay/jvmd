@@ -82,8 +82,9 @@ class Stage3ClasspathMeasurement {
                 assertThat(tree.get(actual.bodies().bodiesRoot(),id->store.get(MachineStore.nodeKey(id)),LocalStore.resultKey(computed.aci()))).isNotNull();
                 files++;
                 for(var c:computed.result().classFiles())classes.put(c.internalName(),store.get(LocalStore.classFileKey(c.contentHash())));
-                for(var message:computed.result().diagnostics())messages.add(new Message(file.path(),message));
+
             }
+            for(var message:scope.getValue().diagnostics())messages.add(new Message(message.path(),message.diagnostic()));
             boolean same=true;
             var missing=new java.util.TreeSet<>(expected.classes().keySet());missing.removeAll(classes.keySet());
             var extra=new java.util.TreeSet<>(classes.keySet());extra.removeAll(expected.classes().keySet());
@@ -97,8 +98,7 @@ class Stage3ClasspathMeasurement {
                 Files.write(Path.of(dump+".body.class"),e.getValue());
             }
             if(!different.isEmpty()) {same=false;failures.add(scope.getKey()+" different class bytes="+different);}
-            // Grouping keeps the native order within a source, independent of worker completion and native phase interleaving.
-            if(!group(messages).equals(group(expected.messages()))) {
+            if(!messages.equals(expected.messages())) {
                 same=false;failures.add(scope.getKey()+" diagnostics differ\n  native="+expected.messages()+"\n  body="+messages);
             }
             if(same)equal++;classCount+=classes.size();
@@ -116,11 +116,6 @@ class Stage3ClasspathMeasurement {
     private static void dependencies(List<ProjectModel.Dependency> dependencies,List<Path> classpath,Map<String,NativeScope> scopes,Path repository) {
         for(var dependency:dependencies)classpath.add(dependency.module()==null?repository.resolve(dependency.location()):scopes.get(dependency.module()+"/main").directory());
     }
-    private static Map<String,List<ResultRecord.Diagnostic>> group(List<Message> messages) {
-        var grouped=new TreeMap<String,List<ResultRecord.Diagnostic>>();
-        for(var message:messages)grouped.computeIfAbsent(message.path(),ignored->new ArrayList<>()).add(message.diagnostic());
-        return grouped;
-    }
     private NativeScope compile(ProjectModel model,List<Path> sources,List<Path> classpath,Attribute.Options options,List<String> declaredOptions,Path output) throws Exception {
         Files.createDirectories(output);var messages=new ArrayList<Message>();
         var ordinary=sources.stream().filter(p->!p.getFileName().toString().equals("module-info.java")).toList();
@@ -134,7 +129,7 @@ class Stage3ClasspathMeasurement {
         if(!ordinary.isEmpty())try(var manager=compiler.getStandardFileManager(listener,Locale.ROOT,options.charset())) {
             manager.setLocationFromPaths(StandardLocation.CLASS_PATH,classpath);manager.setLocationFromPaths(StandardLocation.SOURCE_PATH,List.of());
             manager.setLocationFromPaths(StandardLocation.CLASS_OUTPUT,List.of(output));
-            var task=compiler.getTask(null,manager,listener,options.javac(),null,manager.getJavaFileObjectsFromPaths(ordinary));
+            var task=compiler.getTask(null,manager,listener,options.javac(),null,canonicalNames(manager.getJavaFileObjectsFromPaths(ordinary)));
             task.setLocale(Locale.ROOT);task.call();
         }
         for(var source:sources)if(source.getFileName().toString().equals("module-info.java")) {
@@ -172,4 +167,13 @@ class Stage3ClasspathMeasurement {
         }
         return new NativeScope(output,classes,messages,sources.size()-ordinary.size());
     }
+    /** Native javac oracle with the same explicit diagnostic filename policy; no production formatter is used. */
+    private static List<javax.tools.JavaFileObject> canonicalNames(Iterable<? extends javax.tools.JavaFileObject> inputs) {
+        var result=new ArrayList<javax.tools.JavaFileObject>();
+        for(var input:inputs)result.add(new javax.tools.ForwardingJavaFileObject<javax.tools.JavaFileObject>(input) {
+            @Override public String getName() { return Path.of(toUri()).getFileName().toString(); }
+        });
+        return result;
+    }
+
 }

@@ -1,6 +1,7 @@
 package dev.jvmd.boot.cold.stage2;
 
 import com.sun.source.util.Trees;
+import com.sun.source.util.JavacTask;
 import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.tree.Entry;
@@ -45,7 +46,7 @@ import javax.tools.ForwardingJavaFileObject;
 import javax.tools.JavaFileManager;
 import javax.tools.JavaFileObject;
 
-/** A processor invocation and its observations. Nothing retained here survives the module header compile. */
+/** A processor invocation and its detached observations; native model objects are discarded on close. */
 public final class ProcessorHost implements AutoCloseable {
     private static final String SERVICES = "META-INF/services/javax.annotation.processing.Processor";
     private static final String DECLARATIONS = "META-INF/gradle/incremental.annotation.processors";
@@ -54,6 +55,7 @@ public final class ProcessorHost implements AutoCloseable {
     private final URLClassLoader loader;
     private final Digest digest;
     private final Path generatedDirectory;
+    private final ProcessorCapture capture;
     private final List<Wrapped> processors = new ArrayList<>();
     private final List<Output> outputs = new ArrayList<>();
     private final Set<String> faults = new LinkedHashSet<>();
@@ -85,8 +87,24 @@ public final class ProcessorHost implements AutoCloseable {
     public record Output(String processorClass, JavaFileObject.Kind kind, String name, URI uri, List<URI> origins, byte[] bytes) { }
 
     public ProcessorHost(List<Path> path, List<String> names, Digest digest, Path generatedDirectory) throws IOException {
+        this(path, names, digest, generatedDirectory, null, null);
+    }
+
+    /** One-unit body invocation: skip aggregates before loading them and capture Filer writes outside javac rounds.
+     * The lookup must read Stage 2 PROC records for the supplied full processor-path hash. This does not admit reuse. */
+    public static ProcessorHost bodies(List<Path> path, List<String> names, Digest digest, Path generatedDirectory,
+                                       java.nio.charset.Charset charset,
+                                       java.util.function.BiFunction<Identity, String, ProcessorRecords.Capability> capabilities) throws IOException {
+        return new ProcessorHost(path, names, digest, generatedDirectory, java.util.Objects.requireNonNull(charset),
+                java.util.Objects.requireNonNull(capabilities));
+    }
+
+    private ProcessorHost(List<Path> path, List<String> names, Digest digest, Path generatedDirectory,
+                          java.nio.charset.Charset charset,
+                          java.util.function.BiFunction<Identity, String, ProcessorRecords.Capability> capabilities) throws IOException {
         this.digest = digest;
-        this.generatedDirectory = Files.createDirectories(generatedDirectory);
+        this.generatedDirectory = charset == null ? Files.createDirectories(generatedDirectory) : generatedDirectory.toAbsolutePath().normalize();
+        this.capture = charset == null ? null : new ProcessorCapture(this.generatedDirectory, charset);
         var urls = new ArrayList<java.net.URL>();
         var discovered = new LinkedHashSet<String>();
         var declarations = new LinkedHashMap<String, Integer>();
@@ -113,8 +131,13 @@ public final class ProcessorHost implements AutoCloseable {
         loader = new URLClassLoader(urls.toArray(java.net.URL[]::new), ClassLoader.getPlatformClassLoader());
         try {
             for (var name : names.isEmpty() ? discovered : names) {
+                var previous = capabilities == null ? null : capabilities.apply(pathHash, name);
+                if (capabilities != null && previous == null)
+                    throw new IllegalStateException("Missing Stage 2 processor capability for " + name);
+                if (previous != null && previous.declared() == ProcessorRecords.AGGREGATING) continue;
                 var processor = (Processor) Class.forName(name, true, loader).getConstructor().newInstance();
                 processors.add(new Wrapped(processor, declarations.getOrDefault(name, 0)));
+                if (previous != null) previousCapability(name, previous);
             }
         } catch (ReflectiveOperationException | RuntimeException e) {
             loader.close();
@@ -128,6 +151,12 @@ public final class ProcessorHost implements AutoCloseable {
         try (var in = jar.getInputStream(entry)) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8).lines().map(s -> s.split("#", 2)[0].strip()).filter(s -> !s.isEmpty()).toList();
         }
+    }
+
+    /** Install before parsing/entering the task, including the observer for unwrapped Trees access. */
+    public void attach(JavacTask task) {
+        ProcessorTrees.attach(task, this);
+        task.setProcessors(processors());
     }
 
     public Identity pathHash() { return pathHash; }
@@ -221,6 +250,7 @@ public final class ProcessorHost implements AutoCloseable {
         }
     }
     @Override public void close() throws IOException {
+        if (capture != null) capture.finish(this::rejectReuse);
         closedCapabilities = capabilities();
         closedDomains = domains();
         closedInputs = inputs();
@@ -237,6 +267,7 @@ public final class ProcessorHost implements AutoCloseable {
         final boolean dynamic;
         int observed = ProcessorRecords.OVERLAY;
         Trees trees;
+        Elements nativeElements;
         ProcessorElementProjection projection;
         ProcessorReads reads;
         ProcessorReplay.Environment environment;
@@ -245,6 +276,7 @@ public final class ProcessorHost implements AutoCloseable {
         final Map<URI, ProcessorReplay.Result> isolated = new TreeMap<>();
         final ProcessorReplay.Origins origins = new ProcessorReplay.Origins();
         int roundNumber;
+        boolean lastRound;
         final TreeMap<byte[], Entry> domain = new TreeMap<>(Arrays::compareUnsigned);
         final Set<URI> inputs = new java.util.TreeSet<>();
         Wrapped(Processor delegate, int declared) {
@@ -261,6 +293,7 @@ public final class ProcessorHost implements AutoCloseable {
             this.environment = ProcessorReplay.Environment.of(environment);
             setup.add("init");
             trees = Trees.instance(environment);
+            nativeElements = environment.getElementUtils();
             projection = new ProcessorElementProjection(environment.getElementUtils(), environment.getTypeUtils());
             if (!TESTED_OVERLAYS.contains(name)) reads = new ProcessorReads(environment.getElementUtils(), environment.getTypeUtils(),
                     read -> modelReads.computeIfAbsent(name, ignored -> new ArrayList<>()).add(read), this::unsupported);
@@ -271,10 +304,13 @@ public final class ProcessorHost implements AutoCloseable {
                 boolean aggregating = options.contains("org.gradle.annotation.processing.aggregating");
                 if (isolating != aggregating) declared = isolating ? ProcessorRecords.ISOLATING : ProcessorRecords.AGGREGATING;
             }
+            if (capture != null && declared == ProcessorRecords.AGGREGATING)
+                throw new IllegalStateException("Processor declaration changed since Stage 2: " + name);
             if (declared == ProcessorRecords.NONE) unsupported("no resolved incremental processor declaration");
             else if (observed != ProcessorRecords.VIOLATED && !TESTED_OVERLAYS.contains(name)) observed = ProcessorRecords.GENERATOR;
         }
         @Override public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
+            lastRound = round.processingOver();
             var declarations = new java.util.IdentityHashMap<Element, byte[]>();
             if (!TESTED_OVERLAYS.contains(name)) for (var root : round.getRootElements()) {
                 var origin = origin(root);
@@ -437,16 +473,21 @@ public final class ProcessorHost implements AutoCloseable {
         }
         @Override public JavaFileObject createSourceFile(CharSequence name, Element... origins) throws IOException {
             var paths = origins(origins);
+            if (capture != null) return capturedJava(name, JavaFileObject.Kind.SOURCE, paths);
             return javaOutput(delegate.createSourceFile(name, nativeOrigins(origins)), name.toString().replace('.', '/') + ".java", paths);
         }
         @Override public JavaFileObject createClassFile(CharSequence name, Element... origins) throws IOException {
             var paths = origins(origins);
             processor.unsupported("class-file output requires a generated-class proof");
+            if (capture != null) return capturedJava(name, JavaFileObject.Kind.CLASS, paths);
             return javaOutput(delegate.createClassFile(name, nativeOrigins(origins)), name.toString().replace('.', '/') + ".class", paths);
         }
         @Override public FileObject createResource(JavaFileManager.Location location, CharSequence moduleAndPackage, CharSequence relativeName, Element... origins) throws IOException {
             var paths = origins(origins);
             processor.unsupported("resource output requires a resource proof");
+            if (capture != null) return capture.resource(processor.name, location, moduleAndPackage.toString(), relativeName.toString(),
+                    (file, bytes) -> outputs.add(new Output(processor.name, JavaFileObject.Kind.OTHER,
+                            moduleAndPackage + "/" + relativeName, file.toUri(), paths, bytes)));
             var file = delegate.createResource(location, moduleAndPackage, relativeName, nativeOrigins(origins));
             String name = moduleAndPackage + "/" + relativeName;
             return new ForwardingFileObject<>(file) {
@@ -456,7 +497,24 @@ public final class ProcessorHost implements AutoCloseable {
         }
         @Override public FileObject getResource(JavaFileManager.Location location, CharSequence moduleAndPackage, CharSequence relativeName) throws IOException {
             processor.unsupported("unmodelled Filer resource read " + location.getName() + ":" + moduleAndPackage + "/" + relativeName);
+            if (capture != null) capture.checkRead(location, moduleAndPackage.toString(), relativeName.toString());
             return delegate.getResource(location, moduleAndPackage, relativeName);
+        }
+        private JavaFileObject capturedJava(CharSequence name, JavaFileObject.Kind kind, List<URI> paths) throws IOException {
+            if (processor.lastRound) processor.unsupported("Filer output in the final round requires native generated-source diagnostics");
+            // Like javac's Filer, allow an existing classpath type but never overwrite the explicit source unit.
+            var existing = processor.nativeElements.getTypeElement(name);
+            if (existing == null && name.toString().endsWith("package-info")) {
+                String pkg = name.toString().replaceFirst("\\.?package-info$", "");
+                var element = processor.nativeElements.getPackageElement(pkg);
+                if (element != null && processor.origin(element) != null)
+                    throw new javax.annotation.processing.FilerException("Attempt to recreate a file for type " + name);
+            }
+            if (existing != null && processor.origin(existing) != null)
+                throw new javax.annotation.processing.FilerException("Attempt to recreate a file for type " + name);
+            return capture.javaFile(processor.name, name.toString(), kind,
+                    (file, bytes) -> outputs.add(new Output(processor.name, kind, name.toString().replace('.', '/') + kind.extension,
+                            file.toUri(), paths, bytes)));
         }
         private Element[] nativeOrigins(Element[] origins) { return processor.reads == null ? origins : (Element[]) processor.reads.unwrap(origins); }
     }

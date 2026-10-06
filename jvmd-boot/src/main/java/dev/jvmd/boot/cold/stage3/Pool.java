@@ -3,6 +3,8 @@ package dev.jvmd.boot.cold.stage3;
 import com.sun.source.util.JavacTask;
 import com.sun.tools.javac.api.JavacTaskImpl;
 import com.sun.tools.javac.api.JavacTaskPool;
+import com.sun.tools.javac.main.JavaCompiler;
+import com.sun.tools.javac.processing.JavacProcessingEnvironment;
 import com.sun.tools.javac.code.Symtab;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Flags;
@@ -250,12 +252,24 @@ public final class Pool implements AutoCloseable {
                     observations.reads.clear(); observations.recording = true;
                     tasks++;
                     try { return new Observed<>(action.apply(task),List.copyOf(observations.reads)); }
-                    finally { observations.recording = false; observations.reads.clear(); evict(context); } // generate may have already cleared task.getContext().
+                    finally { observations.recording = false; observations.reads.clear(); clearProcessors(context); evict(context); } // generate may have already cleared task.getContext().
                 });
                 var bytes = new TreeMap<String, byte[]>();
                 files.outputs.forEach((name, output) -> bytes.put(name, output.toByteArray()));
                 return new Completed<>(result.value(), Map.copyOf(bytes),result.reads());
             } finally { files.outputs.clear(); }
+        }
+
+        private void clearProcessors(Context context) {
+            var processing = context.get(JavacProcessingEnvironment.class);
+            if (processing == null) return;
+            try {
+                processing.close();
+                // JDK 25's reusable compiler clears queues but retains procEnvImpl. Its next init otherwise
+                // closes the old environment instead of initializing the new task's processors and diagnostics.
+                ProcessorState.ENVIRONMENT.set(JavaCompiler.instance(context), null);
+                context.put(JavacProcessingEnvironment.class, (JavacProcessingEnvironment) null);
+            } catch (IllegalAccessException failure) { throw new IllegalStateException("Cannot clear javac processor state", failure); }
         }
 
         private void evict(Context context) {
@@ -293,6 +307,16 @@ public final class Pool implements AutoCloseable {
         void close() throws IOException {
             tasksPool = null; previous = null; evicted.clear(); stubFiles.clear();
             files.close();
+        }
+    }
+
+    private static final class ProcessorState {
+        static final java.lang.reflect.Field ENVIRONMENT = environment();
+        private static java.lang.reflect.Field environment() {
+            try {
+                var field = JavaCompiler.class.getDeclaredField("procEnvImpl");
+                field.setAccessible(true); return field;
+            } catch (ReflectiveOperationException failure) { throw new ExceptionInInitializerError(failure); }
         }
     }
 

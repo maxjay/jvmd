@@ -12,6 +12,10 @@ import javax.lang.model.element.Element;
 final class ProcessorTrees extends JavacTrees {
     private final ProcessorHost host;
 
+    static void attach(com.sun.source.util.JavacTask task, ProcessorHost host) {
+        new ProcessorTrees(((com.sun.tools.javac.api.JavacTaskImpl) task).getContext(), host);
+    }
+
     ProcessorTrees(Context context, ProcessorHost host) {
         super(context);
         this.host = host;

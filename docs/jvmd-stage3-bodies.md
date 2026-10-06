@@ -2,7 +2,7 @@
 
 Oct 5, 2026 · @Max
 
-Revision 123, amended 2026-10-06 for the PR #60 reviews: exact stub member identities, qualified package and member-type absences, T/N proof descent, generation isolation, exact Stage 2 header ranges and reverse keys, persistent route ancestry, full warning metadata in A, and the processorElementProjection/generated-output ContentTree amendment. The companion Stage 2 specification is reconciled in `jvmd-stage2-local-cold-boot.md`.
+Revision 123, amended 2026-10-06 for the PR #60 reviews: exact stub member identities, qualified package and member-type absences, T/N proof descent, generation isolation, exact Stage 2 header ranges and reverse keys, persistent route ancestry, full warning metadata in A, the processorElementProjection/generated-output ContentTree amendment, and body collector corrections backed by mutation tests. The companion Stage 2 specification is reconciled in `jvmd-stage2-local-cold-boot.md`.
 
 Stage 3 attributes one source file at a time against stubs, writes its class files as content-addressed results, and writes a proof of exactly which identities the result depends on, verified by the same descent of sums that stages 1 and 2 built. Greenfield: nothing under `jvmd-lsp`, `jvmd-analyzer` or the old `jvmd-index` is reference or guidance.
 
@@ -258,18 +258,18 @@ Attribute(f, scope, pool) -> (result, proof, uses, aci):
 
 ### 5.2 Collect: what the body resolved through
 
-One `TreePathScanner` over the attributed unit. Every node that carries a symbol javac resolved is visited; the rule per node kind is the lookup javac performed.
+An attributed-unit walk, with an initial linear pass for own binary names and tree paths, plus native hierarchy query observations from the compiler task. Every node that carries a symbol javac resolved is visited; the rule per node kind is the lookup javac performed.
 
 ```
 Collect(unit, task) -> (entries: set<Entry>, uses: map<key, [range]>):
     own = types declared by unit (binary names, nested, local and anonymous included)
-    for each type D in own, D not local or anonymous:
+    for each type D in own, including local and anonymous classes:
         for s in closure(D) \ own: T(s, METHOD, ""); T(s, 0, "")                      // override, abstract, default-clash checks and bridges read every method of every supertype
     for node in unit:
         if node is an expression with an attributed type X (tree.type), X a class or interface type (type arguments included, recursively):
             for t in closure(X) \ own: T(t, 0, "")                                        // every applicability, conversion and inference decision walks these closures,
                                                                                         // whether or not the source names them (f(get()) with get() : A implements I)
-        with sym = javac's symbol on node, where sym.owner is a type and not in own:
+        with sym = javac's symbol on node; retain external lookup candidates even when the selected symbol belongs to own:
         case field access or identifier resolved to a field sym on receiver type R (or on a static-imported type):
             for t in lookupPath(R, sym): T(t, FIELD, sym.name); T(t, 0, "")               // every type the field lookup walked; sum zero where t has no such field
         case method invocation resolved to sym on receiver type R, or constructor call on R:
@@ -294,7 +294,11 @@ Collect(unit, task) -> (entries: set<Entry>, uses: map<key, [range]>):
         case static-imported simple name resolved to member of T0:
             for t in closure(T0): T(t, sym.kind, name)                                      // as field/method above
             for other static on-demand imports T2: T(T2, sym.kind, name) expected empty
+        if a package/type head occurs in an expression-qualified name:
+            record FIELD lookup ranges that could reclassify the head as a variable
+            // exclude declaration type positions, class literals and qualified this/super
         uses[entry key] += node range
+    for binary type t queried by javac supertype/interfaces, t outside own: T(t, TYPE, "")
     return (entries, uses)
 
 lookupPath(R, sym): R and its supertypes in javac's search order down to and including sym.owner
@@ -303,7 +307,13 @@ memberTypes(s, X): the N range with key prefix zstr X || u8 TYPE || zstr s: the 
 T(...), N(...), D(...): an entry naming the tree, the key, and (at Arrange) the current range sum
 ```
 
-The collector records what javac's own symbol tells it; it never re-resolves. Local and anonymous classes of `f` are in `own`. Names inside `f` that resolve to `f`'s own members record nothing.
+The collector uses javac's attributed symbols and native query observations; it does not implement overload resolution again. Local and anonymous classes of `f` are in `own`, and their inherited method contracts are read just as for top-level classes. Drop facts owned by `f`; retain the external candidate ranges of a lookup even when its selected member belongs to `f`.
+
+An attributed tree alone does not retain every candidate javac tested. For example, `pick(null)` with overloads taking unrelated `First` and `Second` is ambiguous. Making either interface extend the other repairs the error without changing the overload group. The compiler adapter therefore observes native `Types.supertype` and `Types.interfaces` queries and contributes the exact queried binary type headers, including rejected candidates. It does not traverse every candidate signature: a wrong-arity overload does not acquire a dependency on its unused parameter hierarchy. Observations reset per task and repeat on cached contexts; compiler-created pseudo-types are not persisted as binary dependencies. Queries without a syntax position carry an empty span list, not an invented location. The complete two-sided oracle remains required to establish coverage beyond these fixtures.
+
+Failed simple-type lookups collect exact candidate keys. Arrange binds each key to a D absence if missing, or to its T type-header range if present but inaccessible or ambiguous, and transforms the corresponding U key while preserving its spans. A failed expression qualifier such as `Missing.run()` retains both field lookup ranges and candidate type keys. An inaccessible type is never persisted as an expected absence.
+
+Selected executable types also contribute parameter, return, type-variable and thrown-type headers. A `void` invocation whose declared exception changes from unchecked to checked must invalidate even though its result expression has no class type. TypeMirror dispatch uses `TypeKind`: javac's healthy ClassType also implements the ErrorType interface.
 
 ### 5.3 Verify: the descent
 
@@ -340,6 +350,9 @@ Arrange(entries, route, own, module, f) -> proof:
     proof.routeHash = route.routeHash; proof.ownR = own.r
     proof.ddSum = route.DD.sum; proof.dsSum = route.DS.sum; proof.dcSum = route.DC.sum
     proof.proc = module.processorPath ? processorContext(f) : none                           // 5.3: processorPathHash, optionsHash, configProof(f) off RES|projectKey
+    bind candidate type keys through the own-first resolver:
+        missing -> D(key) with zero sum; present -> T(key, TYPE, "")
+        transform U from candidate D keys to the final T/D keys, merging equal-key spans
     for (t, es) in group entries over T and N by owner t:
         d = own.O has t ? own : resolver.definer(t)                                            // own-first; none: a fault of f, recorded as such
         saved = []
@@ -439,7 +452,7 @@ jvmd-boot/
     stage3/
       Stage3.java            run(model, store): the driver in 5.6; reads LROOT, writes BROOT
       Attribute.java         5.1: one file through the pool, Collect, Arrange, results; Locale.ROOT; explicit -encoding; -processor <declared isolating, wrapped>; Filer outputs captured, not compiled
-      Pool.java              5.5: W javac contexts per (leafSetExt, leafSetSib, k_own), classpath own stubs first; acquire/release; evict(own type names) after every task
+      Pool.java              5.5: W javac contexts per (leafSetExt, leafSetSib, k_own), classpath own stubs first; per-task native hierarchy observations; acquire/release; evict(own type names) after every task
       Arrange.java           5.4: entries into the descent shape against the own-first resolver; processorContext(f) off RES|
       Output.java            OUT| tree per scope; Materialise via Diff
   warm/
@@ -788,7 +801,7 @@ Every processor runs through jvmd's wrapper, in the stage 2 header compile and i
 | Construct | Entries |
 | --- | --- |
 | any expression whose attributed type is a class or interface `X`, type arguments included | `T (t, 0, )` for every `t` in `X`'s closure: applicability, conversion and inference walk it whether or not the source names `X` |
-| a type `D` that `f` declares (not local or anonymous) | `T (s, METHOD, )` and `T (s, 0, )` for every `s` in `D`'s closure outside `f`: override, abstract-method and default-clash checks, and bridge generation |
+| a type `D` that `f` declares, including local and anonymous classes | `T (s, METHOD, )` and `T (s, 0, )` for every `s` in `D`'s closure outside `f`: override, abstract-method and default-clash checks, and bridge generation |
 | `x.f`, `f` (field) | `T (t, FIELD, f)` (sum zero where absent) and `T (t, 0, )` for each `t` on the lookup path from the receiver type to the owner |
 | `x.m(…)`, `super.m(…)` | `T (t, METHOD, m)` and `T (t, 0, )` for each `t` in the receiver's closure |
 | `m(…)` unqualified | the same over the closure of every enclosing class of the call site |

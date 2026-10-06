@@ -33,6 +33,15 @@ public final class ProofCollector {
         public static final Observations NONE = new Observations(List.of(), List.of());
     }
 
+    /** Detached observations before lowering. Type lookup candidates become D absences or T headers at binding. */
+    public record Body(List<Proof.Range> ranges, List<String> typeLookups, UsesRecord uses) {
+        public Body { ranges = List.copyOf(ranges); typeLookups = List.copyOf(typeLookups); }
+    }
+
+    public static Body bodies(CompilationUnitTree unit, Trees trees, Elements elements, Types types, List<String> hierarchyReads) {
+        return BodyCollector.collect(unit, trees, elements, types, hierarchyReads);
+    }
+
     /**
      * Header-only traversal: declaration types, annotations and constant initialisers. Never visits executable bodies.
      * Candidates become expected-zero entries only after the whole own leaf has been sealed.

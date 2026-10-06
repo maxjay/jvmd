@@ -158,6 +158,33 @@ class BodyPoolTest {
         }
     }
 
+    @Test void hierarchyQueryRecordsAClassWhoseInputIsDiscoveredDuringCompletion() throws Exception {
+        var dep=stubs(javac("dependency",Map.of("q/Lib","package q; public class Lib { public r.Lazy value; }",
+                "r/Lazy","package r; public class Lazy {}"),List.of()));
+        var own=Files.createDirectories(dir.resolve("own"));
+        try(var pool=new Pool(configuration(own,List.of(dep),List.of()),1)) {
+            pool.withTask(source("App","class App {}"),null,task -> {
+                try {
+                    task.parse();task.analyze();
+                    var lib=task.getElements().getTypeElement("q.Lib");
+                    var field=lib.getEnclosedElements().stream().filter(e -> e.getSimpleName().contentEquals("value")).findFirst().orElseThrow();
+                    var type=(javax.lang.model.type.DeclaredType)field.asType();
+                    var symbol=type.asElement();
+                    var classfile=Class.forName("com.sun.tools.javac.code.Symbol$ClassSymbol").getField("classfile");
+                    assertThat(classfile.get(symbol)).isNull();
+                    assertThat(Pool.hierarchyReads(task)).doesNotContain("r/Lazy");
+                    var context=Class.forName("com.sun.tools.javac.api.JavacTaskImpl").getMethod("getContext").invoke(task);
+                    var types=Class.forName("com.sun.tools.javac.code.Types");
+                    var nativeTypes=types.getMethod("instance",Class.forName("com.sun.tools.javac.util.Context")).invoke(null,context);
+                    types.getMethod("supertype",Class.forName("com.sun.tools.javac.code.Type")).invoke(nativeTypes,type);
+                    assertThat(classfile.get(symbol)).isNotNull();
+                    assertThat(Pool.hierarchyReads(task)).contains("r/Lazy");
+                    task.generate();return null;
+                } catch(ReflectiveOperationException | IOException e) { throw new IllegalStateException(e); }
+            });
+        }
+    }
+
     @Test void concurrentWorkersMatchSerialBytesAndCloseRejectsNewTasks() throws Exception {
         var own=stubs(javac("own",Map.of("p/F",F,"p/G",G),List.of()));
         var expectedF=bytes(javac("freshF",Map.of("p/F",F),List.of(own)));

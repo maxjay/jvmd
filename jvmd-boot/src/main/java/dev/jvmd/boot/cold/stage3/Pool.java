@@ -6,6 +6,9 @@ import com.sun.tools.javac.api.JavacTaskPool;
 import com.sun.tools.javac.code.Symtab;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Flags;
+import com.sun.tools.javac.code.Type;
+import com.sun.tools.javac.code.TypeTag;
+import com.sun.tools.javac.code.Types;
 import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.Names;
 import dev.jvmd.core.hash.Identity;
@@ -75,6 +78,31 @@ public final class Pool implements AutoCloseable {
     }
 
     public Key key() { return configuration.key(); }
+
+    /** Native hierarchy queries, including rejected overloads which leave no attributed syntax node. */
+    public static List<String> hierarchyReads(JavacTask task) {
+        return List.copyOf(((HierarchyReads) Types.instance(((JavacTaskImpl) task).getContext())).reads);
+    }
+
+    private static final class HierarchyReads extends Types {
+        private final java.util.Set<String> reads = new java.util.TreeSet<>();
+        private boolean recording;
+
+        static void install(Context context) { context.put(typesKey, (Context.Factory<Types>) HierarchyReads::new); }
+        HierarchyReads(Context context) { super(context); }
+
+        private void read(Type type) {
+            // Construction can call virtual methods before this subclass's fields have been initialized.
+            if (recording && type != null && type.hasTag(TypeTag.CLASS) && !type.isCompound()
+                    && type.tsym instanceof Symbol.ClassSymbol symbol && symbol.classfile != null
+                    && symbol.classfile.getKind() == JavaFileObject.Kind.CLASS)
+                reads.add(symbol.flatName().toString().replace('.', '/'));
+        }
+
+        // Completion can assign classfile during the query; observe after the native operation has completed it.
+        @Override public Type supertype(Type type) { var result = super.supertype(type); read(type); return result; }
+        @Override public com.sun.tools.javac.util.List<Type> interfaces(Type type) { var result = super.interfaces(type); read(type); return result; }
+    }
 
     /** One explicitly supplied source; callers collect observations after analyze and before generate mutates trees. */
     public <T> Completed<T> withTask(JavaFileObject source, DiagnosticListener<? super JavaFileObject> diagnostics,
@@ -148,11 +176,13 @@ public final class Pool implements AutoCloseable {
                 var result = tasksPool.getTask(new StringWriter(), files, diagnostics == null ? diagnostic -> { } : diagnostics, configuration.options(), null, List.of(source), task -> {
                     task.setLocale(Locale.ROOT);
                     var context = ((JavacTaskImpl) task).getContext();
-                    if (context != previous) { contexts++; previous = context; evicted.clear(); }
+                    if (context != previous) { contexts++; previous = context; evicted.clear(); HierarchyReads.install(context); }
                     restore(context);
+                    var observations = (HierarchyReads) Types.instance(context);
+                    observations.reads.clear(); observations.recording = true;
                     tasks++;
                     try { return action.apply(task); }
-                    finally { evict(context); } // generate may have already cleared task.getContext().
+                    finally { observations.recording = false; observations.reads.clear(); evict(context); } // generate may have already cleared task.getContext().
                 });
                 var bytes = new TreeMap<String, byte[]>();
                 files.outputs.forEach((name, output) -> bytes.put(name, output.toByteArray()));

@@ -36,7 +36,8 @@ final class ModuleProcessing {
         processorNames = host.names();
         for (var name : host.names()) {
             var previous = boot.store.get(LocalStore.processorKey(host.pathHash(), name));
-            if (previous != null) host.previousCapability(name, ProcessorRecords.Capability.decode(previous));
+            if (previous != null && ProcessorRecords.Capability.decode(previous).observed() == ProcessorRecords.VIOLATED)
+                host.previousCapability(name, ProcessorRecords.Capability.decode(previous));
         }
         optionsHash = HeaderCompiler.optionsHash(boot.digest, options, release, host.pathHash(), host.names());
         for (var path : paths) for (var config : configuration.unmodelledImports(path)) host.rejectReuse("unmodelled configuration import in " + config);
@@ -118,13 +119,8 @@ final class ModuleProcessing {
                 .map(name -> new ProcessorRecords.Invocation(name, capabilities.get(name))).toList());
         boot.processingRecords.put(LocalStore.processorScopeKey(boot.projectKey, module.name(), scope), scopeRecord.encode());
         for (var e : capabilities.entrySet()) {
-            var key = LocalStore.processorKey(host.pathHash(), e.getKey());
             // A violation in either scope remains a violation for this processor code during this boot.
-            boot.processingRecords.merge(key, e.getValue().encode(), (a, b) -> {
-                var previous = ProcessorRecords.Capability.decode(a);
-                var next = ProcessorRecords.Capability.decode(b);
-                return previous.merge(next).encode();
-            });
+            boot.processorCapabilities.merge(new Boot.Processor(host.pathHash(), e.getKey()), e.getValue(), ProcessorRecords.Capability::merge);
         }
         for (var row : rows.values()) {
             boolean isGenerated = generated.containsKey(row.path());

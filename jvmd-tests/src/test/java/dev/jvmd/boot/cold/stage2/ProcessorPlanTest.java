@@ -94,7 +94,7 @@ class ProcessorPlanTest {
         assertThat(result.faults()).isEmpty();
         var project = Stage2.projectKey(digest,model);
         var local = LocalRoot.decode(digest,store.get(LocalStore.localRootKey(project)));
-        assertThat(local.format()).contains(";local=14;");
+        assertThat(local.format()).contains(";local=15;");
         return new State(tree,store,local,project,result);
     }
 
@@ -137,6 +137,39 @@ class ProcessorPlanTest {
         assertThat(reordered.plan("aggregate").invocation()).isEqualTo(aggregate.invocation());
         assertThat(first.store().readsBeforeRoot()).doesNotContain("PS","PG");
         assertThat(reordered.store().readsBeforeRoot()).doesNotContain("PS","PG");
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void mixedGlobalDeclarationsCannotDisableAScopedGeneratorWithEmptyOutputs(Digest digest) throws Exception {
+        sources(); var path = processor(); var model = model(path, false);
+        String input = INPUT.replace("EMIT = true", "EMIT = false").replace("return new InputFirst().value();", "return 0;");
+        Stage2Support.write(dir, Map.of("isolate/src/main/java/p/Input.java", input));
+        var state = boot(digest, model, Stage2Support.jdkOnly(digest).copy(), 2);
+        var plan = state.plan("isolate");
+        var history = LocalStore.processorKey(plan.invocation().processorPathHash(), PROCESSOR);
+        assertThat(ProcessorRecords.Capability.decode(state.store().get(history)).observed()).isEqualTo(ProcessorRecords.GENERATOR);
+        assertThat(ProcessorRecords.Capability.decode(state.store().get(history)).declared()).isEqualTo(ProcessorRecords.NONE);
+        assertThat(plan.invocation().capability(PROCESSOR).declared()).isEqualTo(ProcessorRecords.ISOLATING);
+        assertThat(plan.invocation().capability(PROCESSOR).observed()).isEqualTo(ProcessorRecords.GENERATOR);
+        assertThat(plan.generation(PROCESSOR, "isolate/src/main/java/p/Input.java").outputs().count()).isZero();
+        assertThat(plan.currentInvocation()).isEqualTo(plan.invocation());
+        assertThat(state.tree().get(state.local().local().hash(), id -> state.store().get(MachineStore.nodeKey(id)), history)).isNull();
+        var nativeClasses = Stage2Support.compile(dir.resolve("native-isolate"), Map.of("p/Input.java", input, "p/Empty.java", EMPTY,
+                        "p/Mark.java", "package p; public @interface Mark {}"),
+                List.of("-Amode=isolating", "-proc:full", "--processor-path", path.toString()), List.of());
+        var result = new dev.jvmd.boot.cold.stage3.Stage3(digest, state.tree(), Stage2Support.FEATURE, 2, dir).run(state.store(), model);
+        assertThat(result.faults()).isEmpty();
+        var actual = new TreeMap<String,byte[]>();
+        for (var file : result.scopes().get("isolate/main").files()) {
+            assertThat(file.computed().reusable()).isTrue();
+            for (var output : file.computed().result().classFiles())
+                actual.put(output.internalName() + ".class", state.store().get(LocalStore.classFileKey(output.contentHash())));
+        }
+        assertThat(actual.keySet()).isEqualTo(nativeClasses.keySet());
+        actual.forEach((name, bytes) -> assertThat(bytes).as(name).isEqualTo(nativeClasses.get(name)));
+        // A new header boot retains its scoped declaration; the mixed global consensus is not a scope plan.
+        var repeated = boot(digest, model, state.store(), 2);
+        assertThat(repeated.plan("isolate").invocation().capability(PROCESSOR).declared()).isEqualTo(ProcessorRecords.ISOLATING);
     }
 
     @ParameterizedTest @MethodSource("digests")

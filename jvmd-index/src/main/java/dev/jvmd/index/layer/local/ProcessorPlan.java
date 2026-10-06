@@ -33,6 +33,17 @@ public final class ProcessorPlan {
 
     public ProcessorRecords.Scope invocation() { return invocation; }
 
+    /** Preserve the rooted scope classification/order; global history can revoke admission, never choose an execution role. */
+    public ProcessorRecords.Scope currentInvocation() {
+        return new ProcessorRecords.Scope(invocation.processorPathHash(), invocation.optionsHash(), invocation.processors().stream().map(p -> {
+            var bytes = records.apply(LocalStore.processorKey(invocation.processorPathHash(), p.processorClass()));
+            var capability = p.capability();
+            if (bytes != null && ProcessorRecords.Capability.decode(bytes).observed() == ProcessorRecords.VIOLATED)
+                capability = new ProcessorRecords.Capability(capability.declared(), ProcessorRecords.VIOLATED);
+            return new ProcessorRecords.Invocation(p.processorClass(), capability);
+        }).toList());
+    }
+
     /** Bind source metadata by its committed module/scope origins, independently of the invocation plan. */
     public ProcessorSources.Binding sources() {
         return ProcessorSources.bind(tree, committed, project, module, scope, records);
@@ -40,8 +51,9 @@ public final class ProcessorPlan {
 
     /** Null means this origin had no admitted derivation in that generation; it does not mean an empty output set. */
     public Generation generation(String processor, String origin) {
-        var capability = invocation.capability(processor);
+        var capability = currentInvocation().capability(processor);
         if (capability == null) throw new IllegalArgumentException("Processor was not configured in this scope: " + processor);
+        if (!capability.reusable()) return null;
         if (capability.declared() == ProcessorRecords.AGGREGATING && !origin.isEmpty())
             throw new IllegalArgumentException("An aggregate derivation has no source origin");
         var value = read(LocalStore.processorGenerationKey(project, module, scope, processor, origin));

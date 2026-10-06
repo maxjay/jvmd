@@ -219,7 +219,9 @@ class BodyProofTest {
         java.util.function.Function<byte[], byte[]> noReads = key -> { throw new AssertionError("Processor gate read resolution storage"); };
         var decoded = Proof.decode(proof.encode(), digest.width());
         assertThat(decoded).isEqualTo(proof); assertThat(decoded.hashCode()).isEqualTo(proof.hashCode());
-        assertThat(decoded.valid(state.tree, state.own, state.route, context, observations, noReads)).isTrue();
+        assertThat(decoded.valid(state.tree, state.own, state.route, context, observations, key -> {
+            assertThat(key).isEqualTo(LocalStore.processorKey(one, "fixture.Reader")); return supported.encode();
+        })).isTrue();
         var rejected = decoded.withProcessorBody(observations.rejectReuse());
         assertThat(Proof.decode(rejected.encode(), digest.width())).isEqualTo(rejected);
         assertThat(rejected.valid(state.tree, state.own, state.route, context, observations, noReads)).isFalse();
@@ -244,6 +246,20 @@ class BodyProofTest {
                 .isNotEqualTo(decoded.withProcessorBody(reversed).aci(digest, "App.java", one, two));
         assertThatThrownBy(() -> new ProcessorRecords.Body(List.of(overlay, overlay))).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> state.proof(List.of(), List.of()).withProcessorBody(observations)).isInstanceOf(IllegalArgumentException.class);
+        // Configured aggregates never execute here, but a later violation still revokes a proof with no body invocation.
+        var empty = new ProcessorRecords.Body(List.of());
+        var aggregateOnly = empty.withConfiguredProcessors(List.of("fixture.Aggregate"));
+        var aggregateProof = proof.withProcessorBody(aggregateOnly);
+        assertThat(Proof.decode(aggregateProof.encode(), digest.width())).isEqualTo(aggregateProof);
+        assertThat(aggregateProof.aci(digest, "App.java", one, two)).isEqualTo(proof.withProcessorBody(empty).aci(digest, "App.java", one, two));
+        assertThat(aggregateProof.valid(state.tree, state.own, state.route, context, aggregateOnly, key -> {
+            assertThat(key).isEqualTo(LocalStore.processorKey(one, "fixture.Aggregate"));
+            return new ProcessorRecords.Capability(ProcessorRecords.AGGREGATING, ProcessorRecords.GENERATOR).encode();
+        })).isTrue();
+        assertThat(aggregateProof.valid(state.tree, state.own, state.route, context, aggregateOnly, key -> {
+            assertThat(key).isEqualTo(LocalStore.processorKey(one, "fixture.Aggregate"));
+            return new ProcessorRecords.Capability(ProcessorRecords.AGGREGATING, ProcessorRecords.VIOLATED).encode();
+        })).isFalse();
         // With processor answers unchanged, normal exact range descent must still run when a compiler input moves.
         Files.writeString(dir.resolve("dep/src/main/java/q/Base.java"), BASE.replace("public Number", "public String get(String x) { return x; } public Number"));
         var after = boot(digest, ProjectModel.parse(Stage2Support.model(dir, new Stage2Support.Mod("dep", "g:dep:1", List.of()),

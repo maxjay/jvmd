@@ -329,8 +329,19 @@ class BodyProcessorTest {
         var proof = new dev.jvmd.index.layer.local.Proof(new dev.jvmd.index.layer.local.Proof.Header(zero, zero, zero, zero,
                 leaves.getFirst().r(), context), List.of(), List.of(), runs.getFirst().observations());
         java.util.function.Function<byte[], byte[]> noReads = key -> { throw new AssertionError("Processor gate opened resolution storage"); };
-        assertThat(proof.valid(new ContentTree(digest), leaves.getFirst(), route, context, runs.get(1).observations(), noReads)).isTrue();
+        var capabilityKey = dev.jvmd.index.layer.local.LocalStore.processorKey(fixture.processorPath(), "fixture.Reader");
+        var admissionReads = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.function.Function<byte[], byte[]> admitted = key -> {
+            assertThat(key).isEqualTo(capabilityKey); admissionReads.incrementAndGet();
+            return fixture.capabilities().get("fixture.Reader").encode();
+        };
+        assertThat(proof.valid(new ContentTree(digest), leaves.getFirst(), route, context, runs.get(1).observations(), admitted)).isTrue();
+        assertThat(admissionReads.get()).isEqualTo(1);
         assertThat(proof.valid(new ContentTree(digest), leaves.getFirst(), route, context, runs.get(2).observations(), noReads)).isFalse();
+        assertThat(proof.valid(new ContentTree(digest), leaves.getFirst(), route, context, runs.get(1).observations(), key -> {
+            assertThat(key).isEqualTo(capabilityKey);
+            return new ProcessorRecords.Capability(ProcessorRecords.ISOLATING, ProcessorRecords.VIOLATED).encode();
+        })).isFalse();
         var kappa = digest.hash(Files.readAllBytes(fixture.input()));
         assertThat(proof.aci(digest, "Input.java", kappa, zero)).isEqualTo(proof.withProcessorBody(runs.get(1).observations()).aci(digest, "Input.java", kappa, zero))
                 .isNotEqualTo(proof.withProcessorBody(runs.get(2).observations()).aci(digest, "Input.java", kappa, zero));

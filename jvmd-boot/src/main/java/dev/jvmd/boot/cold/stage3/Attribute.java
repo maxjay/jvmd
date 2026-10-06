@@ -130,10 +130,12 @@ public final class Attribute {
             try (host) {
                 completed=compile(uri,source,messages,host);
                 faults.addAll(processing.conservation(host,row,uri));
+            } finally {
+                host.capabilities().forEach((name, capability) -> store.observeProcessor(host.pathHash(), name, capability));
             }
             faults.addAll(host.faults());
             faults.addAll(processing.check(digest,row,uri));
-            body=host.bodyObservations();
+            body=host.bodyObservations().withConfiguredProcessors(options.processing.names());
             if (!faults.isEmpty()) body=body.rejectReuse();
         } catch (IOException failure) { throw new UncheckedIOException(failure); }
         var bound=Arrange.body(tree,own,route,row.processor(),completed.value().supplement(completed.reads()),store::get);

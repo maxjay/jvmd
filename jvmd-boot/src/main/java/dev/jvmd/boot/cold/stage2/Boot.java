@@ -64,6 +64,8 @@ final class Boot implements AutoCloseable {
     /** {@code DD|}, {@code DS|} and {@code DC|} records this boot used: they are part of the LOCAL tree of the project that used them. */
     final ConcurrentSkipListMap<byte[], byte[]> definers = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);
     final ConcurrentSkipListMap<byte[], byte[]> processingRecords = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);
+    record Processor(Identity path, String name) { }
+    final Map<Processor, dev.jvmd.index.layer.local.ProcessorRecords.Capability> processorCapabilities = new ConcurrentHashMap<>();
     private ProcessorConfiguration configuration;
     final ConcurrentLinkedQueue<String> faults = new ConcurrentLinkedQueue<>();
     final AtomicInteger sourceFiles = new AtomicInteger(), parsedFiles = new AtomicInteger(), sourceLeaves = new AtomicInteger();

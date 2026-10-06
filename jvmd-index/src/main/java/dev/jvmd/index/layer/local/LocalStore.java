@@ -33,6 +33,17 @@ public interface LocalStore extends MachineStore {
 
     default boolean hasLocalRoot(Identity projectKey) { return get(localRootKey(projectKey)) != null; }
 
+    /** Monotone global admission history, outside project trees. Repeating an observation writes nothing. */
+    default void observeProcessor(Identity path, String processor, ProcessorRecords.Capability observation) {
+        synchronized (this) {
+            var key = processorKey(path, processor);
+            var previous = get(key);
+            var merged = previous == null ? observation : ProcessorRecords.Capability.decode(previous).merge(observation);
+            var encoded = merged.encode();
+            if (!java.util.Arrays.equals(previous, encoded)) { put(key, encoded); flush(); }
+        }
+    }
+
     // ---- key layout (section 4). Defined here so every implementation writes the same bytes. -------------------------------
     int MAIN = 0, TEST = 1;
 

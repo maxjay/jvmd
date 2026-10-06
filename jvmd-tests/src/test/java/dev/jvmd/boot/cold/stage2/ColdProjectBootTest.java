@@ -132,7 +132,7 @@ class ColdProjectBootTest {
         Stage2Support.write(directory, Map.of(source, text)); machine(); var model = model();
         var first = BootDecision.local(index(), model, directory).orElseThrow();
         var project = Stage2.projectKey(digest, model); byte[] local;
-        byte[] legacy = new dev.jvmd.core.tree.Codec.Writer().str(first.bodies().bodies().format().replace(";bodies=5", ";bodies=4"))
+        byte[] legacy = new dev.jvmd.core.tree.Codec.Writer().str(first.bodies().bodies().format().replace(";bodies=6", ";bodies=5"))
                 .u8(255).toBytes(); // An old payload is opaque even when its current-format decoder would reject it.
         try (var store = generation().openLocal()) {
             local = store.get(LocalStore.localRootKey(project));

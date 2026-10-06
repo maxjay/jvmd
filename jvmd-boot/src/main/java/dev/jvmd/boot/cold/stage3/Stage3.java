@@ -80,6 +80,8 @@ public final class Stage3 {
             var cause=failure.getCause();if(cause instanceof UncheckedIOException io)throw io.getCause();
             if(cause instanceof RuntimeException runtime)throw runtime;if(cause instanceof Error error)throw error;throw failure;
         }
+        // A later module may revoke admission for processor bytes used by an earlier scope. Check after every worker finished.
+        scopes.replaceAll((name, scope) -> admit(scope, generation));
         var records=new TreeMap<byte[],byte[]>(Arrays::compareUnsigned);var faults=new java.util.TreeSet<String>();int count=0;
         for(var module:model.modules())for(int scope:new int[]{LocalStore.MAIN,LocalStore.TEST}) {
             var result=scopes.get(module.name()+(scope==0?"/main":"/test"));
@@ -99,6 +101,24 @@ public final class Stage3 {
         }
         var bodies=generation.commit(records);
         return new Result(project,bodies,scopes,count,new ArrayList<>(faults),(System.nanoTime()-started)/1_000_000);
+    }
+
+    private static Scope admit(Scope scope, BodyGeneration generation) {
+        var processed = scope.files().stream().map(File::computed).map(Attribute.Computed::proof)
+                .filter(proof -> proof.processorBody() != null).findFirst();
+        if (processed.isEmpty()) return scope;
+        var proof = processed.orElseThrow();
+        var violated = proof.processorBody().violations(proof.header().processor(), generation::get);
+        if (violated.isEmpty()) return scope;
+        var files = scope.files().stream().map(file -> {
+            var computed = file.computed();
+            if (computed.proof().processorBody() == null) return file;
+            var faults = new java.util.TreeSet<>(computed.faults());
+            for (var name : violated) faults.add(name + ": unsupported for reuse: recorded capability violation for these processor bytes");
+            var rejected = computed.proof().withProcessorBody(computed.proof().processorBody().rejectReuse());
+            return new File(file.path(), new Attribute.Computed(null, computed.result(), rejected, computed.uses(), new ArrayList<>(faults)));
+        }).toList();
+        return new Scope(files, scope.output(), scope.aggregateDiagnostics(), scope.descriptorEmissions(), scope.headerDiagnostics());
     }
 
     private Scope scope(ProjectModel model,Identity project,LocalRoot local,BodyGeneration generation,ProjectModel.Module module,int scope,

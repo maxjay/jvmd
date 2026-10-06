@@ -882,6 +882,10 @@ class ProcessedAttributeTest {
         var state=boot(digest,Map.of("p/Input.java","package p; public class Input {int read(){return One.VALUE;}}",
                 "p/Empty.java","package p; public class Empty {}"),List.of(processor),List.of());
         assertThat(state.faults()).isEmpty();allFiles(state,true); // Deliberately leave unrooted RS/U from a previous attribution.
+        Attribute.Computed admitted;
+        try (var pool = new Pool(state.pool(), 1)) { admitted = run(state, attribute(state, pool), "app/src/main/java/p/Input.java"); }
+        byte[] headerRoot = state.store().get(LocalStore.localRootKey(state.project()));
+        var capabilityKey = LocalStore.processorKey(state.plan().invocation().processorPathHash(), "fixture.Generate");
         var watched=state.store().withPrefix("RS").keySet().stream().map(state.store()::watchReads).toList();
         long writes=state.store().withPrefix("RS").keySet().stream().mapToLong(state.store()::writes).sum();
         String previous=System.getProperty(property);
@@ -898,7 +902,57 @@ class ProcessedAttributeTest {
             assertThat(state.store().withPrefix("RS").keySet().stream().mapToLong(state.store()::writes).sum()).isEqualTo(writes);
             state.tree().forEach(result.bodies().bodiesRoot(),id->state.store().get(MachineStore.nodeKey(id)),entry->
                     assertThat(new String(entry.key(),0,Math.min(3,entry.key().length),java.nio.charset.StandardCharsets.US_ASCII)).isNotEqualTo("RS|"));
+            assertThat(ProcessorRecords.Capability.decode(state.store().get(capabilityKey)).observed())
+                    .as("a body-discovered violation survives future boots for these processor bytes").isEqualTo(ProcessorRecords.VIOLATED);
+            assertThat(state.store().get(LocalStore.localRootKey(state.project()))).isEqualTo(headerRoot);
+            var local = LocalRoot.decode(digest, headerRoot);
+            assertThat(state.tree().get(local.local().hash(), id -> state.store().get(MachineStore.nodeKey(id)), capabilityKey))
+                    .as("mutable global history must not change a record rooted in a prior LOCAL snapshot").isNull();
+            assertThat(admitted.proof().valid(state.tree(), state.own(), state.route(), admitted.proof().header().processor(),
+                    admitted.proof().processorBody(), state.store()::get)).isFalse();
+            System.clearProperty(property); // The old violation, not another resource read, must now reject reuse.
+            var repeated = new dev.jvmd.boot.cold.stage3.Stage3(digest,state.tree(),Stage2Support.FEATURE,2,dir).run(state.store(),state.model());
+            assertThat(repeated.faults()).anyMatch(f -> f.contains("recorded capability violation"));
+            assertThat(repeated.scopes().get("app/main").files()).allSatisfy(file -> assertThat(file.computed().reusable()).isFalse());
+            assertThat(state.plan().generation("fixture.Generate", "app/src/main/java/p/Input.java")).isNull();
+            var fresh = new Stage2(digest,state.tree(),Stage2Support.FEATURE,2,dir,ClassFacts::of).run(state.store(),state.model());
+            assertThat(fresh.faults()).anyMatch(f -> f.contains("fixture.Generate") && f.contains("recorded capability violation"));
         } finally {if(previous==null)System.clearProperty(property);else System.setProperty(property,previous);}
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void aTestScopeViolationRevokesAlreadyCompletedMainScopeResults(Digest digest) throws Exception {
+        String property = "jvmd.fixture.test-scope-violation";
+        var processor = processor("""
+                boolean fail=false;
+                for(var element:root.getEnclosedElements()) if(element instanceof VariableElement field && field.getSimpleName().contentEquals("FAIL"))
+                    fail=Boolean.TRUE.equals(field.getConstantValue());
+                if(fail && Boolean.getBoolean("jvmd.fixture.test-scope-violation")) {
+                    try(var ignored=processingEnv.getFiler().getResource(javax.tools.StandardLocation.CLASS_PATH,"","missing-resource").openInputStream()) {}
+                    catch(java.io.IOException expected) {}
+                }
+                """ + GENERATE, "isolating");
+        String input = "package p; public class Input {public static final boolean FAIL=false; int read(){return One.VALUE;}}";
+        Stage2Support.write(dir, Map.of("app/src/test/java/p/Input.java", input.replace("FAIL=false", "FAIL=true")));
+        var state = boot(digest, Map.of("p/Input.java", input), List.of(processor), List.of());
+        assertThat(state.faults()).isEmpty();
+        String previous = System.getProperty(property);
+        try {
+            // Out-of-model injection makes only the later test scope perform the unsupported read.
+            System.setProperty(property, "true"); var expected = oracle(state);
+            var result = new dev.jvmd.boot.cold.stage3.Stage3(digest,state.tree(),Stage2Support.FEATURE,1,dir).run(state.store(),state.model());
+            var main = result.scopes().get("app/main"); var tests = result.scopes().get("app/test");
+            assertThat(tests.files()).anyMatch(file -> file.computed().faults().stream().anyMatch(f -> f.contains("resource read")));
+            assertThat(main.files()).allSatisfy(file -> {
+                assertThat(file.computed().proof().processorBody().processors()).allSatisfy(p -> assertThat(p.capability().reusable()).isTrue());
+                assertThat(file.computed().reusable()).isFalse();
+                assertThat(file.computed().faults()).anyMatch(f -> f.contains("recorded capability violation"));
+            });
+            var actual = new TreeMap<String,byte[]>(); main.files().forEach(file -> actual.putAll(state.classes(file.computed())));
+            sameBytes(actual, expected.classes());
+            state.tree().forEach(result.bodies().bodiesRoot(), id -> state.store().get(MachineStore.nodeKey(id)), entry ->
+                    assertThat(new String(entry.key(),0,Math.min(3,entry.key().length),java.nio.charset.StandardCharsets.US_ASCII)).isNotEqualTo("RS|"));
+        } finally { if(previous==null)System.clearProperty(property);else System.setProperty(property,previous); }
     }
 
     @ParameterizedTest @MethodSource("digests")

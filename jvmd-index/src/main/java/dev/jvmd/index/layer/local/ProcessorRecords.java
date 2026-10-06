@@ -79,19 +79,36 @@ public final class ProcessorRecords {
     }
 
     /** Ordered, detached observations. Output conservation and current-input admission are separate obligations. */
-    public record Body(List<Observation> processors, boolean rejected) {
+    public record Body(List<Observation> processors, boolean rejected, List<String> configuredProcessors) {
         public Body(List<Observation> processors) { this(processors, false); }
+        public Body(List<Observation> processors, boolean rejected) {
+            this(processors, rejected, processors.stream().map(Observation::processorClass).toList());
+        }
         public Body {
             processors = List.copyOf(processors);
+            configuredProcessors = List.copyOf(configuredProcessors);
             var names = new java.util.HashSet<String>();
             for (var processor : processors) if (!names.add(processor.processorClass()))
                 throw new IllegalArgumentException("Duplicate body processor");
+            var configured = new java.util.HashSet<>(configuredProcessors);
+            if (configured.size() != configuredProcessors.size() || configured.contains("") || !configured.containsAll(names))
+                throw new IllegalArgumentException("Invalid configured processor set");
         }
         public boolean reusable() {
             return !rejected && processors.stream().allMatch(p -> p.capability().declared() == ISOLATING && p.capability().reusable());
         }
         /** Scope admission or generated-output conservation can fail even when no body processor was invoked. */
-        public Body rejectReuse() { return new Body(processors, true); }
+        public Body rejectReuse() { return new Body(processors, true, configuredProcessors); }
+        public Body withConfiguredProcessors(List<String> names) { return new Body(processors, rejected, names); }
+        /** Admission metadata is not an ACI input. It includes configured aggregates that do not run in the body task. */
+        public List<String> violations(Context context, java.util.function.Function<byte[], byte[]> records) {
+            var violations = new ArrayList<String>();
+            for (var name : configuredProcessors) {
+                var bytes = records.apply(LocalStore.processorKey(context.processorPathHash(), name));
+                if (bytes != null && Capability.decode(bytes).observed() == VIOLATED) violations.add(name);
+            }
+            return List.copyOf(violations);
+        }
         /** Classification controls admission; only execution order and observed answers are result inputs. */
         public boolean sameInputs(Body other) {
             if (other == null || processors.size() != other.processors.size()) return false;
@@ -108,6 +125,8 @@ public final class ProcessorRecords {
         public void encode(Codec.Writer out) {
             out.u8(rejected ? 1 : 0).u32(processors.size());
             for (var processor : processors) { processor.inputs(out); out.raw(processor.capability().encode()); }
+            out.u32(configuredProcessors.size());
+            for (var name : configuredProcessors) out.str(name);
         }
         public static Body decode(Codec.Reader in) {
             int rejected = in.u8();
@@ -119,7 +138,9 @@ public final class ProcessorRecords {
                 var answers = presence == 0 ? null : in.lenBytes();
                 processors.add(new Observation(name, new Capability(in.u8(), in.u8()), answers));
             }
-            return new Body(processors, rejected == 1);
+            var configured = new ArrayList<String>();
+            for (int i = 0, n = in.count(); i < n; i++) configured.add(in.str());
+            return new Body(processors, rejected == 1, configured);
         }
     }
 

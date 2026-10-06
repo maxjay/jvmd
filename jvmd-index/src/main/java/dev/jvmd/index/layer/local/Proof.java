@@ -134,6 +134,8 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
         if (processor != null) {
             if (processorBody == null || currentBody == null || !processorBody.reusable() || !currentBody.reusable()
                     || !processorBody.sameInputs(currentBody)) return false;
+            if (!processorBody.configuredProcessors().equals(currentBody.configuredProcessors())
+                    || !processorBody.violations(processor, records).isEmpty()) return false;
         } else if (currentBody != null) return false;
         boolean sameOwn = own.r().equals(header.ownR());
         if (sameOwn && route.routeHash().equals(header.routeHash())) return true;

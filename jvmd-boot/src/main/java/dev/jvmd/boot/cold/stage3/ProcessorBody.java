@@ -39,7 +39,7 @@ final class ProcessorBody {
 
     ProcessorHost open(Digest digest, Attribute.Options options) throws IOException {
         var sources = plan.sources();
-        var host = ProcessorHost.bodies(path, digest, project.resolve(".jvmd/body-capture"), options.charset(), plan.invocation(), options.hash());
+        var host = ProcessorHost.bodies(path, digest, project.resolve(".jvmd/body-capture"), options.charset(), plan.currentInvocation(), options.hash());
         host.sourceDeclarations(sources);
         return host;
     }
@@ -47,9 +47,12 @@ final class ProcessorBody {
     /** Check every configured generator, including a native derivation whose processor did not run in this unit. */
     List<String> conservation(ProcessorHost host, FileRow row, URI source) {
         var faults = new ArrayList<String>();
-        for (var processor : plan.invocation().processors()) {
+        java.util.function.BiConsumer<String,String> reject = (name, reason) -> {
+            host.rejectReuse(name, reason); faults.add(name + ": unsupported for reuse: " + reason);
+        };
+        for (var processor : plan.currentInvocation().processors()) {
             var name = processor.processorClass(); var capability = processor.capability();
-            if (!capability.reusable()) faults.add(name + ": unsupported for reuse: Stage 2 scope did not admit this processor");
+            if (!capability.reusable()) reject.accept(name, "Stage 2 scope or current capability history did not admit this processor");
             var generated = host.outputs().stream().filter(o -> o.processorClass().equals(name)).toList();
             if (capability.declared() == ProcessorRecords.AGGREGATING
                     || capability.observed() != ProcessorRecords.GENERATOR && generated.isEmpty()) continue;
@@ -57,17 +60,17 @@ final class ProcessorBody {
             if (generation == null) {
                 // An uninvoked/no-op processor may have no origin at all. A known empty origin must still have PG/GEN.
                 if (!generated.isEmpty() || host.inputs().getOrDefault(name, List.of()).contains(source))
-                    faults.add(name + ": unsupported for reuse: no committed derivation for " + row.path());
+                    reject.accept(name, "no committed derivation for " + row.path());
             } else {
                 var outputs = new ArrayList<GeneratedOutputs.Output>();
                 for (var output : generated) {
                     if (output.kind() != JavaFileObject.Kind.SOURCE || !output.origins().equals(List.of(source)))
-                        faults.add(name + ": unsupported for reuse: output does not belong to this source: " + output.name());
+                        reject.accept(name, "output does not belong to this source: " + output.name());
                     outputs.add(new GeneratedOutputs.Output(switch (output.kind()) { case SOURCE -> 0; case CLASS -> 1; default -> 2; },
                             output.name(), output.bytes()));
                 }
                 if (!plan.matches(generation, outputs))
-                    faults.add(name + ": unsupported for reuse: generated output differs from committed GEN for " + row.path());
+                    reject.accept(name, "generated output differs from committed GEN for " + row.path());
             }
         }
         return List.copyOf(faults);

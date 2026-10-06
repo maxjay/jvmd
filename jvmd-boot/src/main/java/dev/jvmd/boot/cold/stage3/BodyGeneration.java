@@ -55,7 +55,7 @@ public final class BodyGeneration implements LocalStore {
     @Override public byte[] get(byte[] key) {
         open();
         var value=pending.get(key);if(value!=null)return value.clone();
-        if(machine(key) || tag(key,"S") || tag(key,"ST"))return store.get(key);
+        if(machine(key) || tag(key,"S") || tag(key,"ST") || tag(key,"PROC"))return store.get(key);
         if(!body(key) && !tag(key,"U"))return local(key);
         if(previous==null)return null;
         if(tag(key,"U")) {
@@ -83,6 +83,9 @@ public final class BodyGeneration implements LocalStore {
         checkContent(key,value);
         var existing=pending.putIfAbsent(key.clone(),value.clone());
         if(existing!=null && !Arrays.equals(existing,value))throw new IllegalStateException("Conflicting body records in one generation");
+    }
+    @Override public void observeProcessor(Identity path, String processor, dev.jvmd.index.layer.local.ProcessorRecords.Capability observation) {
+        open(); store.observeProcessor(path, processor, observation);
     }
     private void checkContent(byte[] key,byte[] value) {
         if(tag(key,"CF") && (key.length!=3+tree.digest().width()

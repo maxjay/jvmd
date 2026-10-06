@@ -114,6 +114,10 @@ public final class Stage2 {
                 boot.faults.addAll(defaults.notes());
                 runInDependencyOrder(boot, order);
 
+                // Global processor history can advance in another project/body generation without mutating this LOCAL snapshot.
+                for (var observation : boot.processorCapabilities.entrySet())
+                    store.observeProcessor(observation.getKey().path(), observation.getKey().name(), observation.getValue());
+
                 // Step 3: the LOCAL tree over the records. One batch for the records, one for the tree, one for the root.
                 var records = new ConcurrentSkipListMap<byte[], byte[]>(Arrays::compareUnsigned);
                 records.putAll(boot.definers);

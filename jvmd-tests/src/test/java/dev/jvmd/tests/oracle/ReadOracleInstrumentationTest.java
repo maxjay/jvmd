@@ -22,12 +22,20 @@ public class ReadOracleInstrumentationTest {
         Files.writeString(base, "package q; public class Base { public static int inherited(){return 1;} }");
         var child = directory.resolve("Child.java");
         Files.writeString(child, "package q; public class Child extends Base {}");
+        var pick = directory.resolve("Pick.java");
+        Files.writeString(pick, "package q; public class Pick {}");
+        var other = directory.resolve("Other.java");
+        Files.writeString(other, "package r; public class Other {}");
         var dependencies = Files.createDirectories(directory.resolve("dependencies"));
-        assertThat(compiler.run(null, null, null, "-proc:none", "-d", dependencies.toString(), base.toString(), child.toString())).isZero();
+        assertThat(compiler.run(null, null, null, "-proc:none", "-d", dependencies.toString(),
+                base.toString(), child.toString(), pick.toString(), other.toString())).isZero();
         var source = directory.resolve("App.java");
         Files.writeString(source, """
                 package p;
+                import q.*;
+                import r.*;
                 class App {
+                    Pick pick;
                     Object field() { return q.Base.noField; }
                     Object method() { return q.Base.noMethod(); }
                     int inherited() { return q.Child.inherited(); }
@@ -40,15 +48,19 @@ public class ReadOracleInstrumentationTest {
         int result = compiler.run(null, null, errors, "-proc:none", "-classpath", dependencies.toString(), source.toString());
         var trace = ReadOracleTrace.finish();
         assertThat(ReadOracleTrace.hooks()).contains("com/sun/tools/javac/jvm/ClassReader",
-                "com/sun/tools/javac/code/Symbol", "com/sun/tools/javac/comp/Resolve");
+                "com/sun/tools/javac/code/Symbol", "com/sun/tools/javac/comp/Resolve", "com/sun/tools/javac/code/Scope$ScopeImpl");
         assertThat(result).as(errors.toString()).isNotZero();
         assertThat(trace.loaded()).contains("q/Base", "java/lang/Object").doesNotContain("p/App");
         assertThat(trace.absent()).contains(new ReadOracleTrace.Missing("D", "q/Missing", ""),
                 new ReadOracleTrace.Missing("N", "q/Base", "Nested"),
                 new ReadOracleTrace.Missing("FIELD", "q/Base", "noField"),
                 new ReadOracleTrace.Missing("METHOD", "q/Base", "noMethod"),
-                new ReadOracleTrace.Missing("METHOD", "q/Child", "inherited"))
-                .doesNotContain(new ReadOracleTrace.Missing("METHOD", "q/Base", "inherited"));
+                new ReadOracleTrace.Missing("METHOD", "q/Child", "inherited"),
+                new ReadOracleTrace.Missing("D", "p/Pick", ""),
+                new ReadOracleTrace.Missing("D", "r/Pick", ""),
+                new ReadOracleTrace.Missing("D", "java/lang/Pick", ""))
+                .doesNotContain(new ReadOracleTrace.Missing("METHOD", "q/Base", "inherited"),
+                        new ReadOracleTrace.Missing("D", "q/Pick", ""));
         ReadOracleTrace.begin(new Row("p/App.java", List.of("p/App")));
         ReadOracleTrace.suspend();
         compiler.run(null, null, errors, "-proc:none", "-classpath", dependencies.toString(), source.toString());

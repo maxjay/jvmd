@@ -31,6 +31,7 @@ public final class ReadOracleTrace {
         final Set<Missing> absent = new TreeSet<>();
         final Set<Object> nonemptyIterators = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         int suspended;
+        int globalTypes;
         Trace(Object row) { file = call(row, "path").toString(); own = new TreeSet<>(strings(call(row, "typeKeys"))); poolOnly = false; }
         Trace(String file) { this.file = file; own = Set.of(); poolOnly = true; }
         boolean own(String type) { return own.contains(type); }
@@ -54,10 +55,40 @@ public final class ReadOracleTrace {
         var trace = CURRENT.get(); CURRENT.remove();
         if (trace == null) throw new AssertionError("Read oracle did not start");
         if (trace.suspended != 0) throw new AssertionError("Unbalanced collector exclusion");
+        if (trace.globalTypes != 0) throw new AssertionError("Unbalanced global type lookup");
         return new Snapshot(trace.file, List.copyOf(trace.loaded), List.copyOf(trace.absent));
     }
     public static void suspend() { var trace = CURRENT.get(); if (trace != null) trace.suspended++; }
     public static void resume() { var trace = CURRENT.get(); if (trace != null) trace.suspended--; }
+    public static void beginGlobalType() { var trace = CURRENT.get(); if (trace != null && trace.suspended == 0) trace.globalTypes++; }
+    public static void endGlobalType() { var trace = CURRENT.get(); if (trace != null && trace.suspended == 0) trace.globalTypes--; }
+
+    /** Empty package-member iterators never reach Resolve.loadClass. Observe them without forcing iteration. */
+    public static Iterable<?> names(Iterable<?> original, Object scope, Object name) {
+        var trace = CURRENT.get();
+        if (trace == null || trace.suspended != 0 || trace.globalTypes == 0) return original;
+        var owner = field(scope, "owner");
+        if (owner == null || !owner.getClass().getName().equals("com.sun.tools.javac.code.Symbol$PackageSymbol")
+                || field(owner, "members_field") != scope) return original;
+        String pkg = field(owner, "fullname").toString().replace('.', '/');
+        String type = pkg.isEmpty() ? name.toString() : pkg + "/" + name;
+        return () -> new java.util.Iterator<Object>() {
+            final java.util.Iterator<?> iterator = original.iterator();
+            boolean seen;
+            boolean reported;
+            @Override public boolean hasNext() {
+                boolean answer = iterator.hasNext();
+                if (answer) seen = true;
+                else if (!seen && !reported && CURRENT.get() == trace && trace.globalTypes > 0 && trace.suspended == 0) {
+                    if (!trace.own(type)) trace.absent.add(new Missing("D", type, ""));
+                    reported = true;
+                }
+                return answer;
+            }
+            @Override public Object next() { var next = iterator.next(); seen = true; return next; }
+            @Override public void remove() { iterator.remove(); }
+        };
+    }
 
     public static void loaded(Object symbol) {
         var trace = CURRENT.get();

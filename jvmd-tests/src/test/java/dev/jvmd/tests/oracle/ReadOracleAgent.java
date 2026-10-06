@@ -28,6 +28,8 @@ public final class ReadOracleAgent {
             "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)V");
     private static final MethodTypeDesc ITERATOR = MethodTypeDesc.ofDescriptor(
             "(Ljava/lang/Object;ZLjava/lang/Object;Ljava/lang/Object;)Z");
+    private static final MethodTypeDesc NAMES = MethodTypeDesc.ofDescriptor(
+            "(Ljava/lang/Iterable;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Iterable;");
 
     public static void premain(String arguments, Instrumentation instrumentation) throws Exception {
         var jar = Path.of(arguments);
@@ -57,6 +59,7 @@ public final class ReadOracleAgent {
             if (name == null || !Set.of("dev/jvmd/boot/cold/stage3/Attribute", "dev/jvmd/index/layer/local/ProofCollector",
                     "dev/jvmd/boot/cold/stage3/Pool", "dev/jvmd/boot/cold/stage3/Arrange",
                     "com/sun/tools/javac/jvm/ClassReader", "com/sun/tools/javac/code/Symbol",
+                    "com/sun/tools/javac/code/Scope$ScopeImpl",
                     "com/sun/tools/javac/comp/Resolve").contains(name)) return null;
             try {
                 var cf = ClassFile.of();
@@ -74,6 +77,8 @@ public final class ReadOracleAgent {
                     boolean read = name.endsWith("/ClassReader") && methodName.equals("readClassFile");
                     boolean complete = name.endsWith("/Symbol") && methodName.equals("complete");
                     boolean methodScope = name.endsWith("/Resolve") && methodName.equals("findMethodInScope");
+                    boolean globalType = name.endsWith("/Resolve") && methodName.equals("findGlobalType");
+                    boolean namedScope = name.endsWith("/Scope$ScopeImpl") && methodName.equals("getSymbolsByName");
                     int owner = -1, key = -1;
                     if (name.endsWith("/Resolve")) {
                         switch (methodName) {
@@ -84,7 +89,7 @@ public final class ReadOracleAgent {
                         }
                     }
                     int ownerSlot = owner, nameSlot = key;
-                    if (!(attribute || pool || arrange || collector || read || complete || methodScope || key >= 0)) { builder.with(code); return; }
+                    if (!(attribute || pool || arrange || collector || read || complete || methodScope || globalType || namedScope || key >= 0)) { builder.with(code); return; }
                     hooks.merge(methodName, 1, Integer::sum);
                     if (key >= 0 && !descriptor.returnType().descriptorString().equals("Lcom/sun/tools/javac/code/Symbol;"))
                         throw new IllegalStateException("Unexpected javac lookup descriptor: " + methodName + descriptor);
@@ -93,7 +98,8 @@ public final class ReadOracleAgent {
                         @Override public void atStart(java.lang.classfile.CodeBuilder out) {
                             if (attribute) out.aload(1).invokestatic(TAP, "begin", OBJECT);
                             if (pool) out.aload(1).invokestatic(TAP, "beginPool", OBJECT);
-                            if (attribute || pool) { start = out.newLabel(); out.labelBinding(start); }
+                            if (globalType) out.invokestatic(TAP, "beginGlobalType", NONE);
+                            if (attribute || pool || globalType) { start = out.newLabel(); out.labelBinding(start); }
                             if (collector) out.invokestatic(TAP, "suspend", NONE);
                             if (read || complete) out.aload(read ? 1 : 0).invokestatic(TAP, "loaded", OBJECT);
                         }
@@ -109,6 +115,8 @@ public final class ReadOracleAgent {
                                 if (attribute) out.dup().invokestatic(TAP, "end", OBJECT);
                                 if (pool) out.invokestatic(TAP, "endPool", NONE);
                                 if (arrange) out.dup().invokestatic(TAP, "arranged", OBJECT);
+                                if (globalType) out.invokestatic(TAP, "endGlobalType", NONE);
+                                if (namedScope) out.aload(0).aload(1).invokestatic(TAP, "names", NAMES);
                                 if (collector) out.invokestatic(TAP, "resume", NONE);
                                 if (nameSlot >= 0 && result.opcode() == Opcode.ARETURN) {
                                     out.dup().ldc(methodName);
@@ -122,7 +130,7 @@ public final class ReadOracleAgent {
                             if (start != null) {
                                 var end = out.newLabel(); var handler = out.newLabel();
                                 out.labelBinding(end).exceptionCatchAll(start, end, handler).labelBinding(handler)
-                                        .invokestatic(TAP, "abort", NONE).athrow();
+                                        .invokestatic(TAP, globalType ? "endGlobalType" : "abort", NONE).athrow();
                             }
                         }
                     });
@@ -134,8 +142,9 @@ public final class ReadOracleAgent {
                     case "dev/jvmd/index/layer/local/ProofCollector" -> Map.of("bodies", 1);
                     case "com/sun/tools/javac/jvm/ClassReader" -> Map.of("readClassFile", 1);
                     case "com/sun/tools/javac/code/Symbol" -> Map.of("complete", 1);
+                    case "com/sun/tools/javac/code/Scope$ScopeImpl" -> Map.of("getSymbolsByName", 1);
                     default -> Map.of("findField", 1, "findImmediateMemberType", 1, "findMethod", 2, "loadClass", 1,
-                            "findMethodInScope", 1, "findMethodInScope#hasNext", 1);
+                            "findMethodInScope", 1, "findMethodInScope#hasNext", 1, "findGlobalType", 1);
                 };
                 if (!hooks.equals(expected)) throw new AssertionError("Native oracle hook drift: " + name + " " + hooks);
                 ReadOracleTrace.installed(name);

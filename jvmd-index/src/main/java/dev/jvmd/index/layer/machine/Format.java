@@ -7,10 +7,10 @@ import dev.jvmd.core.hash.Digest;
  * key means, so a change to any is a new generation directory and a cold boot, never a migration.
  */
 public record Format(int layout, String digestName, int jdkFeature, String parser) {
-    /** Bumped when any byte layout changes. 4 separates T/res from A/tail, binds fact hashes to keys and carries a beside k. */
+    /** The storage family. 4 separates T/res from A/tail, binds fact hashes to keys and carries a beside k. Incompatible fact projections bump PARSER too. */
     public static final int LAYOUT = 4;
-    /** Bumped when {@link ClassFacts} would produce different facts for the same class bytes. "2": the outer class joined res and annotations became inline structural values. */
-    public static final String PARSER = "2";
+    /** Bumped when {@link ClassFacts} would produce different facts for the same class bytes. "3": exact innerName/N projection and warning codec, with persisted AL roots. */
+    public static final String PARSER = "3";
 
     public static Format of(Digest digest, int jdkFeature) { return new Format(LAYOUT, digest.name(), jdkFeature, PARSER); }
 

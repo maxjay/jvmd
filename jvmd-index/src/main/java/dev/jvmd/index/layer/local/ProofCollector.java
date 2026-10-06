@@ -6,9 +6,11 @@ import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.NestingKind;
@@ -36,16 +38,17 @@ public final class ProofCollector {
         var packages = new LinkedHashSet<String>();
         packages.add("java/lang");
         var explicit = new HashSet<String>();
-        var memberImports = new LinkedHashSet<String>();
+        var memberImports = new LinkedHashSet<TypeElement>();
         var found = new LinkedHashSet<HeaderProof.Absence>();
+        var hierarchy = new Hierarchy(types, elements);
         for (var imported : unit.getImports()) {
             // Imports classify absolute package/type prefixes too; the main scanner deliberately skips imports.
-            packagePrefixes(TreePath.getPath(unit, imported.getQualifiedIdentifier()), trees, found);
+            qualifiedPrefixes(TreePath.getPath(unit, imported.getQualifiedIdentifier()), trees, hierarchy, found);
             String name = imported.getQualifiedIdentifier().toString();
             if (name.endsWith(".*") && imported.getQualifiedIdentifier() instanceof MemberSelectTree selection) {
                 var owner = trees.getElement(TreePath.getPath(unit, selection.getExpression()));
                 if (owner instanceof TypeElement type) {
-                    for (var t : closure(type.asType(), types, elements)) memberImports.add(binary(t, elements));
+                    memberImports.add(type);
                 } else if (!imported.isStatic()) packages.add(name.substring(0, name.length() - 2).replace('.', '/'));
             } else explicit.add(name.substring(name.lastIndexOf('.') + 1));
         }
@@ -82,8 +85,7 @@ public final class ProofCollector {
             }
 
             @Override public Void visitMemberSelect(MemberSelectTree node, Void p) {
-                if (trees.getElement(getCurrentPath()) instanceof javax.lang.model.element.PackageElement pkg)
-                    found.add(new HeaderProof.Absence(0, pkg.getQualifiedName().toString().replace('.', '/'), ""));
+                qualifiedSelection(getCurrentPath(), trees, hierarchy, found);
                 return super.visitMemberSelect(node, p);
             }
 
@@ -99,7 +101,7 @@ public final class ProofCollector {
                 for (var path = getCurrentPath(); path != null; path = path.getParentPath()) {
                     if (!(path.getLeaf() instanceof ClassTree)) continue;
                     if (!(trees.getElement(path) instanceof TypeElement enclosing)) continue;
-                    for (var type : closure(enclosing.asType(), types, elements)) {
+                    for (var type : hierarchy.closure(enclosing)) {
                         String name = binary(type, elements);
                         if (!own.contains(name)) found.add(new HeaderProof.Absence(1, name, simple));
                     }
@@ -107,18 +109,19 @@ public final class ProofCollector {
                 if (packageHead) {
                     found.add(new HeaderProof.Absence(0, qualified(ownPackage, simple), ""));
                     for (var pkg : packages) found.add(new HeaderProof.Absence(0, qualified(pkg, simple), ""));
-                    for (var imported : memberImports) found.add(new HeaderProof.Absence(1, imported, simple));
+                    for (var imported : memberImports) hierarchy.memberAbsences(imported, simple, found);
                     return null;
                 }
                 if (explicit.contains(simple) || own.contains(binary(resolved, elements))) return null;
                 String answered = elements.getPackageOf(resolved).getQualifiedName().toString().replace('.', '/');
-                boolean memberAnswer = resolved.getEnclosingElement() instanceof TypeElement owner && memberImports.contains(binary(owner, elements));
+                boolean memberAnswer = resolved.getEnclosingElement() instanceof TypeElement owner
+                        && memberImports.stream().anyMatch(imported -> hierarchy.closure(imported).contains(owner));
                 if (resolved.getNestingKind() != NestingKind.TOP_LEVEL && !memberAnswer) return null;
                 // A package answer wins before all on-demand imports: those absences were never relevant to this lookup.
                 if (!memberAnswer && (answered.equals(ownPackage) || !packages.contains(answered))) return null;
                 found.add(new HeaderProof.Absence(0, qualified(ownPackage, simple), ""));
                 for (var pkg : packages) if (memberAnswer || !pkg.equals(answered)) found.add(new HeaderProof.Absence(0, qualified(pkg, simple), ""));
-                for (var imported : memberImports) found.add(new HeaderProof.Absence(1, imported, simple));
+                for (var imported : memberImports) hierarchy.memberAbsences(imported, simple, found);
                 return null;
             }
         }.scan(unit, null);
@@ -126,12 +129,62 @@ public final class ProofCollector {
                 .thenComparing(HeaderProof.Absence::type).thenComparing(HeaderProof.Absence::name)).toList();
     }
 
-    private static void packagePrefixes(TreePath path, Trees trees, Set<HeaderProof.Absence> into) {
+    private static void qualifiedPrefixes(TreePath path, Trees trees, Hierarchy hierarchy, Set<HeaderProof.Absence> into) {
         while (path != null) {
-            if (trees.getElement(path) instanceof javax.lang.model.element.PackageElement pkg)
-                into.add(new HeaderProof.Absence(0, pkg.getQualifiedName().toString().replace('.', '/'), ""));
+            qualifiedSelection(path, trees, hierarchy, into);
             if (!(path.getLeaf() instanceof MemberSelectTree selection)) break;
             path = new TreePath(path, selection.getExpression());
+        }
+    }
+
+    private static void qualifiedSelection(TreePath path, Trees trees, Hierarchy hierarchy, Set<HeaderProof.Absence> into) {
+        var selected = trees.getElement(path);
+        if (selected instanceof javax.lang.model.element.PackageElement pkg)
+            into.add(new HeaderProof.Absence(0, pkg.getQualifiedName().toString().replace('.', '/'), ""));
+        if (!(path.getLeaf() instanceof MemberSelectTree selection) || selection.getIdentifier().contentEquals("*")) return;
+        var qualifier = trees.getElement(new TreePath(path, selection.getExpression()));
+        if (!(qualifier instanceof TypeElement type)) return;
+        // javac does not attach a selected symbol to every static import. Its completed member scope supplies that answer.
+        String name = selection.getIdentifier().toString();
+        boolean memberType = selected instanceof TypeElement resolved && resolved.getEnclosingElement() instanceof TypeElement;
+        if (selected == null) memberType = hierarchy.elements.getAllMembers(type).stream()
+                .anyMatch(e -> e instanceof TypeElement && e.getSimpleName().contentEquals(name));
+        if (memberType) hierarchy.memberAbsences(type, name, into);
+    }
+
+    /** Unit-local javac traversal cache; no identity or persisted side channel. */
+    private static final class Hierarchy {
+        private final Types types;
+        private final Elements elements;
+        private final Map<String, List<TypeElement>> closures = new HashMap<>();
+        private final Map<String, List<HeaderProof.Absence>> members = new HashMap<>();
+
+        Hierarchy(Types types, Elements elements) { this.types = types; this.elements = elements; }
+
+        List<TypeElement> closure(TypeElement type) {
+            return closures.computeIfAbsent(binary(type, elements), _ -> ProofCollector.closure(type.asType(), types, elements));
+        }
+
+        void memberAbsences(TypeElement start, String name, Set<HeaderProof.Absence> into) {
+            into.addAll(members.computeIfAbsent(binary(start, elements) + "\0" + name, _ -> {
+                var found = new ArrayList<HeaderProof.Absence>();
+                var pending = new ArrayList<TypeMirror>();
+                var seen = new HashSet<String>();
+                pending.add(start.asType());
+                for (int i = 0; i < pending.size(); i++) {
+                    var mirror = pending.get(i);
+                    if (!(mirror instanceof DeclaredType declared) || mirror.getKind() == TypeKind.ERROR) continue;
+                    var owner = (TypeElement) declared.asElement();
+                    String key = binary(owner, elements);
+                    if (!seen.add(key)) continue;
+                    // Resolve.findMemberType stops at a declaration on EACH branch. An ancestor reachable on a different
+                    // branch still matters: JLS 8.5 permits distinct inherited declarations and then diagnoses ambiguity.
+                    if (owner.getEnclosedElements().stream().anyMatch(e -> e instanceof TypeElement && e.getSimpleName().contentEquals(name))) continue;
+                    found.add(new HeaderProof.Absence(1, key, name));
+                    pending.addAll(types.directSupertypes(mirror));
+                }
+                return List.copyOf(found);
+            }));
         }
     }
 

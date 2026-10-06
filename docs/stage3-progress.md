@@ -133,3 +133,33 @@ mvn -B -pl jvmd-tests -am test '-Dtest=MachineColdBootTest,ClassMemoTest,Content
 ```
 
 The previous hosted Tests and benchmark workflows passed at 08534aa2. Those runs do not cover this amendment; fresh exact-head CI is required. PR #60 remains open pending Max's explicit merge approval. Appendix F and Stage 3 body attribution remain unfinished, and warm remains untouched.
+
+
+### Third mathematical audit, 2026-10-06
+
+The audit of PR #60 at 22067f1c found two immediate correctness defects and required a deeper Stage 2 reconciliation before PR B. Both immediate defects reproduced in `review-third-red.log`: six expected failures (two generation decisions and two member-lookup cases under both digests), no errors. The initial repair passed 31 focused tests; the expanded branch/import and architecture checks passed 32 tests in `review-third-branches.log`.
+
+- MACHINE is now `layout=4;parser=3`, and LOCAL is `local=2`. A committed old parser-2 generation remains untouched while BootDecision cold-boots the distinct parser-3 directory; a local=1 root cannot take the current-format skip branch. No migration or legacy fact decoding was introduced.
+- Qualified inherited member-type references, single static imports and static on-demand imports record exact N absences along every lookup branch before a declaration. Sub/Mid insertion tests cover own and route providers and assert unchanged containing-owner oSums. Hidden ancestors are excluded unless another branch reaches them; that second path can introduce ambiguity. A unit-local cache avoids repeated closure and named-member traversal. No new persisted fingerprint was added.
+- The authoritative Stage 3 document and repository snapshot were amended together, still revision 123 plus the dated review amendment. Their SHA-256 is `27857293052495a85426595bc38aff56f58523f6cfcfb82029fc784722438f6b`. Explicit UTF-8 read/write preserves the original mathematical symbols.
+
+The 244-test full gate (`review-third-final-gate.log`, 3m42s) passed 243 tests and failed only the existing MachineColdBootTest assertion hard-coding parser=2. That assertion now expects parser=3; its entire 27-test suite passed with no failures/errors/skips in `review-third-format-assertion.log` (38.4s). No production code changed after the full gate.
+
+The own-project oracle covers 13 modules / 26 scopes / 492 sources, with 91 jars indexed on the spot. Both digests have exact source/class k equality in 26/26 scopes, no annotation identity differences and zero faults:
+
+| Digest | Wall ms | Header ms | Facts ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 5,271 | 3,519 | 1,330 | 157 | 22,141 |
+| SHA3-256 | 3,946 | 2,318 | 800 | 159 | 22,142 |
+
+Maven model/build time (30.7/30.0s) is excluded. Sampled used heap above baseline was 843/1,341 MB, without controlling intervening GC. These sequential measurements are not a performance comparison. Raw reports: [SHA-256](measurements/layout4-review3-stage2-SHA-256.txt), [SHA3-256](measurements/layout4-review3-stage2-SHA3-256.txt).
+
+Before PR B, the required Stage 2 work is:
+
+1. Replace positive header oSum dependencies with actual T ranges, including exact constant fields, annotation declaration reads and headers along lookup paths. A Mid superclass edit must invalidate a Sub.Inner lookup even when the selected Base.Inner and every old N absence remain unchanged. Keep ownR and definer sums as shortcuts only.
+2. Replace consumer lists with one empty reverse record per dependency/project/path, including expected-zero T/N/D reads. Prove delta-to-prefix-to-candidate fan-out without scanning F rows, and preserve distinct paths for identical source bytes.
+3. Replace the full counts-map copy in DefinerIndex.fold with persistent state. Make distance non-allocating; eliminate exhaustive nearest-state search through route ancestry before claiming project-size-independent routing cost.
+4. Retain full special annotations in A while keeping only the minimal warning bits in res; prove Deprecated.since changes A/a alone. Fact.byName precomputation remains an optional measured optimization, with N still a deterministic projection of m/res.
+5. Rewrite the Stage 2 authority (`C:\Users\Max\Downloads\jvmd stage 2 LOCAL cold boot.md`) and reconcile Appendix A with those implemented proof/reverse/state rules. No RA, nSum, broad processor dependencies or storage-existence dedup reads.
+
+The in-progress processor replay work remains preserved in the separate feat/jvmd-stage-3 tree. Appendix F, body attribution and the Stage 3 invariants are unfinished. PR #60 stays open pending explicit merge approval; warm remains untouched.

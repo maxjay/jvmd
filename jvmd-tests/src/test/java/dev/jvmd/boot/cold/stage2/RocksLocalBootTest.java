@@ -93,6 +93,19 @@ class RocksLocalBootTest {
                 }
                 assertThat(root.local().count()).as("every record is in the LOCAL tree").isGreaterThan(kinds.get("MOD") + kinds.get("RT") + kinds.get("F"));
             }
+            // A legacy LOCAL root in an otherwise current MACHINE cannot take the warm/skip branch either.
+            try (var store = Generation.of(indexDir, format).openLocal()) {
+                var root = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(projectKey)));
+                store.putLocalRoot(projectKey, LocalRoot.encode(digest,
+                        format + ";local=1;javac=" + Runtime.version().feature(), root.local(), root.machineRoot(), root.modelHash()));
+            }
+            var rebuilt = BootDecision.local(indexDir, model, repository);
+            assertThat(rebuilt).as("local=1 must not skip the current LOCAL cold boot").isPresent();
+            assertThat(rebuilt.orElseThrow().faults()).isEmpty();
+            try (var store = Generation.of(indexDir, format).open()) {
+                assertThat(LocalRoot.formatOf(store.get(LocalStore.localRootKey(projectKey)))).isEqualTo(LocalFormat.of(format));
+            }
+            assertThat(BootDecision.local(indexDir, model, repository)).isEmpty();
         } finally { Stage2Support.delete(repository); Stage2Support.delete(project); Stage2Support.delete(indexDir); }
     }
 

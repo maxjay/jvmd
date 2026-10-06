@@ -196,6 +196,85 @@ class HeaderAbsencesTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void qualifiedInheritedMemberTypesProveEveryOwnerBeforeTheWinner(Digest digest) throws Exception {
+        for (var provider : List.of("dep", "app")) for (var owner : List.of("Sub", "Mid")) {
+            Stage2Support.write(root, Map.of(
+                    provider + "/src/main/java/q/Above.java", "package q; public class Above {}",
+                    provider + "/src/main/java/q/Base.java", "package q; public class Base extends Above { public static class Inner {} }",
+                    provider + "/src/main/java/q/Mid.java", "package q; public class Mid extends Base {}",
+                    provider + "/src/main/java/q/Sub.java", "package q; public class Sub extends Mid {}",
+                    "app/src/main/java/p/B.java", "package p; public class B { q.Sub.Inner field; }",
+                    "app/src/main/java/p/OnDemand.java", "package p; import static q.Sub.*; public class OnDemand { Inner field; }",
+                    "app/src/main/java/p/Imported.java", "package p; import static q.Sub.Inner; public class Imported { Inner field; }",
+                    "app/src/main/java/p/Unrelated.java", "package p; public class Unrelated { void body() { q.Sub.Inner local; } }"));
+            var before = boot(digest);
+            assertThat(before.result.faults()).isEmpty();
+            for (var consumer : List.of("B", "Imported", "OnDemand")) assertThat(row(digest, before, consumer).absences())
+                    .contains(new HeaderProof.Absence(1, "q/Sub", "Inner"), new HeaderProof.Absence(1, "q/Mid", "Inner"))
+                    .doesNotContain(new HeaderProof.Absence(1, "q/Above", "Inner"));
+            assertThat(row(digest, before, "Unrelated").absences()).doesNotContain(new HeaderProof.Absence(1, "q/Sub", "Inner"));
+            Stage2Support.write(root, Map.of(provider + "/src/main/java/q/" + owner + ".java",
+                    "package q; public class " + owner + " extends " + (owner.equals("Sub") ? "Mid" : "Base") + " { public static class Inner {} }"));
+            var after = boot(digest);
+            assertThat(after.result.faults()).isEmpty();
+            for (var consumer : List.of("B", "Imported", "OnDemand")) assertThat(valid(digest, row(digest, before, consumer), after)).isFalse();
+            assertThat(valid(digest, row(digest, before, "Unrelated"), after)).isTrue();
+            var tree = new ContentTree(digest);
+            var oldLeaf = MachineLeaf.decode(before.store.get(MachineStore.leafKey(before.result.leaves().get(provider + "/main"))), digest.width());
+            var newLeaf = MachineLeaf.decode(after.store.get(MachineStore.leafKey(after.result.leaves().get(provider + "/main"))), digest.width());
+            for (var unchanged : List.of("q/Sub", "q/Mid", "q/Base"))
+                assertThat(tree.get(newLeaf.oHash(), h -> after.store.get(MachineStore.nodeKey(h)), Keys.ownerKey(unchanged)).h())
+                        .as("the qualified lookup must fail without a containing-owner oSum change")
+                        .isEqualTo(tree.get(oldLeaf.oHash(), h -> before.store.get(MachineStore.nodeKey(h)), Keys.ownerKey(unchanged)).h());
+            for (var name : List.of("Above", "Base", "Mid", "Sub")) java.nio.file.Files.delete(root.resolve(provider + "/src/main/java/q/" + name + ".java"));
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void qualifiedMemberLookupChecksCompetingBranchesButStopsAtTheWinner(Digest digest) throws Exception {
+        Stage2Support.write(root, Map.of(
+                "dep/src/main/java/q/Above.java", "package q; public interface Above {}",
+                "dep/src/main/java/q/Base.java", "package q; public class Base implements Above { public static class Inner {} }",
+                "dep/src/main/java/q/Side.java", "package q; public interface Side {}",
+                "dep/src/main/java/q/Sub.java", "package q; public class Sub extends Base implements Side {}",
+                "app/src/main/java/p/B.java", "package p; public class B { q.Sub.Inner field; }",
+                "app/src/main/java/p/OnDemand.java", "package p; import static q.Sub.*; public class OnDemand { Inner field; }",
+                    "app/src/main/java/p/Imported.java", "package p; import static q.Sub.Inner; public class Imported { Inner field; }"));
+        var before = boot(digest);
+        assertThat(before.result.faults()).isEmpty();
+        for (var name : List.of("B", "Imported", "OnDemand")) assertThat(row(digest, before, name).absences())
+                .contains(new HeaderProof.Absence(1, "q/Sub", "Inner"), new HeaderProof.Absence(1, "q/Side", "Inner"))
+                .doesNotContain(new HeaderProof.Absence(1, "q/Base", "Inner"), new HeaderProof.Absence(1, "q/Above", "Inner"));
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/Above.java", "package q; public interface Above { class Inner {} }"));
+        var hidden = boot(digest);
+        assertThat(hidden.result.faults()).isEmpty();
+        for (var name : List.of("B", "Imported", "OnDemand")) assertThat(valid(digest, row(digest, before, name), hidden))
+                .as("Base.Inner stops lookup before its own ancestor Above").isTrue();
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/Side.java", "package q; public interface Side { class Inner {} }"));
+        var ambiguous = boot(digest);
+        for (var name : List.of("B", "Imported", "OnDemand")) assertThat(valid(digest, row(digest, before, name), ambiguous)).isFalse();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void aWinningOwnersAncestorStillMattersWhenReachedThroughAnotherBranch(Digest digest) throws Exception {
+        Stage2Support.write(root, Map.of(
+                "dep/src/main/java/q/Above.java", "package q; public interface Above {}",
+                "dep/src/main/java/q/Base.java", "package q; public class Base implements Above { public static class Inner {} }",
+                "dep/src/main/java/q/Side.java", "package q; public interface Side extends Above {}",
+                "dep/src/main/java/q/Sub.java", "package q; public class Sub extends Base implements Side {}",
+                "app/src/main/java/p/B.java", "package p; public class B { q.Sub.Inner field; }",
+                "app/src/main/java/p/Imported.java", "package p; import static q.Sub.Inner; public class Imported { Inner field; }",
+                "app/src/main/java/p/OnDemand.java", "package p; import static q.Sub.*; public class OnDemand { Inner field; }"));
+        var before = boot(digest);
+        assertThat(before.result.faults()).isEmpty();
+        for (var name : List.of("B", "Imported", "OnDemand")) assertThat(row(digest, before, name).absences())
+                .contains(new HeaderProof.Absence(1, "q/Above", "Inner"));
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/Above.java", "package q; public interface Above { class Inner {} }"));
+        var ambiguous = boot(digest);
+        for (var name : List.of("B", "Imported", "OnDemand")) assertThat(valid(digest, row(digest, before, name), ambiguous)).isFalse();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void longerPackagePrefixesAreExactAbsencesInHeadersAndImports(Digest digest) throws Exception {
         for (var provider : List.of("dep", "app")) for (var prefix : List.of("q/r", "q/r/s")) {
             Stage2Support.write(root, Map.of(

@@ -382,7 +382,7 @@ class MachineColdBootTest {
         assertThat(store.kinds().keySet()).containsExactlyInAnyOrder("L", "N", "P", "AL", "ROOT");
         var record = MachineTree.decodeRoot(Sha256.INSTANCE, store.root());
         assertThat(record.format()).isEqualTo(Format.of(Sha256.INSTANCE, 25).toString());
-        assertThat(record.format()).isEqualTo("layout=4;digest=SHA-256;jdk=25;parser=2");
+        assertThat(record.format()).isEqualTo("layout=4;digest=SHA-256;jdk=25;parser=3");
     }
 
     @Test void faultsAreRecordedAndNeverFatal() throws Exception {

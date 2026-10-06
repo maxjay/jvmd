@@ -4,13 +4,13 @@ import dev.jvmd.core.tree.Codec;
 import dev.jvmd.index.layer.machine.Ann;
 import dev.jvmd.index.layer.machine.Keys;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.PackageElement;
+import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
@@ -46,6 +46,8 @@ public final class ProcessorElementProjection {
             descriptor.append(')').append(descriptor(method.getReturnType()));
             return Keys.memberKey(internal((TypeElement) method.getEnclosingElement()), Keys.METHOD, method.getSimpleName().toString(), descriptor.toString());
         }
+        if (element instanceof RecordComponentElement component)
+            return Keys.processorElementKey(key(component.getEnclosingElement()), component.getKind().name(), component.getSimpleName().toString());
         if (element instanceof VariableElement variable && variable.getEnclosingElement() instanceof TypeElement owner)
             return Keys.memberKey(internal(owner), Keys.FIELD, variable.getSimpleName().toString(), descriptor(variable.asType()));
         var parent = element.getEnclosingElement();
@@ -63,7 +65,7 @@ public final class ProcessorElementProjection {
         // Preserve absence separately from an empty doc comment: Elements.getDocComment exposes both states.
         var comment = elements.getDocComment(element);
         out.u8(comment == null ? 0 : 1);
-        if (comment != null) out.str(comment);
+        if (comment != null) text(out, comment);
         var modifiers = element.getModifiers().stream().map(Enum::name).sorted().toList();
         out.u32(modifiers.size());
         for (var modifier : modifiers) out.str(modifier);
@@ -89,15 +91,17 @@ public final class ProcessorElementProjection {
                 var value = method.getDefaultValue();
                 out.u8(value == null ? 0 : 1);
                 if (value != null) {
-                    Ann.encode(out, value(value, method.getReturnType(), false));
-                    Ann.encode(out, value(value, method.getReturnType(), true));
+                    encodeValue(out, value(value, method.getReturnType(), false));
+                    encodeValue(out, value(value, method.getReturnType(), true));
                 }
             }
+            // javac's record-component symbol also implements VariableElement. The public declaration kind decides the codec.
+            case RecordComponentElement component -> type(out, component.asType());
             case VariableElement variable -> {
                 type(out, variable.asType());
                 var constant = variable.getConstantValue();
                 out.u8(constant == null ? 0 : 1);
-                if (constant != null) Ann.encode(out, constant(constant, variable.asType()));
+                if (constant != null) encodeValue(out, constant(constant, variable.asType()));
             }
             case TypeParameterElement parameter -> typeList(out, parameter.getBounds());
             case PackageElement pkg -> {
@@ -142,9 +146,9 @@ public final class ProcessorElementProjection {
     private void annotations(Codec.Writer out, List<? extends AnnotationMirror> annotations) {
         out.u32(annotations.size());
         for (var annotation : annotations) {
-            annotation(annotation, false).encode(out);
+            encodeAnnotation(out, annotation(annotation, false));
             // Both explicit presence and effective defaults are observable, including SOURCE-retention annotations.
-            annotation(annotation, true).encode(out);
+            encodeAnnotation(out, annotation(annotation, true));
         }
     }
 
@@ -152,8 +156,31 @@ public final class ProcessorElementProjection {
         var values = defaults ? elements.getElementValuesWithDefaults(annotation) : annotation.getElementValues();
         var encoded = new ArrayList<Ann.Element>();
         for (var e : values.entrySet()) encoded.add(new Ann.Element(e.getKey().getSimpleName().toString(), value(e.getValue(), e.getKey().getReturnType(), defaults)));
-        encoded.sort(Comparator.comparing(Ann.Element::name));
+        // Unlike the binary A projection, a processor can iterate this map in native source order.
         return new Ann(descriptor(annotation.getAnnotationType()), List.copyOf(encoded));
+    }
+
+    /** Java String values may contain unpaired surrogates; UTF-8 replacement would merge distinct processor answers. */
+    private static void text(Codec.Writer out, String value) {
+        out.u32(value.length());
+        for (int i = 0; i < value.length(); i++) out.u16(value.charAt(i));
+    }
+
+    private static void encodeAnnotation(Codec.Writer out, Ann annotation) {
+        out.str(annotation.descriptor()).u16(annotation.elements().size());
+        for (var element : annotation.elements()) { out.str(element.name()); encodeValue(out, element.value()); }
+    }
+
+    private static void encodeValue(Codec.Writer out, Ann.Val value) {
+        switch (value) {
+            case Ann.Val.Str s -> { out.u8('s'); text(out, s.value()); }
+            case Ann.Val.Nested nested -> { out.u8('@'); encodeAnnotation(out, nested.annotation()); }
+            case Ann.Val.Array array -> {
+                out.u8('[').u16(array.values().size());
+                for (var item : array.values()) encodeValue(out, item);
+            }
+            default -> Ann.encode(out, value);
+        }
     }
 
     private Ann.Val value(AnnotationValue annotationValue, TypeMirror expected, boolean defaults) {

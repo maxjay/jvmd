@@ -93,6 +93,7 @@ final class ModuleJob {
         boot.headerNanos.addAndGet(System.nanoTime() - headerStarted);
         try (processorHost; compiled) {
             var extract = new SourceFacts(digest, compiled.elements, compiled.types, options.contains("-parameters"));
+            var declarations = new SourceDeclarations(boot, compiled);
             var unitsByPath = new HashMap<String, HeaderCompiler.Unit>();
             for (var u : compiled.units) unitsByPath.put(u.path, u);
             var initialPaths = found.stream().map(Found::path).collect(Collectors.toSet());
@@ -118,10 +119,11 @@ final class ModuleJob {
                             : SourceFacts.Result.NONE;
                 } else result = extract.of(unit.declared);
                 var reads = ProofCollector.headers(unit.declared, compiled.trees, compiled.elements, compiled.types);
-                boot.factsNanos.addAndGet(System.nanoTime() - factsStarted);
                 boot.parsedFiles.incrementAndGet();
                 var faults = new ArrayList<>(result.faults());
                 faults.addAll(unit.faults);
+                declarations.add(file.path(), unit.declared, faults);
+                boot.factsNanos.addAndGet(System.nanoTime() - factsStarted);
                 var sum = sums.zero();
                 var kept = new HashSet<ByteBuffer>();
                 for (var fact : result.facts()) {
@@ -144,6 +146,7 @@ final class ModuleJob {
                 pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sum, types, faults, headerTargets,
                         new ProofCollector.Observations(reads.ranges(), absences.stream().distinct().toList())));
             }
+            declarations.finish(module.name(), scope);
         }
 
         // 5. Sort the facts by m and stream them into the leaf's shape.

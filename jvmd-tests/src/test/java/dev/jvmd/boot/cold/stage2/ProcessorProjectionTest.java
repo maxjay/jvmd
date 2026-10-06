@@ -109,6 +109,23 @@ class ProcessorProjectionTest {
     private record Domain(Root root, List<Entry> entries, InMemoryLocalStore store) {}
 
     @ParameterizedTest @MethodSource("digests")
+    void recordComponentAndBackingFieldHaveDistinctKeys(Digest digest) throws Exception {
+        var file = dir.resolve("R.java");
+        Files.writeString(file, "record R(int value) {}");
+        try (var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("R.java", file)), List.of(),
+                Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest)) {
+            var projection = new ProcessorElementProjection(compiled.elements, compiled.types);
+            var type = compiled.units.getFirst().declared.getFirst();
+            var component = type.getRecordComponents().getFirst();
+            var field = type.getEnclosedElements().stream().filter(e -> e.getKind() == javax.lang.model.element.ElementKind.FIELD).findFirst().orElseThrow();
+            assertThat(component.getSimpleName()).isEqualTo(field.getSimpleName());
+            assertThat(projection.key(component)).isNotEqualTo(projection.key(field));
+            assertThat(dev.jvmd.index.layer.local.ProcessorDeclaration.decode(projection.of(component, "R.java")).declaration().kind())
+                    .isEqualTo(javax.lang.model.element.ElementKind.RECORD_COMPONENT);
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void packageElementKeysIncludeTheQualifiedName(Digest digest) throws Exception {
         var left = dir.resolve("a/same/One.java");
         var right = dir.resolve("b/same/Two.java");

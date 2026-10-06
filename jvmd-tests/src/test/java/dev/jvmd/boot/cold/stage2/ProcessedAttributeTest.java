@@ -115,6 +115,9 @@ class ProcessedAttributeTest {
     private void allFiles(State state, boolean reusable) throws Exception {
         var expected = oracle(state); var actual = new TreeMap<String,byte[]>(); var messages = new ArrayList<ResultRecord.Diagnostic>();
         var local = state.store().get(LocalStore.localRootKey(state.project()));
+        var declarations = ProcessorSources.load(state.tree(), LocalRoot.decode(state.tree().digest(), local), state.project(), "app", 0, state.store()::get);
+        for (var row : state.rows().values()) for (var type : row.typeKeys())
+            assertThat(declarations.type(type).path()).isEqualTo(row.path());
         try (var pool = new Pool(state.pool(), 1)) {
             var attribute = attribute(state, pool);
             for (var path : state.rows().keySet()) {

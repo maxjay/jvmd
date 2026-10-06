@@ -1,0 +1,242 @@
+package dev.jvmd.boot.cold.stage2;
+
+import dev.jvmd.core.hash.Digest;
+import dev.jvmd.core.hash.Identity;
+import dev.jvmd.core.hash.digests.Sha256;
+import dev.jvmd.core.tree.ContentTree;
+import dev.jvmd.index.layer.local.*;
+import dev.jvmd.index.layer.machine.Ann;
+import dev.jvmd.index.layer.machine.ClassFacts;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.type.TypeKind;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import static org.assertj.core.api.Assertions.*;
+
+/** Persist the actual source view independently of T/A and read it only through the committed generation. */
+@Tag("phase-3")
+class ProcessorSourcesTest {
+    @TempDir Path dir;
+    static Stream<Digest> digests() { return Stream.of(Sha256.INSTANCE, new Digests.Sha3()); }
+    @AfterAll static void release() { Stage2Support.release(); }
+    static final String PATH = "app/src/main/java/p/Input.java";
+    static final String SOURCE = """
+            package p;
+            import java.lang.annotation.*;
+            @Retention(RetentionPolicy.SOURCE) @interface Label { String value() default "default"; int number() default 3; }
+            @Retention(RetentionPolicy.SOURCE) @Target(ElementType.TYPE_USE) @interface Use { int value(); }
+            /** Input documentation. */ @Label(number=9, value="source")
+            public class Input<T extends @Use(1) Number & Comparable<T>> {
+                static final int C = -7;
+                Object initialized = new Object();
+                /** Method documentation. */ <V extends T> @Use(2) String @Use(3) [] call(
+                    @Use(4) Input<T> this, @Use(5) String parameter) throws java.io.IOException { return null; }
+                class Nested$Name { int first; long second; }
+                record Data(@Use(6) String component) { }
+            }
+            """;
+
+    record State(ContentTree tree, InMemoryLocalStore store, Identity project, LocalRoot local, Stage2.Result result) {
+        ProcessorSources sources(String module, int scope) { return ProcessorSources.load(tree, local, project, module, scope, store::get); }
+    }
+    private State boot(Digest digest, ProjectModel model, InMemoryLocalStore store, int workers) throws Exception {
+        var tree = new ContentTree(digest);
+        var result = new Stage2(digest, tree, Stage2Support.FEATURE, workers, dir, ClassFacts::of).run(store, model);
+        var project = Stage2.projectKey(digest, model);
+        var local = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(project)));
+        assertThat(local.format()).contains(";local=7;");
+        return new State(tree, store, project, local, result);
+    }
+    private ProjectModel model() { return ProjectModel.parse(Stage2Support.model(dir, new Stage2Support.Mod("app", "g:app:1", List.of()))); }
+    private State initial(Digest digest) throws Exception {
+        Stage2Support.write(dir, Map.of(PATH, SOURCE));
+        var state = boot(digest, model(), Stage2Support.jdkOnly(digest).copy(), 2);
+        assertThat(state.result().faults()).isEmpty(); return state;
+    }
+    private static ProcessorDeclaration.TypeDeclaration type(ProcessorDeclaration declaration) {
+        return (ProcessorDeclaration.TypeDeclaration) declaration.detail();
+    }
+    private static ProcessorDeclaration member(ProcessorDeclaration declaration, String name) {
+        return type(declaration).enclosed().stream().filter(d -> d.name().equals(name)).findFirst().orElseThrow();
+    }
+    private static long use(ProcessorDeclaration.Type type) {
+        return ((Ann.Val.Prim) type.annotations().getFirst().explicit().elements().getFirst().value()).bits();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void sourceMetadataIsQueryableAfterJavacClosesAndSourceBytesDisappear(Digest digest) throws Exception {
+        var state = initial(digest); Files.delete(dir.resolve(PATH));
+        var sources = state.sources("app", 0); var input = sources.type("p/Input");
+        assertThat(input.path()).isEqualTo(PATH);
+        assertThat(input.declaration().docComment()).isEqualTo("Input documentation. ");
+        assertThat(input.declaration().modifiers()).containsExactly("PUBLIC");
+        var label = input.declaration().annotations().getFirst();
+        assertThat(label.explicit().descriptor()).isEqualTo("Lp/Label;");
+        assertThat(label.explicit().elements()).extracting(Ann.Element::name).containsExactly("number", "value");
+        assertThat(label.explicit().elements().get(1).value()).isEqualTo(new Ann.Val.Str("source"));
+        var bound = (ProcessorDeclaration.Parameter) type(input.declaration()).parameters().getFirst().detail();
+        assertThat(use(bound.bounds().getFirst())).isEqualTo(1);
+        var comparable = (ProcessorDeclaration.Declared) bound.bounds().get(1).shape();
+        assertThat(comparable.arguments().getFirst().kind()).isEqualTo(TypeKind.TYPEVAR);
+        var constant = (ProcessorDeclaration.Variable) member(input.declaration(), "C").detail();
+        assertThat((int) ((Ann.Val.Prim) constant.constant()).bits()).isEqualTo(-7);
+        var method = member(input.declaration(), "call");
+        assertThat(method.docComment()).isEqualTo("Method documentation. ");
+        var signature = (ProcessorDeclaration.Executable) method.detail();
+        assertThat(use(signature.returns())).isEqualTo(3);
+        assertThat(use(((ProcessorDeclaration.Array) signature.returns().shape()).component())).isEqualTo(2);
+        assertThat(use(signature.receiver())).isEqualTo(4);
+        assertThat(signature.parameters().getFirst().name()).isEqualTo("parameter");
+        assertThat(use(((ProcessorDeclaration.Variable) signature.parameters().getFirst().detail()).type())).isEqualTo(5);
+        assertThat(((ProcessorDeclaration.Declared) signature.thrown().getFirst().shape()).binaryName()).isEqualTo("java.io.IOException");
+        var nested = sources.type("p/Input$Nested$Name");
+        assertThat(nested.declaration()).isEqualTo(member(input.declaration(), "Nested$Name"));
+        assertThat(type(nested.declaration()).enclosed()).extracting(ProcessorDeclaration::name).containsExactly("<init>", "first", "second");
+        assertThat(sources.type("p/Input$Nested")).isNull();
+        var record = sources.type("p/Input$Data").declaration();
+        assertThat(record.kind()).isEqualTo(ElementKind.RECORD);
+        assertThat(type(record).components().getFirst().name()).isEqualTo("component");
+        assertThat(use(((ProcessorDeclaration.Other) type(record).components().getFirst().detail()).type())).isEqualTo(6);
+        var labelType = sources.type("p/Label").declaration();
+        assertThat(((ProcessorDeclaration.Executable) member(labelType, "value").detail()).explicitDefault()).isEqualTo(new Ann.Val.Str("default"));
+        assertThat(state.sources("app", 1).root().count()).isZero();
+        assertThat(state.store().readsBeforeRoot()).doesNotContain("PM");
+        assertThat(state.store().events()).noneMatch(e -> e.startsWith("prefix:"));
+        assertThatThrownBy(() -> type(input.declaration()).enclosed().clear()).isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void bodyChangesPreserveSourceModelWhileSourceOnlyMetadataMovesIt(Digest digest) throws Exception {
+        var before = initial(digest); var root = before.sources("app", 0).root();
+        for (var body : List.of(SOURCE.replace("return null;", "class Local {} int value=missing(); return null;"),
+                SOURCE.replace("new Object()", "new String(\"different\")"))) {
+            Stage2Support.write(dir, Map.of(PATH, body));
+            var after = boot(digest, model(), before.store().copy(), 1);
+            assertThat(after.result().faults()).isEmpty();
+            assertThat(after.sources("app", 0).root()).isEqualTo(root);
+            assertThat(after.sources("app", 0).type("p/Input$1Local")).isNull();
+        }
+        for (var source : List.of(SOURCE.replace("value=\"source\"", "value=\"changed\""),
+                SOURCE.replace("String parameter", "String renamed"), SOURCE.replace("Input documentation.", "Changed documentation."),
+                SOURCE.replace("int first; long second;", "long second; int first;"))) {
+            Stage2Support.write(dir, Map.of(PATH, source));
+            var after = boot(digest, model(), before.store().copy(), 2);
+            assertThat(after.result().faults()).isEmpty();
+            assertThat(after.sources("app", 0).root()).isNotEqualTo(root);
+            assertThat(after.result().leaves()).isEqualTo(before.result().leaves());
+            assertThat(after.result().annotations()).isEqualTo(before.result().annotations());
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void scopeRootsDoNotDependOnProcessorPresenceWorkerCountOrModuleOrder(Digest digest) throws Exception {
+        Stage2Support.write(dir, Map.of(PATH, SOURCE, "consumer/src/main/java/q/Use.java", "package q; class Use { p.Input<?> input; }"));
+        var app = new Stage2Support.Mod("app", "g:app:1", List.of());
+        var consumer = new Stage2Support.Mod("consumer", "g:consumer:1", List.of(Stage2Support.Dep.module("g:app:1", "app")));
+        var first = boot(digest, ProjectModel.parse(Stage2Support.model(dir, app, consumer)), Stage2Support.jdkOnly(digest).copy(), 1);
+        var second = boot(digest, ProjectModel.parse(Stage2Support.model(dir, consumer, app)), first.store().copy(), 4);
+        assertThat(first.result().faults()).isEmpty(); assertThat(second.result().faults()).isEmpty();
+        assertThat(second.result().root()).isEqualTo(first.result().root());
+        assertThat(second.sources("app", 0).root()).isEqualTo(first.sources("app", 0).root());
+        assertThat(second.sources("consumer", 0).type("p/Input")).isNull();
+        assertThat(second.sources("app", 0).type("p/Input").declaration().annotations()).hasSize(1);
+        assertThat(second.sources("consumer", 0).type("q/Use")).isNotNull();
+        assertThat(second.store().readsBeforeRoot()).doesNotContain("PM");
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void staleAndTamperedRecordsCannotSupplyCurrentDeclarations(Digest digest) throws Exception {
+        var before = initial(digest); var old = before.sources("app", 0);
+        Stage2Support.write(dir, Map.of(PATH, "package p; public class Input {}"));
+        var current = boot(digest, model(), before.store().copy(), 2);
+        assertThat(current.sources("app", 0).type("p/Input$Data")).isNull();
+        assertThat(old.type("p/Input$Data")).isNotNull();
+        var fake = LocalStore.processorSourcesKey(current.project(), "fake", 0);
+        current.store().put(fake, DefinerIndex.encodeRoot(old.root())); current.store().flush();
+        var reads = current.store().watchReads(fake);
+        assertThatThrownBy(() -> current.sources("fake", 0)).hasMessageContaining("not in the committed LOCAL tree");
+        assertThat(reads.get()).isZero();
+        var key = LocalStore.processorSourcesKey(current.project(), "app", 0);
+        current.store().put(key, DefinerIndex.encodeRoot(old.root())); current.store().flush();
+        assertThatThrownBy(() -> current.sources("app", 0)).hasMessageContaining("differ from the committed LOCAL tree");
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void annotationIterationOrderIsPreservedInTheProjection(Digest digest) throws Exception {
+        var before = initial(digest);
+        Stage2Support.write(dir, Map.of(PATH, SOURCE.replace("number=9, value=\"source\"", "value=\"source\", number=9")));
+        var after = boot(digest, model(), before.store().copy(), 1);
+        assertThat(after.sources("app", 0).type("p/Input").declaration().annotations().getFirst().explicit().elements())
+                .extracting(Ann.Element::name).containsExactly("value", "number");
+        assertThat(after.sources("app", 0).root()).isNotEqualTo(before.sources("app", 0).root());
+        assertThat(after.result().leaves()).isEqualTo(before.result().leaves());
+        assertThat(after.result().annotations()).isEqualTo(before.result().annotations());
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void anInvalidAnnotationIsAnUnavailableDeclarationAndDoesNotAbortTheScope(Digest digest) throws Exception {
+        Stage2Support.write(dir, Map.of(PATH, SOURCE.replace("number=9", "number=\"invalid\""),
+                "app/src/main/java/p/Healthy.java", "package p; class Healthy {}"));
+        var state = boot(digest, model(), Stage2Support.jdkOnly(digest).copy(), 2);
+        assertThat(state.result().faults()).anyMatch(s -> s.contains("processor declaration:"));
+        assertThat(state.sources("app", 0).type("p/Healthy")).isNotNull();
+        assertThatThrownBy(() -> state.sources("app", 0).type("p/Input"))
+                .isInstanceOf(ProcessorSources.Unavailable.class).hasMessageContaining(PATH);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void exactJavaStringsAndNestedAnnotationValuesSurviveDetachment(Digest digest) throws Exception {
+        String source = """
+                package p;
+                import java.lang.annotation.*;
+                @interface Nested { String value() default "default"; }
+                enum Choice { ONE, TWO }
+                @Retention(RetentionPolicy.SOURCE) @interface Label {
+                    String value(); Nested nested(); Nested[] array(); Class<?> type(); Choice choice();
+                }
+                /** DOC */ @Label(value="VALUE", nested=@Nested, array={@Nested("ARRAY")}, type=int[].class, choice=Choice.TWO)
+                public class Input { static final String CONSTANT="CONSTANT"; }
+                """;
+        String escaped = "\\" + "uD800", value = Character.toString((char) 0xd800);
+        Stage2Support.write(dir, Map.of(PATH, source.replace("DOC", escaped).replace("VALUE", escaped).replace("ARRAY", escaped).replace("\"CONSTANT\"", "\""+escaped+"\"")));
+        var state = boot(digest, model(), Stage2Support.jdkOnly(digest).copy(), 2);
+        assertThat(state.result().faults()).isEmpty();
+        var declaration = state.sources("app", 0).type("p/Input").declaration();
+        assertThat(declaration.docComment()).isEqualTo(value + " ");
+        var annotation = declaration.annotations().getFirst();
+        assertThat(annotation.explicit().elements().getFirst().value()).isEqualTo(new Ann.Val.Str(value));
+        assertThat(((Ann.Val.Nested) annotation.explicit().elements().get(1).value()).annotation().elements()).isEmpty();
+        assertThat(((Ann.Val.Nested) annotation.effective().elements().get(1).value()).annotation().elements().getFirst().value())
+                .isEqualTo(new Ann.Val.Str("default"));
+        var array = (Ann.Val.Array) annotation.explicit().elements().get(2).value();
+        assertThat(((Ann.Val.Nested) array.values().getFirst()).annotation().elements().getFirst().value()).isEqualTo(new Ann.Val.Str(value));
+        assertThat(annotation.explicit().elements().get(3).value()).isEqualTo(new Ann.Val.Cls("[I"));
+        assertThat(annotation.explicit().elements().get(4).value()).isEqualTo(new Ann.Val.Enum("Lp/Choice;", "TWO"));
+        assertThat(((ProcessorDeclaration.Variable) member(declaration, "CONSTANT").detail()).constant()).isEqualTo(new Ann.Val.Str(value));
+        Stage2Support.write(dir, Map.of(PATH, source.replace("DOC", "?").replace("VALUE", "?").replace("ARRAY", "?").replace("\"CONSTANT\"", "\"?\"")));
+        var other = boot(digest, model(), state.store().copy(), 2);
+        assertThat(other.sources("app", 0).root()).isNotEqualTo(state.sources("app", 0).root());
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void malformedDeclarationLengthsAreRejectedBeforeAllocation(Digest digest) throws Exception {
+        var state = initial(digest);
+        var bytes = new dev.jvmd.core.tree.Codec.Writer().zstr(PATH).u32(Integer.MAX_VALUE).toBytes();
+        assertThatThrownBy(() -> ProcessorDeclaration.decode(bytes)).isInstanceOf(IllegalArgumentException.class);
+        var key = dev.jvmd.index.layer.machine.Keys.typeKey("p/Input");
+        var entry = state.tree().get(state.sources("app", 0).root().hash(), h -> state.store().get(dev.jvmd.index.layer.machine.MachineStore.nodeKey(h)), key);
+        var projection = java.util.Arrays.copyOfRange(entry.value(), 1, entry.value().length);
+        assertThatThrownBy(() -> ProcessorDeclaration.decode(java.util.Arrays.copyOf(projection, projection.length - 1)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ProcessorDeclaration.decode(java.util.Arrays.copyOf(projection, projection.length + 1)))
+                .hasMessage("Trailing processor declaration bytes");
+    }
+}

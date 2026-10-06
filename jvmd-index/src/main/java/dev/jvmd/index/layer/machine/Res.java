@@ -177,7 +177,7 @@ public final class Res {
                 switch (constant.tag()) {
                     case 3, 4 -> out.u32(constant.bits() & 0xFFFFFFFFL);
                     case 5, 6 -> out.u64(constant.bits());
-                    case 8 -> out.str(constant.text());
+                    case 8 -> out.utf16(constant.text());
                     default -> throw new IllegalArgumentException("Unexpected ConstantValue tag " + constant.tag());
                 }
             }
@@ -194,7 +194,7 @@ public final class Res {
             var constant = switch (tag) {
                 case 3, 4 -> new Constant(tag, in.u32(), null);
                 case 5, 6 -> new Constant(tag, in.u64(), null);
-                case 8 -> new Constant(tag, 0, in.str());
+                case 8 -> new Constant(tag, 0, in.utf16());
                 default -> throw new IllegalArgumentException("Unexpected ConstantValue tag " + tag);
             };
             return new Field(access, signature, constant, Warnings.decode(in));

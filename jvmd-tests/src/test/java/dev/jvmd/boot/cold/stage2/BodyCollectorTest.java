@@ -96,6 +96,22 @@ class BodyCollectorTest {
     private static Proof.Range n(String type,String name) { return new Proof.Range(Proof.N,type,Keys.TYPE,name); }
 
     @ParameterizedTest @MethodSource("digests")
+    void distinctJavaStringConstantsInvalidateOnlyTheirActualConsumers(Digest digest) throws Exception {
+        String lib = "package q; public class Lib { public static final String C=\"\\uD800\", UNUSED=\"?\"; }";
+        String source = "package p; public class App { public String value(){return q.Lib.C;} }";
+        fixture(source, Map.of("q/Lib", lib));
+        var original = boot(digest); var before = compile(original);
+        assertThat(before.errors()).isEmpty();
+        assertThat(before.reads().ranges()).contains(t("q/Lib", Keys.FIELD, "C")).doesNotContain(t("q/Lib", Keys.FIELD, "UNUSED"));
+        fixture(source, Map.of("q/Lib", lib.replace("C=\"\\uD800\"", "C=\"?\"")));
+        var changed = boot(digest);
+        assertThat(changed.valid(before.proof())).isFalse();
+        assertThat(compile(changed).classes().get("p/App")).isNotEqualTo(before.classes().get("p/App"));
+        fixture(source, Map.of("q/Lib", lib.replace("UNUSED=\"?\"", "UNUSED=\"\\uDC00\"")));
+        assertThat(boot(digest).valid(before.proof())).isTrue();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void exactOverloadAndConstantReadsIgnoreUnreadMethods(Digest digest) throws Exception {
         String lib="package q; public class Lib { public static final int C=1; public static String pick(Object x){ return null; } }";
         String source="package p; public class App { Object f(){ return q.Lib.pick(q.Lib.C); } }";

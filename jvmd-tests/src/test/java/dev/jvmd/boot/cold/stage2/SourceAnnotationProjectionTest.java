@@ -83,6 +83,23 @@ class SourceAnnotationProjectionTest {
                 """);
     }
 
+    @ParameterizedTest @MethodSource("cases")
+    void javaStringsInConstantsDefaultsAndAnnotationPathsMatchBinary(Digest digest, boolean parameters) throws Exception {
+        String text = "\\uD800|\\uDC00|\\uD83D\\uDE00|\\0|\\n|café";
+        compare(digest, parameters, false, """
+                package p;
+                import java.lang.annotation.*;
+                @Retention(RetentionPolicy.RUNTIME) @Target({ElementType.TYPE_USE,ElementType.RECORD_COMPONENT,ElementType.PARAMETER})
+                @interface A { String value() default "TEXT"; String[] array() default {"TEXT"}; }
+                @Retention(RetentionPolicy.CLASS) @interface B { A nested(); A[] array(); }
+                @B(nested=@A("TEXT"), array={@A(value="TEXT",array={"TEXT"})}) public class K {
+                    public static final String CONSTANT="TEXT";
+                    public @A("TEXT") String method(@A("TEXT") String parameter) { return parameter; }
+                    public record R(@A("TEXT") String component) {}
+                }
+                """.replace("TEXT", text));
+    }
+
     private void compare(Digest digest, boolean parameters, boolean brokenBody, String source) throws Exception {
         var options = parameters ? List.of("-parameters") : List.<String>of();
         var classes = Stage2Support.compile(dir, Map.of("p/K.java", source), options, List.of());

@@ -148,7 +148,7 @@ class ProcessorDiagnosticsTest {
                         var annotation = input.getAnnotationMirrors().get(0);
                         var value = annotation.getElementValues().values().iterator().next();
                         var messages = processingEnv.getMessager();
-                        messages.printMessage(Kind.NOTE, "global café");
+                        messages.printMessage(Kind.NOTE, "global café " + (char)0xd800 + " " + (char)0xdc00);
                         messages.printMessage(Kind.WARNING, "type warning", input);
                         messages.printMessage(Kind.MANDATORY_WARNING, "annotation warning", input, annotation);
                         messages.printMessage(Kind.WARNING, "value warning", input, annotation, value);

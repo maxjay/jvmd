@@ -146,6 +146,25 @@ class BodyAttributeTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void stringConstantsFromOwnStubsProduceExactNativeClassBytes(Digest digest) throws Exception {
+        String literal = "\\uD800|\\uDC00|\\uD83D\\uDE00|\\0|\\n|café";
+        var state = boot(digest, Map.of("p/Constants.java", "package p; public class Constants { public static final String VALUE=\""+literal+"\"; }",
+                "p/Label.java", "package p; public @interface Label { String value() default \""+literal+"\"; }",
+                "p/App.java", "package p; @Label(Constants.VALUE) public class App { public String value(){return Constants.VALUE;} public static final String COPIED=Constants.VALUE; }"),
+                List.of("-g", "-parameters"));
+        var expected = oracle(state); assertThat(expected.messages()).isEmpty();
+        try (var pool = new Pool(state.configuration(), 1)) {
+            var attribute = state.attribute(pool); var actual = new TreeMap<String,byte[]>();
+            for (var name : state.files().keySet()) {
+                var result = run(state, attribute, name);
+                assertThat(result.result().attributed()).isTrue();
+                actual.putAll(state.classes(result));
+            }
+            sameBytes(actual, expected.classes());
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void rejectsStaleSourceWrongNameAndMismatchedPoolBeforePublishing(Digest digest) throws Exception {
         var state=boot(digest,Map.of("p/App.java","package p; public class App {}"),List.of());
         var file=state.files().get("p/App.java");var row=state.rows().get("p/App.java");var bytes=Files.readAllBytes(file);

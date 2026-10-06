@@ -202,7 +202,7 @@ class ProcessedAttributeTest {
 
     @ParameterizedTest @MethodSource("digests")
     void completeAndEmptyManifestsAndProcessorDiagnosticsReachResults(Digest digest) throws Exception {
-        var processor = processor(GENERATE + "processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE, \"from processor\", root);", "isolating");
+        var processor = processor(GENERATE + "processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE, \"from processor \" + (char)0xd800 + \" \" + (char)0xdc00, root);", "isolating");
         var state = boot(digest, Map.of("p/Input.java", "package p; public class Input { public int value(){ return One.VALUE+Two.VALUE; } }",
                 "p/Empty.java", "package p; public class Empty {}"), List.of(processor), List.of());
         assertThat(state.faults()).isEmpty();

@@ -1,6 +1,6 @@
 # jvmd stage 2: LOCAL cold boot
 
-Oct 4, 2026 · @Max. Reconciled 2026-10-06 with LAYOUT 4, the PR #60 audit, exact header proofs, path-addressed reverse records and persistent definer state.
+Oct 4, 2026 · @Max. Reconciled 2026-10-06 with LAYOUT 4, the PR #60 audit, exact header proofs, path-addressed reverse records, persistent definer state and lossless Java String values in parser 5.
 
 This revision replaces the earlier Stage 2 specification. Stage 3 Appendix A and this document describe the same foundation. Stage 3 Appendix F extends header compilation with processors; its processor proofs, generated outputs and resource records are additional work, not implied by completion of this document.
 
@@ -345,7 +345,7 @@ Kotlin/Scala/Groovy contribute through compiled class files, not SourceFacts. Bu
 
 One RocksDB per MACHINE generation contains shared nodes/leaves and project-prefixed LOCAL records. LROOT replacement retains the prior root under a numbered history key. Raw unreachable records are not live just because a key exists; current-root membership controls header reverse reads. Garbage collection of unreachable records and history retention policy are deferred.
 
-Current representation is `layout=4;parser=4;local=4`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
+Current representation is `layout=4;parser=5;local=4`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA; parser 5 preserves exact Java String code units in constants and annotation values/defaults. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
 
 ## 10. Implementation and completion rules
 
@@ -381,6 +381,8 @@ Dependencies are already mediated, ordered and transitive. Each has exactly one 
 ## Appendix B. Codecs
 
 Primitives use the existing Codec: big-endian integers, fixed-width `id`, length-prefixed `str`/`lenBytes`, NUL-terminated `zstr`, u32-counted lists and explicit optional markers. Literal ASCII tags include their displayed `|`; variable fields below use explicit encodings. Human-readable key separators in MOD/RT/F/SL follow LocalStore's key functions; X's suffix uses the self-delimiting encoding in B.9.
+
+Java String values use `utf16 = u32 codeUnitCount || u16 codeUnit[codeUnitCount]`, without a byte-order mark or normalization. This applies to ConstantValue tag 8 and annotation value tag `s`, recursively through nested annotations, arrays and annotation defaults. It preserves NUL, supplementary pairs and unpaired surrogates. `str` remains standard UTF-8 for identifiers/descriptors and the other existing structural fields. Check lengths before allocating. A source/binary equality check alone is insufficient: test decoded values and native client class bytes against real dependencies and their stubs, since both fact producers could otherwise agree on the same lossy encoding.
 
 ### B.1 MachineLeaf and annotation roots
 
@@ -444,8 +446,8 @@ history key = LROOT|project|u32 n, counting from 1
 ### B.8 FORMAT
 
 ```text
-machine = layout=4;digest=<name>;jdk=<feature>;parser=4
-local   = <machine>;local=4;javac=<runtime feature>
+machine = layout=4;digest=<name>;jdk=<feature>;parser=5
+local   = <machine>;local=4;javac=<full runtime version>;locale=root
 ```
 
 Parser changes when identical class bytes would yield different retained facts/projections. LOCAL changes when its record layout or persisted proof meaning changes. Incompatible commitments cannot take a current-format skip.

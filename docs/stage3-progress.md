@@ -661,3 +661,26 @@ The clean combined gate `stage3-source-declarations-frozen-gate.log` passed **55
 | SHA3-256 | 3,465 | 1,784 | 1,100 | 126 | 25,194 |
 
 The facts time now includes source declaration extraction and PM tree construction. Maven model/build time (25.9/24.8s) is excluded. Sampled heap above baseline was 820/1,819 MB with uncontrolled GC; these sequential measurements are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-source-declarations-SHA-256.txt), [SHA3-256](measurements/stage3-source-declarations-SHA3-256.txt). The Stage 3 repository and Downloads authorities are byte-identical at SHA-256 `c83d1d4d9538694088bb7c5d55dccc6506b1f920e4061aaae664f284a2899a35`, after preserving `jvmd-stage3-bodies.before-source-declarations.md`. Stage 2's authority remains unchanged. The processor adapter/query/driver work and reproduced resolution-string codec defect remain open; the full goal stays active.
+
+
+### Exact Java String values in facts, stubs and diagnostics
+
+The resolution-string defect from the previous checkpoint is fixed. Codec now has a bounded UTF-16 code-unit encoding, separate from structural UTF-8 strings. Res ConstantValue strings and Ann string values use it, including nested annotations/arrays and annotation defaults. Native and header facts retain exact values and stubs emit them unchanged. PM reuses the shared encoding instead of its private duplicate; its declaration bytes remain unchanged. ResultRecord and processor PDIAG messages also retain exact Java text.
+
+The representation is MACHINE layout 4 / parser 5, combined LOCAL 8 and bodies 4. Old MACHINE parser-2/3/4 generations remain in separate directories; no legacy fact decoding or in-place migration is added. LOCAL 8 identifies the changed PDIAG codec; bodies 4 identifies the changed RS message codec. The Stage 2-only foundation remains LOCAL 4 and now names parser 5, while the combined processor extensions use LOCAL 8. Both repository specifications and their Downloads authorities were backed up and synchronized.
+
+`stage3-java-strings-red.log` failed 11 of 20 tests before the change: own-stub body bytes, binary stub constants/defaults, shared fact text and both persisted diagnostic paths lost unpaired surrogates. The corrected and expanded `stage3-java-strings-focused.log` passed **187 tests**, zero failures/errors/skips. Tests preserve all 65,536 code units, reject malformed lengths, compare native raw constant/default values and client class bytes against real dependencies and stubs, match source/class facts with nested/array/type-use annotation text, and retain native processor diagnostics across PDIAG and RS storage. A consumed string constant changes its body proof while an unread constant preserves it; metadata-only annotation strings move A/a without moving T. NUL, supplementary pairs, isolated high/low surrogates and ordinary Unicode are covered.
+
+This closes the reproduced string-codec defect, not the remaining Stage 3 scope. Processor source-query adaptation and package/module/origin views, persisted query verification, scope-wide unsupported handling, aggregate diagnostics, the cold storage boundary, driver/BROOT publication and the remaining full-scope invariant/oracle work stay required. Warm is untouched. The clean combined gate will verify generation isolation and both repository projections with frozen Java sources; terminal results follow.
+
+
+The clean combined gate `stage3-java-strings-frozen-gate.log` passed **568 tests, zero failures/errors/skips**, in 4m18s. All **547 Java files** match the pre-run freeze after terminal completion. The RocksDB test verifies parser-2/3/4 generations remain untouched and cannot skip the parser-5 cold boot. With four workers, the repository oracle covered **13 modules, 26 scopes and 542 sources**, 93 on-the-spot jars and 22 distinct leaf sets. Both digests produced **26/26 exact source/class k matches, no annotation differences and zero boot faults**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,165 | 2,498 | 1,584 | 127 | 25,202 |
+| SHA3-256 | 3,642 | 1,880 | 1,218 | 126 | 25,189 |
+
+Maven model/build time (25.5/25.2s) is excluded. Sampled heap above baseline was 972/1,727 MB with uncontrolled GC; sequential digest runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-java-strings-SHA-256.txt), [SHA3-256](measurements/stage3-java-strings-SHA3-256.txt).
+
+Stage 2 authority SHA-256 is `0eee5d39b6cbca93c21175adf8debac903644873f948f61b8ce499f0fc62fbaa`; Stage 3 is `296629a9e65ba2ea939a80c5b838743a878f4e225ed1c3668b7b797185f0287c`. Each repository file exactly matches its Downloads copy, with distinct `.before-java-strings.md` backups. The reproduced constant/annotation/diagnostic text loss is now closed. The source-model query adapter, full processor admission/verification and driver/oracle obligations remain open; the full goal stays active and no PR was merged.

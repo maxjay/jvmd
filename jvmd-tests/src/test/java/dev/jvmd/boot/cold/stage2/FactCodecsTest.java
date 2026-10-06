@@ -1,6 +1,7 @@
 package dev.jvmd.boot.cold.stage2;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.jvmd.core.hash.digests.Sha256;
 import dev.jvmd.core.tree.Codec;
@@ -93,6 +94,33 @@ class FactCodecsTest {
             for (var fact : facts) if (Keys.ownerOf(fact.m()).equals(Keys.ownerOf(type.key()))) expected = sums.add(expected, fact.h());
             assertThat(type.h()).isEqualTo(expected);
         }
+    }
+
+    @Test void javaStringConstantsAndNestedAnnotationValuesPreserveEveryCodeUnit() {
+        var chars = new char[Character.MAX_VALUE + 1];
+        for (int i = 0; i < chars.length; i++) chars[i] = (char) i;
+        var text = new String(chars);
+        assertThat(new Codec.Reader(new Codec.Writer().utf16(text).toBytes()).utf16()).isEqualTo(text);
+        var field = new Res.Field(0x19, null, new Res.Constant(8, 0, text), Res.Warnings.NONE);
+        assertThat(Res.Field.decode(field.encode()).constant().text()).isEqualTo(text);
+        var nested = new Ann.Val.Nested(new Ann("Lp/Nested;", List.of(new Ann.Element("text", new Ann.Val.Str(text)))));
+        var value = new Ann.Val.Array(List.of(new Ann.Val.Str(text), nested));
+        var method = new Res.Method(0x401, null, List.of(), value, Res.Warnings.NONE);
+        assertThat(Res.Method.decode(method.encode()).defaultValue()).isEqualTo(value);
+        var annotation = new Ann("Lp/Label;", List.of(new Ann.Element("values", value)));
+        var encoded = new Codec.Writer(); annotation.encode(encoded);
+        assertThat(Ann.decode(new Codec.Reader(encoded.toBytes()))).isEqualTo(annotation);
+        var lone = new Res.Field(0x19, null, new Res.Constant(8, 0, Character.toString((char) 0xd800)), Res.Warnings.NONE);
+        var replacement = new Res.Field(0x19, null, new Res.Constant(8, 0, "?"), Res.Warnings.NONE);
+        assertThat(lone.encode()).isNotEqualTo(replacement.encode());
+    }
+
+    @Test void javaTextLengthsAreCheckedBeforeAllocation() {
+        assertThat(new Codec.Writer().utf16(new String(new char[]{0, 0xd800, 0xdc00})).toBytes())
+                .containsExactly(0, 0, 0, 3, 0, 0, (byte)0xd8, 0, (byte)0xdc, 0);
+        for (var bytes : List.of(new byte[0], new byte[]{0,0,0}, new byte[]{0,0,0,1,0},
+                new byte[]{0x7f,-1,-1,-1}, new byte[]{-1,-1,-1,-1}))
+            assertThatThrownBy(() -> new Codec.Reader(bytes).utf16()).isInstanceOf(IllegalArgumentException.class);
     }
 
     private static Fact fact(byte[] m, String simpleName, String what) {

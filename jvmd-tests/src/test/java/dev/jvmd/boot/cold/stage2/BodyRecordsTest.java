@@ -42,7 +42,7 @@ class BodyRecordsTest {
         assertThat(nativeError.getStartPosition()).isEqualTo(source.indexOf("missing"));
         assertThat(nativeError.getStartPosition()).isNotEqualTo(source.substring(0, source.indexOf("missing")).getBytes(StandardCharsets.UTF_8).length);
         var error = new ResultRecord.Diagnostic(0, nativeError.getStartPosition(), nativeError.getEndPosition(), nativeError.getCode(), nativeError.getMessage(Locale.ROOT));
-        var note = new ResultRecord.Diagnostic(2, -1, -1, "note", "without a source position");
+        var note = new ResultRecord.Diagnostic(2, -1, -1, "note", "without a source position " + (char)0xd800 + " " + (char)0xdc00);
         var result = new ResultRecord(false, List.of(), List.of(note, error, note));
         assertThat(ResultRecord.decode(result.encode(), digest.width())).isEqualTo(result);
         var invalid = result.encode(); invalid[0] = 7;
@@ -88,6 +88,7 @@ class BodyRecordsTest {
         assertThat(bodies.current(local)).isTrue();
         assertThat(new BodiesRoot(local.format() + ";bodies=1", c, a, b, c).current(local)).isFalse();
         assertThat(new BodiesRoot(local.format() + ";bodies=2", c, a, b, c).current(local)).isFalse();
+        assertThat(new BodiesRoot(local.format() + ";bodies=3", c, a, b, c).current(local)).isFalse();
         var recommitted = LocalRoot.decode(digest, LocalRoot.encode(digest, local.format(), new Root(c, a, 3, 0), b, c));
         assertThat(bodies.current(recommitted)).isFalse();
         assertThat(bodies.encode()).isEqualTo(original);

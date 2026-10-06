@@ -24,7 +24,7 @@ public final class ProcessorRecords {
                 out.str(message.processorClass()).u8(message.path() == null ? 0 : 1);
                 if (message.path() != null) out.zstr(message.path());
                 out.u8(message.kind().ordinal()).i64(message.position()).i64(message.start()).i64(message.end())
-                        .i64(message.line()).i64(message.column()).str(message.code()).str(message.text());
+                        .i64(message.line()).i64(message.column()).str(message.code()).utf16(message.text());
             }
             return out.toBytes();
         }
@@ -33,7 +33,7 @@ public final class ProcessorRecords {
             int count = in.count();
             var messages = new ArrayList<Message>(count);
             for (int i = 0; i < count; i++) messages.add(new Message(in.str(), in.u8() == 1 ? in.zstr() : null,
-                    javax.tools.Diagnostic.Kind.values()[in.u8()], in.i64(), in.i64(), in.i64(), in.i64(), in.i64(), in.str(), in.str()));
+                    javax.tools.Diagnostic.Kind.values()[in.u8()], in.i64(), in.i64(), in.i64(), in.i64(), in.i64(), in.str(), in.utf16()));
             return new Diagnostics(messages);
         }
     }

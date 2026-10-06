@@ -2,7 +2,7 @@
 
 Oct 5, 2026 · @Max
 
-Revision 123, amended 2026-10-06 for the PR #60 reviews: exact stub member identities, qualified package and member-type absences, T/N proof descent, generation isolation, exact Stage 2 header ranges and reverse keys, persistent route ancestry, full warning metadata in A, the processorElementProjection/generated-output ContentTree amendment, body collector, ordered pool binding and source-byte decoding corrections backed by mutation tests, LOCAL 7 persisted source declaration trees alongside the LOCAL 6 scope-specific processor plans and origin-to-GEN references, and bodies=3 ordered processor observations bound to result identities and checked before resolution shortcuts, and the processor-aware Attribute executor with rooted output conservation and explicit fresh results for unsupported invocations. The companion Stage 2 specification is reconciled in `jvmd-stage2-local-cold-boot.md`.
+Revision 123, amended 2026-10-06 for the PR #60 reviews: exact stub member identities, qualified package and member-type absences, T/N proof descent, generation isolation, exact Stage 2 header ranges and reverse keys, persistent route ancestry, full warning metadata in A, the processorElementProjection/generated-output ContentTree amendment, body collector, ordered pool binding and source-byte decoding corrections backed by mutation tests, LOCAL 7 persisted source declaration trees alongside the LOCAL 6 scope-specific processor plans and origin-to-GEN references, and bodies=4 ordered processor observations bound to result identities and checked before resolution shortcuts, the processor-aware Attribute executor with rooted output conservation and explicit fresh results for unsupported invocations, and parser 5 / LOCAL 8 / bodies 4 lossless Java String and diagnostic text codecs. The companion Stage 2 specification is reconciled in `jvmd-stage2-local-cold-boot.md`.
 
 Stage 3 attributes one source file at a time against stubs, writes its class files as content-addressed results, and writes a proof of exactly which identities the result depends on, verified by the same descent of sums that stages 1 and 2 built. Greenfield: nothing under `jvmd-lsp`, `jvmd-analyzer` or the old `jvmd-index` is reference or guidance.
 
@@ -457,7 +457,7 @@ jvmd-index/
     BodiesRoot.java          BROOT| (B.7): codec; staleness = localRoot != LROOT.root
     LocalStore.java          + key functions: proofKey, resultKey (as stage 2), classFileKey, usesKey, outputKey, materialisedKey, bodiesRootKey, configTreeKey, domainKey, generatedKey, processorKey
   rocks/layer/
-    Generation.java          FORMAT gains layout=4, bodies=3, locale=root
+    Generation.java          FORMAT gains layout=4, bodies=4, locale=root
 
 jvmd-boot/
   cold/
@@ -572,7 +572,7 @@ The rule for an unlisted concern: if it needs a body attributed, it is stage 3's
 - `RS|` values are small (references and diagnostics). Inline.
 - In the LOCAL tree: `C|`, `RS|`, `CF|`, `X|`, `OUT|`. Outside it: `U|` (derivable from re-attribution; content-addressed, so it is written to the store and never to the tree) and `MAT|` (per machine). Nothing per machine or per path under `RS|`, `CF|`, `U|`; `C|`, `X|` and `OUT|` carry the project because they are the project's index of its own files.
 - Root last, after one sync; the LOCAL tree is edited by `apply`, never rebuilt; the previous root to history as stage 2.
-- FORMAT: stage 2's FORMAT with the full javac runtime version (`Runtime.version().toString()`, not the feature number: two builds of one feature release can differ in bytes, diagnostics and inference), `layout=4` (the `A` layer) and `bodies=3` and locale=root (B.6: javac's diagnostic locale is an input of the bytes and messages, so it is fixed; the source charset is an input too and is in optionsHash). A different FORMAT is a cold boot, never a migration.
+- FORMAT: stage 2's FORMAT with the full javac runtime version (`Runtime.version().toString()`, not the feature number: two builds of one feature release can differ in bytes, diagnostics and inference), `layout=4` (the `A` layer) and `bodies=4` and locale=root (B.6: javac's diagnostic locale is an input of the bytes and messages, so it is fixed; the source charset is an input too and is in optionsHash). A different FORMAT is a cold boot, never a migration.
 - Two roots per project. LROOT|projectKey is stage 2's and stage 3 never writes it. BROOT|projectKey (B.7) holds the bodies tree root and the LROOT.root it extended; bodies exist exactly when the two agree, and Diff(BROOT.localRoot, LROOT.root) is the stage 2 change set when they do not. Stage 3 edits the bodies tree with apply over the previous BROOT.root carrying that Diff, never over LROOT alone on a rerun.
 
 ### 9.2 Deferred
@@ -620,7 +620,7 @@ LAYOUT 4 is on `main` with stage 1 and 2 green and invariant 1 of stage 2 at equ
 
 ## Appendix A. LAYOUT 4: the A layer
 
-An amendment to stage 1 (sections 2, 5.4, B.1, B.3, A.4) and stage 2 (3.14, 5.2a, 5.3, 5.4, B.1, B.3, B.5, invariant 1). It lands as its own PR (PR A) before any stage 3 record exists. FORMAT changes; MACHINE and LOCAL cold boot. The corrected Appendix A representation is `layout=4;parser=4` and `local=4`. Parser 3 isolated the exact innerName/N/warning representation; parser 4 retains full warning annotations in A/EA. LOCAL 3 replaced whole-type header proofs with exact T ranges; LOCAL 4 replaces consumer lists with path-addressed reverse keys. Committed parser-2 and parser-3 MACHINE generations remain untouched in separate directories. LOCAL 1/2/3 roots cannot take the current-format skip branch. No migration or per-record legacy decoding. Stage 2's processor work (the wrapper, the declaration, `RES|`, `PD|`, `GEN|`, generated rows, `processorPathHash` and `-encoding` in the header compile) is appendix F and a second PR (PR B); nothing in this appendix depends on it.
+An amendment to stage 1 (sections 2, 5.4, B.1, B.3, A.4) and stage 2 (3.14, 5.2a, 5.3, 5.4, B.1, B.3, B.5, invariant 1). It lands as its own PR (PR A) before any stage 3 record exists. FORMAT changes; MACHINE and LOCAL cold boot. The corrected Appendix A representation is `layout=4;parser=5` and `local=4`. Parser 3 isolated the exact innerName/N/warning representation; parser 4 retains full warning annotations in A/EA; parser 5 preserves exact Java String code units in constants and annotation values/defaults. LOCAL 3 replaced whole-type header proofs with exact T ranges; LOCAL 4 replaces consumer lists with path-addressed reverse keys. Committed parser-2, parser-3 and parser-4 MACHINE generations remain untouched in separate directories. LOCAL 1/2/3 roots cannot take the current-format skip branch. No migration or per-record legacy decoding. Stage 2's processor work (the wrapper, the declaration, `RES|`, `PD|`, `GEN|`, generated rows, `processorPathHash` and `-encoding` in the header compile) is appendix F and a second PR (PR B); nothing in this appendix depends on it.
 
 ### A.1 What moves
 
@@ -662,7 +662,9 @@ seal() -> (k = T.finish().hash, a = Digest(A.finish().hash || EA.finish().hash))
 build() -> L as before                            // E root is res-level only; nodes of A and EA written through the same sink; a returned to the caller, not stored in L; the sealer writes AL|a = Root(A) || Root(EA), full root encodings (A.1)
 ```
 
-`ClassFacts` and `SourceFacts` split the bytes they already produce: `res` to the `T` value, `tail` to the `A` value. `Fact` carries both. The type/warning `Res` codecs follow the versioned Appendix A representation. The `Ann` codec unchanged; it now writes into the `A` value.
+`ClassFacts` and `SourceFacts` split the bytes they already produce: `res` to the `T` value, `tail` to the `A` value. `Fact` carries both. The type/warning `Res` codecs follow the versioned Appendix A representation. The `Ann` codec writes retained metadata into A and preserves Java String values exactly as described below.
+
+Parser 5 encodes Java String values as `utf16 = u32 codeUnitCount || u16 codeUnit[codeUnitCount]`, without a byte-order mark or normalization. ConstantValue tag 8 and annotation value tag `s` use this encoding, recursively through arrays, nested annotations and annotation defaults in T/A. Identifiers/descriptors retain their existing UTF-8 `str` codec. NUL, supplementary pairs and unpaired surrogates remain distinct; a UTF-8 replacement character must never stand in for a Java char. Readers reject impossible/truncated lengths before allocation. Source/binary equality is accompanied by exact native values and class bytes for clients against real dependencies and stubs. A consumed constant's edit changes its T range/proof, while an unrelated constant and metadata-only string edit retain their established proof grain.
 
 ### A.4 Readers
 
@@ -732,7 +734,7 @@ Native `Object.equals` with Object's unchanged implementation compares already-o
 
 ```
 RS|ACI                = u8 attributed || list<(zstr internalName || id cf)> || list<diagnostic>
-diagnostic            = u8 kind || u32 startOffset || u32 endOffset || str code || str message   // kind: 0 error, 1 warning, 2 note; messages in Locale.ROOT
+diagnostic            = u8 kind || u32 startOffset || u32 endOffset || str code || utf16 message   // kind: 0 error, 1 warning, 2 note; messages in Locale.ROOT
 CF|cf                 = classBytes                                 // cf = Digest(classBytes)
 optionsHash           = Digest(filtered javac options as passed, -A options included || u8 release || str encoding || id processorPathHash)
 processorPathHash     = Digest(ordered bh of the processor path's jars)   // full byte hashes from P|, never k: a processor's bodies execute
@@ -773,10 +775,10 @@ MAT|projectKey|module|scope|dirHash = the OUT value last written to the director
 ### B.6 FORMAT
 
 ```
-FORMAT = <current LOCAL FORMAT, including full javac runtime version and locale=root>;bodies=3
+FORMAT = <current LOCAL FORMAT, including full javac runtime version and locale=root>;bodies=4
 ```
 
-`bodies=3` is the version of these codecs. A different FORMAT is a cold boot.
+`bodies=4` preserves exact diagnostic message code units; bodies 3 encoded messages through UTF-8. It is the version of these codecs. A different FORMAT is a cold boot.
 
 ### B.7 Bodies root
 
@@ -947,7 +949,7 @@ Form-1 entries read N in Arrange and Valid. Once the global definer/own shortcut
 
 ## Appendix F. Stage 2 processors (the second amendment, PR B)
 
-The stage 2 side of 3.5 and C.5, as its own PR after appendix A. The processor implementation adds records and extends the header compile; it does not change T/A/N resolution identities. The combined format uses **LOCAL 7**, after the Stage 2-only LOCAL 4 baseline, the generated-file row codec introduced in LOCAL 5, and the scope-specific processor execution plans and origin-to-GEN references introduced in LOCAL 6. LOCAL 7 adds persisted source declaration trees and a lossless source declaration codec; the file-row byte codec itself is unchanged. Legacy LOCAL roots require cold rebuilding. The format binds the full javac runtime version and Locale.ROOT.
+The stage 2 side of 3.5 and C.5, as its own PR after appendix A. The processor implementation adds records and extends the header compile; it does not change T/A/N resolution identities. The combined format uses **LOCAL 8**, after the Stage 2-only LOCAL 4 baseline, the generated-file row codec introduced in LOCAL 5, and the scope-specific processor execution plans and origin-to-GEN references introduced in LOCAL 6. LOCAL 7 added persisted source declaration trees and a lossless source declaration codec. LOCAL 8 preserves processor diagnostic text as UTF-16 code units; the file-row byte codec itself is unchanged. Legacy LOCAL roots require cold rebuilding. The format binds the full javac runtime version and Locale.ROOT.
 
 | Before | After |
 | --- | --- |
@@ -1013,7 +1015,7 @@ PROC|processorPathHash|processorClass
 
 PDIAG|projectKey|module|scope
     = ordered diagnostics: processor, path, kind, position/start/end,
-      line/column, code, text
+      line/column, str code, utf16 text
 ```
 
 PS and PG are fresh records in the committed LOCAL tree. Dynamic declarations may differ between scopes/options using identical processor jars, so per-file processor selection uses PS, with exact processor-path/options equality and preserved processor order. The global PROC merge is commutative: disagreeing declarations give 0, and observed state takes the maximum. PROC cannot choose the per-file processor set.

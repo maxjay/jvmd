@@ -123,7 +123,7 @@ class RocksMachineBootTest {
     @Test void mergedLayout4GenerationsAreUntouchedAndCannotSkipTheNewColdBoot() throws Exception {
         var digest = Sha256.INSTANCE;
         var index = temp.resolve("machine");
-        var previous = List.of("2", "3").stream()
+        var previous = List.of("2", "3", "4").stream()
                 .map(parser -> Generation.of(index, new Format(4, digest.name(), Runtime.version().feature(), parser))).toList();
         // Old codecs must remain opaque: only the old generation's commitment marker matters to the decision.
         byte[] oldRoot = {59, 2}, oldPath = {59, 3};
@@ -136,7 +136,7 @@ class RocksMachineBootTest {
         var config = new Config(Path.of(System.getProperty("java.home")), null, repository(), 3,
                 Duration.ofHours(1), 512, false, temp.resolve("state"), temp.resolve("daemon.sock"));
         var boot = BootDecision.machine(index, config);
-        assertThat(boot).as("committed parser-2/3 generations must not skip the parser-4 cold boot").isPresent();
+        assertThat(boot).as("committed parser-2/3/4 generations must not skip the parser-5 cold boot").isPresent();
         assertThat(boot.orElseThrow().faults()).isEmpty();
         var current = Generation.of(index, Format.of(digest, Runtime.version().feature()));
         assertThat(previous).noneMatch(g -> g.directory().equals(current.directory()));

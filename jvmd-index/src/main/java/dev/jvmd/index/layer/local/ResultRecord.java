@@ -34,7 +34,7 @@ public record ResultRecord(boolean attributed, List<ClassFile> classFiles, List<
         var out = new Codec.Writer(256).u8(attributed ? 1 : 0).u32(classFiles.size());
         for (var c : classFiles) out.zstr(c.internalName()).id(c.contentHash());
         out.u32(diagnostics.size());
-        for (var d : diagnostics) out.u8(d.kind()).u32(d.start()).u32(d.end()).str(d.code()).str(d.message());
+        for (var d : diagnostics) out.u8(d.kind()).u32(d.start()).u32(d.end()).str(d.code()).utf16(d.message());
         return out.toBytes();
     }
 
@@ -47,7 +47,7 @@ public record ResultRecord(boolean attributed, List<ClassFile> classFiles, List<
         for (int i = 0; i < c; i++) classFiles.add(new ClassFile(in.zstr(), in.id(width)));
         int n = in.count();
         var diagnostics = new ArrayList<Diagnostic>(n);
-        for (int i = 0; i < n; i++) diagnostics.add(new Diagnostic(in.u8(), position(in.u32()), position(in.u32()), in.str(), in.str()));
+        for (int i = 0; i < n; i++) diagnostics.add(new Diagnostic(in.u8(), position(in.u32()), position(in.u32()), in.str(), in.utf16()));
         if (in.remaining() != 0) throw new IllegalArgumentException("Trailing result bytes");
         return new ResultRecord(flag == 1, classFiles, diagnostics);
     }

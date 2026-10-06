@@ -47,20 +47,18 @@ public final class DefinerIndex {
     /**
      * What a fold leaves behind for building the next one by difference: for each type (by internal name; names become key bytes only
      * where an entry is written) the leaves that declare it, the types declared by more than one leaf, and the sorted distinct leaves it
-     * covers. Immutable: a derived state shares the lists of every type the difference did not touch.
+     * covers. Immutable: a derived state shares unchanged map branches as well as the lists they hold.
      */
     public static final class State {
-        final Map<String, List<Def>> counts;
-        final Set<String> multi;
+        final DefinerCounts counts;
         final List<Identity> leaves;
         /** The types whose definers differ from the state this one was folded from, and the disjoint tree of that state: an edit's input. */
         final Set<String> touched;
         final Root baseDisjoint;
         private volatile Root disjoint;
 
-        State(Map<String, List<Def>> counts, Set<String> multi, List<Identity> leaves, Set<String> touched, Root baseDisjoint) {
+        State(DefinerCounts counts, List<Identity> leaves, Set<String> touched, Root baseDisjoint) {
             this.counts = counts;
-            this.multi = multi;
             this.leaves = leaves;
             this.touched = touched;
             this.baseDisjoint = baseDisjoint;
@@ -88,33 +86,23 @@ public final class DefinerIndex {
         var added = new ArrayList<Identity>();
         difference(base == null ? List.of() : base.leaves, distinct, removed, added);
 
-        var counts = new HashMap<String, List<Def>>();
-        var multi = new HashSet<String>();
-        var touched = new HashSet<String>();
-        if (base != null) { counts.putAll(base.counts); multi.addAll(base.multi); }
+        var counts = base == null ? DefinerCounts.EMPTY : base.counts;
+        var changed = new HashMap<String, List<Def>>();
         for (var k : removed) {
             tree.forEach(leafOf.apply(k).oHash(), reader, entry -> {
                 var key = Keys.ownerOf(entry.key());
-                var defs = new ArrayList<>(counts.get(key));
+                var defs = changed.computeIfAbsent(key, t -> new ArrayList<>(counts.getOrDefault(t, List.of())));
                 for (int i = 0; i < defs.size(); i++) if (defs.get(i).k().equals(k)) { defs.remove(i); break; }
-                put(counts, multi, touched, key, defs);
             });
         }
         for (var k : added) {
             tree.forEach(leafOf.apply(k).oHash(), reader, entry -> {
                 var key = Keys.ownerOf(entry.key());
-                var defs = new ArrayList<Def>(counts.getOrDefault(key, List.of()));
+                var defs = changed.computeIfAbsent(key, t -> new ArrayList<>(counts.getOrDefault(t, List.of())));
                 defs.add(new Def(k, entry.h()));
-                put(counts, multi, touched, key, defs);
             });
         }
-        return new State(counts, multi, List.copyOf(distinct), touched, base == null ? null : base.disjoint);
-    }
-
-    private static void put(Map<String, List<Def>> counts, Set<String> multi, Set<String> touched, String key, List<Def> defs) {
-        touched.add(key);
-        if (defs.isEmpty()) counts.remove(key); else counts.put(key, List.copyOf(defs));
-        if (defs.size() > 1) multi.add(key); else multi.remove(key);
+        return new State(counts.with(changed), List.copyOf(distinct), Set.copyOf(changed.keySet()), base == null ? null : base.disjoint);
     }
 
     /**
@@ -153,11 +141,12 @@ public final class DefinerIndex {
      *
      * <p>It is computed by probing: every sibling type is looked up in the external state, O(project types), and the external state is
      * never iterated. The only other candidates are the types some part already knows to be multiple, which each state maintains as a
-     * set while it is folded (a handful in practice), so a conflict inside the external part is found without walking its types.
+     * subtree count while it is folded, so singleton branches are skipped without walking the external type universe.
      */
     public static Root conflicts(Digest digest, ContentTree tree, State external, State sibling, List<Identity> sequence, NodeSink sink) {
         var resolver = new Resolver(external, sibling, sequence);
-        var candidates = new HashSet<String>(external.multi);
+        var candidates = new HashSet<String>();
+        external.counts.forEachMultiple(candidates::add);
         candidates.addAll(sibling.counts.keySet());
         var entries = new ArrayList<Entry>();
         for (var key : candidates) {
@@ -264,10 +253,14 @@ public final class DefinerIndex {
 
     /** The size of the symmetric difference of two sorted leaf lists: how far {@code a} is from {@code b}. */
     public static int distance(List<Identity> a, List<Identity> b) {
-        var removed = new ArrayList<Identity>();
-        var added = new ArrayList<Identity>();
-        difference(a, b, removed, added);
-        return removed.size() + added.size();
+        int i = 0, j = 0, distance = 0;
+        while (i < a.size() && j < b.size()) {
+            int comparison = a.get(i).compareTo(b.get(j));
+            if (comparison < 0) { i++; distance++; }
+            else if (comparison > 0) { j++; distance++; }
+            else { i++; j++; }
+        }
+        return distance + a.size() - i + b.size() - j;
     }
 
     /** B.4: {@code id root.hash || id root.sum || u32 count || u8 level}, the value of {@code DD|}, {@code DS|} and {@code DC|}. */

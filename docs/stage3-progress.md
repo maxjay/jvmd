@@ -163,3 +163,27 @@ Before PR B, the required Stage 2 work is:
 5. Rewrite the Stage 2 authority (`C:\Users\Max\Downloads\jvmd stage 2 LOCAL cold boot.md`) and reconcile Appendix A with those implemented proof/reverse/state rules. No RA, nSum, broad processor dependencies or storage-existence dedup reads.
 
 The in-progress processor replay work remains preserved in the separate feat/jvmd-stage-3 tree. Appendix F, body attribution and the Stage 3 invariants are unfinished. PR #60 stays open pending explicit merge approval; warm remains untouched.
+
+
+### Stage 2 persistent definer state, 2026-10-06
+
+The counts-map copy reported in the third audit is removed. `DefinerCounts` is an immutable balanced map, built once for a cold fold and updated by copied search paths for changed type keys. A derived fold accumulates only the changed leaves' types and shares the remaining map entries and branches. Conflict enumeration skips singleton subtrees using their multiple-definer counts. Missing-key getOrDefault/containsKey are explicit point lookups too, avoiding AbstractMap's default full iteration. DD/DS/DC retain their existing ContentTree representations and sums; the map is boot-local working state, with no new stored identity or codec. Leaf-set distance now counts with two indices without allocating removed/added lists. Nearest-state selection itself still scans previous states and remains a separate cost issue.
+
+The structural-sharing regression first failed under both digests: replacing a small leaf in a 32,768-type state shared zero old map entries (`stage2-definer-state-red.log`). The repair reads only the changed leaves, preserves old snapshots, shares all but bounded search paths, and gives the same disjoint/conflict roots as fresh folds. The additional 3,000-update history covers ordered growth/deletion, random conflict membership, branching from old snapshots, point misses and structural sharing. The initial focused gate passed 84 tests and the expanded history suite passed 6.
+
+The final frozen gate passed **250 tests**, no failures/errors/skips, in 3m35s (`stage2-definer-state-frozen-gate.log`). An earlier run crossed the addition of the two point-lookup overrides during its first own-project measurement; its only failure was the resulting source-only pair of methods. That invalid sample is superseded by the complete frozen rerun. No Java sources changed during or after the final gate.
+
+The project oracle covers 13 modules / 26 scopes / 494 sources, with 91 jars indexed on the spot. Both digests have exact source/class k equality in 26/26 scopes, no annotation differences and zero faults:
+
+| Digest | Wall ms | Header ms | Facts ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 5,624 | 3,797 | 1,554 | 233 | 22,138 |
+| SHA3-256 | 3,911 | 2,331 | 771 | 174 | 22,144 |
+
+Maven model/build time (31.5/30.7s) is excluded. Sampled used heap above baseline was 488/881 MB, without controlling intervening GC. These sequential timings do not prove a speedup; the sharing/changed-leaf assertions and implementation's point-update paths establish the derivation cost change. Raw reports: [SHA-256](measurements/stage2-definer-state-SHA-256.txt), [SHA3-256](measurements/stage2-definer-state-SHA3-256.txt).
+
+```powershell
+mvn -B -pl jvmd-tests -am test '-Dtest=DefinerStateTest,MachineColdBootTest,ClassMemoTest,ContentTreeTest,ContentTreeEditTest,ZipReaderTest,RocksMachineBootTest,LocalColdBootTest,LocalCodecsTest,FactCodecsTest,RocksLocalBootTest,Layout4Test,HeaderAbsencesTest,SourceAnnotationProjectionTest,TailStrippingTest,StubProjectionTest,PersistedLeavesTest,MavenProjectTest,Stage2Measurement,ModuleArchitectureTest,ForbiddenIdentifiersTest' '-DexcludedGroups=none' '-Djvmd.stage2.workers=4' '-Dsurefire.failIfNoSpecifiedTests=false'
+```
+
+At 38f890cb, hosted [Tests](https://github.com/maxjay/jvmd/actions/runs/37392009479) and [benchmarks](https://github.com/maxjay/jvmd/actions/runs/37392009061) both passed. Those runs predate the persistent-map change. PR #60 remains open; passing checks are not merge approval. Exact T/N/D header proofs, path-addressed reverse entries, full special annotations in A, and the Stage 2 specification rewrite remain required before PR B. The untouched Stage 2 authority is `C:\Users\Max\Downloads\jvmd stage 2 LOCAL cold boot.md`, SHA-256 `c7b6d3eefeee086e91f90d4da7d96b5b34d301dc62f7f1739051036bfe4bad19` at this checkpoint. Appendix F replay WIP is preserved in the separate Stage 3 tree; all body/result/driver work remains unfinished.

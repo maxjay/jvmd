@@ -30,32 +30,32 @@ class FactCodecsTest {
         assertThat(Keys.ownerOf(m)).isEqualTo("a/B");
         assertThat(Keys.ownerKeyOf(m)).isEqualTo(Keys.ownerKey("a/B"));
         assertThat(Keys.edgeTarget(Keys.edgeKey("x/Y", 5, m))).isEqualTo("x/Y");
-        assertThat(Keys.simpleName("a/B$C")).isEqualTo("C");
+        assertThat(Keys.topLevelName("a/B$C")).isEqualTo("B$C");
     }
 
     @Test void typeFieldMethodAndModuleRoundTrip() {
         var retention = new Ann("Ljava/lang/annotation/Retention;", List.of(new Ann.Element("value", new Ann.Val.Enum("Ljava/lang/annotation/RetentionPolicy;", "RUNTIME"))));
         var metas = new ArrayList<Ann>(java.util.Arrays.asList(retention, null, null, null, null));
-        var type = new Res.Type(4, 0x2601, "<T:Ljava/lang/Object;>Ljava/lang/Object;", "java/lang/Object", List.of("java/lang/annotation/Annotation"), List.of("p/Q"), "p/Outer", "p/Outer",
-                List.of(new Res.Component("c", "I", null), new Res.Component("d", "Ljava/util/List;", "Ljava/util/List<TT;>;")), metas, null);
+        var type = new Res.Type(4, 0x2601, "<T:Ljava/lang/Object;>Ljava/lang/Object;", "java/lang/Object", List.of("java/lang/annotation/Annotation"), List.of("p/Q"), "p/Outer", "p/Outer", "Inner$Name",
+                List.of(new Res.Component("c", "I", null), new Res.Component("d", "Ljava/util/List;", "Ljava/util/List<TT;>;")), metas, null, Res.Warnings.NONE);
         assertThat(Res.Type.decode(type.encode())).isEqualTo(type);
         assertThat(Res.Type.decode(type.encode()).encode()).isEqualTo(type.encode());
 
         var module = new Res.Module("m.x", 0x20, "1.0", List.of(new Res.Requires("java.base", 0x8000, "25")), List.of(new Res.Directive("p/q", 0, List.of("m.y"))), List.of(),
                 List.of("p/Service"), List.of(new Res.Provides("p/Service", List.of("p/Impl"))));
-        var descriptor = new Res.Type(Res.Type.MODULE, 0x8000, null, null, List.of(), List.of(), null, null, List.of(), List.of(), module);
+        var descriptor = new Res.Type(Res.Type.MODULE, 0x8000, null, null, List.of(), List.of(), null, null, null, List.of(), List.of(), module, Res.Warnings.NONE);
         assertThat(Res.Type.decode(descriptor.encode())).isEqualTo(descriptor);
 
         for (var constant : new Res.Constant[] {null, new Res.Constant(3, -7 & 0xFFFFFFFFL, null), new Res.Constant(4, Float.floatToRawIntBits(1.5f) & 0xFFFFFFFFL, null),
                 new Res.Constant(5, Long.MIN_VALUE, null), new Res.Constant(6, Double.doubleToRawLongBits(2.5), null), new Res.Constant(8, 0, "text")}) {
-            var field = new Res.Field(0x19, "TT;", constant);
+            var field = new Res.Field(0x19, "TT;", constant, Res.Warnings.NONE);
             assertThat(Res.Field.decode(field.encode())).isEqualTo(field);
         }
 
         var nested = new Ann.Val.Array(List.of(new Ann.Val.Prim('I', 3), new Ann.Val.Str("s"), new Ann.Val.Cls("Lp/C;"), new Ann.Val.Nested(retention), new Ann.Val.Prim('D', Double.doubleToRawLongBits(1.0))));
-        var method = new Res.Method(0x401, null, List.of("java/io/IOException"), nested);
+        var method = new Res.Method(0x401, null, List.of("java/io/IOException"), nested, Res.Warnings.NONE);
         assertThat(Res.Method.decode(method.encode())).isEqualTo(method);
-        assertThat(Res.Method.decode(new Res.Method(1, "()V", List.of(), null).encode()).defaultValue()).isNull();
+        assertThat(Res.Method.decode(new Res.Method(1, "()V", List.of(), null, Res.Warnings.NONE).encode()).defaultValue()).isNull();
     }
 
     @Test void aLeafIsTheSameShapeWhoeverBuildsIt() {
@@ -96,7 +96,9 @@ class FactCodecsTest {
     }
 
     private static Fact fact(byte[] m, String simpleName, String what) {
-        var res = new Codec.Writer().str(what).toBytes();
+        var res = Keys.Member.decode(m).kind() == Keys.TYPE
+                ? new Res.Type(0, 1, null, "java/lang/Object", List.of(), List.of(), null, null, null, List.of(), List.of(), null, Res.Warnings.NONE).encode()
+                : new Codec.Writer().str(what).toBytes();
         return Fact.of(D, m, res, Entry.NONE, simpleName);
     }
 }

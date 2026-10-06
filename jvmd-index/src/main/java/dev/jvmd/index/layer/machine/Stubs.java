@@ -35,7 +35,8 @@ import java.util.function.Function;
  * Stubs (stage 2, 3.14, 5.2a, C.8 and B.10): class files synthesised from a leaf's {@code T}, with every declared member and
  * everything in its {@code res}, including warning metadata and annotation-type meta-annotations. It reads no annotation tree
  * and includes no executable bodies or parameter names. A method without {@code Code} is legal input to javac; stubs are
- * compile-time input and are never loaded by a JVM. A stub is a pure function of one type's {@code res}, so it is cached per type and shared.
+ * compile-time input and are never loaded by a JVM. A stub is a pure function of one type's {@code res} and its direct members'
+ * InnerClasses projection, so it is cached per type and shared.
  *
  * <p>What a stub lacks that javac needs would be a field of {@code res} that was classified as {@code tail}; invariant 7.3.14
  * (compiling against stubs gives the same result as against the real class files) is where that would surface.
@@ -83,16 +84,16 @@ public final class Stubs {
     }
 
     /**
-     * One stub per type of the leaf, in type key order (5.2a). A stub is a function of one type's {@code res}, which is what its
-     * {@code oSum} identifies, so it is cached per type by {@code Digest(typeKey || oSum)}: shared across leaves, projects and time,
+     * One stub per type of the leaf, in type key order (5.2a). Its own {@code res} is identified by {@code oSum}; its direct
+     * members contribute only the projection below. The resulting per-type key is shared across leaves, projects and time,
      * and an edit regenerates the stubs of the types it changed and never the module's. A module descriptor has no stub: it is not a
      * type a member can be resolved in.
      *
      * <p>The key of a type is
-     * <pre>ST|Digest(typeKey || oSum || sorted (memberTypeKey || u16 flags))</pre>
+     * <pre>ST|Digest(typeKey || oSum || sorted (memberTypeKey || opt&lt;str&gt; innerName || u16 flags))</pre>
      * One thing besides {@code res} is in a class file: an outer type's {@code InnerClasses} attribute, which is how javac finds its member
-     * types. Those are other types' facts, so the outer type's key names its member types and their flags (the access bits of the
-     * member's own {@code res}) and nothing else about them: never a member's {@code oSum}, so that a change to a method of {@code Inner}
+     * types. Those are other types' facts, so the outer type's key names its member types, exact inner names and emitted inner flags,
+     * and nothing else about them: never a member's {@code oSum}, so that a change to a method of {@code Inner}
      * changes {@code Inner}'s stub and not {@code Outer}'s. A type without member types has exactly the key {@code Digest(typeKey || oSum)}.
      */
     public static List<Stub> stubs(Digest digest, ContentTree tree, MachineLeaf leaf, Function<Identity, byte[]> reader, Cache cache) {
@@ -132,7 +133,10 @@ public final class Stubs {
             if (decl.type == null || decl.type.kind() == Res.Type.MODULE) continue; // no type fact (not produced), or a module descriptor
             var oSum = tree.get(leaf.oHash(), reader, Keys.ownerKey(decl.owner)).h();
             var memberTypes = new ArrayList<Member>();
-            for (var member : members.getOrDefault(decl.owner, List.of())) memberTypes.add(new Member(member, decls.get(member).type.access()));
+            for (var member : members.getOrDefault(decl.owner, List.of())) {
+                var type = decls.get(member).type;
+                memberTypes.add(new Member(member, type.innerName(), innerFlags(type.access())));
+            }
             var stKey = stKey(digest, decl.owner, oSum, memberTypes);
             var stored = cache.type(stKey);
             byte[] bytes;
@@ -148,18 +152,18 @@ public final class Stubs {
         return out;
     }
 
-    /** A member type of a type, as its outer type's stub names it: its internal name and its flags (the access bits of its own {@code res}). */
-    public record Member(String internalName, int flags) { }
+    /** Exactly one entry in the outer stub's InnerClasses attribute, excluding the already identified outer name. */
+    public record Member(String internalName, String innerName, int flags) { }
 
     /**
-     * {@code Digest(typeKey || oSum || sorted (memberTypeKey || u16 flags))} (B.10): the member part sorted by the unsigned bytes of
+     * {@code Digest(typeKey || oSum || sorted (memberTypeKey || opt<str> innerName || u16 flags))} (B.10): the member part sorted by the unsigned bytes of
      * {@code memberTypeKey} ({@code zstr internalName}), so it is the same on every machine and in every language, and absent for a
      * type without member types.
      */
     public static Identity stKey(Digest digest, String owner, Identity oSum, List<Member> members) {
         var parts = new ArrayList<byte[]>(List.of(Keys.ownerKey(owner), oSum.view()));
         var sorted = new ArrayList<byte[]>();
-        for (var member : members) sorted.add(new Codec.Writer(member.internalName().length() + 3).zstr(member.internalName()).u16(member.flags()).toBytes());
+        for (var member : members) sorted.add(new Codec.Writer().zstr(member.internalName()).optStr(member.innerName()).u16(member.flags()).toBytes());
         // memberTypeKey is a zstr, so the NUL after the name ends it: comparing the whole parts compares the keys first.
         sorted.sort(Arrays::compareUnsigned);
         parts.addAll(sorted);
@@ -211,16 +215,16 @@ public final class Stubs {
 
         return ClassFile.of().build(internal(decl.owner), cb -> {
             cb.withFlags(classFlags);
-            if (type.warnings().deprecated()) cb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
+            if (type.warnings().deprecatedAttribute()) cb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
             if (superName != null) cb.withSuperclass(internal(superName));
             if (!interfaces.isEmpty()) cb.withInterfaceSymbols(interfaces);
             if (signature != null) cb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(signature)));
             if (host != null) cb.with(NestHostAttribute.of(internal(host)));
             if (!permits.isEmpty()) cb.with(PermittedSubclassesAttribute.ofSymbols(permits));
             var inner = new ArrayList<InnerClassInfo>();
-            if (outer != null) inner.add(InnerClassInfo.of(internal(decl.owner), Optional.of(internal(outer)), Optional.of(Keys.simpleName(decl.owner)), innerFlags(access)));
+            if (outer != null) inner.add(InnerClassInfo.of(internal(decl.owner), Optional.of(internal(outer)), Optional.ofNullable(type.innerName()), innerFlags(access)));
             for (var member : memberTypes) {
-                inner.add(InnerClassInfo.of(internal(member), Optional.of(internal(decl.owner)), Optional.of(Keys.simpleName(member)), innerFlags(all.get(member).type.access())));
+                inner.add(InnerClassInfo.of(internal(member), Optional.of(internal(decl.owner)), Optional.ofNullable(all.get(member).type.innerName()), innerFlags(all.get(member).type.access())));
             }
             if (!inner.isEmpty()) cb.with(InnerClassesAttribute.of(inner));
             if (kind == 3) {
@@ -249,7 +253,7 @@ public final class Stubs {
         };
         cb.withField(decl.name(), ClassDesc.ofDescriptor(decl.descriptor()), fb -> {
             fb.withFlags(res.access());
-            if (res.warnings().deprecated()) fb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
+            if (res.warnings().deprecatedAttribute()) fb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
             if (!res.warnings().annotations().isEmpty()) fb.with(RuntimeVisibleAnnotationsAttribute.of(res.warnings().annotations().stream().map(Stubs::annotation).toList()));
             if (res.signature() != null) fb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(res.signature())));
             if (constant != null) fb.with(ConstantValueAttribute.of(constant));
@@ -262,7 +266,7 @@ public final class Stubs {
         for (var t : res.thrown()) thrown.add(internal(t));
         AnnotationValue defaultValue = res.defaultValue() == null ? null : value(res.defaultValue());
         cb.withMethod(decl.name(), MethodTypeDesc.ofDescriptor(decl.descriptor()), res.access(), mb -> {
-            if (res.warnings().deprecated()) mb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
+            if (res.warnings().deprecatedAttribute()) mb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
             if (!res.warnings().annotations().isEmpty()) mb.with(RuntimeVisibleAnnotationsAttribute.of(res.warnings().annotations().stream().map(Stubs::annotation).toList()));
             if (res.signature() != null) mb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(res.signature())));
             if (!thrown.isEmpty()) mb.with(ExceptionsAttribute.ofSymbols(thrown));

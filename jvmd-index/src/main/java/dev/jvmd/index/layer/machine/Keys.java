@@ -46,7 +46,14 @@ public final class Keys {
     }
 
     public static byte[] memberTypesKey(String type, String name) {
-        return (type + "$" + name).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return new Codec.Writer().zstr(name).u8(TYPE).zstr(type).toBytes();
+    }
+
+    /** N is one rekeyed entry per fact, with an exact Java name and direct enclosing type. */
+    public static byte[] nameKey(String name, int kind, String outer, byte[] m) {
+        var out = new Codec.Writer().zstr(name).u8(kind);
+        if (kind == TYPE) out.zstr(outer == null ? "" : outer);
+        return out.raw(m).toBytes();
     }
 
     /** The {@code O} key of the type a fact belongs to. */
@@ -65,9 +72,9 @@ public final class Keys {
 
     public static int edgeKind(byte[] edgeKey) { return edgeKey[nul(edgeKey) + 1] & 0xFF; }
 
-    /** The text after the last '/' and the last '$' (A.6). */
-    public static String simpleName(String internalName) {
-        int cut = Math.max(internalName.lastIndexOf('/'), internalName.lastIndexOf('$'));
+    /** A top-level name; '$' is a legal identifier character, never a separator here. */
+    public static String topLevelName(String internalName) {
+        int cut = internalName.lastIndexOf('/');
         return internalName.substring(cut + 1);
     }
 

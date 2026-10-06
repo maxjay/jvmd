@@ -301,6 +301,7 @@ class MachineColdBootTest {
         @Override public void write(dev.jvmd.core.tree.Node node) { arrivals.add(parsed.get()); inner.write(node); }
         @Override public void flush() { inner.flush(); }
         @Override public void putLeaf(Identity k, byte[] leaf) { inner.putLeaf(k, leaf); }
+        @Override public void putAnnotationLeaf(Identity a, byte[] roots) { inner.putAnnotationLeaf(a, roots); }
         @Override public void putPath(String location, byte[] value) { inner.putPath(location, value); }
         @Override public void putRoot(byte[] value) { inner.putRoot(value); }
         @Override public void sync() { inner.sync(); }
@@ -378,10 +379,10 @@ class MachineColdBootTest {
     @Test void onlyTheFourRecordKindsAreWrittenAndTheRootVerifies() throws Exception {
         var store = new InMemoryMachineStore();
         boot(Sha256.INSTANCE, 4, all(), store);
-        assertThat(store.kinds().keySet()).containsExactlyInAnyOrder("L", "N", "P", "ROOT");
+        assertThat(store.kinds().keySet()).containsExactlyInAnyOrder("L", "N", "P", "AL", "ROOT");
         var record = MachineTree.decodeRoot(Sha256.INSTANCE, store.root());
         assertThat(record.format()).isEqualTo(Format.of(Sha256.INSTANCE, 25).toString());
-        assertThat(record.format()).isEqualTo("layout=4;digest=SHA-256;jdk=25;parser=2");
+        assertThat(record.format()).isEqualTo("layout=4;digest=SHA-256;jdk=25;parser=3");
     }
 
     @Test void faultsAreRecordedAndNeverFatal() throws Exception {

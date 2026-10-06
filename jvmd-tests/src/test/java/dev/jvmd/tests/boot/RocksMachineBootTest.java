@@ -54,8 +54,8 @@ class RocksMachineBootTest {
             assertThat(result.root()).isEqualTo(expected.root());
             assertThat(store.get(MachineStore.ROOT_KEY)).isEqualTo(memory.root());
             var kinds = new TreeMap<String, Long>();
-            for (var key : store.keys()) kinds.merge(Arrays.equals(key, MachineStore.ROOT_KEY) ? "ROOT" : String.valueOf((char) (key[0] & 0xFF)), 1L, Long::sum);
-            assertThat(kinds.keySet()).containsExactlyInAnyOrder("L", "N", "P", "ROOT");
+            for (var key : store.keys()) kinds.merge(Arrays.equals(key, MachineStore.ROOT_KEY) ? "ROOT" : key[0] == 'A' ? "AL" : String.valueOf((char) (key[0] & 0xFF)), 1L, Long::sum);
+            assertThat(kinds.keySet()).containsExactlyInAnyOrder("L", "N", "P", "AL", "ROOT");
             assertThat(kinds).isEqualTo(memory.kinds());
             new ContentTree(digest).verify(MachineTree.decodeRoot(digest, store.get(MachineStore.ROOT_KEY)).root(), h -> store.get(MachineStore.nodeKey(h)));
         }
@@ -114,7 +114,37 @@ class RocksMachineBootTest {
             assertThat(lines).hasSize(1);
             assertThat(lines.get(0)).contains(generation.directory().toString()).contains("warm boot not implemented, skipping").doesNotContain("\n");
             try (var store = generation.open()) { assertThat(store.get(MachineStore.ROOT_KEY)).as("nothing was deleted or rewritten").isEqualTo(root); }
-            assertThat(Files.list(index).map(p -> p.getFileName().toString()).toList()).containsExactly("layout=4_digest=SHA-256_jdk=" + Runtime.version().feature() + "_parser=2");
+            try (var directories = Files.list(index)) {
+                assertThat(directories.map(p -> p.getFileName().toString()).toList()).containsExactly(generation.directory().getFileName().toString());
+            }
         } finally { logger.removeHandler(handler); }
+    }
+
+    @Test void mergedLayout4Parser2GenerationIsUntouchedAndCannotSkipTheNewColdBoot() throws Exception {
+        var digest = Sha256.INSTANCE;
+        var index = temp.resolve("machine");
+        var previous = Generation.of(index, new Format(4, digest.name(), Runtime.version().feature(), "2"));
+        // Old codecs must remain opaque: only the old generation's commitment marker matters to the decision.
+        byte[] oldRoot = {59, 2}, oldPath = {59, 3};
+        try (var store = previous.create()) {
+            store.putPath("old-layout", oldPath);
+            store.flush();
+            store.sync();
+            store.putRoot(oldRoot);
+        }
+        var config = new Config(Path.of(System.getProperty("java.home")), null, repository(), 3,
+                Duration.ofHours(1), 512, false, temp.resolve("state"), temp.resolve("daemon.sock"));
+        var boot = BootDecision.machine(index, config);
+        assertThat(boot).as("a committed parser-2 generation must not skip the parser-3 cold boot").isPresent();
+        assertThat(boot.orElseThrow().faults()).isEmpty();
+        var current = Generation.of(index, Format.of(digest, Runtime.version().feature()));
+        assertThat(current.directory()).isNotEqualTo(previous.directory());
+        assertThat(current.hasRoot()).isTrue();
+        assertThat(BootDecision.machine(index, config)).isEmpty();
+        try (var store = previous.open()) {
+            assertThat(store.get(MachineStore.ROOT_KEY)).isEqualTo(oldRoot);
+            assertThat(store.get(MachineStore.pathKey("old-layout"))).isEqualTo(oldPath);
+            assertThat(store.keys()).hasSize(2);
+        }
     }
 }

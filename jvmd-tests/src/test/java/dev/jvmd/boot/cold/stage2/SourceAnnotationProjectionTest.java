@@ -60,6 +60,20 @@ class SourceAnnotationProjectionTest {
     }
 
     @ParameterizedTest @MethodSource("cases")
+    void exactDollarNamesAndWarningStatesMatchBinary(Digest digest, boolean parameters) throws Exception {
+        compare(digest, parameters, false, """
+                package p;
+                @Deprecated(since="1", forRemoval=false) public class K {
+                    public static class Foo$Bar {}
+                    public static class Other { public static class Bar {} }
+                    @Deprecated(since="2", forRemoval=true) public int field;
+                    @Deprecated(since="3") @SafeVarargs public static <T> void call(T... values) {}
+                }
+                class Top$Level {}
+                """);
+    }
+
+    @ParameterizedTest @MethodSource("cases")
     void sourceExtractionDoesNotAttributeBodies(Digest digest, boolean parameters) throws Exception {
         compare(digest, parameters, true, """
                 package p;
@@ -83,7 +97,7 @@ class SourceAnnotationProjectionTest {
         var expected = project(digest, binaryFacts, binaryEdges);
         try (var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("p/K.java", dir.resolve("src/p/K.java"))),
                 List.of(), Stage2Support.JDK, Stage2Support.FEATURE, options, digest)) {
-            var facts = new SourceFacts(digest, compiled.elements, compiled.types, compiled.trees, parameters).of(compiled.units.getFirst().declared);
+            var facts = new SourceFacts(digest, compiled.elements, compiled.types, parameters).of(compiled.units.getFirst().declared);
             assertThat(facts.faults()).isEmpty();
             if (brokenBody) {
                 var owner = compiled.units.getFirst().declared.stream().filter(t -> t.getSimpleName().contentEquals("K")).findFirst().orElseThrow();
@@ -96,22 +110,27 @@ class SourceAnnotationProjectionTest {
             }
             var actual = project(digest, facts.facts(), facts.edges());
             assertThat(actual.k).as("source/binary resolution projection").isEqualTo(expected.k);
+            sameTree(digest, "N", actual.names, expected.names, actual, expected);
             sameTree(digest, "A", actual.annotations, expected.annotations, actual, expected);
             sameTree(digest, "EA", actual.edges, expected.edges, actual, expected);
             assertThat(actual.a).isEqualTo(expected.a);
         }
     }
 
-    record Projection(Identity k, Identity a, Root annotations, Root edges, InMemoryLocalStore store) {}
+    record Projection(Identity k, Identity a, Root names, Root annotations, Root edges, InMemoryLocalStore store) {}
 
     private Projection project(Digest digest, List<Fact> facts, List<Entry> edges) {
         var store = new InMemoryLocalStore();
-        var builder = new LeafBuilder(new ContentTree(digest), store);
+        var tree = new ContentTree(digest);
+        var builder = new LeafBuilder(tree, store);
         facts.stream().sorted((a, b) -> Arrays.compareUnsigned(a.m(), b.m())).forEach(builder::add);
         builder.edges(edges);
         var k = builder.seal();
+        var leaf = builder.build();
         store.flush();
-        return new Projection(k, builder.a(), builder.annotations(), builder.annotationEdges(), store);
+        var names = new Root(leaf.nHash(), leaf.r(), leaf.factCount(), leaf.nLevel());
+        tree.verify(names, hash -> store.get(MachineStore.nodeKey(hash)));
+        return new Projection(k, builder.a(), names, builder.annotations(), builder.annotationEdges(), store);
     }
 
     private void sameTree(Digest digest, String name, Root actualRoot, Root expectedRoot, Projection actual, Projection expected) {

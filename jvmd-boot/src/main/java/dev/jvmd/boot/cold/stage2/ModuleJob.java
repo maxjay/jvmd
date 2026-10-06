@@ -6,6 +6,8 @@ import dev.jvmd.index.layer.local.Bind;
 import dev.jvmd.index.layer.local.Bound;
 import dev.jvmd.index.layer.local.DefinerIndex;
 import dev.jvmd.index.layer.local.FileRow;
+import dev.jvmd.index.layer.local.HeaderProof;
+import dev.jvmd.index.layer.local.ProofCollector;
 import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.index.layer.local.ReverseIndex;
@@ -50,7 +52,7 @@ final class ModuleJob {
 
     /** A file's row before its header proof, which needs the definer indexes of the route (3.18). Nothing of its bytes. */
     private record Pending(String path, long size, long mtimeNanos, Identity kappa, Identity sum, List<String> types, List<FileRow.Fault> faults,
-                           Set<String> headerTargets, List<String> constants, List<dev.jvmd.index.layer.local.HeaderProof.Absence> absences) { }
+                           Set<String> headerTargets, ProofCollector.Observations reads) { }
 
     /** What {@code Stage2} needs back: the leaf. Everything else is recorded in {@link Boot}. */
     MachineLeaf run(ProjectModel.Module module, int scope) throws IOException {
@@ -86,7 +88,7 @@ final class ModuleJob {
         var compiled = HeaderCompiler.compile(toCompile, classpath, Path.of(boot.model.jdkHome()), release, options, digest);
         boot.headerNanos.addAndGet(System.nanoTime() - headerStarted);
         try (compiled) {
-            var extract = new SourceFacts(digest, compiled.elements, compiled.types, compiled.trees, options.contains("-parameters"));
+            var extract = new SourceFacts(digest, compiled.elements, compiled.types, options.contains("-parameters"));
             var unitsByPath = new HashMap<String, HeaderCompiler.Unit>();
             for (var u : compiled.units) unitsByPath.put(u.path, u);
             // 4. Each compilation unit, in path order.
@@ -95,7 +97,7 @@ final class ModuleJob {
                 var kappa = unit.kappa == null ? sums.zero() : unit.kappa; // javac could not read it: the file is a parse fault
                 if (!unit.parsed()) {
                     pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sums.zero(), List.of(),
-                            List.of(new FileRow.Fault(new byte[0], unit.parseError)), Set.of(), List.of(), List.of()));
+                            List.of(new FileRow.Fault(new byte[0], unit.parseError)), Set.of(), ProofCollector.Observations.NONE));
                     continue;
                 }
                 // No boot-wide memo of a file's facts (2.6): the header proof in the file row is what lets a later layer keep them.
@@ -106,6 +108,7 @@ final class ModuleJob {
                     result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)))
                             : SourceFacts.Result.NONE;
                 } else result = extract.of(unit.declared);
+                var reads = ProofCollector.headers(unit.declared, compiled.trees, compiled.elements, compiled.types);
                 boot.factsNanos.addAndGet(System.nanoTime() - factsStarted);
                 boot.parsedFiles.incrementAndGet();
                 var faults = new ArrayList<>(result.faults());
@@ -122,8 +125,7 @@ final class ModuleJob {
                 builder.edges(result.edges());
                 var types = new ArrayList<String>();
                 for (var type : result.typeKeys()) if (kept.contains(ByteBuffer.wrap(Keys.typeKey(type)))) types.add(type);
-                var absences = dev.jvmd.index.layer.local.ProofCollector.headerAbsences(unit.declared, compiled.trees, compiled.elements, compiled.types);
-                pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sum, types, faults, new TreeSet<>(result.headerTargets()), result.constantTargets(), absences));
+                pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sum, types, faults, new TreeSet<>(result.headerTargets()), reads));
             }
         }
 
@@ -131,6 +133,7 @@ final class ModuleJob {
         facts.sort((a, b) -> Arrays.compareUnsigned(a.m(), b.m()));
         for (var fact : facts) builder.add(fact);
         var k = builder.seal();
+        store.putAnnotationLeaf(builder.a(), new dev.jvmd.index.layer.machine.AnnotationLeaf(builder.annotations(), builder.annotationEdges()).encode());
 
         // The leaf: the first job to reach this key finds or writes it, and the others take that one (Built.once). A leaf MACHINE or an
         // earlier project already holds is not built again.
@@ -156,17 +159,17 @@ final class ModuleJob {
         for (var type : builder.types()) own.put(Keys.ownerOf(type.key()), type.h());
         for (var p : pending) {
             // The types the headers mention (kind 7) and the types the constants resolved through (kind 8): one proof, two reverse entries.
-            var constants = new TreeSet<>(p.constants());
-            constants.removeAll(p.headerTargets());
-            var all = new TreeSet<>(p.headerTargets());
-            all.addAll(p.constants());
+            var all = new TreeSet<>(p.reads().ranges());
+            // Implicit declaration types (Object, Enum, generated record methods) also contribute facts without an explicit source tree.
+            for (var target : p.headerTargets()) all.add(new HeaderProof.Range(target, Keys.TYPE, ""));
+            var constants = all.stream().map(HeaderProof.Range::type).filter(t -> !p.headerTargets().contains(t)).collect(Collectors.toSet());
             java.util.function.Function<String, MachineLeaf> definer = type -> {
                 if (own.containsKey(type)) return leaf;
                 var external = resolver.definer(type);
                 return external == null ? null : boot.leaf(external);
             };
-            var absences = p.absences().stream().filter(a -> dev.jvmd.index.layer.local.HeaderProof.absent(a, boot.tree, definer, boot::node)).toList();
-            var row = new FileRow(p.path(), p.kappa(), p.size(), p.mtimeNanos(), p.sum(), List.copyOf(p.types()), List.copyOf(p.faults()), headerProof(all, own, resolver), leaf.r(), absences);
+            var absences = p.reads().absences().stream().filter(a -> HeaderProof.absent(a, boot.tree, definer, boot::node)).toList();
+            var row = new FileRow(p.path(), p.kappa(), p.size(), p.mtimeNanos(), p.sum(), List.copyOf(p.types()), List.copyOf(p.faults()), headerProof(all, definer), leaf.r(), absences);
             boot.files.put(row.path(), row);
             var consumer = new ReverseIndex.Consumer(row.kappa(), bound.leafSetExt());
             var named = row.headerProof().stream().map(FileRow.Proof::typeKey).collect(Collectors.toSet());
@@ -201,18 +204,13 @@ final class ModuleJob {
         return null;
     }
 
-    /**
-     * 3.18: for every type the file's headers mention (the targets of its {@code E} edges), the {@code oSum} of its definer under this
-     * binding. A type the module declares itself is its own definer; any other is resolved sibling, then external, then conflicts. A
-     * name nothing declares has no definer and no entry. Sorted by type name, so the row is a function of the file and the binding. The
-     * targets are the headers' types and the types a constant initialiser resolved through: both are names the facts depend on.
-     */
-    private static List<FileRow.Proof> headerProof(Set<String> targets, Map<String, Identity> own, DefinerIndex.Resolver resolver) {
-        var proof = new ArrayList<FileRow.Proof>(targets.size());
-        for (var target : targets) {
-            var oSum = own.get(target);
-            if (oSum == null) oSum = resolver.oSum(target);
-            if (oSum != null) proof.add(new FileRow.Proof(target, oSum));
+    /** Resolve each observed T prefix in the same own-first binding used for javac, retaining expected-zero member ranges. */
+    private List<FileRow.Proof> headerProof(Set<HeaderProof.Range> ranges, java.util.function.Function<String, MachineLeaf> definer) {
+        var proof = new ArrayList<FileRow.Proof>(ranges.size());
+        for (var range : ranges) {
+            var leaf = definer.apply(range.type());
+            if (leaf != null) proof.add(new FileRow.Proof(range.type(), range.kind(), range.name(),
+                    boot.tree.rangeSum(leaf.k(), boot::node, range.key())));
         }
         return proof;
     }

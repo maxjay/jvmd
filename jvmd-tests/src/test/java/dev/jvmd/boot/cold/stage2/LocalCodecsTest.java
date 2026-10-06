@@ -35,6 +35,14 @@ class LocalCodecsTest {
 
     private static Identity id(String s) { return D.hash(s.getBytes()); }
 
+    @Test void annotationAndSourceLeafRecordsRetainFullRoots() {
+        var binding = new dev.jvmd.index.layer.local.SourceLeaf(id("k"), id("a"));
+        assertThat(dev.jvmd.index.layer.local.SourceLeaf.decode(binding.encode(), D.width())).isEqualTo(binding);
+        var roots = new dev.jvmd.index.layer.machine.AnnotationLeaf(new Root(id("A"), id("A.sum"), 73, 2), new Root(id("EA"), id("EA.sum"), 16, 1));
+        assertThat(dev.jvmd.index.layer.machine.AnnotationLeaf.decode(roots.encode(), D.width())).isEqualTo(roots);
+        assertThat(roots.encode().length).isEqualTo(4 * D.width() + 10);
+    }
+
     @Test void routesAndRecordsRoundTrip() {
         var route = new Route(List.of(new RouteEntry.Jrt("jrt:/java.base", "java.base", id("jdk"), id("jdk-annotations")), new RouteEntry.Jar("g:a:1", "g/a/1/a-1.jar", id("jar"), id("jar-annotations")),
                 new RouteEntry.Jar("g:missing:1", "g/missing/1/missing-1.jar", null, null), new RouteEntry.Sibling("g:b:1", "b")), id("hash"), id("R"), id("ext"), id("sib"));
@@ -52,7 +60,7 @@ class LocalCodecsTest {
         var m = new Codec.Writer().zstr("p/Owner").u8(1).zstr("field").zstr("I").toBytes();
         var row = new FileRow("m/src/main/java/p/Owner.java", id("kappa"), 123, 456_789_000_000L, id("sum"), List.of("p/Owner", "p/Owner$Inner"),
                 List.of(new FileRow.Fault(m, "cannot resolve Foo"), new FileRow.Fault(new byte[0], "1:2 expected ';'")),
-                List.of(new FileRow.Proof("java/lang/Object", id("o")), new FileRow.Proof("p/Other", id("p"))), id("ownR"),
+                List.of(new FileRow.Proof("java/lang/Object", 0, "", id("o")), new FileRow.Proof("p/Other", 1, "VALUE", id("p"))), id("ownR"),
                 List.of(new dev.jvmd.index.layer.local.HeaderProof.Absence(0, "p/Missing", ""), new dev.jvmd.index.layer.local.HeaderProof.Absence(1, "p/Base", "Inner")));
         var rowBack = FileRow.decode(row.path(), row.encode(), 32);
         assertThat(rowBack.typeKeys()).isEqualTo(row.typeKeys());

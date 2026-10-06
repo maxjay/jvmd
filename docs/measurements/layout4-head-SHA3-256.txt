@@ -1,0 +1,16 @@
+revision=LAYOUT4-review-fixes
+digest=SHA3-256 runtime=25.0.4.1+1-LTS workers=4
+repository=C:\Users\Max\.m2\repository jdk=C:\Users\Max\tools\jdk-25.0.4.1+1
+inventory=Digest(sorted(zstr location || bh)) 849cd45ccc4139cad0acdcd10924ff7e43a445e2dca5ca46194156bf21924c7a jdk_image=24e8820b3118cc276c5324a2b83902ecc05fd625ca55afa8a65d7fb7f07a3703
+locations=515 distinct_bytes=515 leaves=491
+wall_ms=3730 phi_calls=103443 faults=0
+nodes_written=99850 nodes_produced=127864 node_bytes=537502824 annotation_records=334
+sampled_heap_baseline=1294920640 sampled_heap_peak=2285000928
+tree=A produced=4270 unique=3147 unique_bytes=20849342
+tree=E produced=47432 unique=36321 unique_bytes=218520680
+tree=EA produced=3647 unique=2444 unique_bytes=11800482
+tree=MACHINE produced=5 unique=5 unique_bytes=137434
+tree=N produced=34022 unique=28747 unique_bytes=138506860
+tree=O produced=4093 unique=3458 unique_bytes=8447202
+tree=T produced=34395 unique=25733 unique_bytes=139240854
+fault_entries=

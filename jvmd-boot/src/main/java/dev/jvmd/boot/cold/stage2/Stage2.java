@@ -113,6 +113,8 @@ public final class Stage2 {
                     for (int scope : new int[] {LocalStore.MAIN, LocalStore.TEST}) {
                         var route = boot.routes.get(Boot.routeKey(module.name(), scope)).encode();
                         put(store, records, LocalStore.routeKey(projectKey, module.name(), scope), route);
+                        var binding = new dev.jvmd.index.layer.local.SourceLeaf(boot.built.leaf(module.name(), scope).k(), boot.built.a(module.name(), scope));
+                        put(store, records, LocalStore.sourceLeafKey(projectKey, module.name(), scope), binding.encode());
                     }
                 }
                 for (var row : new java.util.TreeMap<>(boot.files).values()) {

@@ -2,7 +2,6 @@ package dev.jvmd.index.layer.machine;
 
 import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.hash.Digest;
-import dev.jvmd.core.tree.Codec;
 import dev.jvmd.core.tree.Entry;
 
 /**
@@ -20,9 +19,10 @@ public record Fact(byte[] m, byte[] res, byte[] tail, Identity h, String simpleN
     /** An empty tail has no A entry. */
     public Entry aEntry(Digest digest) { return tail.length == 0 ? null : new Entry(m, tail, digest.hash(m, tail)); }
 
-    /** The entry of {@code N}: key (simple name, m), no value, identity h. */
+    /** The entry of {@code N}: exact name, kind, type's outer-or-empty, m; no value, identity h. */
     public Entry byName() {
-        var key = new Codec.Writer(simpleName.length() + m.length + 2).zstr(simpleName).raw(m).toBytes();
+        int kind = Keys.Member.decode(m).kind();
+        var key = Keys.nameKey(simpleName, kind, kind == Keys.TYPE ? Res.Type.decode(res).outer() : null, m);
         return new Entry(key, Entry.NONE, h);
     }
 }

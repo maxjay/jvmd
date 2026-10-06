@@ -39,6 +39,7 @@ class RealRepositoryBootTest {
         @Override public void write(Node node) { nodeBytes.addAndGet(node.bytes().length); inner.write(node); }
         @Override public void flush() { inner.flush(); }
         @Override public void putLeaf(Identity k, byte[] leaf) { inner.putLeaf(k, leaf); }
+        @Override public void putAnnotationLeaf(Identity a, byte[] roots) { inner.putAnnotationLeaf(a, roots); }
         @Override public void putPath(String location, byte[] value) { inner.putPath(location, value); }
         @Override public void putRoot(byte[] value) { inner.putRoot(value); }
         @Override public void sync() { inner.sync(); }

@@ -34,8 +34,8 @@ public final class LeafBuilder {
     public LeafBuilder(ContentTree tree, NodeSink sink) {
         this.tree = tree;
         this.sink = sink;
-        this.chunker = tree.chunker(sink);
-        this.annotations = tree.chunker(sink);
+        this.chunker = tree.chunker(sink.named("T"));
+        this.annotations = tree.chunker(sink.named("A"));
         this.ownerSum = tree.sums().zero();
     }
 
@@ -71,7 +71,7 @@ public final class LeafBuilder {
         owner = null;
         t = chunker.finish();
         aTree = annotations.finish();
-        eaTree = tree.build(distinct(annotationEdges), sink);
+        eaTree = tree.build(distinct(annotationEdges), sink.named("EA"));
         return t.hash();
     }
 
@@ -86,9 +86,9 @@ public final class LeafBuilder {
     /** Builds {@code N}, {@code E} and {@code O} and the leaf record. Valid after {@link #seal}; writes nodes, not the record. */
     public MachineLeaf build() {
         names.sort((a, b) -> Arrays.compareUnsigned(a.key(), b.key()));
-        var n = tree.build(names, sink);
-        var e = tree.build(distinct(edges), sink);
-        var o = tree.build(types, sink);
+        var n = tree.build(names, sink.named("N"));
+        var e = tree.build(distinct(edges), sink.named("E"));
+        var o = tree.build(types, sink.named("O"));
         return new MachineLeaf(t.hash(), t.sum(), n.hash(), n.level(), e.hash(), e.sum(), e.level(), o.hash(), o.level(), t.count(), types.size(), e.count());
     }
 

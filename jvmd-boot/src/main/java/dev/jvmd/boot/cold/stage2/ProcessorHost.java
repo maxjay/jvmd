@@ -195,6 +195,24 @@ public final class ProcessorHost implements AutoCloseable {
         if (capture == null || closedBody == null) throw new IllegalStateException("Body processor observations are not finalized");
         return closedBody;
     }
+
+    /**
+     * Current observations for the tested native overlays, whose inputs are the source, compiler reads and configuration.
+     * The caller supplies the current rooted scope plus global admission history. No saved body answers are accepted here.
+     * Generators with public-model queries need a query verifier or fresh execution instead.
+     */
+    public static java.util.Optional<ProcessorRecords.Body> overlayObservations(ProcessorRecords.Scope current) {
+        var observations = new ArrayList<ProcessorRecords.Observation>();
+        for (var processor : current.processors()) {
+            var capability = processor.capability();
+            if (!capability.reusable()) return java.util.Optional.empty();
+            if (capability.declared() == ProcessorRecords.AGGREGATING) continue;
+            if (capability.observed() != ProcessorRecords.OVERLAY || !TESTED_OVERLAYS.contains(processor.processorClass()))
+                return java.util.Optional.empty();
+            observations.add(new ProcessorRecords.Observation(processor.processorClass(), capability, null));
+        }
+        return java.util.Optional.of(new ProcessorRecords.Body(observations, false, current.names()));
+    }
     Map<String, List<ProcessorReads.Read>> modelReads() {
         var out = new TreeMap<String, List<ProcessorReads.Read>>();
         modelReads.forEach((name, reads) -> out.put(name, List.copyOf(reads)));

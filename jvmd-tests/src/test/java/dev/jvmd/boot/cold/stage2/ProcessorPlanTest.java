@@ -94,7 +94,7 @@ class ProcessorPlanTest {
         assertThat(result.faults()).isEmpty();
         var project = Stage2.projectKey(digest,model);
         var local = LocalRoot.decode(digest,store.get(LocalStore.localRootKey(project)));
-        assertThat(local.format()).contains(";local=15;");
+        assertThat(local.format()).contains(";local=16;");
         return new State(tree,store,local,project,result);
     }
 

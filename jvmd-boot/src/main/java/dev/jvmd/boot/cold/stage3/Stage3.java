@@ -87,14 +87,17 @@ public final class Stage3 {
             var result=scopes.get(module.name()+(scope==0?"/main":"/test"));
             records.put(LocalStore.outputKey(project,module.name(),scope),DefinerIndex.encodeRoot(result.output()));
             for(var file:result.files()) {
-                count++;var computed=file.computed();records.put(LocalStore.proofKey(project,module.name(),scope,file.path()),computed.proof().encode());
-                for(var dependency:ReverseIndex.dependencies(computed.proof()))records.put(ReverseIndex.bodyKey(dependency,project,module.name(),scope,file.path()),Entry.NONE);
+                count++;var computed=file.computed();
+                if(computed.proof()!=null) {
+                    records.put(LocalStore.proofKey(project,module.name(),scope,file.path()),computed.proof().encode());
+                    for(var dependency:ReverseIndex.dependencies(computed.proof()))records.put(ReverseIndex.bodyKey(dependency,project,module.name(),scope,file.path()),Entry.NONE);
+                }
                 for(var c:computed.result().classFiles()) {
                     var key=LocalStore.classFileKey(c.contentHash());records.put(key,required(generation.get(key)));
                 }
                 if(computed.reusable()) {
                     records.put(LocalStore.resultKey(computed.aci()),computed.result().encode());
-                    records.put(LocalStore.usesKey(computed.aci()),computed.uses().encode());
+                    if(computed.proof()!=null)records.put(LocalStore.usesKey(computed.aci()),computed.uses().encode());
                 }
                 for(var fault:computed.faults())faults.add(module.name()+"/"+scope+": "+file.path()+": "+fault);
             }
@@ -105,14 +108,14 @@ public final class Stage3 {
 
     private static Scope admit(Scope scope, BodyGeneration generation) {
         var processed = scope.files().stream().map(File::computed).map(Attribute.Computed::proof)
-                .filter(proof -> proof.processorBody() != null).findFirst();
+                .filter(proof -> proof != null && proof.processorBody() != null).findFirst();
         if (processed.isEmpty()) return scope;
         var proof = processed.orElseThrow();
         var violated = proof.processorBody().violations(proof.header().processor(), generation::get);
         if (violated.isEmpty()) return scope;
         var files = scope.files().stream().map(file -> {
             var computed = file.computed();
-            if (computed.proof().processorBody() == null) return file;
+            if (computed.proof() == null || computed.proof().processorBody() == null) return file;
             var faults = new java.util.TreeSet<>(computed.faults());
             for (var name : violated) faults.add(name + ": unsupported for reuse: recorded capability violation for these processor bytes");
             var rejected = computed.proof().withProcessorBody(computed.proof().processorBody().rejectReuse());
@@ -157,7 +160,7 @@ public final class Stage3 {
                     var diagnostics=HeaderDiagnostics.decode(required(generation.local(LocalStore.headerDiagnosticsKey(project,
                             new SourceUnit(module.name(),scope,row.path())))),digest.width());
                     var derived=diagnostics.failed()?ModuleDescriptor.failed(tree,generation,leaves.apply(own.k()),route,row,diagnostics,headerOptions)
-                            :ModuleDescriptor.derive(tree,generation,leaves.apply(own.k()),route,ModuleDescriptor.Options.of(descriptorOptions));
+                            :ModuleDescriptor.derive(tree,generation,own,ModuleDescriptor.Options.of(descriptorOptions));
                     if(!diagnostics.failed())for(var message:diagnostics.messages())headerDiagnostics.add(new Diagnostics.Message(row.path(),message));
                     results.add(new File(row.path(),derived.computed()));if(derived.emitted())descriptorEmissions++;
                 } else tasks.add(workers.submit(()->{
@@ -174,7 +177,7 @@ public final class Stage3 {
         // One new capability violation invalidates scope reuse, including results completed before the violation was observed.
         var violations=results.stream().flatMap(f->f.computed().faults().stream()).distinct().sorted().toList();
         if(processed && results.stream().anyMatch(f->!f.computed().reusable())) {
-            results.replaceAll(file->{var c=file.computed();if(c.proof().header().processor()==null)return file;var proof=c.proof().withProcessorBody(c.proof().processorBody().rejectReuse());
+            results.replaceAll(file->{var c=file.computed();if(c.proof()==null || c.proof().header().processor()==null)return file;var proof=c.proof().withProcessorBody(c.proof().processorBody().rejectReuse());
                 return new File(file.path(),new Attribute.Computed(null,c.result(),proof,c.uses(),violations));});
         }
         var aggregate=new ArrayList<ProcessorRecords.Message>();

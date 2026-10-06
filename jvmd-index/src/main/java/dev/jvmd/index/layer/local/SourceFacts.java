@@ -113,16 +113,16 @@ public final class SourceFacts {
      * @param moduleVersion the {@code --module-version} the build passed, which javac records as this module's own version; or null
      * @param versionOf     the version of a required module as javac would read it, or null
      */
-    public Result ofModule(com.sun.source.tree.ModuleTree module, String moduleVersion, Function<String, String> versionOf,
+    public Result ofModule(com.sun.source.tree.ModuleTree module, javax.lang.model.element.ModuleElement element, String moduleVersion, Function<String, String> versionOf,
                            Function<com.sun.source.tree.ExpressionTree, TypeElement> resolvedType) {
-        try { return module(module, moduleVersion, versionOf, resolvedType); }
+        try { return module(module, element, moduleVersion, versionOf, resolvedType); }
         catch (RuntimeException | StackOverflowError failure) {
             return new Result(List.of(), List.of(), List.of(), List.of(),
                     List.of(new FileRow.Fault(Keys.typeKey("module-info"), "module declaration could not be read: " + failure)));
         }
     }
 
-    private Result module(com.sun.source.tree.ModuleTree module, String moduleVersion, Function<String, String> versionOf,
+    private Result module(com.sun.source.tree.ModuleTree module, javax.lang.model.element.ModuleElement element, String moduleVersion, Function<String, String> versionOf,
                           Function<com.sun.source.tree.ExpressionTree, TypeElement> resolvedType) {
         var out = new Out();
         var requires = new ArrayList<Res.Requires>();
@@ -157,6 +157,11 @@ public final class SourceFacts {
         }
         if (!explicitBase) requires.add(0, new Res.Requires("java.base", MANDATED, versionOf.apply("java.base")));
         var inners = new java.util.LinkedHashMap<String, Res.Inner>();
+        var annotations = retained(element);
+        // ClassWriter emits annotations before Module, with runtime-visible annotations before invisible ones.
+        // Descriptors of nested annotation types, enum values and class literals also contribute InnerClasses entries.
+        for (var visibility : new Retention[] {Retention.RUNTIME, Retention.CLASS})
+            for (var annotation : annotations) if (retention(annotation) == visibility) moduleAnnotation(annotation, inners);
         for (var name : uses) moduleInner(resolved.get(name), inners);
         for (var provide : provides) {
             moduleInner(resolved.get(provide.service()), inners);
@@ -164,11 +169,15 @@ public final class SourceFacts {
         }
         var descriptor = new Res.Module(module.getName().toString(), module.getModuleType() == com.sun.source.tree.ModuleTree.ModuleKind.OPEN ? 0x0020 : 0,
                 moduleVersion, requires, exports, opens, uses, provides, List.copyOf(inners.values()));
-        var res = new Res.Type(Res.Type.MODULE, ClassFile.ACC_MODULE, null, null, List.of(), List.of(), null, null, null, List.of(), List.of(), descriptor, Res.Warnings.NONE);
-        var tail = Entry.NONE;
+        var warning = warnings(element);
+        // Lower copies the module's annotations to module_info, but not its DEPRECATED flag.
+        warning = new Res.Warnings(false, warning.deprecation(), warning.safeVarargs());
+        var res = new Res.Type(Res.Type.MODULE, ClassFile.ACC_MODULE, null, null, List.of(), List.of(), null, null, null, List.of(), List.of(), descriptor, warning);
+        var tail = tail(element, annotations, false, null);
         add(out, Keys.typeKey("module-info"), "module-info", res.encode(), tail);
         out.typeKeys.add("module-info");
-        return new Result(List.copyOf(out.facts), List.of(), inners.keySet().stream().sorted().toList(), List.copyOf(out.typeKeys), List.of());
+        out.targets.addAll(inners.keySet());
+        return new Result(List.copyOf(out.facts), List.copyOf(out.edges.values()), List.copyOf(out.targets), List.copyOf(out.typeKeys), List.of());
     }
 
     private String moduleType(com.sun.source.tree.ExpressionTree reference, Function<com.sun.source.tree.ExpressionTree, TypeElement> resolvedType) {
@@ -185,6 +194,24 @@ public final class SourceFacts {
         moduleInner(outer, into);
         int flags = (int) ((com.sun.tools.javac.code.Symbol.ClassSymbol) type).flags() & 0x761f;
         into.put(name, new Res.Inner(name, binaryName(outer), type.getSimpleName().toString(), flags));
+    }
+
+    private void moduleAnnotation(AnnotationMirror annotation, Map<String, Res.Inner> into) {
+        moduleInner((TypeElement) annotation.getAnnotationType().asElement(), into);
+        for (var value : annotation.getElementValues().values()) moduleAnnotationValue(value, into);
+    }
+
+    private void moduleAnnotationValue(AnnotationValue value, Map<String, Res.Inner> into) {
+        switch (value.getValue()) {
+            case AnnotationMirror nested -> moduleAnnotation(nested, into);
+            case VariableElement constant -> moduleInner((TypeElement) constant.getEnclosingElement(), into);
+            case TypeMirror type -> {
+                while (type instanceof ArrayType array) type = array.getComponentType();
+                if (type instanceof DeclaredType declared) moduleInner((TypeElement) declared.asElement(), into);
+            }
+            case List<?> array -> { for (var item : array) moduleAnnotationValue((AnnotationValue) item, into); }
+            default -> { }
+        }
     }
 
     private void packageFact(javax.lang.model.element.PackageElement pkg, Out out) {

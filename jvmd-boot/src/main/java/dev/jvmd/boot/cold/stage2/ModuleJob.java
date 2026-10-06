@@ -118,7 +118,7 @@ final class ModuleJob {
                 SourceFacts.Result result;
                 if (unit.module != null) {
                     // The descriptor of the module's own main code; a test scope has none (its module is patched, not declared).
-                    result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)),
+                    result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, unit.moduleElement, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)),
                             unit.moduleTypes::get)
                             : SourceFacts.Result.NONE;
                 } else result = extract.of(unit.declared, unit.packageDeclaration, unit.packageClass);

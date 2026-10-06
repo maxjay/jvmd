@@ -106,7 +106,7 @@ class RocksLocalBootTest {
                 }
             }
             // No previous LOCAL layout may take the current-format skip branch, even with identical runtime and locale.
-            for (int legacy : List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)) {
+            for (int legacy : List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)) {
                 try (var store = Generation.of(indexDir, format).openLocal()) {
                     var root = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(projectKey)));
                     store.putLocalRoot(projectKey, LocalRoot.encode(digest,

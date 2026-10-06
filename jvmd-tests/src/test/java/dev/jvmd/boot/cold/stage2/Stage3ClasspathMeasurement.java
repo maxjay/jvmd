@@ -77,7 +77,13 @@ class Stage3ClasspathMeasurement {
             descriptors+=expected.descriptors();
             for(var file:scope.getValue().files()) {
                 var computed=file.computed();
-                assertThat(tree.get(actual.bodies().bodiesRoot(),id->store.get(MachineStore.nodeKey(id)),LocalStore.proofKey(project,module,kind,file.path()))).isNotNull();
+                var proof=tree.get(actual.bodies().bodiesRoot(),id->store.get(MachineStore.nodeKey(id)),LocalStore.proofKey(project,module,kind,file.path()));
+                if(file.path().endsWith("/module-info.java") && computed.result().attributed()) {
+                    assertThat(computed.proof()).isNull();assertThat(proof).isNull();
+                    assertThat(store.get(LocalStore.usesKey(computed.aci()))).isNull();
+                } else {
+                    assertThat(computed.proof()).isNotNull();assertThat(proof).isNotNull();
+                }
                 assertThat(computed.reusable()).as(file.path()+": "+computed.faults()).isTrue();
                 assertThat(tree.get(actual.bodies().bodiesRoot(),id->store.get(MachineStore.nodeKey(id)),LocalStore.resultKey(computed.aci()))).isNotNull();
                 files++;

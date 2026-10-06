@@ -34,6 +34,25 @@ class BodyProcessorTest {
     @TempDir Path dir;
     static Stream<Digest> digests() { return Stream.of(Sha256.INSTANCE, new Digests.Sha3()); }
 
+    @ParameterizedTest @MethodSource("digests")
+    void freshOverlayAdmissionCannotStandInForAnArbitraryProcessorsModelQueries(Digest digest) {
+        var path = digest.hash(new byte[]{3}); var options = digest.hash(new byte[]{4});
+        String lombok = "lombok.launch.AnnotationProcessorHider$AnnotationProcessor";
+        var overlay = new ProcessorRecords.Invocation(lombok, new ProcessorRecords.Capability(ProcessorRecords.ISOLATING, ProcessorRecords.OVERLAY));
+        var aggregate = new ProcessorRecords.Invocation("fixture.Aggregate", new ProcessorRecords.Capability(ProcessorRecords.AGGREGATING, ProcessorRecords.GENERATOR));
+        var current = new ProcessorRecords.Scope(path, options, List.of(overlay, aggregate));
+        var observations = ProcessorHost.overlayObservations(current).orElseThrow();
+        assertThat(observations.configuredProcessors()).containsExactly(lombok, "fixture.Aggregate");
+        assertThat(observations.processors()).containsExactly(new ProcessorRecords.Observation(lombok, overlay.capability(), null));
+        for (var unsupported : List.of(
+                new ProcessorRecords.Invocation(lombok, new ProcessorRecords.Capability(ProcessorRecords.ISOLATING, ProcessorRecords.VIOLATED)),
+                new ProcessorRecords.Invocation(lombok, new ProcessorRecords.Capability(ProcessorRecords.ISOLATING, ProcessorRecords.GENERATOR)),
+                new ProcessorRecords.Invocation("fixture.Unknown", new ProcessorRecords.Capability(ProcessorRecords.ISOLATING, ProcessorRecords.OVERLAY)),
+                new ProcessorRecords.Invocation("fixture.Aggregate", new ProcessorRecords.Capability(ProcessorRecords.AGGREGATING, ProcessorRecords.VIOLATED))))
+            assertThat(ProcessorHost.overlayObservations(new ProcessorRecords.Scope(path, options, List.of(unsupported))))
+                    .as(unsupported.processorClass() + ":" + unsupported.capability()).isEmpty();
+    }
+
     record Fixture(Path input, Identity processorPath, Map<String, ProcessorRecords.Capability> capabilities,
                    List<ProcessorHost.Output> generated, Pool.Configuration configuration, Map<String, byte[]> classes) { }
 

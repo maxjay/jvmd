@@ -75,7 +75,8 @@ public final class Attribute {
         }
     }
 
-    /** An unsupported fresh result has no reusable ACI/RS/U, but its class bytes and diagnostics remain available. */
+    /** An unsupported fresh result has no reusable ACI/RS/U, but its class bytes and diagnostics remain available.
+     * A successful zero-body module descriptor has no body proof; its RS is addressed directly by the exact T/A inputs. */
     public record Computed(Identity aci,ResultRecord result,Proof proof,UsesRecord uses,List<String> faults) {
         public Computed { faults=List.copyOf(faults); }
         public boolean reusable() { return aci!=null; }

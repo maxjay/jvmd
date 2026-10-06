@@ -23,6 +23,53 @@ class ModuleDescriptorTest {
     static Stream<Digest> digests() { return Stream.of(Sha256.INSTANCE, new Digests.Sha3()); }
 
     @ParameterizedTest @MethodSource("digests")
+    void moduleAnnotationsRetainTheExistingResolutionAndTailProjections(Digest digest) throws Exception {
+        var sources = Map.of("module-info.java", """
+                import p.*;
+                @Deprecated(since="first")
+                @RuntimeMark(number=7, text="module", type=String.class)
+                @ClassMark("retained")
+                @SourceMark("source only")
+                module example { exports p; }
+                """, "p/RuntimeMark.java", """
+                package p;
+                @java.lang.annotation.Target(java.lang.annotation.ElementType.MODULE)
+                @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+                public @interface RuntimeMark { int number(); String text(); Class<?> type(); }
+                """, "p/ClassMark.java", """
+                package p;
+                @java.lang.annotation.Target(java.lang.annotation.ElementType.MODULE)
+                @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)
+                public @interface ClassMark { String value(); }
+                """, "p/SourceMark.java", """
+                package p;
+                @java.lang.annotation.Target(java.lang.annotation.ElementType.MODULE)
+                @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE)
+                public @interface SourceMark { String value(); }
+                """);
+        Stage2Support.write(dir.resolve("m/src/main/java"), sources);
+        var expected = Stage2Support.compile(dir.resolve("native-module-annotations"), sources, List.of(), List.of());
+        var binary = ClassFacts.of(digest, expected.get("module-info.class"), "module-info").facts().getFirst();
+        var model = ProjectModel.parse(Stage2Support.model(dir, new Stage2Support.Mod("m", "g:m:1", List.of())));
+        var tree = new ContentTree(digest); var store = Stage2Support.jdkOnly(digest).copy();
+        var boot = new Stage2(digest, tree, Stage2Support.FEATURE, 1, dir, ClassFacts::of).run(store, model);
+        var project = Stage2.projectKey(digest, model);
+        var leaf = SourceLeaf.decode(store.get(LocalStore.sourceLeafKey(project, "m", 0)), digest.width());
+        var annotationLeaf = AnnotationLeaf.decode(store.get(MachineStore.annotationLeafKey(leaf.a())), digest.width());
+        var fact = tree.get(leaf.k(), id -> store.get(MachineStore.nodeKey(id)), Keys.typeKey("module-info"));
+        var tail = tree.get(annotationLeaf.annotations().hash(), id -> store.get(MachineStore.nodeKey(id)), Keys.typeKey("module-info"));
+        var bodies = new Stage3(digest, tree, Stage2Support.FEATURE, 1, dir).run(store, model);
+        var bytes = store.get(LocalStore.classFileKey(descriptor(bodies).result().classFiles().getFirst().contentHash()));
+        org.assertj.core.api.SoftAssertions.assertSoftly(soft -> {
+            soft.assertThat(boot.faults()).isEmpty();
+            soft.assertThat(fact.value()).as("module resolution/warning projection").isEqualTo(binary.res());
+            soft.assertThat(tail).as("retained module annotation entry").isNotNull();
+            if (tail != null) soft.assertThat(tail.value()).as("module annotation tail").isEqualTo(binary.tail());
+            soft.assertThat(bytes).as("native annotated module descriptor").isEqualTo(expected.get("module-info.class"));
+        });
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void everyDirectiveAndEmissionOptionMatchesNativeJavac(Digest digest) throws Exception {
         var sources = Map.of("module-info.java", """
                 module example {
@@ -47,11 +94,8 @@ class ModuleDescriptorTest {
             var actual = new Stage3(digest, tree, Stage2Support.FEATURE, 2, dir).run(store, model);
             var scope = actual.scopes().get("m/main"); assertThat(scope.descriptorEmissions()).isEqualTo(1);
             var descriptor = descriptor(actual);
-            assertThat(descriptor.proof().types()).singleElement().satisfies(t -> {
-                assertThat(t.key()).isEqualTo("module-info");
-                assertThat(t.entries()).singleElement().satisfies(e -> assertThat(e.range())
-                        .isEqualTo(new Proof.Range(Proof.T, "module-info", Keys.TYPE, "")));
-            });
+            assertThat(descriptor.proof()).isNull();
+            assertThat(store.get(LocalStore.proofKey(actual.project(), "m", 0, "m/src/main/java/module-info.java"))).isNull();
             var expected = Stage2Support.compile(dir.resolve("native-" + debug.replace(':', '-')), sources, options, List.of());
             var bytes = store.get(LocalStore.classFileKey(descriptor.result().classFiles().getFirst().contentHash()));
             assertThat(bytes).as(debug).isEqualTo(expected.get("module-info.class"));
@@ -289,6 +333,67 @@ class ModuleDescriptorTest {
             assertThat(failed.proof().valid(tree, MachineLeaf.decode(store.get(MachineStore.leafKey(repaired.leaves().get("m/main"))), digest.width()),
                     route, null, store::get)).isFalse();
             assertThat(descriptor(driver.run(store, model)).result().attributed()).isTrue();
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void moduleAnnotationDeclarationRepairInvalidatesTheFailedHeaderProof(Digest digest) throws Exception {
+        String path = "m/src/main/java/module-info.java";
+        var source = dir.resolve("m/src/main/java");
+        Stage2Support.write(source, Map.of("module-info.java", "@p.Label module example { exports p; }",
+                "p/Label.java", """
+                package p;
+                @java.lang.annotation.Target(java.lang.annotation.ElementType.MODULE)
+                public @interface Label { String value(); }
+                """));
+        var expected = nativeDescriptorDiagnostics(source);
+        var model = ProjectModel.parse(Stage2Support.model(dir, new Stage2Support.Mod("m", "g:m:1", List.of())));
+        var tree = new ContentTree(digest); var store = Stage2Support.jdkOnly(digest).copy();
+        var headers = new Stage2(digest, tree, Stage2Support.FEATURE, 1, dir, ClassFacts::of);
+        headers.run(store, model);
+        var driver = new Stage3(digest, tree, Stage2Support.FEATURE, 1, dir);
+        var failed = descriptor(driver.run(store, model));
+        assertThat(failed.result().attributed()).isFalse();
+        assertThat(failed.result().diagnostics()).isEqualTo(expected);
+        assertThat(failed.result().classFiles()).isEmpty();
+        var row = FileRow.decode(path, store.get(LocalStore.fileKey(Stage2.projectKey(digest, model), "m", 0, path)), digest.width());
+        assertThat(row.headerProof()).anySatisfy(entry -> {
+            assertThat(entry.typeKey()).isEqualTo("p/Label");
+            assertThat(entry.kind()).isEqualTo(Keys.METHOD);
+        });
+        Stage2Support.write(source, Map.of("p/Label.java", """
+                package p;
+                @java.lang.annotation.Target(java.lang.annotation.ElementType.MODULE)
+                public @interface Label { String value() default "repaired"; }
+                """));
+        var repaired = headers.run(store, model);
+        var route = Route.decode(store.get(LocalStore.routeKey(Stage2.projectKey(digest, model), "m", 0)), digest.width());
+        assertThat(failed.proof().valid(tree, MachineLeaf.decode(store.get(MachineStore.leafKey(repaired.leaves().get("m/main"))), digest.width()),
+                route, null, store::get)).isFalse();
+        assertThat(descriptor(driver.run(store, model)).result().attributed()).isTrue();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void invalidModuleAnnotationsKeepNativeHeaderDiagnostics(Digest digest) throws Exception {
+        var cases = List.of(
+                new String[] {"@p.Label(1)", "TYPE", "int value();"},
+                new String[] {"@p.Label(value=1, value=2)", "MODULE", "int value();"},
+                new String[] {"@p.Label(unknown=1)", "MODULE", "int value() default 0;"},
+                new String[] {"@p.Label(\"wrong type\")", "MODULE", "int value();"},
+                new String[] {"@p.Label(p.Missing.class)", "MODULE", "Class<?> value();"});
+        for (var example : cases) {
+            var source = dir.resolve("m/src/main/java");
+            Stage2Support.write(source, Map.of("module-info.java", example[0] + " module example { exports p; }",
+                    "p/Label.java", "package p; @java.lang.annotation.Target(java.lang.annotation.ElementType."
+                            + example[1] + ") public @interface Label { " + example[2] + " }"));
+            var expected = nativeDescriptorDiagnostics(source);
+            var model = ProjectModel.parse(Stage2Support.model(dir, new Stage2Support.Mod("m", "g:m:1", List.of())));
+            var tree = new ContentTree(digest); var store = Stage2Support.jdkOnly(digest).copy();
+            new Stage2(digest, tree, Stage2Support.FEATURE, 1, dir, ClassFacts::of).run(store, model);
+            var actual = descriptor(new Stage3(digest, tree, Stage2Support.FEATURE, 1, dir).run(store, model));
+            assertThat(actual.result().attributed()).as(example[0]).isFalse();
+            assertThat(actual.result().classFiles()).isEmpty();
+            assertThat(actual.result().diagnostics()).as(example[0]).isEqualTo(expected);
         }
     }
 }

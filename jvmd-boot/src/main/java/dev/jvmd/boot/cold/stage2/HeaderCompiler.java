@@ -63,6 +63,7 @@ final class HeaderCompiler {
         final List<FileRow.Fault> faults = new ArrayList<>();
         /** The module declaration of a {@code module-info.java}: parsed, never entered (E.3). Null for every other file. */
         com.sun.source.tree.ModuleTree module;
+        javax.lang.model.element.ModuleElement moduleElement;
         /** Entered import environment for the descriptor's type references, under the existing classpath policy. */
         CompilationUnitTree moduleUnit;
         final java.util.Map<com.sun.source.tree.ExpressionTree, TypeElement> moduleTypes = new java.util.IdentityHashMap<>();
@@ -321,6 +322,17 @@ final class HeaderCompiler {
                     if (type.tsym instanceof TypeElement element) unit.moduleTypes.put(reference, element);
                 };
                 try {
+                    var declaration = (com.sun.tools.javac.tree.JCTree.JCModuleDecl) unit.module;
+                    var names = com.sun.tools.javac.util.Names.instance(task.getContext());
+                    // Complete declaration annotations in the existing import environment. This symbol is not entered
+                    // into the module graph and cannot change the ordinary classpath header-compilation policy.
+                    declaration.sym = com.sun.tools.javac.code.Symbol.ModuleSymbol.create(names.fromString(declaration.qualId.toString()), names.module_info);
+                    declaration.sym.flags_field |= declaration.mods.flags & com.sun.tools.javac.code.Flags.DEPRECATED;
+                    unit.moduleElement = declaration.sym;
+                    var annotationEnv = com.sun.tools.javac.comp.Enter.instance(task.getContext()).moduleEnv(declaration, environment);
+                    var annotate = com.sun.tools.javac.comp.Annotate.instance(task.getContext());
+                    annotate.annotateLater(declaration.mods.annotations, annotationEnv, declaration.sym, declaration);
+                    annotate.flush();
                     for (var directive : unit.module.getDirectives()) {
                         if (directive instanceof com.sun.source.tree.UsesTree use)
                             resolve.accept(use.getServiceName());

@@ -342,6 +342,9 @@ final class HeaderCompiler {
                                 resolve.accept(implementation);
                         }
                     }
+                    // The detached module has no uses/provides completer. This visits only its declaration lint,
+                    // using javac's annotation-augmented policy; executable bodies and the module graph are absent.
+                    attr.attribStat(declaration, annotationEnv);
                 } finally { log.useSource(previous); }
             }
             for (var tree : entered) {

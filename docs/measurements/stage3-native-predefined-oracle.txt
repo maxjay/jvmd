@@ -1,0 +1,246 @@
+Native read oracle: exact predefined-scope classification
+Diagnostic collection only; strict coverage remains RED.
+
+The observer compares the lookup owner by object identity with Resolve.syms.predefClass,
+the Symtab scope for javac predefined constants and operations. No package/name,
+null-classfile, JDK-library or synthetic-class heuristic excludes other symbols.
+These observations remain visible as PREDEFINED records and are bound by compiler FORMAT.
+
+Completed proof traces: 500
+Loaded-class observations: 23212
+External absent lookups: 2138
+Predefined-scope absent lookups: 342
+Uncovered observations: 21886
+Distinct uncovered observations: 190
+
+Count	Predefined lookup
+4	Missing[kind=FIELD, owner=, name=Bean]
+2	Missing[kind=FIELD, owner=, name=Constants]
+8	Missing[kind=FIELD, owner=, name=ElementType]
+4	Missing[kind=FIELD, owner=, name=Made]
+4	Missing[kind=FIELD, owner=, name=Missing]
+2	Missing[kind=FIELD, owner=, name=Old]
+44	Missing[kind=FIELD, owner=, name=One]
+12	Missing[kind=FIELD, owner=, name=RetentionPolicy]
+4	Missing[kind=FIELD, owner=, name=String]
+6	Missing[kind=FIELD, owner=, name=Two]
+2	Missing[kind=FIELD, owner=, name=Util]
+4	Missing[kind=FIELD, owner=, name=java]
+8	Missing[kind=FIELD, owner=, name=missing]
+72	Missing[kind=FIELD, owner=, name=q]
+4	Missing[kind=METHOD, owner=, name=pick]
+8	Missing[kind=N, owner=, name=Base]
+8	Missing[kind=N, owner=, name=Comparable]
+2	Missing[kind=N, owner=, name=Constants]
+4	Missing[kind=N, owner=, name=Deprecated]
+8	Missing[kind=N, owner=, name=ElementType]
+4	Missing[kind=N, owner=, name=Face]
+4	Missing[kind=N, owner=, name=Generated]
+4	Missing[kind=N, owner=, name=Holder]
+10	Missing[kind=N, owner=, name=Label]
+4	Missing[kind=N, owner=, name=Metadata]
+4	Missing[kind=N, owner=, name=Middle]
+8	Missing[kind=N, owner=, name=Number]
+4	Missing[kind=N, owner=, name=Other]
+12	Missing[kind=N, owner=, name=RetentionPolicy]
+12	Missing[kind=N, owner=, name=Retention]
+8	Missing[kind=N, owner=, name=T]
+8	Missing[kind=N, owner=, name=Target]
+4	Missing[kind=N, owner=, name=Use]
+4	Missing[kind=N, owner=, name=Value]
+4	Missing[kind=N, owner=, name=com]
+8	Missing[kind=N, owner=, name=fixture]
+4	Missing[kind=N, owner=, name=lombok]
+26	Missing[kind=N, owner=, name=q]
+
+Count	Uncovered observation
+2	ABSENT Missing[kind=D, owner=com/google, name=]
+2	ABSENT Missing[kind=D, owner=com/google/auto, name=]
+2	ABSENT Missing[kind=D, owner=com/google/auto/value, name=]
+12	ABSENT Missing[kind=D, owner=java/io, name=]
+38	ABSENT Missing[kind=D, owner=java/lang, name=]
+12	ABSENT Missing[kind=D, owner=java/lang/annotation, name=]
+16	ABSENT Missing[kind=D, owner=java/util, name=]
+4	ABSENT Missing[kind=D, owner=javax/annotation, name=]
+4	ABSENT Missing[kind=D, owner=javax/annotation/processing, name=]
+4	ABSENT Missing[kind=D, owner=org/jspecify, name=]
+4	ABSENT Missing[kind=D, owner=org/jspecify/nullness, name=]
+4	ABSENT Missing[kind=D, owner=org/jspecify/nullness/Nullable, name=]
+4	ABSENT Missing[kind=D, owner=p/Holder$Nested, name=]
+4	ABSENT Missing[kind=D, owner=p/Metadata$Choice, name=]
+4	ABSENT Missing[kind=D, owner=p/Metadata$ImplicitChoice, name=]
+4	ABSENT Missing[kind=D, owner=p/Object, name=]
+4	ABSENT Missing[kind=D, owner=p/Override, name=]
+4	ABSENT Missing[kind=METHOD, owner=, name=get]
+2	ABSENT Missing[kind=METHOD, owner=java/io/Serializable, name=ordinal]
+2	ABSENT Missing[kind=METHOD, owner=java/io/Serializable, name=values]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/Comparable, name=ordinal]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/Comparable, name=valueOf]
+6	ABSENT Missing[kind=METHOD, owner=java/lang/Comparable, name=values]
+6	ABSENT Missing[kind=METHOD, owner=java/lang/Enum, name=values]
+12	ABSENT Missing[kind=METHOD, owner=java/lang/Number, name=valueOf]
+12	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=bootstrap]
+26	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=makeConcatWithConstants]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=metafactory]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=ordinal]
+28	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=requireNonNull]
+16	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=valueOf]
+6	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=values]
+6	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=forRemoval]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=nested]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=number]
+8	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=since]
+12	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=type]
+44	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=value]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/constant/Constable, name=ordinal]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/constant/Constable, name=valueOf]
+6	ABSENT Missing[kind=METHOD, owner=java/lang/constant/Constable, name=values]
+2	ABSENT Missing[kind=METHOD, owner=q/E, name=ordinal]
+4	ABSENT Missing[kind=N, owner=java/lang/Object, name=T]
+6	LOAD Plain
+8	LOAD com/google/auto/value/AutoBuilder
+8	LOAD com/google/auto/value/AutoOneOf
+4	LOAD com/google/auto/value/AutoValue
+4	LOAD com/google/auto/value/AutoValue$Builder
+4	LOAD com/google/auto/value/AutoValue$CopyAnnotations
+14	LOAD fixture/PackageTag
+6	LOAD fixture/PackageTags
+4	LOAD fixture/Spot
+4	LOAD fixture/Spots
+4	LOAD fixture/Tag
+4	LOAD fixture/Tags
+262	LOAD java/base/module-info
+262	LOAD java/compiler/module-info
+262	LOAD java/datatransfer/module-info
+262	LOAD java/desktop/module-info
+262	LOAD java/instrument/module-info
+8	LOAD java/io/IOException
+342	LOAD java/io/Serializable
+472	LOAD java/lang/AutoCloseable
+40	LOAD java/lang/Boolean
+42	LOAD java/lang/Byte
+42	LOAD java/lang/Character
+24	LOAD java/lang/Class
+6	LOAD java/lang/CloneNotSupportedException
+4	LOAD java/lang/Comparable
+272	LOAD java/lang/Deprecated
+40	LOAD java/lang/Double
+4	LOAD java/lang/Enum$EnumDesc
+8	LOAD java/lang/Error
+42	LOAD java/lang/Float
+34	LOAD java/lang/Integer
+4	LOAD java/lang/InterruptedException
+42	LOAD java/lang/Long
+2	LOAD java/lang/MatchException
+2	LOAD java/lang/NoSuchFieldError
+8	LOAD java/lang/Number
+8	LOAD java/lang/Override
+2	LOAD java/lang/RuntimeException
+42	LOAD java/lang/Short
+42	LOAD java/lang/String
+4	LOAD java/lang/SuppressWarnings
+12	LOAD java/lang/Throwable
+44	LOAD java/lang/Void
+284	LOAD java/lang/annotation/ElementType
+4	LOAD java/lang/annotation/Inherited
+14	LOAD java/lang/annotation/Repeatable
+278	LOAD java/lang/annotation/Retention
+278	LOAD java/lang/annotation/RetentionPolicy
+284	LOAD java/lang/annotation/Target
+30	LOAD java/lang/invoke/CallSite
+16	LOAD java/lang/invoke/MethodHandle
+38	LOAD java/lang/invoke/MethodHandles
+38	LOAD java/lang/invoke/MethodHandles$Lookup
+30	LOAD java/lang/invoke/MethodType
+8	LOAD java/lang/invoke/TypeDescriptor
+262	LOAD java/logging/module-info
+262	LOAD java/management/module-info
+262	LOAD java/management/rmi/module-info
+262	LOAD java/naming/module-info
+262	LOAD java/net/http/module-info
+4	LOAD java/net/package-info
+262	LOAD java/prefs/module-info
+262	LOAD java/rmi/module-info
+262	LOAD java/scripting/module-info
+262	LOAD java/se/module-info
+262	LOAD java/security/jgss/module-info
+262	LOAD java/security/sasl/module-info
+262	LOAD java/smartcardio/module-info
+262	LOAD java/sql/module-info
+262	LOAD java/sql/rowset/module-info
+262	LOAD java/transaction/xa/module-info
+16	LOAD java/util/List
+4	LOAD java/util/Map
+4	LOAD java/util/Optional
+24	LOAD java/util/function/Supplier
+262	LOAD java/xml/crypto/module-info
+262	LOAD java/xml/module-info
+4	LOAD javax/annotation/processing/Generated
+262	LOAD jdk/accessibility/module-info
+262	LOAD jdk/attach/module-info
+262	LOAD jdk/charsets/module-info
+262	LOAD jdk/compiler/module-info
+262	LOAD jdk/crypto/cryptoki/module-info
+262	LOAD jdk/crypto/ec/module-info
+262	LOAD jdk/crypto/mscapi/module-info
+262	LOAD jdk/dynalink/module-info
+262	LOAD jdk/editpad/module-info
+262	LOAD jdk/graal/compiler/management/module-info
+262	LOAD jdk/graal/compiler/module-info
+262	LOAD jdk/hotspot/agent/module-info
+262	LOAD jdk/httpserver/module-info
+262	LOAD jdk/incubator/vector/module-info
+262	LOAD jdk/internal/ed/module-info
+262	LOAD jdk/internal/jvmstat/module-info
+262	LOAD jdk/internal/le/module-info
+262	LOAD jdk/internal/md/module-info
+262	LOAD jdk/internal/opt/module-info
+262	LOAD jdk/internal/vm/ci/module-info
+262	LOAD jdk/jartool/module-info
+262	LOAD jdk/javadoc/module-info
+262	LOAD jdk/jcmd/module-info
+262	LOAD jdk/jconsole/module-info
+262	LOAD jdk/jdeps/module-info
+262	LOAD jdk/jdi/module-info
+262	LOAD jdk/jdwp/agent/module-info
+262	LOAD jdk/jfr/module-info
+262	LOAD jdk/jlink/module-info
+262	LOAD jdk/jpackage/module-info
+262	LOAD jdk/jshell/module-info
+262	LOAD jdk/jsobject/module-info
+262	LOAD jdk/jstatd/module-info
+262	LOAD jdk/localedata/module-info
+262	LOAD jdk/management/agent/module-info
+262	LOAD jdk/management/jfr/module-info
+262	LOAD jdk/management/module-info
+262	LOAD jdk/naming/dns/module-info
+262	LOAD jdk/naming/rmi/module-info
+262	LOAD jdk/net/module-info
+262	LOAD jdk/nio/mapmode/module-info
+262	LOAD jdk/sctp/module-info
+262	LOAD jdk/security/auth/module-info
+262	LOAD jdk/security/jgss/module-info
+262	LOAD jdk/unsupported/desktop/module-info
+262	LOAD jdk/unsupported/module-info
+262	LOAD jdk/xml/dom/module-info
+262	LOAD jdk/zipfs/module-info
+12	LOAD late/Loaded
+2	LOAD lombok/AccessLevel
+4	LOAD p/Base$Inherited
+20	LOAD p/Beta
+4	LOAD p/Holder
+4	LOAD p/Holder$Nested
+10	LOAD p/Input
+4	LOAD p/Input$Nested
+10	LOAD p/Label
+34	LOAD p/Metadata
+6	LOAD p/Other
+28	LOAD p/Two
+12	LOAD p/Use
+4	LOAD p/Zeta
+6	LOAD p/package-info
+2	LOAD q/First$Value
+2	LOAD q/I
+6	LOAD q/Other
+2	LOAD q/Second$Value
+2	LOAD q/Util

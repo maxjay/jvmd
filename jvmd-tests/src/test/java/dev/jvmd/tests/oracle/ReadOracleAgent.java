@@ -22,12 +22,15 @@ import java.util.jar.JarEntry;
 /** Test-only native javac instrumentation. No production collector supplies these observations. */
 public final class ReadOracleAgent {
     private static final ClassDesc TAP = ClassDesc.of("dev.jvmd.tests.oracle.ReadOracleTrace");
+    private static final ClassDesc RESOLVE = ClassDesc.of("com.sun.tools.javac.comp.Resolve");
+    private static final ClassDesc SYMTAB = ClassDesc.of("com.sun.tools.javac.code.Symtab");
+    private static final ClassDesc CLASS_SYMBOL = ClassDesc.of("com.sun.tools.javac.code.Symbol$ClassSymbol");
     private static final MethodTypeDesc OBJECT = MethodTypeDesc.ofDescriptor("(Ljava/lang/Object;)V");
     private static final MethodTypeDesc NONE = MethodTypeDesc.ofDescriptor("()V");
     private static final MethodTypeDesc LOOKUP = MethodTypeDesc.ofDescriptor(
-            "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)V");
+            "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V");
     private static final MethodTypeDesc ITERATOR = MethodTypeDesc.ofDescriptor(
-            "(Ljava/lang/Object;ZLjava/lang/Object;Ljava/lang/Object;)Z");
+            "(Ljava/lang/Object;ZLjava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z");
     private static final MethodTypeDesc NAMES = MethodTypeDesc.ofDescriptor(
             "(Ljava/lang/Iterable;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Iterable;");
 
@@ -108,7 +111,8 @@ public final class ReadOracleAgent {
                                     && invoke.owner().asInternalName().equals("java/util/Iterator") && invoke.name().equalsString("hasNext")) {
                                 hooks.merge("findMethodInScope#hasNext", 1, Integer::sum);
                                 // Preserve the actual iterator and its native answer; do not iterate or re-resolve in the observer.
-                                out.dup().with(instruction).aload(6).aload(3).invokestatic(TAP, "methodScope", ITERATOR);
+                                out.dup().with(instruction).aload(6).aload(3);
+                                predefined(out).invokestatic(TAP, "methodScope", ITERATOR);
                                 return;
                             }
                             if (instruction instanceof ReturnInstruction result) {
@@ -121,7 +125,8 @@ public final class ReadOracleAgent {
                                 if (nameSlot >= 0 && result.opcode() == Opcode.ARETURN) {
                                     out.dup().ldc(methodName);
                                     if (ownerSlot == 0) out.aconst_null(); else out.aload(ownerSlot);
-                                    out.aload(nameSlot).invokestatic(TAP, "lookup", LOOKUP);
+                                    out.aload(nameSlot);
+                                    predefined(out).invokestatic(TAP, "lookup", LOOKUP);
                                 }
                             }
                             out.with(instruction);
@@ -153,6 +158,10 @@ public final class ReadOracleAgent {
                 // A transformer exception normally gets swallowed by the JVM. Fail the fork instead of silently losing coverage.
                 failure.printStackTrace(); Runtime.getRuntime().halt(97); return null;
             }
+        }
+        /** Exact native identity, rather than a binary-name, null-classfile or compiler-package heuristic. */
+        private static java.lang.classfile.CodeBuilder predefined(java.lang.classfile.CodeBuilder out) {
+            return out.aload(0).getfield(RESOLVE, "syms", SYMTAB).getfield(SYMTAB, "predefClass", CLASS_SYMBOL);
         }
     }
 }

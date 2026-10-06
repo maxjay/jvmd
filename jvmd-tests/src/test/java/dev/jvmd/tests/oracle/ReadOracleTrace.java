@@ -22,13 +22,14 @@ public final class ReadOracleTrace {
     public record Missing(String kind, String owner, String name) implements Comparable<Missing> {
         @Override public int compareTo(Missing other) { return toString().compareTo(other.toString()); }
     }
-    public record Snapshot(String file, List<String> loaded, List<Missing> absent) { }
+    public record Snapshot(String file, List<String> loaded, List<Missing> absent, List<Missing> predefined) { }
     private static final class Trace {
         final String file;
         final Set<String> own;
         final boolean poolOnly;
         final Set<String> loaded = new TreeSet<>();
         final Set<Missing> absent = new TreeSet<>();
+        final Set<Missing> predefined = new TreeSet<>();
         final Set<Object> nonemptyIterators = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         int suspended;
         int globalTypes;
@@ -56,7 +57,7 @@ public final class ReadOracleTrace {
         if (trace == null) throw new AssertionError("Read oracle did not start");
         if (trace.suspended != 0) throw new AssertionError("Unbalanced collector exclusion");
         if (trace.globalTypes != 0) throw new AssertionError("Unbalanced global type lookup");
-        return new Snapshot(trace.file, List.copyOf(trace.loaded), List.copyOf(trace.absent));
+        return new Snapshot(trace.file, List.copyOf(trace.loaded), List.copyOf(trace.absent), List.copyOf(trace.predefined));
     }
     public static void suspend() { var trace = CURRENT.get(); if (trace != null) trace.suspended++; }
     public static void resume() { var trace = CURRENT.get(); if (trace != null) trace.suspended--; }
@@ -100,7 +101,7 @@ public final class ReadOracleTrace {
         }
     }
 
-    public static void lookup(Object result, String operation, Object site, Object name) {
+    public static void lookup(Object result, String operation, Object site, Object name, Object predefined) {
         var trace = CURRENT.get();
         if (trace == null || trace.suspended != 0 || result == null) return;
         String kind = field(result, "kind").toString();
@@ -117,11 +118,12 @@ public final class ReadOracleTrace {
         // Source-owned declarations are already bound by the compilation's bytes; no external proof is required.
         if (trace.own(owner) || fileKind(field(site, "classfile")).equals("SOURCE")) return;
         String form = switch (operation) { case "findField" -> "FIELD"; case "findMethod" -> "METHOD"; default -> "N"; };
-        trace.absent.add(new Missing(form, owner, name.toString()));
+        var observation = new Missing(form, owner, name.toString());
+        (site == predefined ? trace.predefined : trace.absent).add(observation);
     }
 
     /** Observe the iterator that javac itself consumed, including an empty child scope before a successful inherited lookup. */
-    public static boolean methodScope(Object iterator, boolean hasNext, Object scope, Object name) {
+    public static boolean methodScope(Object iterator, boolean hasNext, Object scope, Object name, Object predefined) {
         var trace = CURRENT.get();
         if (trace == null || trace.suspended != 0) return hasNext;
         if (hasNext) trace.nonemptyIterators.add(iterator);
@@ -129,7 +131,7 @@ public final class ReadOracleTrace {
             var owner = field(scope, "owner");
             if (owner != null && owner.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol")
                     && !trace.own(binary(owner)) && !fileKind(field(owner, "classfile")).equals("SOURCE"))
-                trace.absent.add(new Missing("METHOD", binary(owner), name.toString()));
+                (owner == predefined ? trace.predefined : trace.absent).add(new Missing("METHOD", binary(owner), name.toString()));
         }
         return hasNext;
     }
@@ -141,9 +143,11 @@ public final class ReadOracleTrace {
     private static void report(Snapshot trace, Object proof) {
         var uncovered = uncovered(proof, trace.loaded(), trace.absent());
         var lines = new ArrayList<String>();
-        lines.add("FILE " + trace.file() + " loaded=" + trace.loaded().size() + " absent=" + trace.absent().size() + " uncovered=" + uncovered.size());
+        lines.add("FILE " + trace.file() + " loaded=" + trace.loaded().size() + " absent=" + trace.absent().size()
+                + " predefined=" + trace.predefined().size() + " uncovered=" + uncovered.size());
         trace.loaded().forEach(value -> lines.add("LOAD " + value));
         trace.absent().forEach(value -> lines.add("ABSENT " + value));
+        trace.predefined().forEach(value -> lines.add("PREDEFINED " + value));
         uncovered.forEach(value -> lines.add("UNCOVERED " + value));
         synchronized (REPORT_LOCK) {
             try {

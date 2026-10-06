@@ -55,7 +55,7 @@ public final class ProofCollector {
      * Header-only traversal: declaration types, annotations and constant initialisers. Never visits executable bodies.
      * Candidates become expected-zero entries only after the whole own leaf has been sealed.
      */
-    public static Observations headers(List<TypeElement> declarations, Trees trees, Elements elements, Types types) {
+    public static Observations headers(List<? extends Element> declarations, Trees trees, Elements elements, Types types) {
         if (declarations.isEmpty()) return Observations.NONE;
         var root = trees.getPath(declarations.getFirst());
         if (root == null) return Observations.NONE;
@@ -87,7 +87,7 @@ public final class ProofCollector {
         }
         String ownPackage = unit.getPackageName() == null ? "" : unit.getPackageName().toString().replace('.', '/');
         var own = new HashSet<String>();
-        for (var declaration : declarations) ownTypes(declaration, elements, own);
+        for (var declaration : declarations) if (declaration instanceof TypeElement type) ownTypes(type, elements, own);
         new TreePathScanner<Void, Void>() {
             private boolean valueContext;
 
@@ -104,7 +104,7 @@ public final class ProofCollector {
             }
 
             @Override public Void visitImport(ImportTree node, Void p) { return null; }
-            @Override public Void visitPackage(PackageTree node, Void p) { return null; }
+            @Override public Void visitPackage(PackageTree node, Void p) { scan(node.getAnnotations(), p); return null; }
             @Override public Void visitBlock(BlockTree node, Void p) { return null; }
             @Override public Void visitLambdaExpression(LambdaExpressionTree node, Void p) { return null; }
 

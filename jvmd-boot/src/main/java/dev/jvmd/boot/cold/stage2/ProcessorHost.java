@@ -61,7 +61,7 @@ public final class ProcessorHost implements AutoCloseable {
     private final Set<String> faults = new LinkedHashSet<>();
     private final Identity pathHash;
     private java.util.function.Function<URI, String> sourcePaths = URI::toString;
-    private java.util.function.Function<String, dev.jvmd.index.layer.local.ProcessorDeclaration.Source> sourceDeclarations;
+    private dev.jvmd.index.layer.local.ProcessorSources.Binding sourceDeclarations;
     private Map<String, ProcessorRecords.Capability> closedCapabilities;
     private Map<String, List<Entry>> closedDomains;
     private Map<String, List<URI>> closedInputs;
@@ -171,7 +171,7 @@ public final class ProcessorHost implements AutoCloseable {
     public Identity pathHash() { return pathHash; }
     public void sourcePaths(java.util.function.Function<URI, String> sourcePaths) { this.sourcePaths = sourcePaths; }
     public String sourcePath(URI uri) { return sourcePaths.apply(uri); }
-    public void sourceDeclarations(java.util.function.Function<String, dev.jvmd.index.layer.local.ProcessorDeclaration.Source> sources) {
+    public void sourceDeclarations(dev.jvmd.index.layer.local.ProcessorSources.Binding sources) {
         if (capture == null) throw new IllegalStateException("Source query views are for body tasks");
         this.sourceDeclarations = java.util.Objects.requireNonNull(sources);
     }

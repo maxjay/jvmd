@@ -56,6 +56,9 @@ public final class Keys {
         return out.raw(m).toBytes();
     }
 
+    /** Exact package declaration identity, separate from a package-info class-file fact. */
+    public static byte[] packageElementKey(String qualifiedName) { return processorElementKey(new byte[0], "PACKAGE", qualifiedName); }
+
     /** Processor-only elements (parameters, type parameters, packages, modules): disjoint from declaration fact keys. */
     public static byte[] processorElementKey(byte[] parent, String kind, String name) {
         return new Codec.Writer().u8(0).lenBytes(parent).zstr(kind).zstr(name).toBytes();

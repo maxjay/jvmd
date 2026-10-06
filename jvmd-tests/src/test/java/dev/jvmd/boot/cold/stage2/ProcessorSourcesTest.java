@@ -52,7 +52,7 @@ class ProcessorSourcesTest {
         var result = new Stage2(digest, tree, Stage2Support.FEATURE, workers, dir, ClassFacts::of).run(store, model);
         var project = Stage2.projectKey(digest, model);
         var local = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(project)));
-        assertThat(local.format()).contains(";local=10;");
+        assertThat(local.format()).contains(";local=11;");
         return new State(tree, store, project, local, result);
     }
     private ProjectModel model() { return ProjectModel.parse(Stage2Support.model(dir, new Stage2Support.Mod("app", "g:app:1", List.of()))); }
@@ -248,6 +248,65 @@ class ProcessorSourcesTest {
         var shadow = boot(digest, ProjectModel.parse(Stage2Support.model(dir, a, external)), state.store().copy(), 2);
         var binding = ProcessorSources.bind(shadow.tree(), shadow.local(), shadow.project(), "app", 0, shadow.store()::get);
         assertThat(binding.apply("p/Metadata")).isNull(); assertThat(binding.apply("p/Input").path()).isEqualTo(PATH);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void packageHeadersPersistWithoutEnumeratingMembersOrReopeningSources(Digest digest) throws Exception {
+        String info="app/src/main/java/p/package-info.java";
+        Stage2Support.write(dir,Map.of(PATH,"package p; public class Input {}",info,"""
+                /// Package **documentation**.
+                @Deprecated(since="source") package p;
+                """));
+        var state=boot(digest,model(),Stage2Support.jdkOnly(digest).copy(),2);
+        assertThat(state.result().faults()).isEmpty();Files.delete(dir.resolve(info));
+        var header=state.sources("app",0).packageHeader("p");
+        assertThat(header.path()).isEqualTo(info);
+        assertThat(header.declaration().detail()).isEqualTo(new ProcessorDeclaration.PackageHeader("p"));
+        assertThat(header.declaration().kind()).isEqualTo(ElementKind.PACKAGE);
+        assertThat(header.declaration().docComment()).contains("Package **documentation**.");
+        assertThat(header.declaration().docCommentKind()).isEqualTo(javax.lang.model.util.Elements.DocCommentKind.END_OF_LINE);
+        assertThat(header.declaration().annotations()).hasSize(1);
+        assertThat(header.declaration().annotations().getFirst().explicit().descriptor()).isEqualTo("Ljava/lang/Deprecated;");
+        assertThat(state.sources("app",0).packageHeader("q")).isNull();
+        assertThat(state.sources("app",0).type("p/package-info")).isNull();
+        assertThat(ProcessorSources.bind(state.tree(),state.local(),state.project(),"app",0,state.store()::get).packageHeader("p")).isEqualTo(header);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void packageBindingUsesPackageInfoOriginsEvenWhenTypeLeavesAreEqual(Digest digest) throws Exception {
+        Stage2Support.write(dir,Map.of("a/src/main/java/p/A.java","package p; public class A {}",
+                "a/src/main/java/p/package-info.java","/** first */ package p;",
+                "b/src/main/java/p/A.java","package p; public class A {}",
+                "b/src/main/java/p/package-info.java","/** second */ package p;",PATH,"package p; public class Input {}"));
+        var a=new Stage2Support.Mod("a","g:a:1",List.of());var b=new Stage2Support.Mod("b","g:b:1",List.of());
+        var app=new Stage2Support.Mod("app","g:app:1",List.of(Stage2Support.Dep.module("g:a:1","a"),Stage2Support.Dep.module("g:b:1","b")));
+        var first=boot(digest,ProjectModel.parse(Stage2Support.model(dir,a,b,app)),Stage2Support.jdkOnly(digest).copy(),2);
+        assertThat(first.result().leaves().get("a/main")).isEqualTo(first.result().leaves().get("b/main"));
+        assertThat(ProcessorSources.bind(first.tree(),first.local(),first.project(),"app",0,first.store()::get).packageHeader("p").declaration().docComment()).isEqualTo("first ");
+        var reversed=new Stage2Support.Mod("app","g:app:1",List.of(Stage2Support.Dep.module("g:b:1","b"),Stage2Support.Dep.module("g:a:1","a")));
+        var second=boot(digest,ProjectModel.parse(Stage2Support.model(dir,a,b,reversed)),first.store().copy(),2);
+        assertThat(ProcessorSources.bind(second.tree(),second.local(),second.project(),"app",0,second.store()::get).packageHeader("p").declaration().docComment()).isEqualTo("second ");
+        var jar=Stage2Support.pack(dir.resolve("package.jar"),Stage2Support.compile(dir.resolve("binary-package"),
+                Map.of("p/package-info.java","@Deprecated package p;"),List.of(),List.of()));
+        var binary=new Stage2Support.Mod("app","g:app:1",List.of(Stage2Support.Dep.jar("g:package:1",jar.toString()),Stage2Support.Dep.module("g:a:1","a")));
+        var shadow=boot(digest,ProjectModel.parse(Stage2Support.model(dir,a,binary)),first.store().copy(),2);
+        assertThat(ProcessorSources.bind(shadow.tree(),shadow.local(),shadow.project(),"app",0,shadow.store()::get).packageHeader("p")).isNull();
+        Stage2Support.write(dir,Map.of("app/src/main/java/p/package-info.java","/** own */ package p;"));
+        var own=boot(digest,ProjectModel.parse(Stage2Support.model(dir,a,binary)),shadow.store().copy(),2);
+        assertThat(ProcessorSources.bind(own.tree(),own.local(),own.project(),"app",0,own.store()::get).packageHeader("p").declaration().docComment()).isEqualTo("own ");
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void faultedPackageMetadataRemainsUnavailableInItsCurrentRoot(Digest digest) throws Exception {
+        Stage2Support.write(dir,Map.of(PATH,"package p; public class Input {} @interface Label {int value();}",
+                "app/src/main/java/p/package-info.java","@p.Label(\"invalid\") package p;"));
+        var state=boot(digest,model(),Stage2Support.jdkOnly(digest).copy(),2);
+        assertThat(state.result().faults()).anyMatch(f->f.contains("processor package:"));
+        assertThat(state.sources("app",0).type("p/Input")).isNotNull();
+        var bound=ProcessorSources.bind(state.tree(),state.local(),state.project(),"app",0,state.store()::get);
+        assertThat(bound.packageExists("p")).isTrue();
+        assertThatThrownBy(()->bound.packageHeader("p")).isInstanceOf(ProcessorSources.Unavailable.class)
+                .hasMessageContaining("app/src/main/java/p/package-info.java");
     }
 
     @ParameterizedTest @MethodSource("digests")

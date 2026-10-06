@@ -188,6 +188,18 @@ class ProcessorProjectionTest {
         assertThat(explicit.root.sum()).isNotEqualTo(compact.root.sum());
     }
 
+    @ParameterizedTest @MethodSource("digests")
+    void commentKindIsObservableEvenWhenTheCommentTextIsEqual(Digest digest) throws Exception {
+        var traditional=project(digest,SOURCE.replace("@Entity(\"x\")","/**text*/ @Entity(\"x\")"),"p/E.java");
+        var markdown=project(digest,SOURCE.replace("@Entity(\"x\")","///text\n@Entity(\"x\")"),"p/E.java");
+        var before=dev.jvmd.index.layer.local.ProcessorDeclaration.decode(traditional.entries.getFirst().value()).declaration();
+        var after=dev.jvmd.index.layer.local.ProcessorDeclaration.decode(markdown.entries.getFirst().value()).declaration();
+        assertThat(after.docComment()).isEqualTo(before.docComment());
+        assertThat(after.docCommentKind()).isNotEqualTo(before.docCommentKind());
+        assertThat(markdown.root.hash()).isNotEqualTo(traditional.root.hash());
+        assertThat(markdown.root.sum()).isNotEqualTo(traditional.root.sum());
+    }
+
     private Domain project(Digest digest, String source, String sourcePath) throws Exception {
         var file = dir.resolve(sourcePath);
         Files.createDirectories(file.getParent());

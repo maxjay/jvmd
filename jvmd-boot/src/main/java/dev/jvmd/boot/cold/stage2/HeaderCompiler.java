@@ -57,6 +57,9 @@ final class HeaderCompiler {
         long size;
         String parseError;
         final List<TypeElement> declared = new ArrayList<>();
+        /** Explicit package-info source, including documentation-only packages with no class-file fact. */
+        javax.lang.model.element.PackageElement packageDeclaration;
+        boolean packageClass;
         final List<FileRow.Fault> faults = new ArrayList<>();
         /** The module declaration of a {@code module-info.java}: parsed, never entered (E.3). Null for every other file. */
         com.sun.source.tree.ModuleTree module;
@@ -268,9 +271,19 @@ final class HeaderCompiler {
             }
 
             var trees = Trees.instance(task);
+            var packagePolicy = com.sun.tools.javac.main.Option.PkgInfo.get(com.sun.tools.javac.util.Options.instance(task.getContext()));
+            var nativeTypes = com.sun.tools.javac.code.Types.instance(task.getContext());
             for (var tree : entered) {
                 var unit = byUri.get(tree.getSourceFile().toUri());
                 if (!unit.parsed()) continue;
+                if (tree.getPackage() != null && tree.getSourceFile().isNameCompatible("package-info", JavaFileObject.Kind.SOURCE))
+                    unit.packageDeclaration = (javax.lang.model.element.PackageElement) trees.getElement(TreePath.getPath(tree, tree.getPackage()));
+                if (unit.packageDeclaration != null) unit.packageClass = switch (packagePolicy) {
+                    case ALWAYS -> true;
+                    case LEGACY -> !tree.getPackageAnnotations().isEmpty();
+                    case NONEMPTY -> unit.packageDeclaration.getAnnotationMirrors().stream().anyMatch(a ->
+                            nativeTypes.getRetention((com.sun.tools.javac.code.Attribute.Compound) a) != com.sun.tools.javac.code.Attribute.RetentionPolicy.SOURCE);
+                };
                 for (var decl : tree.getTypeDecls()) {
                     if (!(decl instanceof ClassTree klass)) continue;
                     Element element = trees.getElement(TreePath.getPath(tree, klass));

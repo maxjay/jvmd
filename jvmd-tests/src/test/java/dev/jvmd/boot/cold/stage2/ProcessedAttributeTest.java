@@ -44,6 +44,9 @@ class ProcessedAttributeTest {
     }
 
     private State boot(Digest digest, Map<String,String> sources, List<Path> processors, List<Path> classpath) throws Exception {
+        return boot(digest, sources, processors, classpath, List.of());
+    }
+    private State boot(Digest digest, Map<String,String> sources, List<Path> processors, List<Path> classpath, List<String> extraOptions) throws Exception {
         var original = new ArrayList<Path>();
         for (var source : new TreeMap<>(sources).entrySet()) {
             var path = dir.resolve("app/src/main/java/" + source.getKey()); Files.createDirectories(path.getParent());
@@ -53,8 +56,9 @@ class ProcessedAttributeTest {
         var deps = new ArrayList<Stage2Support.Dep>(); int n = 0;
         for (var jar : classpath) deps.add(Stage2Support.Dep.jar("g:dep" + n++ + ":1", jar.toString()));
         var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        var javacOptions = new ArrayList<>(List.of("-g", "-parameters")); javacOptions.addAll(extraOptions);
         var modelJson = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(Stage2Support.model(dir,
-                new Stage2Support.Mod("app", "g:app:1", deps).withOptions("-g", "-parameters")));
+                new Stage2Support.Mod("app", "g:app:1", deps).withOptions(javacOptions.toArray(String[]::new))));
         var processing = ((com.fasterxml.jackson.databind.node.ObjectNode) modelJson.withArray("modules").get(0)).putObject("processing");
         var path = processing.putArray("path"); n = 0;
         for (var jar : processors) path.addObject().put("coordinate", "g:processor" + n++ + ":1").put("location", jar.toString());
@@ -116,8 +120,10 @@ class ProcessedAttributeTest {
         var expected = oracle(state); var actual = new TreeMap<String,byte[]>(); var messages = new ArrayList<ResultRecord.Diagnostic>();
         var local = state.store().get(LocalStore.localRootKey(state.project()));
         var declarations = ProcessorSources.load(state.tree(), LocalRoot.decode(state.tree().digest(), local), state.project(), "app", 0, state.store()::get);
-        for (var row : state.rows().values()) for (var type : row.typeKeys())
-            assertThat(declarations.type(type).path()).isEqualTo(row.path());
+        for (var row : state.rows().values()) for (var type : row.typeKeys()) {
+            var declaration = type.endsWith("/package-info") ? declarations.packageHeader(type.substring(0,type.length()-13).replace('/','.')) : declarations.type(type);
+            assertThat(declaration.path()).isEqualTo(row.path());
+        }
         try (var pool = new Pool(state.pool(), 1)) {
             var attribute = attribute(state, pool);
             for (var path : state.rows().keySet()) {
@@ -367,7 +373,7 @@ class ProcessedAttributeTest {
                 new javax.lang.model.util.ElementScanner14<Void,StringBuilder>() {
                     public Void scan(Element element, StringBuilder text) {
                         text.append("|").append(element.getKind()).append(":").append(element.getSimpleName());
-                        text.append(":").append(element.getModifiers()).append(":").append(elements.getDocComment(element));
+                        text.append(":").append(element.getModifiers()).append(":").append(elements.getDocComment(element)).append(":commentKind=").append(elements.getDocCommentKind(element));
                         text.append(":deprecated=").append(elements.isDeprecated(element)).append(":origin=").append(elements.getOrigin(element));
                         text.append(":").append(element.getAnnotationMirrors()).append(":").append(elements.getAllAnnotationMirrors(element));
                         if(element instanceof TypeElement type) {
@@ -556,6 +562,106 @@ class ProcessedAttributeTest {
         assertThat(results.get(1)).isEqualTo(results.get(0));
         assertThat(results.get(2).aci()).isNotEqualTo(results.get(0).aci());
         assertThat(results.get(2).proof().processorBody()).isNotEqualTo(results.get(0).proof().processorBody());
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void packageDeclarationsRetainNativeSourceMetadataAndMembers(Digest digest) throws Exception {
+        var processor=processor("""
+                var elements=processingEnv.getElementUtils();var text=new StringBuilder();
+                for(var name:java.util.List.of("p","q","","empty.deep","empty","missing")) {
+                    var pkg=elements.getPackageElement(name);
+                    if(pkg==null){text.append("|absent:").append(name);continue;}
+                    text.append("|").append(pkg).append(":").append(pkg.getKind()).append(":").append(pkg.getQualifiedName())
+                        .append(":").append(pkg.getSimpleName()).append(":").append(pkg.isUnnamed()).append(":").append(pkg.getModifiers())
+                        .append(":").append(pkg.asType()).append(":").append(pkg.asType().getKind())
+                        .append(":").append(elements.getOrigin(pkg)).append(":").append(elements.isDeprecated(pkg))
+                        .append(":").append(elements.getDocComment(pkg)).append(":").append(elements.getDocCommentKind(pkg)).append(":").append(pkg.getEnclosedElements());
+                    text.append(":").append(elements.getAllPackageElements(name)).append(":").append(elements.getAllAnnotationMirrors(pkg));
+                    for(var annotation:pkg.getAnnotationMirrors())text.append(":").append(annotation)
+                        .append(":").append(elements.getElementValuesWithDefaults(annotation)).append(":").append(elements.getOrigin(pkg,annotation));
+                    for(var tag:pkg.getAnnotationsByType(fixture.PackageTag.class))text.append(":").append(tag.value());
+                    for(var enclosed:pkg.getEnclosedElements())text.append(":").append(enclosed).append(":").append(elements.getPackageOf(enclosed)==pkg);
+                    text.append(":qualified=").append(elements.getPackageElement(elements.getModuleOf(root),name)==pkg);
+                    text.append(":owner=").append(elements.getModuleOf(pkg)==elements.getModuleOf(root));
+                }
+                var parent=elements.getPackageElement(elements.getModuleOf(root),"empty");
+                text.append("|parent=").append(parent).append(":").append(parent.getEnclosedElements())
+                    .append(":").append(elements.getDocComment(parent)).append(":").append(elements.getAllPackageElements("empty"));
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,text,root);
+                ""","isolating",Map.of("fixture/PackageTag.java","""
+                package fixture;
+                @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE)
+                @java.lang.annotation.Target(java.lang.annotation.ElementType.PACKAGE)
+                @java.lang.annotation.Repeatable(PackageTags.class) public @interface PackageTag {String value();}
+                ""","fixture/PackageTags.java","""
+                package fixture;
+                @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE)
+                @java.lang.annotation.Target(java.lang.annotation.ElementType.PACKAGE)
+                public @interface PackageTags {PackageTag[] value();}
+                """));
+        var state=boot(digest,Map.of("p/Input.java","package p; public class Input {class Nested {}}",
+                "p/Beta.java","package p; class Beta {}",
+                "p/package-info.java","/** Package documentation. @deprecated Old package. */ @fixture.PackageTag(\"first\") @fixture.PackageTag(\"second\") package p;",
+                "q/Other.java","package q; class Other {}","Plain.java","class Plain {}",
+                "empty/deep/package-info.java","/** Empty package documentation. */ package empty.deep;"),List.of(processor),List.of(processor));
+        assertThat(state.faults()).isEmpty();
+        var expected=oracle(state);
+        try(var pool=new Pool(state.pool(),1)) {
+            var first=run(state,attribute(state,pool),"app/src/main/java/p/Input.java");
+            assertThat(first.reusable()).as(first.faults().toString()).isTrue();
+            assertThat(first.result().diagnostics()).isEqualTo(expected.messages());
+        }
+        allFiles(state,true);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void onlyConsumedPackageMetadataChangesTheProofAcrossOneHotContext(Digest digest) throws Exception {
+        var processor=processor("""
+                var pkg=processingEnv.getElementUtils().getPackageOf(root);
+                var tag=pkg.getAnnotation(fixture.PackageTag.class);
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,tag==null?"none":tag.value(),root);
+                ""","isolating",Map.of("fixture/PackageTag.java","""
+                package fixture;
+                @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE)
+                @java.lang.annotation.Target(java.lang.annotation.ElementType.PACKAGE)
+                public @interface PackageTag {String value();}
+                """));
+        var states=new ArrayList<State>();var results=new ArrayList<Attribute.Computed>();var expected=new ArrayList<Oracle>();
+        var packageSources=new ArrayList<byte[]>();
+        for(var change:List.of(new String[]{"read","unread","1"},new String[]{"read","changed","2"},new String[]{"changed","changed","2"})) {
+            var state=boot(digest,Map.of("p/Input.java","package p; public class Input {}",
+                    "p/Other.java","package p; class Other {int body(){return %s;}}".formatted(change[2]),
+                    "p/package-info.java","/** %s */ @fixture.PackageTag(\"%s\") package p;".formatted(change[1],change[0])),List.of(processor),List.of(processor),List.of("-Xpkginfo:nonempty"));
+            assertThat(state.faults()).isEmpty();states.add(state);expected.add(oracle(state));
+            packageSources.add(Files.readAllBytes(dir.resolve("app/src/main/java/p/package-info.java")));
+        }
+        Files.delete(dir.resolve("app/src/main/java/p/package-info.java"));
+        var removed=boot(digest,Map.of("p/Input.java","package p; public class Input {}",
+                "p/Other.java","package p; class Other {int body(){return 2;}}"),List.of(processor),List.of(processor),List.of("-Xpkginfo:nonempty"));
+        assertThat(removed.faults()).isEmpty();states.add(removed);expected.add(oracle(removed));
+        assertThat(states).extracting(state->state.own().k()).containsOnly(states.getFirst().own().k());
+        try(var pool=new Pool(states.getFirst().pool(),1)) {
+            for(int i=0;i<states.size();i++) {
+                var state=states.get(i);var attribute=attribute(state,pool);
+                if(i<packageSources.size()) {
+                    var path="app/src/main/java/p/package-info.java";
+                    var info=attribute.run(state.rows().get(path),dir.resolve(path).toUri(),packageSources.get(i));
+                    assertThat(info.reusable()).as(info.faults().toString()).isTrue();
+                    assertThat(info.result().classFiles()).isEmpty();
+                }
+                results.add(run(state,attribute,"app/src/main/java/p/Input.java"));
+            }
+            assertThat(run(states.getFirst(),attribute(states.getFirst(),pool),"app/src/main/java/p/Input.java")).isEqualTo(results.getFirst());
+            assertThat(pool.statistics().contexts()).isEqualTo(1);
+        }
+        for(int i=0;i<results.size();i++) {
+            assertThat(results.get(i).reusable()).as(results.get(i).faults().toString()).isTrue();
+            assertThat(results.get(i).result().diagnostics()).isEqualTo(expected.get(i).messages());
+        }
+        assertThat(results.get(1)).isEqualTo(results.get(0));
+        assertThat(results.get(2).aci()).isNotEqualTo(results.get(0).aci());
+        assertThat(results.get(3).aci()).isNotEqualTo(results.get(2).aci());
+        assertThat(results.get(3).result().diagnostics().getFirst().message()).isEqualTo("none");
     }
 
     @ParameterizedTest @MethodSource("digests")

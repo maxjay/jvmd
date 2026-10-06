@@ -6,7 +6,6 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
@@ -18,14 +17,14 @@ import javax.lang.model.util.Types;
 final class ProcessorSourceElements {
     private final Elements elements;
     private final ProcessorElementProjection keys;
-    private final Function<String, ProcessorDeclaration.Source> sources;
+    private final dev.jvmd.index.layer.local.ProcessorSources.Binding sources;
     private final Predicate<Element> explicit;
     private final java.util.function.BiFunction<TypeElement, ProcessorDeclaration, Element> missing;
     private final Map<Element, ProcessorDeclaration> declarations = new IdentityHashMap<>();
     private final Map<TypeElement, Map<ProcessorDeclaration.Key, Element>> members = new IdentityHashMap<>();
     private final Map<ProcessorDeclaration.Key, Element> parameters = new LinkedHashMap<>();
 
-    ProcessorSourceElements(Elements elements, Types types, Function<String, ProcessorDeclaration.Source> sources, Predicate<Element> explicit,
+    ProcessorSourceElements(Elements elements, Types types, dev.jvmd.index.layer.local.ProcessorSources.Binding sources, Predicate<Element> explicit,
                             java.util.function.BiFunction<TypeElement, ProcessorDeclaration, Element> missing) {
         this.elements = elements; this.keys = new ProcessorElementProjection(elements, types); this.sources = sources; this.explicit = explicit;
         this.missing = missing;
@@ -36,6 +35,11 @@ final class ProcessorSourceElements {
         if (element instanceof TypeElement type) {
             var source = explicit.test(type) ? null : sources.apply(elements.getBinaryName(type).toString().replace('.', '/'));
             var declaration = source == null ? null : source.declaration(); declarations.put(type, declaration); return declaration;
+        }
+        if (element instanceof javax.lang.model.element.PackageElement pkg) {
+            var module = elements.getModuleOf(pkg);
+            var source = explicit.test(pkg) || module != null && !module.isUnnamed() ? null : sources.packageHeader(pkg.getQualifiedName().toString());
+            var declaration = source == null ? null : source.declaration(); declarations.put(pkg, declaration); return declaration;
         }
         var owner = element.getEnclosingElement();
         var parent = owner == null ? null : declaration(owner);

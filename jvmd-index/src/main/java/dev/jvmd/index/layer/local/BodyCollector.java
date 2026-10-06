@@ -51,6 +51,8 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
     private BodyCollector(CompilationUnitTree unit, Trees trees, Elements elements, Types types) {
         this.unit = unit; this.trees = trees; this.elements = elements; this.types = types;
         ownPackage = unit.getPackageName() == null ? "" : unit.getPackageName().toString().replace('.', '/');
+        if (unit.getPackage() != null && unit.getSourceFile().isNameCompatible("package-info", javax.tools.JavaFileObject.Kind.SOURCE))
+            own.add(ownPackage + "/package-info");
         packages.add("java/lang");
         new TreePathScanner<Void, Void>() {
             @Override public Void scan(Tree node,Void p) {
@@ -90,7 +92,7 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
         return super.scan(node, p);
     }
 
-    @Override public Void visitPackage(PackageTree node, Void p) { return null; }
+    @Override public Void visitPackage(PackageTree node, Void p) { scan(node.getAnnotations(), p); return null; }
 
     @Override public Void visitImport(ImportTree node, Void p) {
         // Prefix classification is a proof input; importing a type is not a read of its whole member universe.

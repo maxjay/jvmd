@@ -117,12 +117,14 @@ final class ModuleJob {
                     // The descriptor of the module's own main code; a test scope has none (its module is patched, not declared).
                     result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)))
                             : SourceFacts.Result.NONE;
-                } else result = extract.of(unit.declared);
-                var reads = ProofCollector.headers(unit.declared, compiled.trees, compiled.elements, compiled.types);
+                } else result = extract.of(unit.declared, unit.packageDeclaration, unit.packageClass);
+                var proofDeclarations = new ArrayList<javax.lang.model.element.Element>(unit.declared);
+                if (unit.packageDeclaration != null) proofDeclarations.add(unit.packageDeclaration);
+                var reads = ProofCollector.headers(proofDeclarations, compiled.trees, compiled.elements, compiled.types);
                 boot.parsedFiles.incrementAndGet();
                 var faults = new ArrayList<>(result.faults());
                 faults.addAll(unit.faults);
-                declarations.add(file.path(), unit.declared, faults);
+                declarations.add(file.path(), unit.declared, unit.packageDeclaration, faults);
                 boot.factsNanos.addAndGet(System.nanoTime() - factsStarted);
                 var sum = sums.zero();
                 var kept = new HashSet<ByteBuffer>();

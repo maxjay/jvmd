@@ -10,7 +10,7 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.util.Elements;
 
 /** Detached, queryable declaration data from {@link ProcessorElementProjection}; never retains a javac object. */
-public record ProcessorDeclaration(ElementKind kind, String name, Key key, String docComment, boolean deprecated, Elements.Origin origin, List<String> modifiers,
+public record ProcessorDeclaration(ElementKind kind, String name, Key key, String docComment, Elements.DocCommentKind docCommentKind, boolean deprecated, Elements.Origin origin, List<String> modifiers,
                                    List<Annotation> annotations, Detail detail) {
     public ProcessorDeclaration { modifiers = List.copyOf(modifiers); annotations = List.copyOf(annotations); }
     public record Source(String path, ProcessorDeclaration declaration) { }
@@ -44,6 +44,8 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
     public record Package(String qualifiedName, List<ProcessorDeclaration> enclosed) implements Detail {
         public Package { enclosed = List.copyOf(enclosed); }
     }
+    /** Package metadata only; membership remains a separate query over native package scopes. */
+    public record PackageHeader(String qualifiedName) implements Detail { }
     public record Other(Type type) implements Detail { }
 
     public record Type(TypeKind kind, List<Annotation> annotations, Shape shape) {
@@ -79,6 +81,7 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
         var name = in.str();
         var key = new Key(in.lenBytes());
         var comment = flag(in) ? in.text() : null;
+        var commentKind = flag(in) ? Elements.DocCommentKind.valueOf(in.str()) : null;
         boolean deprecated = flag(in);
         var origin = Elements.Origin.valueOf(in.str());
         var modifiers = list(in, in::str);
@@ -97,10 +100,10 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
             case FIELD, ENUM_CONSTANT, PARAMETER, LOCAL_VARIABLE, EXCEPTION_PARAMETER, RESOURCE_VARIABLE, BINDING_VARIABLE ->
                     new Variable(type(in), flag(in) ? value(in) : null);
             case TYPE_PARAMETER -> new Parameter(types(in));
-            case PACKAGE -> new Package(in.str(), declarations(in));
+            case PACKAGE -> flag(in) ? new Package(in.str(), declarations(in)) : new PackageHeader(in.str());
             default -> new Other(type(in));
         };
-        return new ProcessorDeclaration(kind, name, key, comment, deprecated, origin, modifiers, annotations, detail);
+        return new ProcessorDeclaration(kind, name, key, comment, commentKind, deprecated, origin, modifiers, annotations, detail);
     }
 
     private static Type type(Reader in) {

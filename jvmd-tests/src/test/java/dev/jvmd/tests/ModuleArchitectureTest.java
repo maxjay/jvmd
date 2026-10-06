@@ -49,6 +49,7 @@ class ModuleArchitectureTest {
                 || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage2/ProcessorTrees")
                 || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage2/ProcessorSourceQueries")
                 || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage2/ProcessorSourceTypes")
+                || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage2/ProcessorSourcePackages")
                 || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage3/Pool")
                 || module.equals("index")&&owner.equals("dev/jvmd/index/layer/local/SourceFacts");
     }
@@ -59,6 +60,7 @@ class ModuleArchitectureTest {
         assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage2/ProcessorTrees")).isTrue();
         assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage2/ProcessorSourceQueries")).isTrue();
         assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage2/ProcessorSourceTypes")).isTrue();
+        assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage2/ProcessorSourcePackages")).isTrue();
         assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage2/ModuleJob")).isFalse();
         assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage3/Pool$Worker")).isTrue();
         assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage3/Attribute")).isFalse();

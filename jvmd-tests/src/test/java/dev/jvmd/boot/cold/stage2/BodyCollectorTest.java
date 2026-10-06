@@ -76,8 +76,10 @@ class BodyCollectorTest {
         try(var pool=new Pool(state.configuration(),1)) { return compile(state,pool); }
     }
 
-    private Compiled compile(State state,Pool pool) throws Exception {
-        var file=dir.resolve("app/src/main/java/p/App.java");var text=Files.readString(file);
+    private Compiled compile(State state,Pool pool) throws Exception { return compile(state,pool,"App.java"); }
+
+    private Compiled compile(State state,Pool pool,String filename) throws Exception {
+        var file=dir.resolve("app/src/main/java/p/"+filename);var text=Files.readString(file);
         var source=new SimpleJavaFileObject(file.toUri(),JavaFileObject.Kind.SOURCE) { public CharSequence getCharContent(boolean ignore) { return text; } };
         var errors=new ArrayList<String>();
         var result=pool.withTask(source,d -> { if(d.getKind()==Diagnostic.Kind.ERROR) errors.add(d.getCode()); },task -> {
@@ -94,6 +96,29 @@ class BodyCollectorTest {
 
     private static Proof.Range t(String type,int kind,String name) { return new Proof.Range(Proof.T,type,kind,name); }
     private static Proof.Range n(String type,String name) { return new Proof.Range(Proof.N,type,Keys.TYPE,name); }
+
+    @ParameterizedTest @MethodSource("digests")
+    void packageAnnotationConstantsAreExactBodyReadsWithSourceSpans(Digest digest) throws Exception {
+        String source="@q.Mark(q.Values.VALUE) package p;";
+        String values="package q; public class Values {public static final String VALUE=\"before\", UNUSED=\"unused\";}";
+        Stage2Support.write(dir,Map.of("app/src/main/java/p/package-info.java",source,
+                "dep/src/main/java/q/Mark.java","package q; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME) @java.lang.annotation.Target(java.lang.annotation.ElementType.PACKAGE) public @interface Mark {String value();}",
+                "dep/src/main/java/q/Values.java",values));
+        var before=boot(digest);Compiled compiled;
+        try(var pool=new Pool(before.configuration(),1)){compiled=compile(before,pool,"package-info.java");}
+        assertThat(compiled.errors()).isEmpty();
+        assertThat(compiled.reads().ranges()).contains(t("q/Values",Keys.FIELD,"VALUE"),t("q/Mark",Keys.METHOD,""))
+                .doesNotContain(t("q/Values",Keys.FIELD,"UNUSED"));
+        var use=compiled.uses().uses().stream().filter(u->u.tree()==Proof.T&&u.type().equals("q/Values")&&u.kind()==Keys.FIELD&&u.name().equals("VALUE")).findFirst().orElseThrow();
+        assertThat(use.spans()).anySatisfy(span->assertThat(source.substring((int)span.start(),(int)span.end())).isEqualTo("q.Values.VALUE"));
+        Files.writeString(dir.resolve("dep/src/main/java/q/Values.java"),values.replace("UNUSED=\"unused\"","UNUSED=\"changed\""));
+        assertThat(boot(digest).valid(compiled.proof())).isTrue();
+        Files.writeString(dir.resolve("dep/src/main/java/q/Values.java"),values.replace("VALUE=\"before\"","VALUE=\"after\""));
+        var changed=boot(digest);assertThat(changed.valid(compiled.proof())).isFalse();
+        try(var pool=new Pool(changed.configuration(),1)) {
+            assertThat(compile(changed,pool,"package-info.java").classes().get("p/package-info")).isNotEqualTo(compiled.classes().get("p/package-info"));
+        }
+    }
 
     @ParameterizedTest @MethodSource("digests")
     void distinctJavaStringConstantsInvalidateOnlyTheirActualConsumers(Digest digest) throws Exception {

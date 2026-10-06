@@ -92,9 +92,13 @@ public final class SourceFacts {
     }
 
     /** The facts of the top-level types a file declares, and of their member types, in declaration order. */
-    public Result of(List<? extends TypeElement> declared) {
+    public Result of(List<? extends TypeElement> declared) { return of(declared, null, false); }
+
+    /** Package-info emission is determined by the native header task's policy and completed package annotations. */
+    public Result of(List<? extends TypeElement> declared, javax.lang.model.element.PackageElement pkg, boolean packageClass) {
         var out = new Out();
         for (var type : declared) type(type, out);
+        if (packageClass) packageFact(java.util.Objects.requireNonNull(pkg), out);
         return new Result(List.copyOf(out.facts), List.copyOf(out.edges.values()), List.copyOf(out.targets), List.copyOf(out.typeKeys), List.copyOf(out.faults));
     }
 
@@ -142,6 +146,26 @@ public final class SourceFacts {
         add(out, Keys.typeKey("module-info"), "module-info", res.encode(), tail);
         out.typeKeys.add("module-info");
         return new Result(List.copyOf(out.facts), List.of(), List.of(), List.copyOf(out.typeKeys), List.of());
+    }
+
+    private void packageFact(javax.lang.model.element.PackageElement pkg, Out out) {
+        String owner = pkg.getQualifiedName().toString().replace('.', '/') + "/package-info";
+        var key = Keys.typeKey(owner);
+        try {
+            // Lower emits a synthetic abstract interface with Object as superclass and the package's annotations.
+            // Synthetic is excluded from the resolution access mask, just as on the class-file side.
+            var warning = warnings(pkg);
+            // Lower copies annotations to package_info, but does not copy the package symbol's DEPRECATED flag.
+            warning = new Res.Warnings(false, warning.deprecation(), warning.safeVarargs());
+            var res = new Res.Type(1, ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT, null, "java/lang/Object",
+                    List.of(), List.of(), null, null, null, List.of(), List.of(), null, warning);
+            var tail = tail(pkg, retained(pkg), false, null);
+            add(out, key, "package-info", res.encode(), tail);
+            edge(out, "java/lang/Object", Edges.EXTENDS, key);
+            out.typeKeys.add(owner);
+        } catch (RuntimeException | StackOverflowError broken) {
+            out.faults.add(new FileRow.Fault(key, "package declaration could not be read: " + broken));
+        }
     }
 
     private static Res.Directive packageDirective(String packageName, List<? extends com.sun.source.tree.ExpressionTree> to) {

@@ -34,7 +34,7 @@ public final class ProcessorPlan {
     public ProcessorRecords.Scope invocation() { return invocation; }
 
     /** Bind source metadata by its committed module/scope origins, independently of the invocation plan. */
-    public Function<String, ProcessorDeclaration.Source> sources() {
+    public ProcessorSources.Binding sources() {
         return ProcessorSources.bind(tree, committed, project, module, scope, records);
     }
 

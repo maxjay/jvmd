@@ -40,7 +40,7 @@ public final class ProcessorElementProjection {
     public byte[] key(Element element) {
         if (element instanceof TypeElement type) return Keys.typeKey(internal(type));
         if (element instanceof PackageElement pkg)
-            return Keys.processorElementKey(new byte[0], "PACKAGE", pkg.getQualifiedName().toString());
+            return Keys.packageElementKey(pkg.getQualifiedName().toString());
         if (element instanceof ExecutableElement method) {
             var descriptor = new StringBuilder("(");
             for (var p : method.getParameters()) descriptor.append(descriptor(p.asType()));
@@ -61,12 +61,24 @@ public final class ProcessorElementProjection {
         return out.toBytes();
     }
 
-    private void declaration(Codec.Writer out, Element element) {
+    /** Materialize package metadata without copying or eagerly enumerating its members. */
+    public byte[] packageHeader(PackageElement element, String sourcePath) {
+        var out = new Codec.Writer().zstr(sourcePath);
+        declaration(out, element, false);
+        return out.toBytes();
+    }
+
+    private void declaration(Codec.Writer out, Element element) { declaration(out, element, true); }
+
+    private void declaration(Codec.Writer out, Element element, boolean packageMembers) {
         out.str(element.getKind().name()).str(element.getSimpleName().toString()).lenBytes(key(element));
         // Preserve absence separately from an empty doc comment: Elements.getDocComment exposes both states.
         var comment = elements.getDocComment(element);
         out.u8(comment == null ? 0 : 1);
         if (comment != null) out.utf16(comment);
+        var commentKind = elements.getDocCommentKind(element);
+        out.u8(commentKind == null ? 0 : 1);
+        if (commentKind != null) out.str(commentKind.name());
         out.u8(elements.isDeprecated(element) ? 1 : 0).str(elements.getOrigin(element).name());
         var modifiers = element.getModifiers().stream().map(Enum::name).sorted().toList();
         out.u32(modifiers.size());
@@ -109,8 +121,8 @@ public final class ProcessorElementProjection {
             }
             case TypeParameterElement parameter -> typeList(out, parameter.getBounds());
             case PackageElement pkg -> {
-                out.str(pkg.getQualifiedName().toString());
-                declarations(out, pkg.getEnclosedElements());
+                out.u8(packageMembers ? 1 : 0).str(pkg.getQualifiedName().toString());
+                if (packageMembers) declarations(out, pkg.getEnclosedElements());
             }
             default -> type(out, element.asType());
         }

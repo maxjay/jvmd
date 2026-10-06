@@ -15,7 +15,6 @@ import java.lang.reflect.Method;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.AnnotationMirror;
@@ -29,7 +28,7 @@ import javax.lang.model.util.Elements;
 /**
  * Source-side declaration queries for a body task. Native symbols remain the handles passed to javac utilities,
  * Filer and Messager. Detached annotation values use javac's value/visitor/formatting implementation, without installing
- * metadata in the shared symbols. ProcessorSourceTypes supplies detached native type-use views; package/module views remain separate.
+ * metadata in the shared symbols. ProcessorSourceTypes and ProcessorSourcePackages supply detached native type-use and package views.
  */
 final class ProcessorSourceQueries implements ProcessorReads.Model {
     private final Elements elements;
@@ -39,16 +38,18 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
     private final com.sun.tools.javac.util.Names names;
     private final ProcessorSourceElements declarations;
     private final ProcessorSourceTypes sourceTypes;
+    private final ProcessorSourcePackages sourcePackages;
     private final Map<Element, Annotations> annotations = new IdentityHashMap<>();
     private final Map<ExecutableElement, AnnotationValue> defaultValues = new IdentityHashMap<>();
     private final Map<AnnotationMirror, Map<? extends ExecutableElement, ? extends AnnotationValue>> defaults = new IdentityHashMap<>();
 
-    ProcessorSourceQueries(ProcessingEnvironment environment, Function<String, ProcessorDeclaration.Source> sources, Predicate<Element> explicit) {
+    ProcessorSourceQueries(ProcessingEnvironment environment, dev.jvmd.index.layer.local.ProcessorSources.Binding sources, Predicate<Element> explicit) {
         elements = environment.getElementUtils(); types = environment.getTypeUtils();
         var context = ((JavacProcessingEnvironment) environment).getContext();
         compilerTypes = com.sun.tools.javac.code.Types.instance(context);
         symbols = com.sun.tools.javac.code.Symtab.instance(context); names = com.sun.tools.javac.util.Names.instance(context);
         declarations = new ProcessorSourceElements(elements, types, sources, explicit, this::privateMember);
+        sourcePackages = new ProcessorSourcePackages(context, elements, sources);
         sourceTypes = new ProcessorSourceTypes(types, compilerTypes, symbols, declarations, this::descriptor, this::typeAnnotations);
     }
 
@@ -59,6 +60,9 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
             if (name.equals("directSupertypes")) return sourceTypes.directSupertypes((Type) arguments[0]);
         }
         if (receiver == elements) {
+            if (name.equals("getPackageElement")) return arguments.length == 1 ? sourcePackages.unbound((CharSequence) arguments[0])
+                    : sourcePackages.qualified((javax.lang.model.element.ModuleElement) arguments[0], (CharSequence) arguments[1]);
+            if (name.equals("getAllPackageElements")) return sourcePackages.all((CharSequence) arguments[0]);
             if (name.equals("getOrigin") && arguments.length == 1 && arguments[0] instanceof Element element) {
                 var source = declarations.declaration(element);
                 if (source != null) return source.origin();
@@ -74,9 +78,9 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
             }
             if (name.equals("getAllMembers") && arguments[0] instanceof TypeElement type) return allMembers(type);
             if (name.equals("getElementValuesWithDefaults") && defaults.containsKey(arguments[0])) return defaults.get(arguments[0]);
-            if (name.equals("getDocComment") && arguments[0] instanceof Element element) {
+            if ((name.equals("getDocComment") || name.equals("getDocCommentKind")) && arguments[0] instanceof Element element) {
                 var source = declarations.declaration(element);
-                if (source != null) return source.docComment();
+                if (source != null) return name.equals("getDocComment") ? source.docComment() : source.docCommentKind();
             }
             if (name.equals("isDeprecated") && arguments[0] instanceof Element element) {
                 var source = declarations.declaration(element);

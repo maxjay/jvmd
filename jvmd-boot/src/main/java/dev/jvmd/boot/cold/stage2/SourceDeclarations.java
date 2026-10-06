@@ -22,8 +22,35 @@ final class SourceDeclarations {
         projection = new ProcessorElementProjection(compiled.elements, compiled.types);
     }
 
-    void add(String path, List<TypeElement> declared, List<FileRow.Fault> faults) {
-        for (var type : declared) add(path, type, faults);
+    void add(String path, List<TypeElement> declared, javax.lang.model.element.PackageElement pkg, List<FileRow.Fault> faults) {
+        for (var type : declared) {
+            presence(((javax.lang.model.element.PackageElement) type.getEnclosingElement()).getQualifiedName().toString());
+            add(path, type, faults);
+        }
+        if (pkg != null) {
+            presence(pkg.getQualifiedName().toString());
+            var key = projection.key(pkg);
+            var previous = entries.get(key);
+            if (previous != null && previous.value()[0] != 2) return;
+            Entry entry;
+            try { entry = ProcessorSources.available(boot.tree, key, projection.packageHeader(pkg, path)); }
+            catch (RuntimeException incomplete) {
+                String reason = incomplete.getClass().getSimpleName() + ": " + incomplete.getMessage();
+                entry = ProcessorSources.unavailable(boot.tree, key, path, reason);
+                faults.add(new FileRow.Fault(key, "processor package: " + reason));
+            }
+            entries.put(key, entry);
+        }
+    }
+
+    private void presence(String name) {
+        while (true) {
+            var entry = ProcessorSources.packagePresence(boot.tree, name);
+            entries.putIfAbsent(entry.key(), entry);
+            int dot = name.lastIndexOf('.');
+            if (dot < 0) break;
+            name = name.substring(0, dot);
+        }
     }
 
     private void add(String path, TypeElement type, List<FileRow.Fault> faults) {

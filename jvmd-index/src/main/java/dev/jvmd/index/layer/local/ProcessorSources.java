@@ -31,7 +31,7 @@ public final class ProcessorSources {
     }
 
     /** Bind source metadata by the first defining origin, not by a T identity shared by distinct source scopes. */
-    public static Function<String, ProcessorDeclaration.Source> bind(ContentTree tree, LocalRoot committed, Identity project,
+    public static Binding bind(ContentTree tree, LocalRoot committed, Identity project,
                                                                     String module, int scope, Function<byte[], byte[]> records) {
         Function<byte[], byte[]> required = key -> {
             var entry = tree.get(committed.local().hash(), id -> records.apply(MachineStore.nodeKey(id)), key);
@@ -41,7 +41,6 @@ public final class ProcessorSources {
                 throw new IllegalStateException("Source binding record differs from the committed LOCAL tree");
             return value;
         };
-        record Origin(Identity types, ProcessorSources sources) { }
         var origins = new java.util.ArrayList<Origin>();
         var own = SourceLeaf.decode(required.apply(LocalStore.sourceLeafKey(project, module, scope)), tree.digest().width());
         origins.add(new Origin(own.k(), ProcessorSources.load(tree, committed, project, module, scope, records)));
@@ -54,39 +53,99 @@ public final class ProcessorSources {
             case RouteEntry.Jar jar -> { if (jar.defaultK() != null) origins.add(new Origin(jar.defaultK(), null)); }
             case RouteEntry.Jrt jrt -> origins.add(new Origin(jrt.k(), null));
         }
-        return name -> {
-            var key = dev.jvmd.index.layer.machine.Keys.typeKey(name);
-            for (var origin : origins) if (tree.get(origin.types(), id -> records.apply(MachineStore.nodeKey(id)), key) != null) {
+        return new Binding(tree, records, origins);
+    }
+
+    private record Origin(Identity types, ProcessorSources sources) { }
+
+    /** Each query selects its actual source origin; neither a package nor a shared T root owns a whole scope's metadata. */
+    public static final class Binding implements Function<String, ProcessorDeclaration.Source> {
+        private final ContentTree tree;
+        private final Function<byte[], byte[]> records;
+        private final java.util.List<Origin> origins;
+        private Binding(ContentTree tree, Function<byte[], byte[]> records, java.util.List<Origin> origins) {
+            this.tree = tree; this.records = records; this.origins = java.util.List.copyOf(origins);
+        }
+        @Override public ProcessorDeclaration.Source apply(String name) {
+            var key = Keys.typeKey(name);
+            for (var origin : origins) if (defines(origin, key)) {
                 if (origin.sources() == null) return null;
                 var source = origin.sources().type(name);
                 if (source == null) throw new IllegalStateException("Source type has no committed processor declaration: " + name);
                 return source;
             }
             return null;
-        };
+        }
+        /** An explicit package-info, even documentation-only, shadows later package metadata. Other types do not. */
+        public ProcessorDeclaration.Source packageHeader(String qualifiedName) {
+            var binary = Keys.typeKey(qualifiedName.isEmpty() ? "package-info" : qualifiedName.replace('.', '/') + "/package-info");
+            for (var origin : origins) {
+                if (origin.sources() != null) {
+                    var source = origin.sources().packageHeader(qualifiedName);
+                    if (source != null) return source;
+                }
+                if (defines(origin, binary)) return null;
+            }
+            return null;
+        }
+        public boolean packageExists(String qualifiedName) {
+            for (var origin : origins) if (origin.sources() != null && origin.sources().packageExists(qualifiedName)) return true;
+            return false;
+        }
+        private boolean defines(Origin origin, byte[] key) {
+            return tree.get(origin.types(), id -> records.apply(MachineStore.nodeKey(id)), key) != null;
+        }
     }
 
     public Root root() { return root; }
 
     /** Exact binary name lookup, including nested names with literal '$'; null is a proved absence from this scope. */
     public ProcessorDeclaration.Source type(String internalName) {
-        var key = Keys.typeKey(internalName);
+        var source = declaration(Keys.typeKey(internalName), internalName, false);
+        if (source != null && (!(source.declaration().detail() instanceof ProcessorDeclaration.TypeDeclaration type)
+                || !type.binaryName().replace('.', '/').equals(internalName)))
+            throw new IllegalStateException("Processor declaration key differs from its binary name");
+        return source;
+    }
+
+    public ProcessorDeclaration.Source packageHeader(String qualifiedName) {
+        var source = declaration(Keys.packageElementKey(qualifiedName), qualifiedName, true);
+        if (source != null && (!(source.declaration().detail() instanceof ProcessorDeclaration.PackageHeader pkg)
+                || !pkg.qualifiedName().equals(qualifiedName)))
+            throw new IllegalStateException("Processor package key differs from its qualified name");
+        return source;
+    }
+
+    private boolean packageExists(String qualifiedName) {
+        return entry(Keys.packageElementKey(qualifiedName)) != null;
+    }
+
+    private Entry entry(byte[] key) {
         var entry = tree.get(root.hash(), id -> records.apply(MachineStore.nodeKey(id)), key);
-        if (entry == null) return null;
-        if (!tree.digest().hash(key, entry.value()).equals(entry.h()))
+        if (entry != null && !tree.digest().hash(key, entry.value()).equals(entry.h()))
             throw new IllegalStateException("Processor declaration entry digest mismatch");
+        return entry;
+    }
+
+    private ProcessorDeclaration.Source declaration(byte[] key, String name, boolean packageHeader) {
+        var entry = entry(key);
+        if (entry == null) return null;
         var in = new Codec.Reader(entry.value());
         int tag = in.u8();
         if (tag == 0) {
             var source = ProcessorDeclaration.decode(in.raw(in.remaining()));
-            if (!(source.declaration().detail() instanceof ProcessorDeclaration.TypeDeclaration type)
-                    || !type.binaryName().replace('.', '/').equals(internalName)
-                    || !java.util.Arrays.equals(source.declaration().key().bytes(), key))
-                throw new IllegalStateException("Processor declaration key differs from its binary name");
+            if (!java.util.Arrays.equals(source.declaration().key().bytes(), key))
+                throw new IllegalStateException("Processor declaration key differs from its stored key");
             return source;
         }
-        if (tag == 1) throw new Unavailable(internalName, in.str(), in.str());
+        if (tag == 1) throw new Unavailable(name, in.str(), in.str());
+        if (tag == 2 && packageHeader && in.remaining() == 0) return null;
         throw new IllegalStateException("Invalid processor declaration entry tag");
+    }
+
+    /** Exact package existence, including ancestors, without claiming a package-info declaration or metadata origin. */
+    public static Entry packagePresence(ContentTree tree, String qualifiedName) {
+        return entry(tree, Keys.packageElementKey(qualifiedName), new byte[] {2});
     }
 
     public static Entry available(ContentTree tree, byte[] key, byte[] projection) {

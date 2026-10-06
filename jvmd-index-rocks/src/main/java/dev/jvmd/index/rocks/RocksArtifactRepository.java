@@ -144,7 +144,9 @@ public final class RocksArtifactRepository implements AutoCloseable {
     }
 
     public boolean verifyDocumentation(String docsKey,String binaryCacheKey,String sourceSha)throws Exception{
+        dev.jvmd.core.BootEvents.count("docs.verify_calls",1);
         byte[] value=db.get(key(docsKey,"z|manifest"));if(value==null)return false;
+        dev.jvmd.core.BootEvents.count("docs.verify_full_passes",1);long verifyStarted=dev.jvmd.core.BootEvents.nanos();
         var manifest=parseManifest(value);
         if(!"documentation".equals(manifest.get("kind"))||!binaryCacheKey.equals(manifest.get("binary"))||!sourceSha.equals(manifest.get("source_sha")))return false;
         var digest=java.security.MessageDigest.getInstance("SHA-256");byte[] prefix=key(docsKey,"9|member|");long count=0;
@@ -154,6 +156,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
             }
             iterator.status();
         }
+        dev.jvmd.core.BootEvents.count("docs.verify_records",count);dev.jvmd.core.BootEvents.timed("docs.verify_full",verifyStarted);
         return Objects.equals(manifest.get("members"),Long.toString(count))&&Objects.equals(manifest.get("sha256"),HexFormat.of().formatHex(digest.digest()));
     }
 
@@ -163,7 +166,7 @@ public final class RocksArtifactRepository implements AutoCloseable {
         return Json.MAPPER.readValue(value,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){});
     }
 
-    public boolean contains(String cacheKey)throws Exception{return db.get(key(cacheKey,"z|manifest"))!=null;}
+    public boolean contains(String cacheKey)throws Exception{dev.jvmd.core.BootEvents.count("repository.contains",1);return db.get(key(cacheKey,"z|manifest"))!=null;}
 
     /** Immutable SSTs verified by this owner need no second scan during candidate activation. */
     boolean verifyForActivation(String cacheKey)throws Exception{

@@ -103,6 +103,7 @@ public final class UnixServer implements AutoCloseable {
             catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             return;
         }
+        if(BootEvents.ENABLED)BootEvents.mark("SHUTDOWN_BEGIN");
         timer.shutdownNow();
         try {
             if (server != null) server.close();
@@ -114,6 +115,7 @@ public final class UnixServer implements AutoCloseable {
             try { if (bound) Files.deleteIfExists(config.socket()); } catch (IOException ignored) { }
             try { if (lock != null && lock.isValid()) lock.release(); } catch (IOException ignored) { }
             try { if (lockChannel != null) lockChannel.close(); } catch (IOException ignored) { }
+            if(BootEvents.ENABLED)BootEvents.mark("SHUTDOWN_END");
             stopped.countDown();
         }
     }

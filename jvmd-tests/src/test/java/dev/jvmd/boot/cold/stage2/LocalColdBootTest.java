@@ -498,7 +498,7 @@ class LocalColdBootTest {
             var sums = Sum.forWidth(digest.width());
             var totals = new HashMap<String, Identity>();
             for (var path : Fixtures.multi().keySet()) {
-                var row = FileRow.decode(path, booted.store().get(LocalStore.fileKey(booted.projectKey(), path)), digest.width());
+                var row = FileRow.decode(path, booted.store().get(LocalStore.fileKey(booted.projectKey(), Stage2Support.source(path))), digest.width());
                 var module = path.substring(0, path.indexOf('/'));
                 var scope = path.contains("/src/test/") ? "test" : "main";
                 totals.merge(module + "/" + scope, row.sum(), sums::add);
@@ -529,7 +529,7 @@ class LocalColdBootTest {
             var rows = new HashMap<String, FileRow>();
             for (var name : List.of("Many", "Fine", "Broken")) {
                 var path = "m/src/main/java/f/" + name + ".java";
-                rows.put(name, FileRow.decode(path, store.get(LocalStore.fileKey(booted.projectKey(), path)), digest.width()));
+                rows.put(name, FileRow.decode(path, store.get(LocalStore.fileKey(booted.projectKey(), Stage2Support.source(path))), digest.width()));
             }
             assertThat(rows.get("Broken").faults()).as("an unparsable file is one fault covering the file").hasSize(1);
             assertThat(rows.get("Broken").faults().get(0).m()).isEmpty();
@@ -549,7 +549,7 @@ class LocalColdBootTest {
         try {
             Stage2Support.write(project2, Map.of("m/src/main/java/g/G.java", "package g; import missing.Foo; public class G { public int ok; public Foo bad; public Foo make() { return null; } public void fine(int x) { } }"));
             var booted = boot(digest, Stage2Support.model(project2, new Stage2Support.Mod("m", "corp:m:1", List.of())), 2);
-            var row = FileRow.decode("m/src/main/java/g/G.java", booted.store().get(LocalStore.fileKey(booted.projectKey(), "m/src/main/java/g/G.java")), digest.width());
+            var row = FileRow.decode("m/src/main/java/g/G.java", booted.store().get(LocalStore.fileKey(booted.projectKey(), Stage2Support.source("m/src/main/java/g/G.java"))), digest.width());
             assertThat(row.faults()).hasSize(2);
             assertThat(row.typeKeys()).containsExactly("g/G");
             assertThat(leaf(digest, booted.store(), booted.result().leaves().get("m/main")).factCount()).as("type, ok, fine and the default constructor").isEqualTo(4);
@@ -792,11 +792,11 @@ class LocalColdBootTest {
             assertThat(is.routeHash()).as("the route of server-a changed").isNotEqualTo(was.routeHash());
             assertThat(is.leafSetExt()).as("its external part did not").isEqualTo(was.leafSetExt());
             for (var path : List.of("server-a/src/main/java/a/Server.java")) {
-                var row = FileRow.decode(path, before.store().get(LocalStore.fileKey(before.projectKey(), path)), digest.width());
-                var again = FileRow.decode(path, after.store().get(LocalStore.fileKey(after.projectKey(), path)), digest.width());
+                var row = FileRow.decode(path, before.store().get(LocalStore.fileKey(before.projectKey(), Stage2Support.source(path))), digest.width());
+                var again = FileRow.decode(path, after.store().get(LocalStore.fileKey(after.projectKey(), Stage2Support.source(path))), digest.width());
                 assertThat(again.kappa()).isEqualTo(row.kappa());
-                assertThat(LocalStore.proofKey(after.projectKey(), path)).as("C|project|path key")
-                        .isEqualTo(LocalStore.proofKey(before.projectKey(), path));
+                assertThat(LocalStore.proofKey(after.projectKey(), Stage2Support.source(path))).as("C|project|path key")
+                        .isEqualTo(LocalStore.proofKey(before.projectKey(), Stage2Support.source(path)));
                 assertThat(after.store().withPrefix("RS")).as("Stage 2 writes no body results").isEmpty();
             }
 
@@ -824,8 +824,8 @@ class LocalColdBootTest {
             assertThat(m1.k()).as("the same bytes, resolved differently").isNotEqualTo(m2.k());
             assertThat(m1.r()).isNotEqualTo(m2.r());
             assertThat(booted.result().parsedFiles()).as("every file is taken through Φ_src: there is no memo").isEqualTo(2);
-            var one = FileRow.decode("m1/src/main/java/use/User.java", booted.store().get(LocalStore.fileKey(booted.projectKey(), "m1/src/main/java/use/User.java")), digest.width());
-            var two = FileRow.decode("m2/src/main/java/use/User.java", booted.store().get(LocalStore.fileKey(booted.projectKey(), "m2/src/main/java/use/User.java")), digest.width());
+            var one = FileRow.decode("m1/src/main/java/use/User.java", booted.store().get(LocalStore.fileKey(booted.projectKey(), Stage2Support.source("m1/src/main/java/use/User.java"))), digest.width());
+            var two = FileRow.decode("m2/src/main/java/use/User.java", booted.store().get(LocalStore.fileKey(booted.projectKey(), Stage2Support.source("m2/src/main/java/use/User.java"))), digest.width());
             assertThat(one.kappa()).as("one content key").isEqualTo(two.kappa());
             assertThat(one.sum()).isNotEqualTo(two.sum());
         } finally { Stage2Support.delete(project); }
@@ -849,11 +849,11 @@ class LocalColdBootTest {
             for (var name : List.of("UsesT1", "UsesNothing")) rows.put(name, row(digest, booted, name));
 
             for (var row : rows.values()) for (var dependency : ReverseIndex.dependencies(row)) {
-                assertThat(booted.store().get(dependency.key(booted.projectKey(), row.path()))).isEmpty();
-                assertThat(ReverseIndex.consumers(digest, booted.store(), dependency)).contains(new ReverseIndex.Consumer(booted.projectKey(), row.path()));
+                assertThat(booted.store().get(dependency.key(booted.projectKey(), Stage2Support.source(row.path())))).isEmpty();
+                assertThat(ReverseIndex.consumers(digest, booted.store(), dependency)).contains(new ReverseIndex.Consumer(booted.projectKey(), Stage2Support.source(row.path())));
             }
             var t1 = ReverseIndex.consumers(digest, booted.store(), new ReverseIndex.Dependency(ReverseIndex.T, "lib/T1", Keys.TYPE, ""));
-            assertThat(t1).containsExactly(new ReverseIndex.Consumer(booted.projectKey(), rows.get("UsesT1").path()));
+            assertThat(t1).containsExactly(new ReverseIndex.Consumer(booted.projectKey(), Stage2Support.source(rows.get("UsesT1").path())));
             var string = ReverseIndex.consumers(digest, booted.store(), new ReverseIndex.Dependency(ReverseIndex.T, "java/lang/String", Keys.TYPE, ""));
             assertThat(string).extracting(ReverseIndex.Consumer::path).contains(rows.get("UsesNothing").path()).doesNotContain(rows.get("UsesT1").path());
             assertThat(booted.store().withPrefix("X").values()).allMatch(value -> value.length == 0);
@@ -1114,11 +1114,11 @@ class LocalColdBootTest {
             var found = new ArrayList<byte[]>();
             store.forEachKey(dependency.prefix(), found::add);
             assertThat(found).hasSize(2);
-            assertThat(store.get(dependency.key(one.projectKey(), "a/src/main/java/a/A.java"))).isEmpty();
-            assertThat(store.get(dependency.key(otherKey, "b/src/main/java/b/B.java"))).isEmpty();
+            assertThat(store.get(dependency.key(one.projectKey(), Stage2Support.source("a/src/main/java/a/A.java")))).isEmpty();
+            assertThat(store.get(dependency.key(otherKey, Stage2Support.source("b/src/main/java/b/B.java")))).isEmpty();
             assertThat(ReverseIndex.consumers(digest, store, dependency)).containsExactlyInAnyOrder(
-                    new ReverseIndex.Consumer(one.projectKey(), "a/src/main/java/a/A.java"),
-                    new ReverseIndex.Consumer(otherKey, "b/src/main/java/b/B.java"));
+                    new ReverseIndex.Consumer(one.projectKey(), Stage2Support.source("a/src/main/java/a/A.java")),
+                    new ReverseIndex.Consumer(otherKey, Stage2Support.source("b/src/main/java/b/B.java")));
         } finally { Stage2Support.delete(first); Stage2Support.delete(second); }
     }
 
@@ -1155,7 +1155,7 @@ class LocalColdBootTest {
             assertThat(holds(digest, base, changed, "UsesConst")).as("the file that reads K.VALUE fails its proof").isFalse();
             assertThat(holds(digest, base, changed, "UsesImport")).isFalse();
             assertThat(holds(digest, base, changed, "UsesNothing")).as("nothing else does").isTrue();
-            var before = FileRow.decode("x", base.store().get(LocalStore.fileKey(base.projectKey(), "app/src/main/java/app/UsesConst.java")), digest.width());
+            var before = FileRow.decode("x", base.store().get(LocalStore.fileKey(base.projectKey(), Stage2Support.source("app/src/main/java/app/UsesConst.java"))), digest.width());
             assertThat(leaf(digest, changed.store(), changed.result().leaves().get("app/main")).r()).as("and the facts did change").isNotEqualTo(leaf(digest, base.store(), base.result().leaves().get("app/main")).r());
             assertThat(before.headerProof()).isNotEmpty();
         } finally { Stage2Support.delete(project); }
@@ -1246,8 +1246,8 @@ class LocalColdBootTest {
         assertThat(row(digest, e.before(), file).headerProof()).as("the proof of " + file + " names " + type).extracting(FileRow.Proof::typeKey).contains(type);
         var row = row(digest, e.before(), file);
         for (var dependency : ReverseIndex.dependencies(row)) if (dependency.type().equals(type)) {
-            assertThat(e.before().store().get(dependency.key(e.before().projectKey(), row.path()))).isEmpty();
-            assertThat(ReverseIndex.consumers(digest, e.before().store(), dependency)).contains(new ReverseIndex.Consumer(e.before().projectKey(), row.path()));
+            assertThat(e.before().store().get(dependency.key(e.before().projectKey(), Stage2Support.source(row.path())))).isEmpty();
+            assertThat(ReverseIndex.consumers(digest, e.before().store(), dependency)).contains(new ReverseIndex.Consumer(e.before().projectKey(), Stage2Support.source(row.path())));
         }
         assertThat(holds(digest, e.before(), e.after(), file)).as("proof of " + file + " after the change").isEqualTo(!failsAfter);
         assertThat(holds(digest, e.before(), e.after(), "UsesNothing")).as("nothing else fails").isTrue();
@@ -1435,7 +1435,7 @@ class LocalColdBootTest {
 
     private static FileRow row(Digest digest, Booted booted, String file) {
         var path = "app/src/main/java/app/" + file + ".java";
-        return FileRow.decode(path, booted.store().get(LocalStore.fileKey(booted.projectKey(), path)), digest.width());
+        return FileRow.decode(path, booted.store().get(LocalStore.fileKey(booted.projectKey(), Stage2Support.source(path))), digest.width());
     }
 
     /** Validate persisted ranges and absences against the new route, including the own-module leaf. */

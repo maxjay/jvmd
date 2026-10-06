@@ -190,12 +190,12 @@ final class ModuleJob {
             };
             var absences = p.reads().absences().stream().filter(a -> HeaderProof.absent(a, boot.tree, definer, boot::node)).toList();
             var row = new FileRow(p.path(), p.kappa(), p.size(), p.mtimeNanos(), p.sum(), List.copyOf(p.types()), List.copyOf(p.faults()), headerProof(all, definer), leaf.r(), absences);
-            boot.files.put(row.path(), row);
+            boot.files.put(new dev.jvmd.index.layer.local.SourceUnit(module.name(), scope, row.path()), row);
             for (var fault : row.faults()) boot.faults.add(row.path() + ": " + (fault.m().length == 0 ? "" : Keys.ownerOf(fault.m()) + ": ") + fault.reason());
         }
         if (processing != null) {
             var rows = new TreeMap<String, FileRow>();
-            for (var p : pending) rows.put(p.path(), boot.files.get(p.path()));
+            for (var p : pending) rows.put(p.path(), boot.files.get(new dev.jvmd.index.layer.local.SourceUnit(module.name(), scope, p.path())));
             processing.finish(rows);
         }
         sink.flush();

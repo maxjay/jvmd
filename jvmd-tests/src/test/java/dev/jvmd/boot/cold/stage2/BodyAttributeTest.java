@@ -66,7 +66,7 @@ class BodyAttributeTest {
         }
         var configuration=new Pool.Configuration(new Pool.Key(route.routeHash(),own.k()),stubs,List.of(),policy.charset(),policy.javac(),names);
         var rows=new TreeMap<String,FileRow>();
-        for(var name:files.keySet()) { String path="app/src/main/java/"+name;rows.put(name,FileRow.decode(path,store.get(LocalStore.fileKey(project,path)),digest.width())); }
+        for(var name:files.keySet()) { String path="app/src/main/java/"+name;rows.put(name,FileRow.decode(path,store.get(LocalStore.fileKey(project, Stage2Support.source(path))),digest.width())); }
         return new State(tree,store,project,own,route,policy,configuration,rows,files);
     }
 
@@ -128,7 +128,7 @@ class BodyAttributeTest {
         }
         assertThat(state.store().get(LocalStore.localRootKey(state.project()))).isEqualTo(beforeLocal);
         assertThat(state.store().get(LocalStore.bodiesRootKey(state.project()))).isNull();
-        assertThat(state.store().get(LocalStore.proofKey(state.project(),state.rows().get("p/App.java").path()))).isNull();
+        assertThat(state.store().get(LocalStore.proofKey(state.project(), Stage2Support.source(state.rows().get("p/App.java").path())))).isNull();
     }
 
     @ParameterizedTest @MethodSource("digests")

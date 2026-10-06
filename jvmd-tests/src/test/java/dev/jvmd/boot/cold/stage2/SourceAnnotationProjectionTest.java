@@ -125,7 +125,7 @@ class SourceAnnotationProjectionTest {
             var result=new Stage2(digest,tree,Stage2Support.FEATURE,1,project,ClassFacts::of).run(store,model);
             assertThat(result.faults()).isEmpty();
             var projectKey=Stage2.projectKey(digest,model);String path="app/src/main/java/p/package-info.java";
-            var row=dev.jvmd.index.layer.local.FileRow.decode(path,store.get(dev.jvmd.index.layer.local.LocalStore.fileKey(projectKey,path)),digest.width());
+            var row=dev.jvmd.index.layer.local.FileRow.decode(path,store.get(dev.jvmd.index.layer.local.LocalStore.fileKey(projectKey, Stage2Support.source(path))),digest.width());
             if(!retention.equals("NONE"))assertThat(row.headerProof()).anyMatch(read->read.typeKey().equals("p/Values")&&read.kind()==dev.jvmd.index.layer.machine.Keys.FIELD&&read.name().equals("VALUE"));
             var leaf=dev.jvmd.index.layer.machine.MachineLeaf.decode(store.get(MachineStore.leafKey(result.leaves().get("app/main"))),digest.width());
             var annotations=dev.jvmd.index.layer.machine.AnnotationLeaf.decode(store.get(MachineStore.annotationLeafKey(result.annotations().get("app/main"))),digest.width());

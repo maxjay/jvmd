@@ -130,7 +130,7 @@ final class ModuleProcessing {
             boolean isGenerated = generated.containsKey(row.path());
             var updated = new FileRow(row.path(), row.kappa(), row.size(), row.mtimeNanos(), row.sum(), row.typeKeys(), row.faults(), row.headerProof(),
                     row.ownR(), row.absences(), isGenerated, origins.get(row.path()), ids.get(row.path()), context(row.path()));
-            boot.files.put(updated.path(), updated);
+            boot.files.put(new dev.jvmd.index.layer.local.SourceUnit(module.name(), scope, updated.path()), updated);
         }
     }
 

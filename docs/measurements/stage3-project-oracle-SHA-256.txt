@@ -1,0 +1,50 @@
+digest: SHA-256
+project: C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566
+workers: 4
+stage3 wall ms: 15754
+jvmd-analyzer/main files=33 classes=125 equal=true
+jvmd-analyzer/test files=0 classes=0 equal=true
+jvmd-boot/main files=41 classes=137 equal=true
+jvmd-boot/test files=0 classes=0 equal=true
+jvmd-core/main files=48 classes=129 equal=true
+jvmd-core/test files=0 classes=0 equal=true
+jvmd-dist/main files=9 classes=39 equal=false
+jvmd-dist/test files=0 classes=0 equal=true
+jvmd-index-rocks/main files=21 classes=52 equal=false
+jvmd-index-rocks/test files=12 classes=13 equal=false
+jvmd-index/main files=91 classes=328 equal=true
+jvmd-index/test files=0 classes=0 equal=true
+jvmd-lsp/main files=2 classes=3 equal=true
+jvmd-lsp/test files=0 classes=0 equal=true
+jvmd-mcp/main files=2 classes=2 equal=true
+jvmd-mcp/test files=0 classes=0 equal=true
+jvmd-resolver/main files=7 classes=19 equal=true
+jvmd-resolver/maven3/main files=8 classes=20 equal=true
+jvmd-resolver/maven3/test files=0 classes=0 equal=true
+jvmd-resolver/maven4/main files=10 classes=22 equal=false
+jvmd-resolver/maven4/test files=0 classes=0 equal=true
+jvmd-resolver/test files=0 classes=0 equal=true
+jvmd-runtime/main files=17 classes=41 equal=false
+jvmd-runtime/test files=0 classes=0 equal=true
+jvmd-tests/main files=0 classes=0 equal=true
+jvmd-tests/test files=254 classes=365 equal=false
+classpath equality: 20/26 scopes; files=555 classes=1295
+module descriptors included in byte oracle: 10; emitted=10
+jvmd-dist/main diagnostics differ
+  native=[Message[path=jvmd-dist/src/main/java/dev/jvmd/dist/Application.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.unchecked.filename, message=C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566\jvmd-dist\src\main\java\dev\jvmd\dist\Application.java uses unchecked or unsafe operations.]], Message[path=jvmd-dist/src/main/java/dev/jvmd/dist/Application.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.unchecked.recompile, message=Recompile with -Xlint:unchecked for details.]]]
+  body=[Message[path=jvmd-dist/src/main/java/dev/jvmd/dist/Application.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.unchecked.filename, message=/C:/Users/Max/.codex/worktrees/jvmd-stage-3/jvmd-stage-2-cold-boot-eb9566/jvmd-dist/src/main/java/dev/jvmd/dist/Application.java uses unchecked or unsafe operations.]], Message[path=jvmd-dist/src/main/java/dev/jvmd/dist/Application.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.unchecked.recompile, message=Recompile with -Xlint:unchecked for details.]]]
+jvmd-index-rocks/main diagnostics differ
+  native=[Message[path=jvmd-index-rocks/src/main/java/module-info.java, diagnostic=Diagnostic[kind=1, start=96, end=106, code=compiler.warn.requires.transitive.automatic, message=requires transitive directive for an automatic module]]]
+  body=[]
+jvmd-index-rocks/test diagnostics differ
+  native=[Message[path=jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SourceOverlayTest.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.unchecked.filename, message=C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566\jvmd-index-rocks\src\test\java\dev\jvmd\index\rocks\SourceOverlayTest.java uses unchecked or unsafe operations.]], Message[path=jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SourceOverlayTest.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.unchecked.recompile, message=Recompile with -Xlint:unchecked for details.]]]
+  body=[Message[path=jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SourceOverlayTest.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.unchecked.filename, message=/C:/Users/Max/.codex/worktrees/jvmd-stage-3/jvmd-stage-2-cold-boot-eb9566/jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SourceOverlayTest.java uses unchecked or unsafe operations.]], Message[path=jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SourceOverlayTest.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.unchecked.recompile, message=Recompile with -Xlint:unchecked for details.]]]
+jvmd-resolver/maven4/main diagnostics differ
+  native=[Message[path=jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/MavenEngine.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.filename, message=C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566\jvmd-resolver\engine\src\main\java\dev\jvmd\resolver\engine\MavenEngine.java uses or overrides a deprecated API.]], Message[path=jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/MavenEngine.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.recompile, message=Recompile with -Xlint:deprecation for details.]]]
+  body=[Message[path=jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/MavenEngine.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.filename, message=/C:/Users/Max/.codex/worktrees/jvmd-stage-3/jvmd-stage-2-cold-boot-eb9566/jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/MavenEngine.java uses or overrides a deprecated API.]], Message[path=jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/MavenEngine.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.recompile, message=Recompile with -Xlint:deprecation for details.]]]
+jvmd-runtime/main diagnostics differ
+  native=[Message[path=jvmd-runtime/src/main/java/dev/jvmd/runtime/DebugSession.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.filename, message=C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566\jvmd-runtime\src\main\java\dev\jvmd\runtime\DebugSession.java uses or overrides a deprecated API.]], Message[path=jvmd-runtime/src/main/java/dev/jvmd/runtime/DebugSession.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.recompile, message=Recompile with -Xlint:deprecation for details.]]]
+  body=[Message[path=jvmd-runtime/src/main/java/dev/jvmd/runtime/DebugSession.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.filename, message=/C:/Users/Max/.codex/worktrees/jvmd-stage-3/jvmd-stage-2-cold-boot-eb9566/jvmd-runtime/src/main/java/dev/jvmd/runtime/DebugSession.java uses or overrides a deprecated API.]], Message[path=jvmd-runtime/src/main/java/dev/jvmd/runtime/DebugSession.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.recompile, message=Recompile with -Xlint:deprecation for details.]]]
+jvmd-tests/test diagnostics differ
+  native=[Message[path=jvmd-tests/src/test/java/dev/jvmd/tests/PersistentDiagnosticsTest.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.plural, message=Some input files use or override a deprecated API.]], Message[path=jvmd-tests/src/test/java/dev/jvmd/tests/PersistentDiagnosticsTest.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.recompile, message=Recompile with -Xlint:deprecation for details.]]]
+  body=[Message[path=jvmd-tests/src/test/java/dev/jvmd/tests/PersistentDiagnosticsTest.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.filename, message=/C:/Users/Max/.codex/worktrees/jvmd-stage-3/jvmd-stage-2-cold-boot-eb9566/jvmd-tests/src/test/java/dev/jvmd/tests/PersistentDiagnosticsTest.java uses or overrides a deprecated API.]], Message[path=jvmd-tests/src/test/java/dev/jvmd/tests/PersistentDiagnosticsTest.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.recompile, message=Recompile with -Xlint:deprecation for details.]], Message[path=jvmd-tests/src/test/java/dev/jvmd/tests/RealProjectBenchmark.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.filename, message=/C:/Users/Max/.codex/worktrees/jvmd-stage-3/jvmd-stage-2-cold-boot-eb9566/jvmd-tests/src/test/java/dev/jvmd/tests/RealProjectBenchmark.java uses or overrides a deprecated API.]], Message[path=jvmd-tests/src/test/java/dev/jvmd/tests/RealProjectBenchmark.java, diagnostic=Diagnostic[kind=2, start=-1, end=-1, code=compiler.note.deprecated.recompile, message=Recompile with -Xlint:deprecation for details.]]]

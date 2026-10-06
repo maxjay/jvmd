@@ -24,7 +24,7 @@ The `ContentTree` that carries all of this is a prolly tree: sorted entries, con
 
 ## 2. Definitions
 
-Everything from stages 1 and 2 keeps its meaning: `Digest`, `Identity`, `Sum` mod `p`, `ContentTree` with `B = 32`, `CAP = 128`, `apply`, facts `m`, `res`, the leaf `T`, `N`, `E`, `O`, `k`, `r`, `L`, routes, `Bound`, `leafSetExt`, `leafSetSib`, `routeHash`, `R`, the definer indexes `DD|`, `DS|`, `DC|`, stubs `ST|`, `S|`, file rows `F|` with header proofs, `X|H|dependency|projectKey|path` for headers, `LROOT`. One identity changes under appendix A: `h = Digest(m || res)` in place of `Digest(res)`, so that every sum binds a value to its key (3.3). New or changed here:
+Everything from stages 1 and 2 keeps its meaning: `Digest`, `Identity`, `Sum` mod `p`, `ContentTree` with `B = 32`, `CAP = 128`, `apply`, facts `m`, `res`, the leaf `T`, `N`, `E`, `O`, `k`, `r`, `L`, routes, `Bound`, `leafSetExt`, `leafSetSib`, `routeHash`, `R`, the definer indexes `DD|`, `DS|`, `DC|`, stubs `ST|`, `S|`, file rows `F|` with header proofs, `X|H|dependency|projectKey|module|scope|path` for headers, `LROOT`. One identity changes under appendix A: `h = Digest(m || res)` in place of `Digest(res)`, so that every sum binds a value to its key (3.3). New or changed here:
 
 ### 2.1 The A layer (LAYOUT 4)
 
@@ -39,6 +39,8 @@ Everything from stages 1 and 2 keeps its meaning: `Digest`, `Identity`, `Sum` mo
 
 ### 2.2 The attribution unit
 
+**Source addresses (LOCAL 13; supersedes the Stage 2-only path-key layout).** A source compilation is `SourceUnit(module, scope, path)`. `F|project|module|scope|path`, `C|project|module|scope|path` and all header/body X consumer suffixes use this address. Scope is MAIN=0 or TEST=1; the suffix after the fixed project prefix is `zstr module || u8 scope || zstr path`. A shared source root must produce one independent F/C/reverse consumer per compilation context. Source bytes, CF, RS and generated derivations retain their existing content identities and share when their actual inputs are equal. The driver reads the unit address from F; it does not infer a unique owner from the physical path.
+
 | Term | Definition |
 | --- | --- |
 | `Attribute(f)` | javac parse, enter, attribute and generate over one compilation unit `f`, with no other source file in the task. The classpath is, in this order: the stubs of `f`'s own module leaf (first, so that own types shadow same-named classpath types exactly as a real build's sources do), then the route in route order (jars, sibling stub directories). `f` is the only source; javac uses an explicitly given source over a classpath class of the same name, so `f`'s own types come from `f` and every other type of the module from its stub. `--system` is the bound JDK. The task runs with `Locale.ROOT` and an explicit `-encoding` (the model's, else UTF-8), so neither diagnostics nor decoding depend on the machine. |
@@ -51,7 +53,7 @@ Everything from stages 1 and 2 keeps its meaning: `Digest`, `Identity`, `Sum` mo
 
 | Input | Covered by |
 | --- | --- |
-| `f`'s bytes | `κ_file` in `ACI`; `C\|projectKey\|path` locates the proof |
+| `f`'s bytes | `κ_file` in `ACI`; `C\|projectKey\|module\|scope\|path` locates the proof |
 | `f`'s file name (`SourceFile` attribute, javac messages) | `basename` in `ACI` |
 | javac options, release, preview, `-g`, `-parameters`, `-encoding` | `optionsHash` |
 | the javac that runs (bytes, diagnostics, inference differ between builds) | FORMAT: `Runtime.version().toString()` |
@@ -68,6 +70,12 @@ Everything from stages 1 and 2 keeps its meaning: `Digest`, `Identity`, `Sum` mo
 | anything a processor reads outside the processing environment (files, environment, other modules), or a processor with no incremental declaration | not covered and not approximated: unsupported for reuse, reported by processor class (3.5) |
 | the stub synthesis itself | one type's res plus its direct-member InnerClasses projection (A.1); the stub key binds exactly both |
 | the own leaf's `A`, the siblings' `A` | not a javac resolution input (2.1); processors can observe annotation metadata independently of T, so those actual queries need processor model proofs (3.5), never a whole-leaf A identity |
+
+### 2.2.1 Module descriptors: zero-body derivation
+
+`module-info.java` never enters `Attribute`. Stage 2's canonical `Res.Module` fact at `T[module-info]` supplies the complete descriptor, including implicit java.base, module/version, required-module versions, exports, opens, uses and provides. Stage 3 deterministically emits `module-info.class` from that fact and the descriptor's byte-emission options, stores the bytes under ordinary `CF|Digest(bytes)`, and includes the class in the scope's OUT tree. The derivation key is `Digest(str "module-info derivation v1" || typeKey(module-info) || fact.h || u16 majorVersion || u8 sourceFile)`, domain-separated from source ACI. The declared descriptor target/release determines majorVersion; the last `-g` setting determines SourceFile emission. Stage 2 already records the required-module versions from that declared release's module view. This zero-body emission policy is separate from the ordinary classpath Attribute source-level policy. The proof consumes the single existing form-0 T type-fact range. Its header shortcuts do not enter the derivation key. Invalidation consumes the existing keyed type-fact identity/range; there is no module-wide or module-read proof added to regenerate these bytes. Source whitespace and executable-body edits are not descriptor inputs.
+
+Unchanged descriptor and emission options mean no descriptor emission work. One directive edit changes only the module-info derivation among outputs that otherwise consume unchanged inputs. An independent javac oracle must compare the emitted descriptor byte for byte for supported descriptors. Exact validation of directives, where not already supplied by Stage 2, belongs to Stage 2/header/module-resolution proofs. The deferred module-path boundary applies only to compilation of ordinary Java under JPMS readability/export semantics; it does not defer module-info.class. The initial implementation and both-digest fixtures cover implicit/explicit required modules, required versions, module versions, qualified exports/opens, uses/provides, open modules, debug options and declared Java 21/25 descriptor releases. Broader descriptor projection coverage and Stage 2 directive diagnostics remain completion work; a zero-body emitter is not evidence that header validation is complete.
 
 ### 2.3 The proof entry, and the resolution universe
 
@@ -88,11 +96,11 @@ A proof is a header of the identities it was read against, then its entries grou
 
 | Record | Key | Value | Space |
 | --- | --- | --- | --- |
-| Proof | `C\|projectKey\|path` | header and entries by type (B.1); the file's last attribution context, beside its header proof in the file row | LOCAL, per project |
+| Proof | `C\|projectKey\|module\|scope\|path` | header and entries by type (B.1); the file's last attribution context, beside its header proof in the file row | LOCAL, per project |
 | Result | `RS\|ACI` | `list<(zstr internalName \|\| id cf)>`, diagnostics (B.2) | content-addressed; shared wherever the inputs coincide |
 | Class file | `CF\|Digest(bytes)` | the class bytes | shared across files, versions and projects |
 | Uses | `U\|ACI` | per entry key, the offset ranges in `f` where it was resolved (B.4) | content-addressed |
-| Reverse | `X\|G\|key\|projectKey\|path`, `X\|D\|key\|projectKey\|path` | empty: one entry per consumer, so the consumers of a key are a prefix range and a consumer joins or leaves in O(log) (B.3) | LOCAL, per project |
+| Reverse | `X\|G\|key\|projectKey\|module\|scope\|path`, `X\|D\|key\|projectKey\|module\|scope\|path` | empty: one entry per consumer, so the consumers of a key are a prefix range and a consumer joins or leaves in O(log) (B.3) | LOCAL, per project |
 | Output | `OUT\|projectKey\|module\|scope` | root of the `ContentTree` internal name to `cf` over the scope's valid class files (B.5) | LOCAL, per project |
 | Annotation layer | `N\|hash` nodes of `A` and `EA`; `a` in `P\|`, `Built`, route elements | as stage 1 | shared with MACHINE |
 | Bodies root | BROOT\|projectKey | FORMAT, the bodies tree root, the stage 2 root it extended, machine root, model hash (B.7). Stage 2's LROOT is read and never written by stage 3; bodies exist when BROOT.localRoot equals LROOT.root. | per project |
@@ -166,7 +174,7 @@ A result is a function of exactly what the attribution read: the file's bytes an
 
 ### 3.7 The reverse index is find-references
 
-`X|G|key|projectKey|path`, one empty-valued entry per consumer, so the consumers of `(t, kind, name)` are a prefix range and a consumer joining or leaving is one entry, O(log) in the LOCAL tree, never a list rewritten. "Who calls `T.foo`" is one range read, exact over every attributed body, at member level; the two prefixes `X|G|u8 form || zstr t`, for forms 0 and 1, together select every range consumer of t. `X|D|typeKey|projectKey|path` likewise for files that relied on a type's absence. The uses record `U|ACI` adds the offsets, so the LSP goes from file to position without re-attributing. Both are derived from the same collection pass that writes the proof; neither costs a second walk. For LIVE this index is the fan-out: changed keys in, exact candidate files out (appendix D).
+`X|G|key|projectKey|module|scope|path`, one empty-valued entry per consumer, so the consumers of `(t, kind, name)` are a prefix range and a consumer joining or leaving is one entry, O(log) in the LOCAL tree, never a list rewritten. "Who calls `T.foo`" is one range read, exact over every attributed body, at member level; the two prefixes `X|G|u8 form || zstr t`, for forms 0 and 1, together select every range consumer of t. `X|D|typeKey|projectKey|module|scope|path` likewise for files that relied on a type's absence. The uses record `U|ACI` adds the offsets, so the LSP goes from file to position without re-attributing. Both are derived from the same collection pass that writes the proof; neither costs a second walk. For LIVE this index is the fan-out: changed keys in, exact candidate files out (appendix D).
 
 ### 3.8 Output as a tree
 
@@ -201,14 +209,14 @@ The event and size test of the stage 2 audit, applied to every record here: `C|`
 3. Keep the task/context borrowed through collection and generation, then detach every native observation before task cleanup. Merge these with the tree observations before arrangement. At task exit, evict the module's own type symbols (names from `S|k`); the next borrow restores lazy stub entries before its explicit source is entered (C.3). Arrangement only needs the detached observations and the current stored binding.
 4. Before generation, the collector (5.2) walks `f`'s attributed tree once and records, for every symbol javac resolved to outside `f`, the `T` ranges of the lookup it walked (the whole closure, with sum zero where a name was absent); the closure headers of every attributed expression type; the member-type and own-package absences a simple name passed; the `D` ranges of the on-demand imports it passed; with offsets for `U|`. For each type `f` declares, the whole method set and header of every supertype in its closure. Entries that name a type of `f` itself are dropped: `f`'s own declarations are in the result, not the proof.
 5. The proof is arranged (5.4): the header (`routeHash`, the root sums of `DD|`, `DS|`, `DC|`, `ownR`, and in a processor module the processor context of `f`: `processorPathHash`, `optionsHash`, `configProof(f)` read from `RES|projectKey`), then entries grouped by type with the type's current `oSum` and each range's current sum, read off the current trees through the own-first resolver of 2.3.
-6. `ACI = Digest(basename || κ_file || optionsHash || opt<proc> || opt<bodyInputs> || sorted (key || sum))`: the entries, never the header shortcuts (`routeHash`, the index sums, `ownR` are how the proof is checked, not what the result depends on; two routes with the same ranges give the same bytes and share the result). Results: each class file to `CF|Digest(bytes)` (a `CF|` that exists is not rewritten); `RS|ACI` with the references and diagnostics; `U|ACI` with the offsets; `C|projectKey|path` with the proof. All in memory in the boot's record map, as stage 2 does with file rows.
-7. Reverse entries: for each T/N range key (form included) and D key of the proof, the entry `X|G|key|projectKey|path` or `X|D|key|projectKey|path`, empty-valued, in the boot's record map.
+6. `ACI = Digest(basename || κ_file || optionsHash || opt<proc> || opt<bodyInputs> || sorted (key || sum))`: the entries, never the header shortcuts (`routeHash`, the index sums, `ownR` are how the proof is checked, not what the result depends on; two routes with the same ranges give the same bytes and share the result). Results: each class file to `CF|Digest(bytes)` (a `CF|` that exists is not rewritten); `RS|ACI` with the references and diagnostics; `U|ACI` with the offsets; `C|projectKey|module|scope|path` with the proof. All in memory in the boot's record map, as stage 2 does with file rows.
+7. Reverse entries: for each T/N range key (form included) and D key of the proof, the entry `X|G|key|projectKey|module|scope|path` or `X|D|key|projectKey|module|scope|path`, empty-valued, in the boot's record map.
 8. A file that fails to attribute is step 6 with its diagnostics and whatever class files javac produced, and a flag in `RS|`. The scope continues.
 
 ### Step 3. Records and tree (one thread, after every scope)
 
 1. `OUT|projectKey|module|scope`: a `ContentTree` over internal name to `cf` for every type of every file of the scope that attributed cleanly; its root in the record.
-2. `X|G|key|projectKey|path` and `X|D|key|projectKey|path`: one empty record per consumer per key, written once, no read.
+2. `X|G|key|projectKey|module|scope|path` and `X|D|key|projectKey|module|scope|path`: one empty record per consumer per key, written once, no read.
 3. The bodies tree: `apply` over the stage 2 root `LROOT.root` (or, on a rerun, over the previous `BROOT.root` with stage 2's `Diff(BROOT.localRoot, LROOT.root)` applied first) with every record written here except `U|` (key to `Digest(value)`), so the tree is edited, not rebuilt; the previous bodies root moves to history as stage 2's 9.1.
 4. Sync, then `BROOT|projectKey` with the new bodies root, the `LROOT.root` it extended, the machine root and the model hash. "Bodies exist for this project" means `BROOT` is present and its `localRoot` equals the current `LROOT.root`; a stage 2 recommit makes it stale without touching it, and the stale `localRoot` is exactly the old side of the `Diff` that names what moved (appendix D).
 
@@ -225,11 +233,11 @@ Every file has a result and a proof. A reader checks a result by descent on its 
 | Record | Key | Value | Space |
 | --- | --- | --- | --- |
 | Annotation layer nodes | `N\|hash` | nodes of `A` and `EA` | shared with MACHINE |
-| Proof | `C\|projectKey\|path` | route header and entries by type (B.1) | per project |
+| Proof | `C\|projectKey\|module\|scope\|path` | route header and entries by type (B.1) | per project |
 | Result | `RS\|ACI` | class file refs, diagnostics, flag (B.2) | content-addressed |
 | Class file | `CF\|Digest(bytes)` | bytes | shared |
 | Uses | `U\|ACI` | offsets per key (B.4) | content-addressed |
-| Reverse | `X\|G\|key\|projectKey\|path`, `X\|D\|key\|projectKey\|path` | empty (B.3) | per project |
+| Reverse | `X\|G\|key\|projectKey\|module\|scope\|path`, `X\|D\|key\|projectKey\|module\|scope\|path` | empty (B.3) | per project |
 | Output | `OUT\|projectKey\|module\|scope` | tree root (B.5); a file that failed attribution contributes nothing, so its previous class files are deleted on materialise, as javac would emit nothing for it | per project |
 | Materialised | `MAT\|projectKey\|module\|scope\|dirHash` | the `OUT` root last written to that directory | per machine, outside the tree |
 | Bodies root | `BROOT\|projectKey` | FORMAT, the bodies root, the `LROOT.root` it extended, machine root, model hash (B.7). `LROOT\|projectKey` stays stage 2's. | per project |
@@ -242,7 +250,7 @@ Language-neutral. `store` is the LOCAL store; `tree` is the `ContentTree`; `reso
 
 ```
 Attribute(f, scope, pool) -> (result, proof, uses, aci):
-    row = F|projectKey|f.path                                  // typeKeys, κ, header proof
+    row = F|projectKey|module|scope|f.path                                  // typeKeys, κ, header proof
     context = pool.acquire()                                   // one of W reusable javac contexts for this route state and own leaf
     task = context.task(source = f)                            // classpath fixed per state: own stub dir first, then jars and sibling stub dirs in route order;
                                                                // Locale.ROOT, explicit -encoding; processing per module (C.1); javac prefers the given source
@@ -263,7 +271,7 @@ The source/options policy is shared with Stage 2 through JavacOptions, including
 
 Attribute returns the fresh ResultRecord, Proof, UsesRecord and processor-class faults. When scope admission, actual processor observations and output conservation all hold, it computes ACI and publishes CF/RS/U. An unsupported fresh result has a rejected proof and no reusable ACI; its class-byte blobs are still content-addressed as CF, but RS/U are not read or published. This retains fresh classes and diagnostics without making unsupported results reusable. The driver must preserve these fresh outputs and faults and propagate any newly discovered processor violation to scope reuse policy; it must not serve an older RS for that scope. An unsupported aggregate rejects scope reuse even though no processor executes in the one-unit body task.
 
-**Implementation boundary.** Both Attribute entry points are tested against fresh whole-module javac on their fixtures. Named type and member declaration queries now recover source annotations/doc comments, declaration order, private members, parameter names and deprecation from rooted PM data. The SOURCE-annotation-driven generator regression now matches native output and passes GEN conservation; a separate deliberately drifting generator remains rejected. Source type-use views now preserve annotations, generic bounds, arrays, receivers, parameters, record types and native type-query rendering. Element origins, executable state and package metadata/presence queries are now covered by native comparison and mutation fixtures. Completing module/file queries, remaining package ambiguity/order and public-model edges, persisted query verification and the complete capability audit remains required. The scope driver now retains aggregate Stage 2 PDIAG output separately from per-file RS diagnostics and identities. A newly discovered processor violation rejects reuse for every result in that scope, including earlier provisional results, while preserving fresh classes and diagnostics. The initial driver and BROOT publication boundary are implemented and tested as described in 5.6. The independent two-sided proof oracle, complete native diagnostic ordering, module-info handling under the accepted classpath-mode boundary and own-project Stage 3 oracle remain required. These fixtures do not establish full Stage 3 completion.
+**Implementation boundary.** Both Attribute entry points are tested against fresh whole-module javac on their fixtures. Named type and member declaration queries now recover source annotations/doc comments, declaration order, private members, parameter names and deprecation from rooted PM data. The SOURCE-annotation-driven generator regression now matches native output and passes GEN conservation; a separate deliberately drifting generator remains rejected. Source type-use views now preserve annotations, generic bounds, arrays, receivers, parameters, record types and native type-query rendering. Element origins, executable state and package metadata/presence queries are now covered by native comparison and mutation fixtures. Completing module/file queries, remaining package ambiguity/order and public-model edges, persisted query verification and the complete capability audit remains required. The scope driver now retains aggregate Stage 2 PDIAG output separately from per-file RS diagnostics and identities. A newly discovered processor violation rejects reuse for every result in that scope, including earlier provisional results, while preserving fresh classes and diagnostics. The initial driver and BROOT publication boundary are implemented and tested as described in 5.6. The independent two-sided proof oracle, complete native diagnostic ordering, zero-body module descriptor derivation and its native byte oracle and own-project Stage 3 oracle remain required. These fixtures do not establish full Stage 3 completion.
 
 ### 5.2 Collect: what the body resolved through
 
@@ -410,8 +418,8 @@ Stage3.run(model, store):
         for scope in [main, test]:
             pool = Pool(route(module, scope), ownLeaf(module, scope).k, W)                                  // ownLeaf from SL|projectKey|module|scope (A.1)
             for f in rows(module, scope) in parallel over the pool's contexts: (result, proof, uses, aci) = Attribute(f, scope, pool)
-                records += C|project|f.path, RS|aci; CF|id for each new class file
-                records += X|G|key|project|f.path and X|D|key|project|f.path for each key of the proof, empty
+                records += C|project|module|scope|f.path, RS|aci; CF|id for each new class file
+                records += X|G|key|project|module|scope|f.path and X|D|key|project|module|scope|f.path for each key of the proof, empty
                 store.put(U|aci, uses)                                                          // outside the tree: derivable, content-addressed
             OUT = tree.build(sorted (internalName -> cf) over clean results); records += OUT|project|module|scope
     newRoot = tree.apply(base, removed = stale bodies records, added = records as (key, Digest(value)))   // the bodies tree is edited, not rebuilt
@@ -566,7 +574,7 @@ Let `F` be files, `D` declarations per file, `P` proof entries per file (distinc
 | Project model, processor paths, generated source roots | read only | the build tool through the provider (stage 2, section 8) |
 | Running generators (Modello, protobuf) | no | the build tool; their outputs are sources in the model |
 | Running annotation processors | yes, inside javac, when the model lists a processor path | javac |
-| Module path (`--module-path`) builds | classpath mode, as stage 2 | deferred with stage 2's accepted deviation |
+| Module path (`--module-path`) builds | ordinary Java remains classpath mode; module-info.class is a required zero-body derivation | JPMS readability/export semantics for ordinary Java are deferred with stage 2's accepted deviation |
 | javac plugins (`-Xplugin`) | dropped, as stage 2 C.1 | not supported |
 | Writing class files to disk | `Materialise`, on request | the caller (a run, a test runner, the LSP) decides when |
 | Running or testing the program | no | `java -cp <materialised dirs>:<jars>`; HotSwap decisions are LIVE's (body-only = every `oSum` unchanged) |
@@ -698,7 +706,7 @@ Collect source reads after declaration completion and before releasing javac's c
 
 Required mutations: unrelated methods of a type-only or constant-field dependency preserve validity; a consumed constant changes it; an intermediate superclass change invalidates an inherited lookup even when old winners and N zeros remain; a newly available type or constant invalidates its old proof; static on-demand field ambiguities invalidate their consumers; annotation element/default changes invalidate annotation checking while unused annotation constant fields do not. Executable-body-only edits preserve every header proof.
 
-The header reverse representation is `ASCII X|H| || u8 form || zstr type || u8 kind || zstr name || id project || zstr path`, with an empty value. Forms are T=0, N=1, D=2; N uses TYPE/name and D uses TYPE/empty-name. Every positive or expected-zero dependency produces one key per actual path. Diff(T/N/D) maps changed keys to reverse prefixes; a prefix seek discovers candidates without reading F rows. Current LOCAL-root membership filters raw stale keys from earlier cold generations; roots are cached per reached project. Validate only returned candidates. This primitive does not implement a warm driver or Stage 3's body-read oracle.
+The header reverse representation is `ASCII X|H| || u8 form || zstr type || u8 kind || zstr name || id project || zstr module || u8 scope || zstr path`, with an empty value. Forms are T=0, N=1, D=2; N uses TYPE/name and D uses TYPE/empty-name. Every positive or expected-zero dependency produces one key per actual compilation unit. Diff(T/N/D) maps changed keys to reverse prefixes; a prefix seek discovers candidates without reading F rows. Current LOCAL-root membership filters raw stale keys from earlier cold generations; roots are cached per reached project. Validate only returned candidates. This primitive does not implement a warm driver or Stage 3's body-read oracle.
 
 DefinerCounts shares immutable map branches and updates only changed types. IndexMemo deduplicates exact `(kind, leafSet)` folds. Parent routes are explicit: own main for tests, first declared sibling main for dependent main, shared JDK external base for roots. There is no exhaustive nearest-state search. Leaf-list comparison and O reads of changed leaves remain costs; unrelated root routes can revisit shared jars. The full Stage 2 specification states these limits rather than claiming all routing work is independent of project size.
 
@@ -721,7 +729,7 @@ Primitives as stage 2 appendix B: `u8`, `u16`, `u32`, `u64`, `i64`, `str`, `zstr
 ### B.1 Proof
 
 ```
-C|projectKey|path     = header || opt<bodyObservations> || list<type> || list<zstr absentTypeKey>   // the last proof of this file in this project
+C|projectKey|module|scope|path     = header || opt<bodyObservations> || list<type> || list<zstr absentTypeKey>   // the last proof of this file in this project
 header                = id routeHash || id ddSum || id dsSum || id dcSum || id ownR || opt<proc>
 proc                  = id processorPathHash || id optionsHash || list<(zstr path || id sum)>   // only with a processor path; the list is configProof(f): one entry per directory on f's chain, sum zero where no file exists
 bodyObservations      = u8 rejected || list<(str processorClass || opt<bytes modelAnswers> || u8 declared || u8 observed)> // invocation order; detached actual answers
@@ -758,11 +766,11 @@ ACI                   = Digest(str basename || id κ_file || id optionsHash || o
 ### B.3 Reverse
 
 ```
-X|G|key|projectKey|path   = (empty)        // key = u8 form || zstr t || u8 kind || zstr name, as the proof entry; one record per consumer
-X|D|typeKey|projectKey|path = (empty)
+X|G|key|projectKey|module|scope|path   = (empty)        // key = u8 form || zstr t || u8 kind || zstr name, as the proof entry; one record per consumer
+X|D|typeKey|projectKey|module|scope|path = (empty)
 ```
 
-The prefix `X|G|u8 form || zstr t` selects consumers of that form in t; the union of the form-0 and form-1 prefixes is every range consumer of t; `X|G|u8 form || zstr t || u8 kind || zstr name` every consumer of one range; the trailing `projectKey` and `path` narrow to one project and one file. One record per consumer, so a file joining or leaving a range is one entry in the LOCAL tree and a hot range (`Object.toString`) is never rewritten as a list.
+The prefix `X|G|u8 form || zstr t` selects consumers of that form in t; the union of the form-0 and form-1 prefixes is every range consumer of t; `X|G|u8 form || zstr t || u8 kind || zstr name` every consumer of one range; the trailing `projectKey`, `module`, `scope` and `path` narrow to one source compilation. The consumer suffix is `id project || zstr module || u8 scope || zstr path`. One record per consumer, so a file joining or leaving a range is one entry in the LOCAL tree and a hot range (`Object.toString`) is never rewritten as a list.
 
 Body consumers are members of the committed BROOT tree, not merely raw storage keys and not members of LROOT. Diff(T/N/D) maps changed keys to X|G/X|D prefixes and seeks those prefixes without scanning C or F records. Cached per-project BROOT membership filters unreachable keys from old body generations. A BROOT that names an older LROOT is still the source of old consumers while the caller validates the delta against the new LOCAL state; staleness must not hide the consumers that need checking.
 
@@ -960,7 +968,7 @@ Form-1 entries read N in Arrange and Valid. Once the global definer/own shortcut
 
 ## Appendix F. Stage 2 processors (the second amendment, PR B)
 
-The stage 2 side of 3.5 and C.5, as its own PR after appendix A. The processor implementation adds records and extends the header compile. The package-info correction below restores missing source facts under the existing T/A/N encoding; it adds no new resolution identity. The combined format uses **LOCAL 12**, after the Stage 2-only LOCAL 4 baseline, the generated-file row codec introduced in LOCAL 5, and the scope-specific processor execution plans and origin-to-GEN references introduced in LOCAL 6. LOCAL 7 added persisted source declaration trees and a lossless source declaration codec. LOCAL 8 preserves processor diagnostic text as UTF-16 code units. LOCAL 9 stores each source declaration's exact element key and explicit deprecation flag, including doc-comment-only deprecation. LOCAL 10 added native element/annotation origins and the public bridge, compact-constructor and canonical-constructor answers. LOCAL 11 adds doc-comment kind, typed package headers and package-presence entries, and invalidates earlier LOCAL extraction that omitted emitted package-info facts. LOCAL 12 adds the native ordered package-member projection for packages declared in the current source scope; LOCAL 11 and earlier roots must rebuild before a body processor can query it. The file-row byte codec itself is unchanged. Legacy LOCAL roots require cold rebuilding. The format binds the full javac runtime version and Locale.ROOT.
+The stage 2 side of 3.5 and C.5, as its own PR after appendix A. The processor implementation adds records and extends the header compile. The package-info correction below restores missing source facts under the existing T/A/N encoding; it adds no new resolution identity. The combined format uses **LOCAL 13**, after the Stage 2-only LOCAL 4 baseline, the generated-file row codec introduced in LOCAL 5, and the scope-specific processor execution plans and origin-to-GEN references introduced in LOCAL 6. LOCAL 7 added persisted source declaration trees and a lossless source declaration codec. LOCAL 8 preserves processor diagnostic text as UTF-16 code units. LOCAL 9 stores each source declaration's exact element key and explicit deprecation flag, including doc-comment-only deprecation. LOCAL 10 added native element/annotation origins and the public bridge, compact-constructor and canonical-constructor answers. LOCAL 11 adds doc-comment kind, typed package headers and package-presence entries, and invalidates earlier LOCAL extraction that omitted emitted package-info facts. LOCAL 12 adds the native ordered package-member projection for packages declared in the current source scope; LOCAL 11 and earlier roots must rebuild before a body processor can query it. LOCAL 13 addresses F, C and header/body X consumers by project plus compilation unit `(module, scope, path)`: one physical source may be compiled by several modules or scopes with different dependencies. The file-row value codec itself is unchanged. Legacy LOCAL roots require cold rebuilding; reverse readers filter incompatible roots and unreachable raw keys before decoding their consumer suffix. The format binds the full javac runtime version and Locale.ROOT.
 
 | Before | After |
 | --- | --- |

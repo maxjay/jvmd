@@ -71,14 +71,14 @@ class Stage3Test {
             assertThat(reads.subList(0,end)).doesNotContain("read:C","read:RS","read:CF","read:U","read:OUT","read:X");
             assertThat(reads.get(end-1)).isEqualTo("sync");
             for(var scope:result.scopes().values())for(var file:scope.files()) {
-                var proof=current.get(LocalStore.proofKey(result.project(),file.path()));assertThat(proof).isEqualTo(file.computed().proof().encode());
+                var proof=current.get(LocalStore.proofKey(result.project(), Stage2Support.source(file.path())));assertThat(proof).isEqualTo(file.computed().proof().encode());
                 assertThat(tree.get(result.bodies().bodiesRoot(),h->current.get(MachineStore.nodeKey(h)),LocalStore.resultKey(file.computed().aci()))).isNotNull();
                 assertThat(tree.get(result.bodies().bodiesRoot(),h->current.get(MachineStore.nodeKey(h)),LocalStore.usesKey(file.computed().aci()))).isNull();
             }
             if(first!=null)assertThat(result.bodies()).isEqualTo(first.bodies());first=result;
         }
         var consumers=ReverseIndex.bodyConsumers(digest,copies.getFirst(),new ReverseIndex.Dependency(ReverseIndex.T,"q/Base",Keys.FIELD,"VALUE"));
-        assertThat(consumers).contains(new ReverseIndex.Consumer(first.project(),"app/src/main/java/p/App.java"));
+        assertThat(consumers).contains(new ReverseIndex.Consumer(first.project(), Stage2Support.source("app/src/main/java/p/App.java")));
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -101,6 +101,47 @@ class Stage3Test {
         var changes=driver.materialise(store,model,"app",0,output);assertThat(changes.written()).isEqualTo(1);assertThat(changes.deleted()).isEqualTo(2);
         assertThat(output.resolve("p/App.class")).doesNotExist();assertThat(output.resolve("p/App$Nested.class")).doesNotExist();
         assertThat(output.resolve("p/Good.class")).exists();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void aSharedSourceHasIndependentHeaderAndBodyRecordsInEachCompilationScope(Digest digest) throws Exception {
+        String source="package p; public class Shared {public static final int HEADER=q.Dep.VALUE; public int value(){return q.Dep.VALUE;}}";
+        String path="shared/p/Shared.java";Stage2Support.write(dir,Map.of(path,source));
+        var first=Stage2Support.jar(dir,"one.jar",Map.of("q/Dep.java","package q; public class Dep {public static final int VALUE=1;}"),List.of());
+        var second=Stage2Support.jar(dir,"two.jar",Map.of("q/Dep.java","package q; public class Dep {public static final int VALUE=2;}"),List.of());
+        var mapper=new com.fasterxml.jackson.databind.ObjectMapper();
+        var json=mapper.readTree(Stage2Support.model(dir,
+                new Stage2Support.Mod("left","g:left:1",List.of(Stage2Support.Dep.jar("g:one:1",first.toString()))).withOptions("-g","-parameters"),
+                new Stage2Support.Mod("right","g:right:1",List.of(Stage2Support.Dep.jar("g:two:1",second.toString()))).withOptions("-g","-parameters")));
+        for(var module:json.withArray("modules"))for(var scope:List.of("main","test"))
+            ((com.fasterxml.jackson.databind.node.ObjectNode)module.path("scopes").path(scope)).putArray("sourceRoots").add("shared");
+        var model=ProjectModel.parse(mapper.writeValueAsBytes(json));var tree=new ContentTree(digest);
+        var expectedLeft=Stage2Support.compile(dir.resolve("native-left"),Map.of("p/Shared.java",source),List.of("-g","-parameters"),List.of(first));
+        var expectedRight=Stage2Support.compile(dir.resolve("native-right"),Map.of("p/Shared.java",source),List.of("-g","-parameters"),List.of(second));
+        Stage3.Result previous=null;
+        for(int workers:List.of(1,4)) {
+            var store=Stage2Support.jdkOnly(digest).copy();
+            new Stage2(digest,tree,Stage2Support.FEATURE,workers,dir,ClassFacts::of).run(store,model);
+            assertThat(store.withPrefix("F")).as("one header row per compilation, despite identical physical source").hasSize(4);
+            var actual=driver(digest,tree,workers).run(store,model);
+            assertThat(actual.files()).isEqualTo(4);assertThat(actual.faults()).isEmpty();
+            sameBytes(classes(store,actual.scopes().get("left/main")),expectedLeft);
+            sameBytes(classes(store,actual.scopes().get("right/main")),expectedRight);
+            sameBytes(classes(store,actual.scopes().get("left/test")),expectedLeft);
+            sameBytes(classes(store,actual.scopes().get("right/test")),expectedRight);
+            assertThat(store.withPrefix("C")).hasSize(4);
+            assertThat(store.withPrefix("RS")).as("equal consumed inputs still share results across scopes").hasSize(2);
+            assertThat(store.withPrefix("CF")).hasSize(2);
+            var left=FileRow.decode(path,store.get(LocalStore.fileKey(actual.project(),"left",0,path)),digest.width());
+            var right=FileRow.decode(path,store.get(LocalStore.fileKey(actual.project(),"right",0,path)),digest.width());
+            assertThat(left.kappa()).isEqualTo(right.kappa());assertThat(left.sum()).isNotEqualTo(right.sum());
+            var consumed=new ReverseIndex.Dependency(ReverseIndex.T,"q/Dep",Keys.FIELD,"VALUE");
+            var consumers=List.of(new ReverseIndex.Consumer(actual.project(),"left",0,path),new ReverseIndex.Consumer(actual.project(),"left",1,path),
+                    new ReverseIndex.Consumer(actual.project(),"right",0,path),new ReverseIndex.Consumer(actual.project(),"right",1,path));
+            assertThat(ReverseIndex.consumers(digest,store,consumed)).containsExactlyInAnyOrderElementsOf(consumers);
+            assertThat(ReverseIndex.bodyConsumers(digest,store,consumed)).containsExactlyInAnyOrderElementsOf(consumers);
+            if(previous!=null)assertThat(actual.bodies()).isEqualTo(previous.bodies());previous=actual;
+        }
     }
 
     @ParameterizedTest @MethodSource("digests")

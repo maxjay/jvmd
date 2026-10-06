@@ -52,8 +52,8 @@ class BodyRecordsTest {
     @ParameterizedTest @MethodSource("digests")
     void namesAndNamespacesKeepProofsResultsClassBytesAndUsesDistinct(Digest digest) {
         var a = digest.hash(new byte[] {1}); var b = digest.hash(new byte[] {2});
-        assertThat(LocalStore.proofKey(a, "src/A.java")).isNotEqualTo(LocalStore.proofKey(b, "src/A.java"))
-                .isNotEqualTo(LocalStore.proofKey(a, "test/A.java"));
+        assertThat(LocalStore.proofKey(a, Stage2Support.source("src/A.java"))).isNotEqualTo(LocalStore.proofKey(b, Stage2Support.source("src/A.java")))
+                .isNotEqualTo(LocalStore.proofKey(a, Stage2Support.source("test/A.java")));
         assertThat(LocalStore.resultKey(a)).isNotEqualTo(LocalStore.resultKey(b)).isNotEqualTo(LocalStore.usesKey(a));
         assertThat(LocalStore.classFileKey(a)).isNotEqualTo(MachineStore.nodeKey(a));
         var x = new ResultRecord.ClassFile("p/A", a); var y = new ResultRecord.ClassFile("p/A$Inner", b);

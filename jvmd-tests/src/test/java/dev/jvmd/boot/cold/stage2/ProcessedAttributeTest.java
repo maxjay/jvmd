@@ -78,9 +78,10 @@ class ProcessedAttributeTest {
         }
         var pool = new Pool.Configuration(new Pool.Key(route.routeHash(), own.k()), stubs, classpath, options.charset(), options.javac(), names);
         var rows = new TreeMap<String,FileRow>();
-        int prefix = LocalStore.fileKey(project, "").length;
         for (var entry : store.withPrefix("F").entrySet()) {
-            var name = new String(entry.getKey(), prefix, entry.getKey().length - prefix, java.nio.charset.StandardCharsets.UTF_8);
+            var unit = SourceUnit.fromFileKey(entry.getKey(), digest.width());
+            if (!unit.module().equals("app") || unit.scope() != 0) continue;
+            var name = unit.path();
             rows.put(name, FileRow.decode(name, entry.getValue(), digest.width()));
         }
         return new State(tree, store, project, own, route, module, model, plan, options, pool, processors, classpath, rows, original, result.faults());

@@ -27,7 +27,7 @@ class BodyGenerationTest {
     private record State(ContentTree tree,InMemoryLocalStore store,Identity project,LocalRoot local) { }
     private State local(Digest digest) {
         var tree=new ContentTree(digest);var store=new InMemoryLocalStore();var project=digest.hash(new byte[]{1});
-        return local(tree,store,project,Map.of(LocalStore.fileKey(project,"A.java"),new byte[]{2}));
+        return local(tree,store,project,Map.of(LocalStore.fileKey(project, Stage2Support.source("A.java")),new byte[]{2}));
     }
     private State local(ContentTree tree,InMemoryLocalStore store,Identity project,Map<byte[],byte[]> values) {
         var sorted=records();sorted.putAll(values);sorted.forEach(store::put);store.flush();
@@ -55,7 +55,7 @@ class BodyGenerationTest {
         var result=generation.commit(current);
         assertThat(result.current(s.local())).isTrue();assertThat(reads.get()).isZero();
         assertThat(s.store().get(LocalStore.localRootKey(s.project()))).isEqualTo(LocalRoot.encode(digest,s.local().format(),s.local().local(),s.local().machineRoot(),s.local().modelHash()));
-        var expected=records();expected.put(LocalStore.fileKey(s.project(),"A.java"),new byte[]{2});expected.put(key,new byte[]{4});
+        var expected=records();expected.put(LocalStore.fileKey(s.project(), Stage2Support.source("A.java")),new byte[]{2});expected.put(key,new byte[]{4});
         sameTree(s,generation.root(),expected);
         assertThat(s.tree().get(result.bodiesRoot(),h->s.store().get(MachineStore.nodeKey(h)),LocalStore.usesKey(aci))).isNull();
         var events=s.store().events();int committed=events.indexOf("putBodiesRoot");assertThat(events.get(committed-1)).isEqualTo("sync");
@@ -66,13 +66,13 @@ class BodyGenerationTest {
     @ParameterizedTest @MethodSource("digests")
     void rerunCarriesTheLocalDiffAndRemovesExactlyStaleBodiesRecords(Digest digest) {
         var s=local(digest);var first=BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local());
-        var old=records();old.put(LocalStore.proofKey(s.project(),"A.java"),new byte[]{3});old.put(LocalStore.resultKey(digest.hash(new byte[]{3})),new byte[]{4});
+        var old=records();old.put(LocalStore.proofKey(s.project(), Stage2Support.source("A.java")),new byte[]{3});old.put(LocalStore.resultKey(digest.hash(new byte[]{3})),new byte[]{4});
         var before=first.commit(old);var beforeBytes=before.encode();
-        var changed=local(s.tree(),s.store(),s.project(),Map.of(LocalStore.fileKey(s.project(),"B.java"),new byte[]{5}));
+        var changed=local(s.tree(),s.store(),s.project(),Map.of(LocalStore.fileKey(s.project(), Stage2Support.source("B.java")),new byte[]{5}));
         var generation=BodyGeneration.begin(s.tree(),s.store(),s.project(),changed.local());
-        var current=records();current.put(LocalStore.proofKey(s.project(),"B.java"),new byte[]{6});
+        var current=records();current.put(LocalStore.proofKey(s.project(), Stage2Support.source("B.java")),new byte[]{6});
         var after=generation.commit(current);assertThat(after.current(changed.local())).isTrue();
-        var expected=records();expected.putAll(current);expected.put(LocalStore.fileKey(s.project(),"B.java"),new byte[]{5});
+        var expected=records();expected.putAll(current);expected.put(LocalStore.fileKey(s.project(), Stage2Support.source("B.java")),new byte[]{5});
         sameTree(changed,generation.root(),expected);
         assertThat(s.store().get(LocalStore.bodiesRootHistoryKey(s.project(),1))).isEqualTo(beforeBytes);
         for(var key:old.keySet())assertThat(s.tree().get(after.bodiesRoot(),h->s.store().get(MachineStore.nodeKey(h)),key)).isNull();
@@ -91,23 +91,23 @@ class BodyGenerationTest {
 
     @ParameterizedTest @MethodSource("digests")
     void membershipDoesNotAcceptChangedRecordBytesOrAnUnrelatedOldLocalRecord(Digest digest) {
-        var s=local(digest);var key=LocalStore.proofKey(s.project(),"A.java");
+        var s=local(digest);var key=LocalStore.proofKey(s.project(), Stage2Support.source("A.java"));
         BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local()).commit(Map.of(key,new byte[]{3}));
         s.store().put(key,new byte[]{4});s.store().flush();
         var generation=BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local());
         assertThatThrownBy(()->generation.get(key)).isInstanceOf(IllegalStateException.class).hasMessageContaining("digest");
         generation.commit(Map.of(key,new byte[]{3})); // A fresh result repairs a mutable record left by an interrupted publication.
         assertThat(s.store().get(key)).containsExactly(3);
-        var localKey=LocalStore.fileKey(s.project(),"A.java");
-        var changed=local(s.tree(),s.store(),s.project(),Map.of(LocalStore.fileKey(s.project(),"B.java"),new byte[]{5}));
+        var localKey=LocalStore.fileKey(s.project(), Stage2Support.source("A.java"));
+        var changed=local(s.tree(),s.store(),s.project(),Map.of(LocalStore.fileKey(s.project(), Stage2Support.source("B.java")),new byte[]{5}));
         assertThat(BodyGeneration.begin(s.tree(),s.store(),s.project(),changed.local()).get(localKey)).isNull();
     }
 
     @ParameterizedTest @MethodSource("digests")
     void movingLocalRootAbortsBeforeAnyBodyRecordIsWritten(Digest digest) {
         var s=local(digest);var generation=BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local());
-        var key=LocalStore.proofKey(s.project(),"A.java");generation.put(key,new byte[]{3});
-        local(s.tree(),s.store(),s.project(),Map.of(LocalStore.fileKey(s.project(),"B.java"),new byte[]{4}));
+        var key=LocalStore.proofKey(s.project(), Stage2Support.source("A.java"));generation.put(key,new byte[]{3});
+        local(s.tree(),s.store(),s.project(),Map.of(LocalStore.fileKey(s.project(), Stage2Support.source("B.java")),new byte[]{4}));
         long writes=s.store().recordWriteCount();
         assertThatThrownBy(()->generation.commit(Map.of(key,new byte[]{3}))).isInstanceOf(IllegalStateException.class).hasMessageContaining("changed");
         assertThat(s.store().recordWriteCount()).isEqualTo(writes);assertThat(s.store().get(LocalStore.bodiesRootKey(s.project()))).isNull();
@@ -118,7 +118,7 @@ class BodyGenerationTest {
         var s=local(digest);var aci=digest.hash(new byte[]{3});var key=LocalStore.resultKey(aci);
         var first=BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local()).commit(Map.of(key,new byte[]{4}));
         var next=BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local());long writes=s.store().recordWriteCount();
-        var changes=records();changes.put(LocalStore.proofKey(s.project(),"new.java"),new byte[]{5});changes.put(key,new byte[]{6});
+        var changes=records();changes.put(LocalStore.proofKey(s.project(), Stage2Support.source("new.java")),new byte[]{5});changes.put(key,new byte[]{6});
         assertThatThrownBy(()->next.commit(changes)).isInstanceOf(IllegalStateException.class).hasMessageContaining("Conflicting");
         assertThat(s.store().recordWriteCount()).isEqualTo(writes);assertThat(s.store().get(LocalStore.bodiesRootKey(s.project()))).isEqualTo(first.encode());
         var incompatible=new BodiesRoot("old;bodies=3",first.bodiesRoot(),first.localRoot(),first.machineRoot(),first.modelHash());
@@ -138,7 +138,7 @@ class BodyGenerationTest {
         }
         var project=digest.hash(new byte[]{1});var local=LocalRoot.decode(digest,LocalRoot.encode(digest,"fixture;local=11",empty,project,project));
         var encodedLocal=LocalRoot.encode(digest,local.format(),local.local(),local.machineRoot(),local.modelHash());byte[] first;
-        var key=LocalStore.proofKey(project,"A.java");
+        var key=LocalStore.proofKey(project, Stage2Support.source("A.java"));
         try(var store=disk.openLocal()) {
             store.putLocalRoot(project,encodedLocal);
             first=BodyGeneration.begin(tree,store,project,local).commit(Map.of(key,new byte[]{2})).encode();

@@ -133,10 +133,11 @@ public final class Stage2 {
                         put(store, records, LocalStore.sourceLeafKey(projectKey, module.name(), scope), binding.encode());
                     }
                 }
-                for (var row : new java.util.TreeMap<>(boot.files).values()) {
-                    put(store, records, LocalStore.fileKey(projectKey, row.path()), row.encode());
+                for (var file : new java.util.TreeMap<>(boot.files).entrySet()) {
+                    var row = file.getValue();
+                    put(store, records, LocalStore.fileKey(projectKey, file.getKey()), row.encode());
                     for (var dependency : dev.jvmd.index.layer.local.ReverseIndex.dependencies(row))
-                        put(store, records, dependency.key(projectKey, row.path()), Entry.NONE);
+                        put(store, records, dependency.key(projectKey, file.getKey()), Entry.NONE);
                 }
                 store.flush();
                 var entries = new ArrayList<Entry>(records.size());

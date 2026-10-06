@@ -102,11 +102,11 @@ class RocksLocalBootTest {
                         .contains("server-a/src/main/java/a/Server.java");
                 for (var consumer : consumers) {
                     assertThat(consumer.project()).isEqualTo(projectKey);
-                    assertThat(store.get(dependency.key(consumer.project(), consumer.path()))).isEmpty();
+                    assertThat(store.get(dependency.key(consumer.project(), consumer.source()))).isEmpty();
                 }
             }
             // No previous LOCAL layout may take the current-format skip branch, even with identical runtime and locale.
-            for (int legacy : List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)) {
+            for (int legacy : List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)) {
                 try (var store = Generation.of(indexDir, format).openLocal()) {
                     var root = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(projectKey)));
                     store.putLocalRoot(projectKey, LocalRoot.encode(digest,

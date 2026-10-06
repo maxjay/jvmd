@@ -57,7 +57,7 @@ class ProcessorReadTest {
         var driver = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 1, dir, ClassFacts::of);
         var first = Stage2Support.jdkOnly(digest).copy();
         assertThat(driver.run(first, model).faults()).isEmpty();
-        var proof = FileRow.decode(input, first.get(LocalStore.fileKey(project, input)), digest.width());
+        var proof = FileRow.decode(input, first.get(LocalStore.fileKey(project, Stage2Support.source(input))), digest.width());
         assertThat(proof.headerProof()).extracting(FileRow.Proof::typeKey).contains("ext/Api", "ext/Base");
         assertThat(proof.absences()).extracting(dev.jvmd.index.layer.local.HeaderProof.Absence::type).contains("p/Optional");
         var firstGenerated = generated(first, digest);
@@ -123,12 +123,12 @@ class ProcessorReadTest {
         var first = Stage2Support.jdkOnly(digest).copy();
         assertThat(driver.run(first, model).faults()).isEmpty();
         var before = generated(first, digest);
-        var originalProof = FileRow.decode(input, first.get(LocalStore.fileKey(project, input)), digest.width()).headerProof();
+        var originalProof = FileRow.decode(input, first.get(LocalStore.fileKey(project, Stage2Support.source(input))), digest.width()).headerProof();
 
         Files.copy(annotatedApi(2), api, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         var second = first.copy();
         assertThat(driver.run(second, model).faults()).isEmpty();
-        assertThat(FileRow.decode(input, second.get(LocalStore.fileKey(project, input)), digest.width()).headerProof()).isEqualTo(originalProof);
+        assertThat(FileRow.decode(input, second.get(LocalStore.fileKey(project, Stage2Support.source(input))), digest.width()).headerProof()).isEqualTo(originalProof);
         var after = generated(second, digest);
         assertThat(after.genId()).isNotEqualTo(before.genId());
         assertThat(new String(second.get(LocalStore.generatedSourceKey(after.kappa())), java.nio.charset.StandardCharsets.UTF_8)).contains("VALUE = 2;");
@@ -351,13 +351,13 @@ class ProcessorReadTest {
         var first = Stage2Support.jdkOnly(digest).copy();
         assertThat(driver.run(first, model).faults()).isEmpty();
         var before = generated(first, digest);
-        var beforeRow = FileRow.decode(other, first.get(LocalStore.fileKey(project, other)), digest.width());
+        var beforeRow = FileRow.decode(other, first.get(LocalStore.fileKey(project, Stage2Support.source(other))), digest.width());
 
         Files.writeString(dir.resolve(other), otherSource.replace("@Label(1)", "@Label(2)"));
         var second = first.copy();
         assertThat(driver.run(second, model).faults()).isEmpty();
         assertThat(second.get(domainKey)).isEqualTo(first.get(domainKey));
-        assertThat(FileRow.decode(other, second.get(LocalStore.fileKey(project, other)), digest.width()).sum()).isEqualTo(beforeRow.sum());
+        assertThat(FileRow.decode(other, second.get(LocalStore.fileKey(project, Stage2Support.source(other))), digest.width()).sum()).isEqualTo(beforeRow.sum());
         var after = generated(second, digest);
         assertThat(after.genId()).isNotEqualTo(before.genId());
         assertThat(new String(second.get(LocalStore.generatedSourceKey(after.kappa())), java.nio.charset.StandardCharsets.UTF_8)).contains("VALUE = 2;");

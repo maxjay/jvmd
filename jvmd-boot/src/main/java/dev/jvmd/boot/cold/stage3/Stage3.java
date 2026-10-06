@@ -33,7 +33,7 @@ import java.util.concurrent.Executors;
 /** Cold body attribution: every committed file, dependency-ordered scopes, and a separate bodies-root commit. */
 public final class Stage3 {
     public record File(String path,Attribute.Computed computed) { }
-    public record Scope(List<File> files,Root output,List<ProcessorRecords.Message> aggregateDiagnostics) {
+    public record Scope(List<File> files,Root output,List<ProcessorRecords.Message> aggregateDiagnostics,int descriptorEmissions) {
         public Scope {files=List.copyOf(files);aggregateDiagnostics=List.copyOf(aggregateDiagnostics);}
     }
     public record Result(Identity project,BodiesRoot bodies,Map<String,Scope> scopes,int files,List<String> faults,long wallMillis) {
@@ -81,8 +81,8 @@ public final class Stage3 {
             var result=scopes.get(module.name()+(scope==0?"/main":"/test"));
             records.put(LocalStore.outputKey(project,module.name(),scope),DefinerIndex.encodeRoot(result.output()));
             for(var file:result.files()) {
-                count++;var computed=file.computed();records.put(LocalStore.proofKey(project,file.path()),computed.proof().encode());
-                for(var dependency:ReverseIndex.dependencies(computed.proof()))records.put(ReverseIndex.bodyKey(dependency,project,file.path()),Entry.NONE);
+                count++;var computed=file.computed();records.put(LocalStore.proofKey(project,module.name(),scope,file.path()),computed.proof().encode());
+                for(var dependency:ReverseIndex.dependencies(computed.proof()))records.put(ReverseIndex.bodyKey(dependency,project,module.name(),scope,file.path()),Entry.NONE);
                 for(var c:computed.result().classFiles()) {
                     var key=LocalStore.classFileKey(c.contentHash());records.put(key,required(generation.get(key)));
                 }
@@ -99,7 +99,7 @@ public final class Stage3 {
 
     private Scope scope(ProjectModel model,Identity project,LocalRoot local,BodyGeneration generation,ProjectModel.Module module,int scope,
                         List<FileRow> rows,StubDirectories stubs,java.util.function.Function<Identity,MachineLeaf> leaves,ExecutorService workers) {
-        if(rows.isEmpty())return new Scope(List.of(),Output.build(tree,generation,List.of()),List.of());
+        if(rows.isEmpty())return new Scope(List.of(),Output.build(tree,generation,List.of()),List.of(),0);
         var descriptor=ModuleRecord.decode(required(generation.local(LocalStore.moduleKey(project,module.name()))));
         var own=SourceLeaf.decode(required(generation.local(LocalStore.sourceLeafKey(project,module.name(),scope))),digest.width());
         var route=Route.decode(required(generation.local(LocalStore.routeKey(project,module.name(),scope))),digest.width());
@@ -118,15 +118,21 @@ public final class Stage3 {
                 :Attribute.Options.unprocessed(digest,descriptor,Path.of(model.jdkHome()));
         var ownStubs=stubs.get(own.k());var configuration=new Pool.Configuration(new Pool.Key(route.routeHash(),own.k()),ownStubs.path(),classpath,
                 options.charset(),options.javac(),ownStubs.types());
-        var results=new ArrayList<File>();
+        var descriptorOptions=new ArrayList<>(descriptor.javacOptions());descriptorOptions.addAll(descriptor.processing().options());
+        var results=new ArrayList<File>();int descriptorEmissions=0;
         try(var pool=new Pool(configuration,this.workers)) {
             var attribute=processed?Attribute.processed(tree,generation,leaves.apply(own.k()),route,pool,options,plan,
                     descriptor.processing().path().stream().map(p->repository.resolve(p.location())).toList(),Path.of(model.root()))
                     :Attribute.unprocessed(tree,generation,leaves.apply(own.k()),route,pool,options);
             var tasks=new ArrayList<java.util.concurrent.Future<File>>();
-            for(var row:rows)tasks.add(workers.submit(()->{
-                var path=model.resolve(row.path());return new File(row.path(),attribute.run(row,path.toUri(),Files.readAllBytes(path)));
-            }));
+            for(var row:rows) {
+                if(row.path().equals("module-info.java") || row.path().endsWith("/module-info.java")) {
+                    var derived=ModuleDescriptor.derive(tree,generation,leaves.apply(own.k()),route,ModuleDescriptor.Options.of(descriptorOptions));
+                    results.add(new File(row.path(),derived.computed()));if(derived.emitted())descriptorEmissions++;
+                } else tasks.add(workers.submit(()->{
+                    var path=model.resolve(row.path());return new File(row.path(),attribute.run(row,path.toUri(),Files.readAllBytes(path)));
+                }));
+            }
             try {for(var task:tasks)results.add(task.get());}
             catch(InterruptedException failure) {Thread.currentThread().interrupt();throw new IllegalStateException("Body attribution interrupted",failure);}
             catch(java.util.concurrent.ExecutionException failure) {
@@ -137,7 +143,7 @@ public final class Stage3 {
         // One new capability violation invalidates scope reuse, including results completed before the violation was observed.
         var violations=results.stream().flatMap(f->f.computed().faults().stream()).distinct().sorted().toList();
         if(processed && results.stream().anyMatch(f->!f.computed().reusable())) {
-            results.replaceAll(file->{var c=file.computed();var proof=c.proof().withProcessorBody(c.proof().processorBody().rejectReuse());
+            results.replaceAll(file->{var c=file.computed();if(c.proof().header().processor()==null)return file;var proof=c.proof().withProcessorBody(c.proof().processorBody().rejectReuse());
                 return new File(file.path(),new Attribute.Computed(null,c.result(),proof,c.uses(),violations));});
         }
         var aggregate=new ArrayList<ProcessorRecords.Message>();
@@ -148,7 +154,8 @@ public final class Stage3 {
                 if(capability!=null && capability.declared()==ProcessorRecords.AGGREGATING)aggregate.add(message);
             }
         }
-        return new Scope(results,Output.build(tree,generation,results.stream().map(f->f.computed().result()).toList()),aggregate);
+        results.sort(java.util.Comparator.comparing(File::path));
+        return new Scope(results,Output.build(tree,generation,results.stream().map(f->f.computed().result()).toList()),aggregate,descriptorEmissions);
     }
 
     private Map<ScopeKey,List<FileRow>> rows(ProjectModel model,Identity project,LocalRoot local,BodyGeneration generation) {
@@ -160,13 +167,13 @@ public final class Stage3 {
             paths.add(model.resolve(".jvmd/generated/"+name+"/"+scope).toAbsolutePath().normalize());
             roots.put(key,paths);rows.put(key,new ArrayList<>());
         }
-        var prefix=LocalStore.fileKey(project,"");
+        var prefix=LocalStore.filePrefix(project);
         tree.forEach(local.local().hash(),id->generation.get(MachineStore.nodeKey(id)),entry->{
             var key=entry.key();if(key.length<prefix.length || !Arrays.equals(key,0,prefix.length,prefix,0,prefix.length))return;
-            String name=new String(key,prefix.length,key.length-prefix.length,StandardCharsets.UTF_8);var path=model.resolve(name).toAbsolutePath().normalize();
-            var owners=roots.entrySet().stream().filter(e->e.getValue().stream().anyMatch(path::startsWith)).map(Map.Entry::getKey).toList();
-            if(owners.size()!=1)throw new ProjectModel.Fault("Source row has no unique module scope: "+name);
-            rows.get(owners.getFirst()).add(FileRow.decode(name,required(generation.local(key)),digest.width()));
+            var unit=SourceUnit.fromFileKey(key,digest.width());var path=model.resolve(unit.path()).toAbsolutePath().normalize();
+            var owner=new ScopeKey(unit.module(),unit.scope());var declared=roots.get(owner);
+            if(declared==null || declared.stream().noneMatch(path::startsWith))throw new ProjectModel.Fault("Source row is outside its module scope: "+unit);
+            rows.get(owner).add(FileRow.decode(unit.path(),required(generation.local(key)),digest.width()));
         });
         return rows;
     }

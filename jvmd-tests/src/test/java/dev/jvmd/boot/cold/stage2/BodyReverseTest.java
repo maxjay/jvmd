@@ -34,14 +34,15 @@ class BodyReverseTest {
         var nested = new ReverseIndex.Dependency(ReverseIndex.N, "q/Base", Keys.TYPE, "Foo");
         var missing = new ReverseIndex.Dependency(ReverseIndex.D, "q/Missing", Keys.TYPE, "");
         var other = new ReverseIndex.Dependency(ReverseIndex.T, "q/Base", Keys.METHOD, "unread");
-        byte[] first = ReverseIndex.bodyKey(method, a, "src/A.java"), second = ReverseIndex.bodyKey(method, a, "test/A.java");
-        byte[] overriding = ReverseIndex.bodyKey(whole, a, "src/Override.java"), unrelated = ReverseIndex.bodyKey(other, a, "src/Other.java");
-        byte[] named = ReverseIndex.bodyKey(nested, b, "src/N.java"), absent = ReverseIndex.bodyKey(missing, b, "src/D.java");
+        byte[] first = ReverseIndex.bodyKey(method, a, Stage2Support.source("src/A.java")), second = ReverseIndex.bodyKey(method, a, Stage2Support.source("test/A.java"));
+        byte[] overriding = ReverseIndex.bodyKey(whole, a, Stage2Support.source("src/Override.java")), unrelated = ReverseIndex.bodyKey(other, a, Stage2Support.source("src/Other.java"));
+        byte[] named = ReverseIndex.bodyKey(nested, b, Stage2Support.source("src/N.java")), absent = ReverseIndex.bodyKey(missing, b, Stage2Support.source("src/D.java"));
         publish(digest, tree, store, a, List.of(first, second, overriding, unrelated));
         publish(digest, tree, store, b, List.of(named, absent));
         // A raw stale key and a header key with the same spelling are not body consumers.
-        store.put(ReverseIndex.bodyKey(method, a, "stale/Old.java"), Entry.NONE);
-        store.put(method.key(a, "header/Only.java"), Entry.NONE);
+        store.put(ReverseIndex.bodyKey(method, a, Stage2Support.source("stale/Old.java")), Entry.NONE);
+        store.put(method.key(a, Stage2Support.source("header/Only.java")), Entry.NONE);
+        store.put(new Codec.Writer().raw(ReverseIndex.bodyPrefix(method)).id(a).zstr("legacy/Old.java").toBytes(), Entry.NONE);
         store.flush();
         var t = delta(digest, tree, store, Keys.memberKey("q/Base", Keys.METHOD, "get", "()Ljava/lang/Number;"), true);
         var n = delta(digest, tree, store, new Codec.Writer().zstr("Foo").u8(Keys.TYPE).zstr("q/Base").raw(Keys.typeKey("q/Base$Foo")).toBytes(), false);
@@ -50,8 +51,8 @@ class BodyReverseTest {
         var rootReadsB = store.watchReads(LocalStore.bodiesRootKey(b));
         int start = store.events().size();
         assertThat(ReverseIndex.bodyCandidates(digest, store, t, n, d)).containsExactlyInAnyOrder(
-                new ReverseIndex.Consumer(a, "src/A.java"), new ReverseIndex.Consumer(a, "test/A.java"), new ReverseIndex.Consumer(a, "src/Override.java"),
-                new ReverseIndex.Consumer(b, "src/N.java"), new ReverseIndex.Consumer(b, "src/D.java"));
+                new ReverseIndex.Consumer(a, Stage2Support.source("src/A.java")), new ReverseIndex.Consumer(a, Stage2Support.source("test/A.java")), new ReverseIndex.Consumer(a, Stage2Support.source("src/Override.java")),
+                new ReverseIndex.Consumer(b, Stage2Support.source("src/N.java")), new ReverseIndex.Consumer(b, Stage2Support.source("src/D.java")));
         assertThat(store.events().subList(start, store.events().size())).doesNotContain("read:F", "read:C", "prefix:F", "prefix:C", "read:LROOT");
         assertThat(rootReadsA.get()).isEqualTo(1);
         assertThat(rootReadsB.get()).isEqualTo(1);
@@ -61,7 +62,7 @@ class BodyReverseTest {
         // Publishing a new body set removes consumers through tree membership, without deleting unrelated raw storage.
         publish(digest, tree, store, a, List.of(second, overriding, unrelated));
         assertThat(store.get(first)).isEmpty();
-        assertThat(ReverseIndex.bodyConsumers(digest, store, method)).containsExactly(new ReverseIndex.Consumer(a, "test/A.java"));
+        assertThat(ReverseIndex.bodyConsumers(digest, store, method)).containsExactly(new ReverseIndex.Consumer(a, Stage2Support.source("test/A.java")));
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -72,9 +73,27 @@ class BodyReverseTest {
                 new Proof.Entry(new Proof.Range(Proof.N, "p/Base", Keys.TYPE, "missing"), zero)))), List.of("p/Missing"));
         var dependencies = ReverseIndex.dependencies(proof);
         assertThat(dependencies).hasSize(3);
-        assertThat(dependencies.stream().map(d -> java.util.HexFormat.of().formatHex(ReverseIndex.bodyKey(d, id, "src/A.java"))).distinct()).hasSize(3);
+        assertThat(dependencies.stream().map(d -> java.util.HexFormat.of().formatHex(ReverseIndex.bodyKey(d, id, Stage2Support.source("src/A.java")))).distinct()).hasSize(3);
         for (var dependency : dependencies)
-            assertThat(ReverseIndex.bodyKey(dependency, id, "src/A.java")).isNotEqualTo(ReverseIndex.bodyKey(dependency, id, "test/A.java"));
+            assertThat(ReverseIndex.bodyKey(dependency, id, Stage2Support.source("src/A.java"))).isNotEqualTo(ReverseIndex.bodyKey(dependency, id, Stage2Support.source("test/A.java")));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void anOldRootCannotMakeAnUnscopedConsumerLookLikeACurrentUnit(Digest digest) {
+        var store=new InMemoryLocalStore();var tree=new ContentTree(digest);var project=digest.hash(new byte[]{3});
+        var dependency=new ReverseIndex.Dependency(ReverseIndex.T,"p/T",Keys.METHOD,"x");
+        String format=LocalFormat.of(dev.jvmd.index.layer.machine.Format.of(digest,Runtime.version().feature()))
+                .replace(";local="+LocalFormat.LAYOUT+";",";local=12;");
+        byte[] header=new Codec.Writer().raw(dependency.prefix()).id(project).zstr("same/Source.java").toBytes();
+        byte[] body=new Codec.Writer().raw(ReverseIndex.bodyPrefix(dependency)).id(project).zstr("same/Source.java").toBytes();
+        store.put(header,Entry.NONE);store.put(body,Entry.NONE);
+        var local=tree.build(List.of(new Entry(header,Entry.NONE,digest.hash(Entry.NONE))),store);
+        var bodies=tree.build(List.of(new Entry(body,Entry.NONE,digest.hash(Entry.NONE))),store);
+        store.put(LocalStore.localRootKey(project),LocalRoot.encode(digest,format,local,project,project));
+        store.put(LocalStore.bodiesRootKey(project),new BodiesRoot(BodiesRoot.format(format),bodies.hash(),local.hash(),project,project).encode());
+        store.flush();
+        assertThat(ReverseIndex.consumers(digest,store,dependency)).isEmpty();
+        assertThat(ReverseIndex.bodyConsumers(digest,store,dependency)).isEmpty();
     }
 
     private static void publish(Digest digest, ContentTree tree, InMemoryLocalStore store, Identity project, List<byte[]> keys) {
@@ -82,7 +101,8 @@ class BodyReverseTest {
         for (var key : keys) store.put(key, Entry.NONE);
         var root = tree.build(entries, store);
         var local = digest.hash(new byte[] {7});
-        store.put(LocalStore.bodiesRootKey(project), new BodiesRoot("test;bodies=1", root.hash(), local, local, local).encode());
+        String format=LocalFormat.of(dev.jvmd.index.layer.machine.Format.of(digest,Runtime.version().feature()));
+        store.put(LocalStore.bodiesRootKey(project), new BodiesRoot(BodiesRoot.format(format), root.hash(), local, local, local).encode());
         store.flush();
     }
 

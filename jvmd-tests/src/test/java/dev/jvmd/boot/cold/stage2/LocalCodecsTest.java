@@ -35,6 +35,21 @@ class LocalCodecsTest {
 
     private static Identity id(String s) { return D.hash(s.getBytes()); }
 
+    @Test void sharedPhysicalSourcesHaveDistinctCompilationAddresses() {
+        var project=id("project");
+        var units=List.of(new dev.jvmd.index.layer.local.SourceUnit("left",0,"shared/T.java"),
+                new dev.jvmd.index.layer.local.SourceUnit("right",0,"shared/T.java"),
+                new dev.jvmd.index.layer.local.SourceUnit("left",1,"shared/T.java"));
+        var files=new java.util.TreeSet<byte[]>(java.util.Arrays::compareUnsigned);
+        var proofs=new java.util.TreeSet<byte[]>(java.util.Arrays::compareUnsigned);
+        for(var unit:units) {
+            var key=dev.jvmd.index.layer.local.LocalStore.fileKey(project,unit);
+            assertThat(dev.jvmd.index.layer.local.SourceUnit.fromFileKey(key,D.width())).isEqualTo(unit);
+            files.add(key);proofs.add(dev.jvmd.index.layer.local.LocalStore.proofKey(project,unit));
+        }
+        assertThat(files).hasSize(3);assertThat(proofs).hasSize(3);
+    }
+
     @Test void annotationAndSourceLeafRecordsRetainFullRoots() {
         var binding = new dev.jvmd.index.layer.local.SourceLeaf(id("k"), id("a"));
         assertThat(dev.jvmd.index.layer.local.SourceLeaf.decode(binding.encode(), D.width())).isEqualTo(binding);
@@ -95,8 +110,8 @@ class LocalCodecsTest {
 
     @Test void reversePathsAndStage3ResultReferencesRoundTrip() {
         var dependency = new ReverseIndex.Dependency(ReverseIndex.T, "p/T", 1, "value");
-        assertThat(dependency.key(id("project"), "src/T.java")).startsWith(dependency.prefix());
-        assertThat(dependency.key(id("project"), "src/T.java")).isNotEqualTo(dependency.key(id("project"), "test/T.java"));
+        assertThat(dependency.key(id("project"), Stage2Support.source("src/T.java"))).startsWith(dependency.prefix());
+        assertThat(dependency.key(id("project"), Stage2Support.source("src/T.java"))).isNotEqualTo(dependency.key(id("project"), Stage2Support.source("test/T.java")));
         var result = new ResultRecord(false, List.of(new ResultRecord.ClassFile("p/T", id("bytes"))),
                 List.of(new ResultRecord.Diagnostic(0, 5, 9, "compiler.err.x", "boom")));
         var resultBack = ResultRecord.decode(result.encode(), 32);

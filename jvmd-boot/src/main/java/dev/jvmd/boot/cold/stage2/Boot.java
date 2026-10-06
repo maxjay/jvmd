@@ -8,6 +8,7 @@ import dev.jvmd.core.tree.Codec;
 import dev.jvmd.core.tree.ContentTree;
 import dev.jvmd.core.tree.NodeSink;
 import dev.jvmd.index.layer.local.FileRow;
+import dev.jvmd.index.layer.local.SourceUnit;
 import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.index.layer.local.Route;
@@ -58,7 +59,7 @@ final class Boot implements AutoCloseable {
     Identity jdkLeafSet;
     /** The bound routes as the jobs wrote them. */
     final Map<String, Route> routes = new ConcurrentHashMap<>();
-    final Map<String, FileRow> files = new ConcurrentHashMap<>();
+    final Map<SourceUnit, FileRow> files = new ConcurrentHashMap<>();
     /** {@code DD|}, {@code DS|} and {@code DC|} records this boot used: they are part of the LOCAL tree of the project that used them. */
     final ConcurrentSkipListMap<byte[], byte[]> definers = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);
     final ConcurrentSkipListMap<byte[], byte[]> processingRecords = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);

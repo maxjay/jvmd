@@ -94,7 +94,7 @@ class ProcessorPlanTest {
         assertThat(result.faults()).isEmpty();
         var project = Stage2.projectKey(digest,model);
         var local = LocalRoot.decode(digest,store.get(LocalStore.localRootKey(project)));
-        assertThat(local.format()).contains(";local=12;");
+        assertThat(local.format()).contains(";local=13;");
         return new State(tree,store,local,project,result);
     }
 
@@ -151,7 +151,7 @@ class ProcessorPlanTest {
         var blobReads=new ArrayList<java.util.concurrent.atomic.AtomicInteger>();
         for(var suffix:List.of("First","Second")) {
             String generated=".jvmd/generated/aXNvbGF0ZQ/0/p/Input"+suffix+".java";
-            var row=FileRow.decode(generated,state.store().get(LocalStore.fileKey(state.project(),generated)),digest.width());
+            var row=FileRow.decode(generated,state.store().get(LocalStore.fileKey(state.project(), Stage2Support.source(generated))),digest.width());
             assertThat(row.genId()).isEqualTo(input.derivation());
             var bytes=state.store().get(LocalStore.generatedSourceKey(row.kappa()));
             expected.add(new GeneratedOutputs.Output(0,"p/Input"+suffix+".java",bytes));

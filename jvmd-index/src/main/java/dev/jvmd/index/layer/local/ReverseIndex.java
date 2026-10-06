@@ -26,7 +26,8 @@ public final class ReverseIndex {
                 throw new IllegalArgumentException("Invalid header reverse dependency");
         }
         public byte[] prefix() { return new Codec.Writer().raw(HEADER).u8(form).zstr(type).u8(kind).zstr(name).toBytes(); }
-        public byte[] key(Identity project, String path) { return new Codec.Writer().raw(prefix()).id(project).zstr(path).toBytes(); }
+        public byte[] key(Identity project, SourceUnit unit) { var out = new Codec.Writer().raw(prefix()).id(project); unit.encode(out); return out.toBytes(); }
+        public byte[] key(Identity project, String module, int scope, String path) { return key(project, new SourceUnit(module, scope, path)); }
         @Override public int compareTo(Dependency other) {
             int c = Integer.compare(form, other.form);
             if (c == 0) c = type.compareTo(other.type);
@@ -35,10 +36,14 @@ public final class ReverseIndex {
         }
     }
 
-    public record Consumer(Identity project, String path) implements Comparable<Consumer> {
+    public record Consumer(Identity project, SourceUnit source) implements Comparable<Consumer> {
+        public Consumer(Identity project, String module, int scope, String path) { this(project, new SourceUnit(module, scope, path)); }
+        public String path() { return source.path(); }
+        public String module() { return source.module(); }
+        public int scope() { return source.scope(); }
         @Override public int compareTo(Consumer other) {
             int c = project.compareTo(other.project);
-            return c == 0 ? path.compareTo(other.path) : c;
+            return c == 0 ? source.compareTo(other.source) : c;
         }
     }
 
@@ -65,8 +70,11 @@ public final class ReverseIndex {
                 : out.raw(new byte[] {'X', '|', 'G', '|'}).u8(dependency.form()).zstr(dependency.type()).u8(dependency.kind()).zstr(dependency.name()).toBytes();
     }
 
-    public static byte[] bodyKey(Dependency dependency, Identity project, String path) {
-        return new Codec.Writer().raw(bodyPrefix(dependency)).id(project).zstr(path).toBytes();
+    public static byte[] bodyKey(Dependency dependency, Identity project, SourceUnit unit) {
+        var out = new Codec.Writer().raw(bodyPrefix(dependency)).id(project); unit.encode(out); return out.toBytes();
+    }
+    public static byte[] bodyKey(Dependency dependency, Identity project, String module, int scope, String path) {
+        return bodyKey(dependency, project, new SourceUnit(module, scope, path));
     }
 
     public static Set<Dependency> dependencies(Proof proof) {
@@ -129,7 +137,8 @@ public final class ReverseIndex {
         private Identity root(Identity project) {
             if (!roots.containsKey(project)) {
                 var value = store.get(body ? LocalStore.bodiesRootKey(project) : LocalStore.localRootKey(project));
-                roots.put(project, value == null ? null : body ? BodiesRoot.decode(value, digest.width()).bodiesRoot()
+                boolean compatible = value != null && LocalRoot.formatOf(value).contains(";local=" + LocalFormat.LAYOUT + ";");
+                roots.put(project, !compatible ? null : body ? BodiesRoot.decode(value, digest.width()).bodiesRoot()
                         : LocalRoot.decode(digest, value).local().hash());
             }
             return roots.get(project);
@@ -143,10 +152,12 @@ public final class ReverseIndex {
                     var in = new Codec.Reader(key);
                     in.raw(prefix.length);
                     var project = in.id(digest.width());
-                    String path = in.zstr();
                     var root = root(project);
-                    if (root != null && tree.get(root, h -> store.get(MachineStore.nodeKey(h)), key) != null)
-                        consumers.add(new Consumer(project, path));
+                    // Old formats and unreachable raw keys can have a different consumer suffix. Never decode those as current units.
+                    if (root == null || tree.get(root, h -> store.get(MachineStore.nodeKey(h)), key) == null) return;
+                    var unit = SourceUnit.decode(in);
+                    if (in.remaining() != 0) throw new IllegalStateException("Trailing reverse consumer bytes");
+                    consumers.add(new Consumer(project, unit));
                 });
             }
             return consumers;

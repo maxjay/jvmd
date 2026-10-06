@@ -109,6 +109,8 @@ public final class Attribute {
 
     /** Persist CF/RS/U only. The driver owns C, reverse/output trees and the BROOT commit. */
     public Computed run(FileRow row,URI uri,byte[] bytes) throws InterruptedException {
+        if (row.path().equals("module-info.java") || row.path().endsWith("/module-info.java"))
+            throw new IllegalArgumentException("Module descriptors derive from their canonical fact, never Attribute");
         if (processing==null && row.processor()!=null) throw new IllegalArgumentException("Processor-bearing file requires processor-aware attribution: "+row.path());
         if (processing!=null && row.processor()==null) throw new IllegalArgumentException("File has no committed processor context: "+row.path());
         byte[] source=bytes.clone();

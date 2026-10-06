@@ -140,12 +140,12 @@ class ProcessorStage2Test {
                 var changed = Stream.concat(delta.added().stream(), delta.removed().stream()).map(e -> new dev.jvmd.core.tree.Codec.Reader(e.key()).zstr()).distinct().toList();
                 assertThat(changed).containsExactly(config);
                 for (var path : paths) {
-                    var a = FileRow.decode(path, beforeStore.get(LocalStore.fileKey(project, path)), digest.width());
-                    var b = FileRow.decode(path, afterStore.get(LocalStore.fileKey(project, path)), digest.width());
+                    var a = FileRow.decode(path, beforeStore.get(LocalStore.fileKey(project, Stage2Support.source(path))), digest.width());
+                    var b = FileRow.decode(path, afterStore.get(LocalStore.fileKey(project, Stage2Support.source(path))), digest.width());
                     assertThat(b.processor().equals(a.processor())).as("configuration proof for %s, %s operation %s", path, config, operation).isEqualTo(!path.startsWith(parent));
                     if (operation != 2) assertThat(b.sum().equals(a.sum())).as("Lombok header for %s", path).isEqualTo(!path.startsWith(parent));
                     if (operation == 2) {
-                        var baseline = FileRow.decode(path, original.get(LocalStore.fileKey(project, path)), digest.width());
+                        var baseline = FileRow.decode(path, original.get(LocalStore.fileKey(project, Stage2Support.source(path))), digest.width());
                         assertThat(b.sum()).isEqualTo(baseline.sum());
                         assertThat(b.processor()).isEqualTo(baseline.processor());
                     }

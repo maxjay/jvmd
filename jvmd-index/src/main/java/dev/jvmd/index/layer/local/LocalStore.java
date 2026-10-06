@@ -43,11 +43,14 @@ public interface LocalStore extends MachineStore {
     static byte[] routeKey(Identity projectKey, String module, int scope) {
         return join("RT|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
     }
-    static byte[] fileKey(Identity projectKey, String path) { return join("F|", projectKey.view(), "|", path.getBytes(StandardCharsets.UTF_8)); }
+    static byte[] filePrefix(Identity projectKey) { return join("F|", projectKey.view(), "|"); }
+    static byte[] fileKey(Identity projectKey, SourceUnit unit) { return join("F|", projectKey.view(), "|", unit.encode()); }
+    static byte[] fileKey(Identity projectKey, String module, int scope, String path) { return fileKey(projectKey, new SourceUnit(module, scope, path)); }
     static byte[] disjointKey(Identity leafSetExt) { return join("DD|", leafSetExt.view()); }
     static byte[] siblingKey(Identity leafSetSib) { return join("DS|", leafSetSib.view()); }
     static byte[] conflictsKey(Identity routeHash) { return join("DC|", routeHash.view()); }
-    static byte[] proofKey(Identity projectKey, String path) { return join("C|", projectKey.view(), "|", path.getBytes(StandardCharsets.UTF_8)); }
+    static byte[] proofKey(Identity projectKey, SourceUnit unit) { return join("C|", projectKey.view(), "|", unit.encode()); }
+    static byte[] proofKey(Identity projectKey, String module, int scope, String path) { return proofKey(projectKey, new SourceUnit(module, scope, path)); }
     static byte[] resultKey(Identity aci) { return join("RS|", aci.view()); }
     static byte[] classFileKey(Identity content) { return join("CF|", content.view()); }
     static byte[] usesKey(Identity aci) { return join("U|", aci.view()); }

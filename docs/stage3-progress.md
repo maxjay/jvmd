@@ -11,7 +11,7 @@ The full specification is **not complete**. Module annotations now preserve the 
 
 Implemented components include body proofs/results/uses and reverse indexes, the reusable one-unit compiler pool, body collection and processor-aware attribution, generated-output ContentTrees, persisted source declaration/package views, and now the initial dependency-ordered driver with rooted reads, generation buffering, BROOT/history publication and output materialisation.
 
-Outstanding completion gates include full source/module/file processor views and capability admission, persisted query verification, complete descriptor header validation, the both-digest 2,000-file processor invariant, own-project Stage 3 diagnostic equality and the independent two-sided read oracle. Existing fixture coverage does not close those full-spec obligations. The implementation still attributes every ordinary file on a rerun; unchanged descriptor derivations reuse their rooted RS/CF. Warm remains untouched.
+Outstanding completion gates include full source/module/file processor views and capability admission, persisted query verification, complete descriptor header validation, own-project Stage 3 diagnostic equality and the independent two-sided read oracle. The 2,000-file processor reuse measurement now passes both digests. Existing fixture coverage does not close the other full-spec obligations. The implementation still attributes every ordinary file on a rerun; unchanged descriptor derivations reuse their rooted RS/CF. Warm remains untouched.
 
 ## Ordered delivery
 
@@ -1002,10 +1002,17 @@ The full independent Stage 3 comparison matches every key and byte of **1,319 cl
 
 LOCAL **16** fences the corrected source-module extraction. MACHINE layout 4/parser 6 and bodies 6 are unchanged. The specification/Downloads pair is synchronized at SHA-256 `819cbcc07a4e1cb79add8f78d1e51ca6d76e12ae1f566b9c3a6cf847dbf2664c`; the previous authority is preserved in `jvmd-stage3-bodies.before-module-annotations.md`. Complete native module directive validation and the missing automatic-module warning remain open, separately from descriptor bytes.
 
-## 2,000-file processor reuse measurement (both-digest run in progress)
+## 2,000-file processor reuse measurement (both digests passed)
 
 The test-only caller now exercises Valid against rooted prior C/RS/U/CF records and attributes only the invalid subset. The production cold driver still attributes every ordinary file. ProcessorHost can construct fresh observations for its explicitly tested overlays from the current scoped plan and admission history, without copying answers out of an old proof. An arbitrary OVERLAY classification or generator cannot use this path; configured aggregate names remain admission metadata. This is not a persisted public-query verifier for arbitrary processors.
 
 The fixture contains 1,000 Lombok Data beans, 999 callers and one parent class. Adding one field introduces a getter that shadows the inherited getter consumed by one caller. Exactly the bean and that caller attribute; 1,998 results are served from rooted RS. A body-only edit attributes one bean and serves 1,999. Editing or deleting a subdirectory lombok.config attributes its 1,000 files and serves the other 1,000, with ownR and route identity unchanged. Each step compares the complete class map byte for byte against a fresh whole-module javac invocation on the physical source/configuration tree, and checks the actual pool task count.
 
-The SHA-256 run passed all four scenarios. Initial cold body work with four workers took 280,967 ms. Subset attribution uses one worker: field addition 893 ms; body edit 503 ms; configuration edit 401,918 ms; deletion 442,269 ms. Validation over all 2,000 files took 650/600/324/336 ms respectively. This includes fresh native processor state for every attributed task; it is not a processor-startup optimization. Report: [SHA-256](measurements/stage3-processor-reuse-SHA-256.txt). SHA3-256 has passed the field/body cases; its two configuration cases are still running. Invariant 27 is not marked complete until that second digest finishes.
+Both digest runs passed all four scenarios, including full native class-byte comparison after every edit. The combined benchmark/admission run passed **4 tests, zero failures/errors/skips**, in 41m32s (`stage3-processor-reuse-second.log`). This records the 2,000-file evidence for invariant 27; it does not close the remaining full-spec gates.
+
+| Digest | Initial cold, 4 workers | Field addition | Body edit | Configuration edit | Configuration deletion |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 280,967 ms | 893 ms | 503 ms | 401,918 ms | 442,269 ms |
+| SHA3-256 | 308,720 ms | 915 ms | 516 ms | 425,861 ms | 402,091 ms |
+
+Subset attribution uses one worker and fresh native processor state for each task. Validation over all 2,000 files took 650/600/324/336 ms for SHA-256 and 685/589/326/362 ms for SHA3-256, in the four edit scenarios respectively. Some other validation ran concurrently in another worktree/JVM; these are not digest speed comparisons or a processor-startup optimization. Reports: [SHA-256](measurements/stage3-processor-reuse-SHA-256.txt), [SHA3-256](measurements/stage3-processor-reuse-SHA3-256.txt).

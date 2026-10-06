@@ -1,0 +1,7 @@
+digest: SHA3-256
+files: 2000
+initial cold driver ms: 308720
+field addition: attributed=2 served from rooted RS=1998 validation ms=685 attribution ms=915
+body edit: attributed=1 served from rooted RS=1999 validation ms=589 attribution ms=516
+config edit: attributed=1000 served from rooted RS=1000 validation ms=326 attribution ms=425861
+config deletion: attributed=1000 served from rooted RS=1000 validation ms=362 attribution ms=402091

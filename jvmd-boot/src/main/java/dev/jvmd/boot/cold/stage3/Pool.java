@@ -87,6 +87,7 @@ public final class Pool implements AutoCloseable {
     }
 
     public Key key() { return configuration.key(); }
+    public Configuration configuration() { return configuration; }
 
     /** Compiles this immutable byte snapshot with javac's own decoder and encoding diagnostics. */
     public <T> Completed<T> withTask(URI uri, byte[] bytes, DiagnosticListener<? super JavaFileObject> diagnostics,

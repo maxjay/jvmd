@@ -14,13 +14,11 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeKind;
@@ -120,20 +118,12 @@ final class HeaderCompiler {
     }
 
     /**
-     * The lowest source level the running javac accepts: JDK 25 answers {@code -source 7} and below with "no longer supported. Use 8 or
-     * later", while 8 works with {@code --system}. A module whose release is lower is compiled at this level, which accepts everything
-     * the older levels did.
-     */
-    static final int MINIMUM_SOURCE = 8;
-
-    /**
      * The release javac runs at and the descriptor records (C.1, E.4): the running feature version for a module that compiles with
      * preview features (preview requires it) or states no release, otherwise the model's release clamped to what the running javac
      * accepts, so that a release it cannot take is a substitution and not a refusal of the boot.
      */
     static int effectiveRelease(int release, boolean preview, int feature) {
-        if (preview || release <= 0) return feature;
-        return Math.max(MINIMUM_SOURCE, Math.min(release, feature));
+        return JavacOptions.effectiveRelease(release,preview,feature);
     }
 
     /**
@@ -335,48 +325,11 @@ final class HeaderCompiler {
         return Keys.typeKey(pkg + klass.getSimpleName());
     }
 
-    static Charset charset(List<String> options) {
-        var charset = StandardCharsets.UTF_8;
-        for (int i = 0; i + 1 < options.size(); i++) if (options.get(i).equals("-encoding")) charset = Charset.forName(options.get(++i));
-        return charset;
-    }
+    static Charset charset(List<String> options) { return JavacOptions.charset(options); }
 
     static Identity optionsHash(Digest digest, List<String> options, int release, Identity processorPathHash, List<String> processors) {
-        var filtered = filtered(options);
-        var out = new dev.jvmd.core.tree.Codec.Writer().u32(filtered.size());
-        for (var option : filtered) out.str(option);
-        out.u8(release).str(charset(options).name()).optId(processorPathHash).u32(processors.size());
-        for (var processor : processors) out.str(processor);
-        return digest.hash(out.toBytes());
+        return JavacOptions.optionsHash(digest,options,release,processorPathHash,processors);
     }
 
-    /** Options that take an argument, and are dropped with it (C.1). */
-    private static final Set<String> DROPPED_WITH_ARGUMENT = Set.of("-d", "-s", "-h", "-processor", "-processorpath", "--processor-path", "--release", "-source", "--source",
-            "-target", "--target", "--module-version", "-classpath", "-cp", "--class-path", "-sourcepath", "--source-path", "--module-path", "-p", "--system");
-
-    /** The module's own options minus everything this task decides itself: output, processing, classpath, release and system. */
-    static List<String> filtered(List<String> options) {
-        var out = new ArrayList<String>();
-        for (int i = 0; i < options.size(); i++) {
-            String option = options.get(i);
-            if (DROPPED_WITH_ARGUMENT.contains(option)) { i++; continue; }
-            if (option.startsWith("-proc:") || option.startsWith("-implicit:") || option.startsWith("-Xplugin")) continue;
-            int eq = option.indexOf('=');
-            if (option.startsWith("--") && eq > 0 && DROPPED_WITH_ARGUMENT.contains(option.substring(0, eq))) continue;
-            // Header compilation is classpath mode: exports to the original named module must target this task's unnamed module.
-            if (option.equals("--add-exports") && i + 1 < options.size()) {
-                out.add(option);
-                out.add(unnamedExport(options.get(++i)));
-                continue;
-            }
-            if (option.startsWith("--add-exports=")) option = "--add-exports=" + unnamedExport(option.substring("--add-exports=".length()));
-            out.add(option);
-        }
-        return out;
-    }
-
-    private static String unnamedExport(String value) {
-        int target = value.lastIndexOf('=');
-        return target < 0 ? value : value.substring(0, target + 1) + "ALL-UNNAMED";
-    }
+    static List<String> filtered(List<String> options) { return JavacOptions.filtered(options); }
 }

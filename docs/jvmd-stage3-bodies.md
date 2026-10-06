@@ -257,6 +257,10 @@ Attribute(f, scope, pool) -> (result, proof, uses, aci):
     return (result, proof, uses, aci)
 ```
 
+The source/options policy is shared with Stage 2 through JavacOptions, including source-level normalization, charset selection, filtered options and optionsHash. The executor snapshots diagnostics when javac emits them, retains native observations through generation, arranges the detached proof and stores CF/RS/U. Any error produces an unattributed result with no class references, even if javac produced partial outputs. Content publication checks existing values and flushes under a store lock, so concurrent equal attributions share their records and a conflicting value cannot overwrite an existing content-addressed result. Compilation itself remains parallel. Mutable C, reverse/output entries and BROOT publication belong to the driver.
+
+**Implementation boundary.** The current Attribute.unprocessed entry point is implemented and tested against fresh whole-module javac. It rejects a processor-bearing module or F row explicitly; it cannot satisfy such a request by silently disabling processors. The processor-aware invocation, input admission, generated-output comparison, complete two-sided proof oracle and driver/BROOT commit are still required by this specification. The unprocessed executor does not complete those requirements.
+
 ### 5.2 Collect: what the body resolved through
 
 An attributed-unit walk, with an initial linear pass for own binary names and tree paths, plus native hierarchy query observations from the compiler task. Every node that carries a symbol javac resolved is visited; the rule per node kind is the lookup javac performed.
@@ -451,6 +455,7 @@ jvmd-boot/
     stage1/
       ArtifactJob.java       LeafBuilder with A; P| record carries a
     stage2/
+      JavacOptions.java      common source/charset/filtered-option policy and optionsHash for headers and bodies
       ModuleJob.java         LeafBuilder with A; Built carries a; route elements (k, a); header compile with --processor-path through ProcessorHost, -encoding; absences in the header proof; generated rows, GEN|, PD|, RES|
       Built.java             (module, scope) -> (leaf, a)
       Boot.java              stubDir unchanged
@@ -781,7 +786,7 @@ observations = Collect(unit, task)                         // before lowering ch
 task.generate(unit)                                      // in-memory class files; Filer outputs captured, never compiled here
 ```
 
-The in-memory file manager forwards every read to the standard one and captures class file writes. No file is written to disk by `Attribute`. Source input is an immutable byte snapshot, decoded with the task-bound javac BaseFileManager and its explicit charset. Decoding errors use the same task Log, preserving native diagnostic positions and messages and preventing output on an error. Reopening the path or decoding with replacement via new String(bytes, charset) would respectively permit a changed input or erase the encoding diagnostic. The pool owns the snapshot and releases its decoder binding at task exit. Attribute must verify the snapshot's digest against the F row before publishing a result; that integration remains required.
+The in-memory file manager forwards every read to the standard one and captures class file writes. No file is written to disk by `Attribute`. Source input is an immutable byte snapshot, decoded with the task-bound javac BaseFileManager and its explicit charset. Decoding errors use the same task Log, preserving native diagnostic positions and messages and preventing output on an error. Reopening the path or decoding with replacement via new String(bytes, charset) would respectively permit a changed input or erase the encoding diagnostic. The pool owns the snapshot and releases its decoder binding at task exit. Attribute verifies the snapshot digest and source basename against the F row before compiling, and checks that the pool's route/own binding, charset and effective options match the identities used for arrangement and ACI.
 
 ### C.2 The pool
 

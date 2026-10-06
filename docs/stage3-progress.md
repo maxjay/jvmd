@@ -512,3 +512,28 @@ The clean combined gate passed **467 tests, zero failures/errors/skips**, in 3m5
 | SHA3-256 | 3,190 | 1,749 | 806 | 132 | 25,024 |
 
 Maven model/build time (25.6/25.2s) is excluded. Sampled heap above baseline was 1,026/1,172 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-body-input-SHA-256.txt), [SHA3-256](measurements/stage3-body-input-SHA3-256.txt). The distribution assembly script also passes Bash syntax checking. These gates validate this checkpoint; the Attribute/processor/driver and complete Stage 3 proof obligations listed above remain outstanding.
+
+
+### Per-file attribution executor and content publication
+
+Attribute now binds one immutable source snapshot to F's kappa and basename, requires the current route/own-leaf pool key and the exact prepared charset/options, then performs parse/analyze, pre-lowering collection and in-memory generation. It merges the detached native observations, arranges the proof, computes ACI and persists CF/RS/U. Diagnostic values are snapshotted at emission; errors retain a result/proof but no class references. Existing content is checked before publication, and only the storage check/flush is serialized, so concurrent equal attributions write one copy of every record. C/reverse/OUT/BROOT remain driver-owned; Attribute leaves LROOT untouched.
+
+JavacOptions contains the shared Stage 2/3 source normalization, charset, filtering and optionsHash policy; HeaderCompiler delegates to it without changing its option semantics. Attribute's unprocessed entry point rejects processor-bearing module/file inputs. This is an explicit implementation boundary, not a replacement for the required processor-aware path or an admission claim.
+
+The first gate passed 15 tests. The combined `stage3-attribute-focused.log` passed 107 tests, including 14 new attribution cases under both digests. `stage3-attribute-input-errors.log` passes all 18 attribution cases after adding malformed-byte and locale regressions. Fresh whole-module javac matches the combined per-file class bytes, including records, local/anonymous classes, additional top-level declarations and debug/parameter metadata. Tests compare exact ordered warnings/errors and UTF-16 positions, exercise error-then-success context reuse, assert relocation with the same basename yields the same result/ACI without record writes, and prove concurrent duplication writes only one CF/RS/U set. Charset and debug changes move ACI appropriately; equal decoded characters under different encodings still produce equal class bytes. Stale snapshots, wrong basenames and mismatched pool keys/options fail before compilation/publication.
+
+The clean full gate `stage3-attribute-frozen-gate.log` completed with all tracked and new Java source files frozen; results follow. The Stage 3 Downloads authority was synchronized after preserving `jvmd-stage3-bodies.before-attribute-executor.md`; both copies hash to SHA-256 `fa56e7c0e8d5331bab9f7b7ee923dc327efeeefea2188d3fa0d77c8a121fd0bb`. Revision remains 123 with its dated amendments; Stage 2's authority is unchanged.
+
+Next: the processor-aware Attribute path must capture Filer output without compiling it, select admitted isolating/overlay processors while excluding aggregating processors, prove actual processor reads, and compare outputs with GEN. It must not publish reuse on unsupported inputs. Then complete current route/source/options preparation from LROOT, the Stage3/BROOT driver and all thirty invariants, including the full two-sided body-read oracle. The existing classpath-mode/JPMS and release-view boundaries of Stage 2 also need to be respected by the whole-project oracle. Warm remains untouched and the full goal remains active.
+
+
+The clean gate passed **485 tests, zero failures/errors/skips**, in 3m57s. All **536 Java source files**, including the three new files, match the pre-run digest snapshot. The repository oracle covered **13 modules, 26 scopes and 531 sources**, 93 on-the-spot jars and 22 distinct states. Both digests produced **26/26 exact source/class k matches, no annotation differences and zero boot faults**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,216 | 2,763 | 1,278 | 137 | 25,011 |
+| SHA3-256 | 3,206 | 1,783 | 799 | 131 | 25,040 |
+
+Maven model/build time (25.3/26.1s) is excluded. Sampled heap above baseline was 1,054/1,170 MB with uncontrolled GC; these sequential measurements are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-attribute-SHA-256.txt), [SHA3-256](measurements/stage3-attribute-SHA3-256.txt).
+
+Invariant 20 remains a driver integration obligation: the executor currently checks the exact CF/RS/U keys it has just computed when deduplicating publication. The driver must provide the required cold-run memo/root-bounded store view and prove that previous result reuse is reached through BROOT, rather than treating unrooted records as reusable results. No exception to invariant 20 is established by these executor tests. Processor support and the other outstanding invariants above remain part of the active goal; PR #61 remains a separate draft.

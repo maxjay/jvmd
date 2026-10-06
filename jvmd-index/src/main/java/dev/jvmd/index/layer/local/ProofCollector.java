@@ -34,12 +34,21 @@ public final class ProofCollector {
     }
 
     /** Detached observations before lowering. Type lookup candidates become D absences or T headers at binding. */
-    public record Body(List<Proof.Range> ranges, List<String> typeLookups, UsesRecord uses) {
-        public Body { ranges = List.copyOf(ranges); typeLookups = List.copyOf(typeLookups); }
+    public record Body(List<Proof.Range> ranges, List<String> typeLookups, UsesRecord uses, Set<String> ownTypes) {
+        public Body { ranges = List.copyOf(ranges); typeLookups = List.copyOf(typeLookups); ownTypes = Set.copyOf(ownTypes); }
+
+        /** Merge detached compiler reads after generation, retaining source spans for entries the tree already observed. */
+        public Body supplement(List<Proof.Range> observations) {
+            var all = new java.util.TreeSet<>(ranges);
+            var spans = new ArrayList<>(uses.uses());
+            for (var range : observations) if (!ownTypes.contains(range.type()) && all.add(range))
+                spans.add(new UsesRecord.Use(range.form(),range.type(),range.kind(),range.name(),List.of()));
+            return new Body(new ArrayList<>(all),typeLookups,new UsesRecord(spans),ownTypes);
+        }
     }
 
-    public static Body bodies(CompilationUnitTree unit, Trees trees, Elements elements, Types types, List<String> hierarchyReads) {
-        return BodyCollector.collect(unit, trees, elements, types, hierarchyReads);
+    public static Body bodies(CompilationUnitTree unit, Trees trees, Elements elements, Types types) {
+        return BodyCollector.collect(unit, trees, elements, types);
     }
 
     /**

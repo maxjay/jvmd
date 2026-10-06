@@ -39,14 +39,13 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
     private final List<TypeElement> staticImports = new ArrayList<>();
     private final String ownPackage;
 
-    static ProofCollector.Body collect(CompilationUnitTree unit, Trees trees, Elements elements, Types types, List<String> hierarchyReads) {
+    static ProofCollector.Body collect(CompilationUnitTree unit, Trees trees, Elements elements, Types types) {
         var scanner = new BodyCollector(unit, trees, elements, types);
         scanner.scan(unit, null);
-        for (String type : hierarchyReads) if (!scanner.own.contains(type)) scanner.add(new Proof.Range(Proof.T,type,Keys.TYPE,""),null);
         var uses = new ArrayList<UsesRecord.Use>();
         scanner.ranges.forEach((key, spans) -> uses.add(new UsesRecord.Use(key.form(), key.type(), key.kind(), key.name(), new ArrayList<>(spans))));
         scanner.absent.forEach((type, spans) -> uses.add(new UsesRecord.Use(UsesRecord.D, type, Keys.TYPE, "", new ArrayList<>(spans))));
-        return new ProofCollector.Body(new ArrayList<>(scanner.ranges.keySet()), new ArrayList<>(scanner.absent.keySet()), new UsesRecord(uses));
+        return new ProofCollector.Body(new ArrayList<>(scanner.ranges.keySet()), new ArrayList<>(scanner.absent.keySet()), new UsesRecord(uses),scanner.own);
     }
 
     private BodyCollector(CompilationUnitTree unit, Trees trees, Elements elements, Types types) {
@@ -282,8 +281,8 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
         for (var type : roots(receiver)) {
             if (!seen.add(binary(type))) continue;
             t(type,Keys.TYPE,"",node);
-            if (type.getEnclosedElements().stream().anyMatch(e -> e instanceof TypeElement && e.getSimpleName().contentEquals(name))) continue;
             n(type,name,node);
+            if (type.getEnclosedElements().stream().anyMatch(e -> e instanceof TypeElement && e.getSimpleName().contentEquals(name))) continue;
             for (var parent : types.directSupertypes(type.asType())) memberReads(parent,name,node,seen);
         }
     }

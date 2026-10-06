@@ -9,14 +9,21 @@ import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.TypeTag;
 import com.sun.tools.javac.code.Types;
+import com.sun.tools.javac.file.BaseFileManager;
 import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.Names;
 import dev.jvmd.core.hash.Identity;
+import dev.jvmd.index.layer.local.Proof;
+import dev.jvmd.index.layer.machine.Keys;
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.StringWriter;
 import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -41,8 +48,9 @@ import javax.tools.ToolProvider;
 
 /** W single-task javac workers over one immutable route/own-leaf binding (stage 3 C.2). */
 public final class Pool implements AutoCloseable {
-    public record Key(Identity external, Identity sibling, Identity own) {
-        public Key { Objects.requireNonNull(external); Objects.requireNonNull(sibling); Objects.requireNonNull(own); }
+    /** The route hash binds its ordered leaves; unordered leaf sets cannot distinguish conflicting winners. */
+    public record Key(Identity route, Identity own) {
+        public Key { Objects.requireNonNull(route); Objects.requireNonNull(own); }
     }
 
     /** Options already fixed by the module's attribution policy, including source/system/encoding/processing. */
@@ -55,7 +63,8 @@ public final class Pool implements AutoCloseable {
     }
 
     /** No compiler tree or symbol may escape the callback; the caller returns its detached observations. */
-    public record Completed<T>(T value, Map<String, byte[]> classes) { }
+    public record Completed<T>(T value, Map<String, byte[]> classes, List<Proof.Range> reads) { }
+    private record Observed<T>(T value, List<Proof.Range> reads) { }
     public record Statistics(int workers, long contexts, long tasks) { }
 
     private final Configuration configuration;
@@ -79,24 +88,79 @@ public final class Pool implements AutoCloseable {
 
     public Key key() { return configuration.key(); }
 
+    /** Compiles this immutable byte snapshot with javac's own decoder and encoding diagnostics. */
+    public <T> Completed<T> withTask(URI uri, byte[] bytes, DiagnosticListener<? super JavaFileObject> diagnostics,
+                                     Function<JavacTask,T> action) throws InterruptedException {
+        var source = new ByteSource(uri,bytes);
+        try { return withTask(source,diagnostics,action); }
+        finally { source.manager = null; }
+    }
+
+    private static final class ByteSource extends SimpleJavaFileObject {
+        private final byte[] bytes;
+        private BaseFileManager manager;
+        private CharBuffer decoded;
+
+        ByteSource(URI uri,byte[] bytes) { super(uri,Kind.SOURCE);this.bytes=bytes.clone(); }
+        @Override public InputStream openInputStream() { return new ByteArrayInputStream(bytes); }
+        @Override public CharSequence getCharContent(boolean ignoreEncodingErrors) {
+            if (decoded != null) return decoded.asReadOnlyBuffer();
+            if (manager == null) throw new IllegalStateException("Source decoder is not bound to a compiler task");
+            var previous=manager.log.useSource(this);
+            try {
+                var text=manager.decode(ByteBuffer.wrap(bytes),ignoreEncodingErrors);
+                // A diagnostic can request the line text recursively with ignoreEncodingErrors=true.
+                if (!ignoreEncodingErrors) decoded=text;
+                return text.asReadOnlyBuffer();
+            } finally { manager.log.useSource(previous); }
+        }
+    }
+
     /** Native hierarchy queries, including rejected overloads which leave no attributed syntax node. */
-    public static List<String> hierarchyReads(JavacTask task) {
+    public static List<Proof.Range> reads(JavacTask task) {
         return List.copyOf(((HierarchyReads) Types.instance(((JavacTaskImpl) task).getContext())).reads);
     }
 
     private static final class HierarchyReads extends Types {
-        private final java.util.Set<String> reads = new java.util.TreeSet<>();
+        private final java.util.Set<Proof.Range> reads = new java.util.TreeSet<>();
         private boolean recording;
 
         static void install(Context context) { context.put(typesKey, (Context.Factory<Types>) HierarchyReads::new); }
         HierarchyReads(Context context) { super(context); }
 
-        private void read(Type type) {
+        private void read(Type type) { read(type,Keys.TYPE); }
+
+        private void read(Type type,int kind) {
             // Construction can call virtual methods before this subclass's fields have been initialized.
             if (recording && type != null && type.hasTag(TypeTag.CLASS) && !type.isCompound()
                     && type.tsym instanceof Symbol.ClassSymbol symbol && symbol.classfile != null
                     && symbol.classfile.getKind() == JavaFileObject.Kind.CLASS)
-                reads.add(symbol.flatName().toString().replace('.', '/'));
+                reads.add(new Proof.Range(Proof.T,symbol.flatName().toString().replace('.', '/'),kind,""));
+        }
+
+        private void functional(Type origin) {
+            if (!recording || origin == null || !origin.hasTag(TypeTag.CLASS)) return;
+            read(origin);
+            // These targets fail on their header before descriptor checking consumes any method contract.
+            if (!origin.tsym.isInterface() || (origin.tsym.flags() & Flags.ANNOTATION) != 0 || origin.tsym.isSealed()) return;
+            var pending = new ArrayList<Type>();
+            var seen = new java.util.HashSet<Symbol>();
+            pending.add(origin);
+            for (int i=0;i<pending.size();i++) {
+                var type=pending.get(i);
+                if (type == null || !type.hasTag(TypeTag.CLASS) || !seen.add(type.tsym)) continue;
+                // These are the inherited method contracts of the exact descriptor query, including an erroneous target.
+                var parent=super.supertype(type);var interfaces=super.interfaces(type);
+                read(type);read(type,Keys.METHOD);
+                pending.add(parent);pending.addAll(interfaces);
+            }
+        }
+
+        @Override public Symbol findDescriptorSymbol(Symbol.TypeSymbol origin) {
+            try { return super.findDescriptorSymbol(origin); } finally { functional(origin.type); }
+        }
+        @Override public Type findDescriptorType(Type origin) {
+            try { return super.findDescriptorType(origin); } finally { functional(origin); }
         }
 
         // Completion can assign classfile during the query; observe after the native operation has completed it.
@@ -177,16 +241,19 @@ public final class Pool implements AutoCloseable {
                     task.setLocale(Locale.ROOT);
                     var context = ((JavacTaskImpl) task).getContext();
                     if (context != previous) { contexts++; previous = context; evicted.clear(); HierarchyReads.install(context); }
+                    if (source instanceof ByteSource input) {
+                        var manager=files.decoder();manager.setContext(context);input.manager=manager;
+                    }
                     restore(context);
                     var observations = (HierarchyReads) Types.instance(context);
                     observations.reads.clear(); observations.recording = true;
                     tasks++;
-                    try { return action.apply(task); }
+                    try { return new Observed<>(action.apply(task),List.copyOf(observations.reads)); }
                     finally { observations.recording = false; observations.reads.clear(); evict(context); } // generate may have already cleared task.getContext().
                 });
                 var bytes = new TreeMap<String, byte[]>();
                 files.outputs.forEach((name, output) -> bytes.put(name, output.toByteArray()));
-                return new Completed<>(result, Map.copyOf(bytes));
+                return new Completed<>(result.value(), Map.copyOf(bytes),result.reads());
             } finally { files.outputs.clear(); }
         }
 
@@ -233,6 +300,7 @@ public final class Pool implements AutoCloseable {
         final Map<String, ByteArrayOutputStream> outputs = new TreeMap<>();
         private final java.util.Set<java.io.Closeable> loaders = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         MemoryFiles(StandardJavaFileManager delegate) { super(delegate); }
+        BaseFileManager decoder() { return (BaseFileManager) fileManager; }
 
         @Override public ClassLoader getClassLoader(Location location) {
             var loader = super.getClassLoader(location);

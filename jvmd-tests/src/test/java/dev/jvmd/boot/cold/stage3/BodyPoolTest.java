@@ -3,6 +3,7 @@ package dev.jvmd.boot.cold.stage3;
 import com.sun.source.util.JavacTask;
 import dev.jvmd.core.hash.digests.Sha256;
 import java.io.IOException;
+import java.io.ByteArrayOutputStream;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -36,7 +37,7 @@ class BodyPoolTest {
 
     private Pool.Configuration configuration(Path own, List<Path> route, List<String> ownTypes) {
         var digest = Sha256.INSTANCE;
-        return new Pool.Configuration(new Pool.Key(digest.hash(new byte[]{1}), digest.hash(new byte[]{2}), digest.hash(new byte[]{3})),
+        return new Pool.Configuration(new Pool.Key(digest.hash(new byte[]{1}), digest.hash(new byte[]{3})),
                 own, route, StandardCharsets.UTF_8, OPTIONS, ownTypes);
     }
 
@@ -172,13 +173,13 @@ class BodyPoolTest {
                     var symbol=type.asElement();
                     var classfile=Class.forName("com.sun.tools.javac.code.Symbol$ClassSymbol").getField("classfile");
                     assertThat(classfile.get(symbol)).isNull();
-                    assertThat(Pool.hierarchyReads(task)).doesNotContain("r/Lazy");
+                    assertThat(Pool.reads(task)).extracting(dev.jvmd.index.layer.local.Proof.Range::type).doesNotContain("r/Lazy");
                     var context=Class.forName("com.sun.tools.javac.api.JavacTaskImpl").getMethod("getContext").invoke(task);
                     var types=Class.forName("com.sun.tools.javac.code.Types");
                     var nativeTypes=types.getMethod("instance",Class.forName("com.sun.tools.javac.util.Context")).invoke(null,context);
                     types.getMethod("supertype",Class.forName("com.sun.tools.javac.code.Type")).invoke(nativeTypes,type);
                     assertThat(classfile.get(symbol)).isNotNull();
-                    assertThat(Pool.hierarchyReads(task)).contains("r/Lazy");
+                    assertThat(Pool.reads(task)).extracting(dev.jvmd.index.layer.local.Proof.Range::type).contains("r/Lazy");
                     task.generate();return null;
                 } catch(ReflectiveOperationException | IOException e) { throw new IllegalStateException(e); }
             });
@@ -204,6 +205,27 @@ class BodyPoolTest {
             assertThat(pool.statistics()).isEqualTo(new Pool.Statistics(2,2,2));
         }
         assertThatThrownBy(() -> pool.withTask(source("p/G",G),null,BodyPoolTest::phases)).isInstanceOf(IllegalStateException.class).hasMessageContaining("closed");
+    }
+
+    @Test void completedTaskIncludesNativeReadsMadeOnlyDuringGeneration() throws Exception {
+        var own=Files.createDirectories(dir.resolve("own"));
+        String text="public record R(int value) { public String concat(int x){ return \"x=\"+x; } }";
+        try(var pool=new Pool(configuration(own,List.of(),List.of("R")),1)) {
+            List<dev.jvmd.index.layer.local.Proof.Range> previous=null;
+            for(int run=0;run<2;run++) {
+                var result=pool.withTask(source("R",text),null,task -> {
+                    try {
+                        task.parse();task.analyze();var before=Pool.reads(task);
+                        task.generate();return before;
+                    } catch(IOException e) { throw new UncheckedIOException(e); }
+                });
+                assertThat(result.reads()).containsAll(result.value());
+                assertThat(result.reads().stream().filter(read -> !result.value().contains(read)).toList()).isNotEmpty();
+                assertThat(result.classes()).containsKey("R");
+                if(previous!=null) assertThat(result.reads()).isEqualTo(previous);
+                previous=result.reads();
+            }
+        }
     }
 
     @Test void compilerErrorDoesNotLeakDiagnosticsAndThrownCallbackDiscardsContext() throws Exception {
@@ -258,6 +280,58 @@ class BodyPoolTest {
             sameBytes(pool.withTask(source("p/G",G),null,BodyPoolTest::phases).classes(),expected);
             sameBytes(pool.withTask(source("p/G",G),null,BodyPoolTest::phases).classes(),expected);
             assertThat(pool.statistics().contexts()).isEqualTo(1);
+        }
+    }
+
+    private record Message(Diagnostic.Kind kind,String code,long position,long start,long end,long line,long column,String text,URI source) {
+        static Message of(Diagnostic<? extends JavaFileObject> d) {
+            return new Message(d.getKind(),d.getCode(),d.getPosition(),d.getStartPosition(),d.getEndPosition(),d.getLineNumber(),d.getColumnNumber(),
+                    d.getMessage(Locale.ROOT),d.getSource()==null ? null : d.getSource().toUri());
+        }
+    }
+
+    @Test void byteSnapshotsMatchNativeDecodingDiagnosticsAndNeverReopenSource() throws Exception {
+        var own=Files.createDirectories(dir.resolve("own"));
+        for(var charset:List.of(StandardCharsets.UTF_8,StandardCharsets.ISO_8859_1)) {
+            var options=new ArrayList<>(OPTIONS);options.set(options.indexOf("UTF-8"),charset.name());
+            var base=configuration(own,List.of(),List.of("Bytes"));
+            var config=new Pool.Configuration(base.key(),own,List.of(),charset,options,base.ownTypes());
+            try(var pool=new Pool(config,1)) {
+                // A malformed task between two successful tasks must not retain its decoder or diagnostics.
+                for(int run=0;run<3;run++) {
+                    var raw=new ByteArrayOutputStream();
+                    raw.write(("public class Bytes { String a=\""+(charset.equals(StandardCharsets.UTF_8)?"😀":"é")+"\"; String b=\"").getBytes(charset));
+                    if(run==1 && charset.equals(StandardCharsets.UTF_8)) raw.write(0xff);
+                    else raw.write("café".getBytes(charset));
+                    raw.write("\"; }".getBytes(charset));
+                    byte[] input=raw.toByteArray();
+                    var path=dir.resolve(charset.name()+"-"+run).resolve("Bytes.java");Files.createDirectories(path.getParent());Files.write(path,input);
+                    var output=Files.createDirectories(path.getParent().resolve("classes"));
+                    var expected=new ArrayList<Message>();
+                    var compiler=ToolProvider.getSystemJavaCompiler();
+                    try(var files=compiler.getStandardFileManager(d -> expected.add(Message.of(d)),Locale.ROOT,charset)) {
+                        files.setLocationFromPaths(javax.tools.StandardLocation.CLASS_PATH,List.of(own));
+                        files.setLocationFromPaths(javax.tools.StandardLocation.SOURCE_PATH,List.of());
+                        files.setLocationFromPaths(javax.tools.StandardLocation.CLASS_OUTPUT,List.of(output));
+                        var task=compiler.getTask(null,files,d -> expected.add(Message.of(d)),options,null,files.getJavaFileObjects(path));
+                        task.setLocale(Locale.ROOT);task.call();
+                    }
+                    Files.delete(path);
+                    var actual=new ArrayList<Message>();
+                    var result=pool.withTask(path.toUri(),input,d -> actual.add(Message.of(d)),task -> {
+                        java.util.Arrays.fill(input,(byte)'!'); // the task must use its private snapshot
+                        return phases(task);
+                    });
+                    assertThat(actual).isEqualTo(expected);
+                    // A separately supplied standard file manager can report a decode error through its own Log
+                    // while javac still emits a class. Stage 3's decoder shares the task's Log and must emit none.
+                    if(expected.stream().anyMatch(d -> d.kind()==Diagnostic.Kind.ERROR)) assertThat(result.classes()).isEmpty();
+                    else sameBytes(result.classes(),bytes(output));
+                    if(run==1 && charset.equals(StandardCharsets.UTF_8)) assertThat(actual).anyMatch(d -> d.code().equals("compiler.err.illegal.char.for.encoding"));
+                    else assertThat(actual).isEmpty();
+                }
+                assertThat(pool.statistics().contexts()).isEqualTo(1);
+            }
         }
     }
 

@@ -112,7 +112,7 @@ class BodyOutputTest {
         var source=new javax.tools.SimpleJavaFileObject(java.net.URI.create("memory:///p/Main.java"),javax.tools.JavaFileObject.Kind.SOURCE) {
             public CharSequence getCharContent(boolean ignore) { return "package p; public class Main { public static void main(String[] args){ System.out.print(\"stage3-ok\"); } }"; }
         };
-        var config=new Pool.Configuration(new Pool.Key(project,project,project),own,List.of(),StandardCharsets.UTF_8,
+        var config=new Pool.Configuration(new Pool.Key(project,project),own,List.of(),StandardCharsets.UTF_8,
                 List.of("-proc:none","-implicit:none","-encoding","UTF-8"),List.of());
         Map<String,byte[]> classes;
         try(var pool=new Pool(config,1)) {

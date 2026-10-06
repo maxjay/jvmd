@@ -1,6 +1,7 @@
 package dev.jvmd.boot.cold.stage2;
 
 import dev.jvmd.boot.cold.stage3.Arrange;
+import dev.jvmd.boot.cold.stage3.Pool;
 import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.digests.Sha256;
 import dev.jvmd.core.tree.ContentTree;
@@ -135,6 +136,47 @@ class BodyProofTest {
         var current = second.proof(List.of(CONSTANT, METHOD), List.of("q/Missing"));
         assertThat(current.aci(digest, "App.java", digest.hash(new byte[] {1}), digest.hash(new byte[] {2})))
                 .isEqualTo(proof.aci(digest, "App.java", digest.hash(new byte[] {1}), digest.hash(new byte[] {2})));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void reversingConflictingJarsRequiresANewPoolEvenWithTheSameLeafSets(Digest digest) throws Exception {
+        String source="package p; public class App { public int value(){ return q.Base.C; } }";
+        var firstJar=Stage2Support.jar(dir,"first.jar",Map.of("q/Base.java",BASE),List.of());
+        var secondJar=Stage2Support.jar(dir,"second.jar",Map.of("q/Base.java",BASE.replace("C = 1","C = 2")),List.of());
+        Stage2Support.write(dir,Map.of("app/src/main/java/p/App.java",source));
+        var firstDep=Stage2Support.Dep.jar("g:first:1",firstJar.toString());
+        var secondDep=Stage2Support.Dep.jar("g:second:1",secondJar.toString());
+        var first=boot(digest,ProjectModel.parse(Stage2Support.model(dir,new Stage2Support.Mod("app","g:app:1",List.of(firstDep,secondDep)))));
+        var second=boot(digest,ProjectModel.parse(Stage2Support.model(dir,new Stage2Support.Mod("app","g:app:1",List.of(secondDep,firstDep)))));
+        assertThat(first.own().k()).isEqualTo(second.own().k());
+        assertThat(first.route().leafSetExt()).isEqualTo(second.route().leafSetExt());
+        assertThat(first.route().leafSetSib()).isEqualTo(second.route().leafSetSib());
+        var firstKey=new Pool.Key(first.route().routeHash(),first.own().k());
+        var secondKey=new Pool.Key(second.route().routeHash(),second.own().k());
+        assertThat(firstKey).isNotEqualTo(secondKey);
+        var options=List.of("-proc:none","-implicit:none","-encoding","UTF-8","-g","-parameters");
+        var own=Files.createDirectories(dir.resolve("own"));
+        for(var stub:Stubs.stubs(digest,first.tree(),first.own(),id -> first.store().get(MachineStore.nodeKey(id)),Stubs.Cache.NONE)) {
+            var path=own.resolve(stub.internalName()+".class");Files.createDirectories(path.getParent());Files.write(path,stub.bytes());
+        }
+        var unit=new javax.tools.SimpleJavaFileObject(dir.resolve("app/src/main/java/p/App.java").toUri(),javax.tools.JavaFileObject.Kind.SOURCE) {
+            @Override public CharSequence getCharContent(boolean ignore) { return source; }
+        };
+        byte[] previous=null;
+        for(int i=0;i<2;i++) {
+            var route=i==0 ? List.of(firstJar,secondJar) : List.of(secondJar,firstJar);
+            var configuration=new Pool.Configuration(i==0 ? firstKey : secondKey,own,route,java.nio.charset.StandardCharsets.UTF_8,options,List.of("p/App"));
+            var expected=Stage2Support.compile(dir.resolve("oracle-"+i),Map.of("p/App.java",source),options,route).get("p/App.class");
+            try(var pool=new Pool(configuration,1)) {
+                var result=pool.withTask(unit,null,task -> {
+                    try { task.parse();task.analyze();task.generate();return null; }
+                    catch(java.io.IOException e) { throw new java.io.UncheckedIOException(e); }
+                });
+                var actual=result.classes().get("p/App");assertThat(actual).isEqualTo(expected);
+                if(previous!=null) assertThat(actual).isNotEqualTo(previous);
+                previous=actual;
+            }
+        }
     }
 
     @ParameterizedTest @MethodSource("digests")

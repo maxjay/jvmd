@@ -487,3 +487,28 @@ The final clean gate over the Java sources committed as `5e61d426` passed **457 
 Maven model/build time (25.3/25.4s) is excluded. Sampled heap above baseline was 1,098/795 MB with uncontrolled GC. These sequential measurements are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-body-collector-SHA-256.txt), [SHA3-256](measurements/stage3-body-collector-SHA3-256.txt).
 
 This gate validates the collector checkpoint with the Stage 2/F and body proof/pool/output components. It does not establish the pending complete two-sided body read oracle, processor-aware Attribute, driver/root publication or all thirty Stage 3 invariants. The implementation goal remains active. PR #61 has not been merged, and the earlier post-merge Linux distribution cleanup failure remains unresolved.
+
+
+### Error-path observations, ordered pool binding and source-byte input
+
+The ambiguous inherited member-type and invalid functional-target regressions first failed under both digests (`stage3-body-error-contracts-red.log`, four stale-valid results). The collector now records the nonempty N range before stopping each direct-member branch. The native Types adapter retains functional-descriptor method contracts even when descriptor lookup fails; class targets rejected on their header do not gain an unused method-set dependency. The final focused error gate passed 54 tests (`stage3-body-error-contracts-final.log`).
+
+Pool completion now returns detached native observations captured after generation. ProofCollector merges these with the earlier tree observations, excludes source-owned types and preserves existing U spans. A record/string-concatenation regression proves additional reads arise only during generation and are identical on a reused context. No compiler context or symbol is required during subsequent Arrange.
+
+The route-order regression first failed under both digests because the unordered external/sibling leaf sets keyed the same pool for opposite conflicting jar orders (`stage3-body-pool-order-red.log`). Pool now uses the existing `(routeHash, own.k)` binding. The regression verifies equal leaf sets, distinct keys and byte equality to fresh javac in both orders; the chosen constant changes the output bytes. This changes compiler-resource ownership only; routeHash remains excluded from ACI, and no broad identity was added to a semantic proof. The combined order/generation gate passed 21 tests.
+
+The pool's source-byte overload owns an immutable snapshot and decodes it with the task-bound native BaseFileManager. UTF-8, Latin-1, supplementary Unicode, malformed input and error-then-success on a reused context match native diagnostic kinds, codes, text, source URI and all positions. Deleting the source path and mutating the caller's array before parsing cannot change the snapshot. The oracle exposed that a separately supplied native file manager can report a decode error through its own Log while a task still emits bytes; the adapter binds decoding to the task Log and emits no output on that error. Successful outputs match fresh javac byte-for-byte. The file-package export is limited to the existing Pool adapter, and launcher/test grants are updated consistently. `stage3-body-byte-input.log` passes all 10 pool and 3 architecture tests.
+
+The specification and Downloads authority are byte-identical at SHA-256 `025fc45213eede3ab1c21ca30fbacca25ab84dbab090ba8080abbf2db368ae01`, after preserving `jvmd-stage3-bodies.before-error-reads-byte-input.md`. Revision remains 123 with the dated amendment; the Stage 2 authority is unchanged. The clean combined gate `stage3-body-input-frozen-gate.log` completed with Java sources frozen; results follow.
+
+This checkpoint supplies the source-byte input primitive, not a completed Attribute or driver. Next work must bind the snapshot digest to F, compute the effective attribution options, integrate processor admission/output checks, persist CF/RS/U and publish Stage3/BROOT. The complete two-sided body proof oracle and all thirty invariants remain required. Warm is unchanged, the goal remains active, PR #61 remains a separate draft, and the earlier Linux distribution cleanup failure remains unresolved.
+
+
+The clean combined gate passed **467 tests, zero failures/errors/skips**, in 3m53s. All 533 tracked Java source files match the pre-run digest snapshot; no source changed during verification. The repository oracle covered **13 modules, 26 scopes, 528 sources**, 93 on-the-spot jars and 22 distinct states, and produced **26/26 exact source/class k matches, no annotation differences and zero boot faults under both digests**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,199 | 2,669 | 1,355 | 126 | 25,008 |
+| SHA3-256 | 3,190 | 1,749 | 806 | 132 | 25,024 |
+
+Maven model/build time (25.6/25.2s) is excluded. Sampled heap above baseline was 1,026/1,172 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-body-input-SHA-256.txt), [SHA3-256](measurements/stage3-body-input-SHA3-256.txt). The distribution assembly script also passes Bash syntax checking. These gates validate this checkpoint; the Attribute/processor/driver and complete Stage 3 proof obligations listed above remain outstanding.

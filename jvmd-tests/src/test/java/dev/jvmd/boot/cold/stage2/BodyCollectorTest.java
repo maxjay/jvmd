@@ -58,7 +58,7 @@ class BodyCollectorTest {
         var generation=dir.resolve("body-stubs-"+(generations++));
         var ownStubs=stubs(digest,tree,store,own,generation.resolve("own"));
         var depStubs=stubs(digest,tree,store,dependency,generation.resolve("dep"));
-        var config=new Pool.Configuration(new Pool.Key(route.leafSetExt(),route.leafSetSib(),own.k()),ownStubs.path(),List.of(depStubs.path()),
+        var config=new Pool.Configuration(new Pool.Key(route.routeHash(),own.k()),ownStubs.path(),List.of(depStubs.path()),
                 StandardCharsets.UTF_8,List.of("-proc:none","-implicit:none","-encoding","UTF-8","-g","-parameters"),ownStubs.types());
         return new State(tree,store,own,route,config);
     }
@@ -83,12 +83,13 @@ class BodyCollectorTest {
         var result=pool.withTask(source,d -> { if(d.getKind()==Diagnostic.Kind.ERROR) errors.add(d.getCode()); },task -> {
             try {
                 var unit=task.parse().iterator().next();task.analyze();
-                var reads=ProofCollector.bodies(unit,Trees.instance(task),task.getElements(),task.getTypes(),Pool.hierarchyReads(task));
-                var proof=Arrange.body(state.tree(),state.own(),state.route(),null,reads,state.store()::get);
-                task.generate();return Map.entry(proof,reads);
+                var reads=ProofCollector.bodies(unit,Trees.instance(task),task.getElements(),task.getTypes());
+                task.generate();return reads;
             } catch(IOException ex) { throw new UncheckedIOException(ex); }
         });
-        return new Compiled(result.value().getKey().proof(),result.value().getValue(),result.value().getKey().uses(),List.copyOf(errors),result.classes());
+        var reads=result.value().supplement(result.reads());
+        var arranged=Arrange.body(state.tree(),state.own(),state.route(),null,reads,state.store()::get);
+        return new Compiled(arranged.proof(),reads,arranged.uses(),List.copyOf(errors),result.classes());
     }
 
     private static Proof.Range t(String type,int kind,String name) { return new Proof.Range(Proof.T,type,kind,name); }
@@ -228,6 +229,37 @@ class BodyCollectorTest {
         assertThat(before.proof().absent()).doesNotContain("q/Value","r/Value");
         Files.writeString(dir.resolve("dep/src/main/java/r/Value.java"),"package r; class Value {}");
         var changed=boot(digest);assertThat(compile(changed).errors()).isEmpty();assertThat(changed.valid(before.proof())).isFalse();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void ambiguousInheritedMemberTypeTracksEveryDeclaration(Digest digest) throws Exception {
+        fixture("package p; public class App implements q.First,q.Second { Object f(){ Value x=null; return x; } }",Map.of(
+                "q/First","package q; public interface First { class Value {} }",
+                "q/Second","package q; public interface Second { class Value {} }"));
+        var before=compile(boot(digest));assertThat(before.errors()).contains("compiler.err.ref.ambiguous");
+        Files.writeString(dir.resolve("dep/src/main/java/q/Second.java"),"package q; public interface Second {}");
+        var changed=boot(digest);assertThat(compile(changed).errors()).isEmpty();assertThat(changed.valid(before.proof())).isFalse();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void erroneousLambdaTargetStillReadsTheFunctionalContract(Digest digest) throws Exception {
+        fixture("package p; public class App { q.Func f(){ return () -> {}; } }",Map.of(
+                "q/Func","package q; public interface Func { void run(); void other(); }"));
+        var before=compile(boot(digest));assertThat(before.errors()).isNotEmpty();
+        Files.writeString(dir.resolve("dep/src/main/java/q/Func.java"),"package q; public interface Func { void run(); }");
+        var changed=boot(digest);assertThat(compile(changed).errors()).isEmpty();assertThat(changed.valid(before.proof())).isFalse();
+        assertThat(before.reads().ranges()).contains(t("q/Func",Keys.METHOD,""));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void classLambdaTargetFailsOnItsHeaderWithoutReadingItsMethods(Digest digest) throws Exception {
+        fixture("package p; public class App { q.Target f(){ return () -> {}; } }",Map.of(
+                "q/Target","package q; public class Target {}"));
+        var before=compile(boot(digest));assertThat(before.errors()).isNotEmpty();
+        assertThat(before.reads().ranges()).doesNotContain(t("q/Target",Keys.METHOD,""));
+        Files.writeString(dir.resolve("dep/src/main/java/q/Target.java"),"package q; public class Target { public void run(){} }");
+        var changed=boot(digest);assertThat(compile(changed).errors()).containsExactlyElementsOf(before.errors());
+        assertThat(changed.valid(before.proof())).isTrue();
     }
 
     @ParameterizedTest @MethodSource("digests")

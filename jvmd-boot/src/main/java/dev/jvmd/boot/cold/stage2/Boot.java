@@ -54,16 +54,14 @@ final class Boot implements AutoCloseable {
     final IndexMemo indexMemo = new IndexMemo();
     /** The routes as step 1 resolved them: {@code module \0 scope -> entries}. */
     final Map<String, List<RouteEntry>> entries = new ConcurrentHashMap<>();
+    /** Planned ancestry: a test extends its main route; a main extends its first declared sibling's main route. */
+    final Map<String, String> parents = new ConcurrentHashMap<>();
+    /** Common external base for root modules, bound by step 1 before jobs start. */
+    List<Identity> jdkLeaves;
+    Identity jdkLeafSet;
     /** The bound routes as the jobs wrote them. */
     final Map<String, Route> routes = new ConcurrentHashMap<>();
     final Map<String, FileRow> files = new ConcurrentHashMap<>();
-    /**
-     * For each type key (an internal name) the files whose header proof names it, each under the external part of its route: the kind 7
-     * entries of {@code X|} (B.5, B.9). Without them, checking header proofs after an edit is a scan of every dependent's file row.
-     */
-    final Map<String, java.util.Set<dev.jvmd.index.layer.local.ReverseIndex.Consumer>> headerConsumers = new ConcurrentHashMap<>();
-    /** The same for a type only a constant initialiser resolved through (kind 8): its value is inlined into the file's facts. */
-    final Map<String, java.util.Set<dev.jvmd.index.layer.local.ReverseIndex.Consumer>> constantConsumers = new ConcurrentHashMap<>();
     /** {@code DD|}, {@code DS|} and {@code DC|} records this boot used: they are part of the LOCAL tree of the project that used them. */
     final ConcurrentSkipListMap<byte[], byte[]> definers = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);
     final ConcurrentLinkedQueue<String> faults = new ConcurrentLinkedQueue<>();

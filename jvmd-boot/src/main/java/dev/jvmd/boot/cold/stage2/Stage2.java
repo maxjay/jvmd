@@ -86,6 +86,8 @@ public final class Stage2 {
         try (var boot = new Boot(digest, tree, store, model, projectKey, repository)) {
             try (var defaults = new Defaults(digest, tree, jdkFeature, workers, repository, Path.of(model.jdkHome()), store, boot.written, parser)) {
                 var jdk = defaults.jdk();
+                boot.jdkLeaves = jdk.stream().map(RouteEntry.Jrt::k).distinct().sorted().toList();
+                boot.jdkLeafSet = dev.jvmd.index.layer.local.Bind.leafSet(digest, boot.jdkLeaves);
                 var jars = new ArrayList<ProjectModel.Dependency>();
                 for (var module : model.modules())
                     for (var scope : List.of(module.main(), module.test())) for (var d : scope.dependencies()) if (d.module() == null) jars.add(d);
@@ -97,7 +99,14 @@ public final class Stage2 {
                         if (scope == LocalStore.TEST) route.add(new RouteEntry.Sibling(module.coordinate(), module.name()));
                         if (scope == LocalStore.TEST) addAll(route, defaults, module.main().dependencies());
                         addAll(route, defaults, module.scope(scope).dependencies());
-                        boot.entries.put(Boot.routeKey(module.name(), scope), List.copyOf(route));
+                        var routeKey = Boot.routeKey(module.name(), scope);
+                        boot.entries.put(routeKey, List.copyOf(route));
+                        // This is a DAG already enforced by Order: main dependencies finish first, then own main before test.
+                        // Root modules share the JDK state. No search through all earlier leaf sets is needed.
+                        for (var entry : route) if (entry instanceof RouteEntry.Sibling sibling) {
+                            boot.parents.put(routeKey, Boot.routeKey(sibling.module(), LocalStore.MAIN));
+                            break;
+                        }
                     }
                 }
                 boot.faults.addAll(defaults.notes());
@@ -119,12 +128,9 @@ public final class Stage2 {
                 }
                 for (var row : new java.util.TreeMap<>(boot.files).values()) {
                     put(store, records, LocalStore.fileKey(projectKey, row.path()), row.encode());
+                    for (var dependency : dev.jvmd.index.layer.local.ReverseIndex.dependencies(row))
+                        put(store, records, dependency.key(projectKey, row.path()), Entry.NONE);
                 }
-                // The reverse entries of the header proofs, beside the file rows: X|7|typeKey|projectKey for the types the headers mention and
-                // X|8|typeKey|projectKey for those a constant resolved through, each this project's list of files, written once, no read. The
-                // project key trails, so every project's entry for a type is under the prefix X|kind|typeKey and no two projects share a key.
-                reverse(store, records, projectKey, dev.jvmd.index.layer.local.ConsumerRecord.HEADER, boot.headerConsumers);
-                reverse(store, records, projectKey, dev.jvmd.index.layer.local.ConsumerRecord.CONSTANT, boot.constantConsumers);
                 store.flush();
                 var entries = new ArrayList<Entry>(records.size());
                 for (var e : records.entrySet()) entries.add(new Entry(e.getKey(), Entry.NONE, digest.hash(e.getValue())));
@@ -152,21 +158,6 @@ public final class Stage2 {
                         new Timings(boot.headerNanos.get() / 1_000_000, boot.factsNanos.get() / 1_000_000, boot.definerNanos.get() / 1_000_000,
                         boot.indexMemo.externalFolds(), boot.indexMemo.siblingFolds()));
             }
-        }
-    }
-
-    /** One kind of reverse entries: per type, the project's consumers sorted, so the record is a function of the project's content. */
-    private static void reverse(LocalStore store, Map<byte[], byte[]> records, Identity projectKey, int kind,
-                                Map<String, java.util.Set<dev.jvmd.index.layer.local.ReverseIndex.Consumer>> byType) {
-        for (var e : new java.util.TreeMap<>(byType).entrySet()) {
-            var consumers = new ArrayList<>(e.getValue());
-            consumers.sort((a, b) -> {
-                int c = a.kappa().compareTo(b.kappa());
-                return c != 0 ? c : a.leafSetExt().compareTo(b.leafSetExt());
-            });
-            var key = Keys.ownerKey(e.getKey());
-            var value = new dev.jvmd.index.layer.local.ReverseIndex(consumers).encode();
-            put(store, records, LocalStore.reverseKey(kind, key, projectKey), value);
         }
     }
 

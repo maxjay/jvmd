@@ -31,7 +31,7 @@ import java.util.function.Function;
  * </ul>
  *
  * Each disjoint part is a fold of a commutative merge over the <em>distinct</em> leaves it covers, so it depends on the set of leaves
- * and not on their order, and it is built from the nearest known state by adding and removing leaves. A leaf listed twice on a
+ * and not on their order, and it is built from a supplied ancestor by adding and removing leaves. A leaf listed twice on a
  * classpath is one leaf and is never in conflict with itself.
  *
  * <p>Every stored identity is resolution-level: an entry's {@code h} is {@code Digest(typeKey || oSum)}, never a function of

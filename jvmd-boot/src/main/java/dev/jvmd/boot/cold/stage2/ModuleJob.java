@@ -10,7 +10,6 @@ import dev.jvmd.index.layer.local.HeaderProof;
 import dev.jvmd.index.layer.local.ProofCollector;
 import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
-import dev.jvmd.index.layer.local.ReverseIndex;
 import dev.jvmd.index.layer.local.Route;
 import dev.jvmd.index.layer.local.RouteEntry;
 import dev.jvmd.index.layer.local.SourceFacts;
@@ -34,8 +33,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 /**
  * One module and scope (stage 2, 4 step 2 and 5.4): bind its route, header-compile its source files against the classpath of jars
@@ -153,16 +150,14 @@ final class ModuleJob {
 
         // 7. The definer indexes of this route, then the header proof of every file from what they resolve.
         long definerStarted = System.nanoTime();
-        var resolver = definerIndex(bound);
+        var resolver = definerIndex(Boot.routeKey(module.name(), scope), bound);
         boot.definerNanos.addAndGet(System.nanoTime() - definerStarted);
         var own = new HashMap<String, Identity>();
         for (var type : builder.types()) own.put(Keys.ownerOf(type.key()), type.h());
         for (var p : pending) {
-            // The types the headers mention (kind 7) and the types the constants resolved through (kind 8): one proof, two reverse entries.
             var all = new TreeSet<>(p.reads().ranges());
             // Implicit declaration types (Object, Enum, generated record methods) also contribute facts without an explicit source tree.
             for (var target : p.headerTargets()) all.add(new HeaderProof.Range(target, Keys.TYPE, ""));
-            var constants = all.stream().map(HeaderProof.Range::type).filter(t -> !p.headerTargets().contains(t)).collect(Collectors.toSet());
             java.util.function.Function<String, MachineLeaf> definer = type -> {
                 if (own.containsKey(type)) return leaf;
                 var external = resolver.definer(type);
@@ -171,10 +166,6 @@ final class ModuleJob {
             var absences = p.reads().absences().stream().filter(a -> HeaderProof.absent(a, boot.tree, definer, boot::node)).toList();
             var row = new FileRow(p.path(), p.kappa(), p.size(), p.mtimeNanos(), p.sum(), List.copyOf(p.types()), List.copyOf(p.faults()), headerProof(all, definer), leaf.r(), absences);
             boot.files.put(row.path(), row);
-            var consumer = new ReverseIndex.Consumer(row.kappa(), bound.leafSetExt());
-            var named = row.headerProof().stream().map(FileRow.Proof::typeKey).collect(Collectors.toSet());
-            for (var type : p.headerTargets()) if (named.contains(type)) boot.headerConsumers.computeIfAbsent(type, t -> ConcurrentHashMap.newKeySet()).add(consumer);
-            for (var type : constants) if (named.contains(type)) boot.constantConsumers.computeIfAbsent(type, t -> ConcurrentHashMap.newKeySet()).add(consumer);
             for (var fault : row.faults()) boot.faults.add(row.path() + ": " + (fault.m().length == 0 ? "" : Keys.ownerOf(fault.m()) + ": ") + fault.reason());
         }
         sink.flush();
@@ -216,13 +207,18 @@ final class ModuleJob {
     }
 
     /**
-     * The definer indexes of a route (3.6, 3.17, 5.5): the external and the sibling disjoint index, each folded from the nearest state of
+     * The definer indexes of a route (3.6, 3.17, 5.5): the external and the sibling disjoint index, each folded from the planned parent of
      * its kind, and the conflict table across both. A disjoint index the store already holds (another project wrote the external one)
      * is not built again: it is a shared, derivable record, and reading it is allowed.
      */
-    private DefinerIndex.Resolver definerIndex(Bound bound) {
-        var external = state(IndexMemo.Kind.EXTERNAL, bound.leafSetExt(), bound.external());
-        var sibling = state(IndexMemo.Kind.SIBLING, bound.leafSetSib(), bound.sibling());
+    private DefinerIndex.Resolver definerIndex(String routeKey, Bound bound) {
+        var parentKey = boot.parents.get(routeKey);
+        var parent = parentKey == null ? null : boot.indexMemo.route(parentKey);
+        var externalBase = parent == null
+                ? state(IndexMemo.Kind.EXTERNAL, boot.jdkLeafSet, boot.jdkLeaves, null) : parent.external();
+        var external = state(IndexMemo.Kind.EXTERNAL, bound.leafSetExt(), bound.external(), externalBase);
+        var sibling = state(IndexMemo.Kind.SIBLING, bound.leafSetSib(), bound.sibling(), parent == null ? null : parent.sibling());
+        boot.indexMemo.route(routeKey, new IndexMemo.States(external, sibling));
         if (boot.indexMemo.claimConflicts(bound.routeHash())) {
             var root = DefinerIndex.encodeRoot(DefinerIndex.conflicts(boot.digest, boot.tree, external, sibling, bound.sequence(), boot.sink));
             boot.store.put(LocalStore.conflictsKey(bound.routeHash()), root);
@@ -235,14 +231,14 @@ final class ModuleJob {
      * The state of one leaf set, and its disjoint record. Folded once per {@code (kind, key)} in the boot: the first job to ask claims it
      * and the others wait for that fold ({@link IndexMemo#once}), so jobs whose routes share an external leaf set do not each fold it.
      */
-    private DefinerIndex.State state(IndexMemo.Kind kind, Identity key, List<Identity> leaves) {
+    private DefinerIndex.State state(IndexMemo.Kind kind, Identity key, List<Identity> leaves, DefinerIndex.State base) {
         return boot.indexMemo.once(kind, key, () -> {
-            var state = DefinerIndex.fold(boot.tree, leaves, boot.indexMemo.nearest(kind, leaves), boot::leaf, boot::node);
+            var state = DefinerIndex.fold(boot.tree, leaves, base, boot::leaf, boot::node);
             var recordKey = kind == IndexMemo.Kind.EXTERNAL ? LocalStore.disjointKey(key) : LocalStore.siblingKey(key);
             var value = boot.store.get(recordKey);
             if (value != null) state.disjoint(DefinerIndex.decodeRoot(value, boot.digest.width()));
             else {
-                // Edited from the nearest state's tree when there is one. Its nodes are read from the store, so they are committed first.
+                // Edit the parent's tree. Its nodes were flushed before that route's states were published.
                 var root = DefinerIndex.disjoint(boot.digest, boot.tree, state, boot::node, boot.sink);
                 value = DefinerIndex.encodeRoot(root);
                 state.disjoint(root);

@@ -61,11 +61,12 @@ public final class ProcessorElementProjection {
     }
 
     private void declaration(Codec.Writer out, Element element) {
-        out.str(element.getKind().name()).str(element.getSimpleName().toString());
+        out.str(element.getKind().name()).str(element.getSimpleName().toString()).lenBytes(key(element));
         // Preserve absence separately from an empty doc comment: Elements.getDocComment exposes both states.
         var comment = elements.getDocComment(element);
         out.u8(comment == null ? 0 : 1);
         if (comment != null) out.utf16(comment);
+        out.u8(elements.isDeprecated(element) ? 1 : 0);
         var modifiers = element.getModifiers().stream().map(Enum::name).sorted().toList();
         out.u32(modifiers.size());
         for (var modifier : modifiers) out.str(modifier);

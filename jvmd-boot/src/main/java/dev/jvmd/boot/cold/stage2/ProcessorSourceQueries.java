@@ -27,9 +27,9 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.util.Elements;
 
 /**
- * Source-side type declaration queries for a body task. Native symbols remain the handles passed to javac utilities,
+ * Source-side declaration queries for a body task. Native symbols remain the handles passed to javac utilities,
  * Filer and Messager. Detached annotation values use javac's value/visitor/formatting implementation, without installing
- * metadata in the shared symbols. Member/type-use and package/module source views are separate outstanding adapters.
+ * metadata in the shared symbols. Type-use and package/module source views are separate outstanding adapters.
  */
 final class ProcessorSourceQueries implements ProcessorReads.Model {
     private final Elements elements;
@@ -37,10 +37,9 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
     private final com.sun.tools.javac.code.Types compilerTypes;
     private final com.sun.tools.javac.code.Symtab symbols;
     private final com.sun.tools.javac.util.Names names;
-    private final Function<String, ProcessorDeclaration.Source> sources;
-    private final Predicate<Element> explicit;
-    private final Map<TypeElement, ProcessorDeclaration.Source> declarations = new IdentityHashMap<>();
-    private final Map<TypeElement, Annotations> annotations = new IdentityHashMap<>();
+    private final ProcessorSourceElements declarations;
+    private final Map<Element, Annotations> annotations = new IdentityHashMap<>();
+    private final Map<ExecutableElement, AnnotationValue> defaultValues = new IdentityHashMap<>();
     private final Map<AnnotationMirror, Map<? extends ExecutableElement, ? extends AnnotationValue>> defaults = new IdentityHashMap<>();
 
     ProcessorSourceQueries(ProcessingEnvironment environment, Function<String, ProcessorDeclaration.Source> sources, Predicate<Element> explicit) {
@@ -48,41 +47,115 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
         var context = ((JavacProcessingEnvironment) environment).getContext();
         compilerTypes = com.sun.tools.javac.code.Types.instance(context);
         symbols = com.sun.tools.javac.code.Symtab.instance(context); names = com.sun.tools.javac.util.Names.instance(context);
-        this.sources = sources; this.explicit = explicit;
+        declarations = new ProcessorSourceElements(elements, types, sources, explicit, this::privateMember);
     }
 
     @Override public Object invoke(Object receiver, Method method, Object[] arguments) throws Throwable {
         String name = method.getName();
         if (receiver == elements) {
+            if (name.equals("getAllMembers") && arguments[0] instanceof TypeElement type) return allMembers(type);
             if (name.equals("getElementValuesWithDefaults") && defaults.containsKey(arguments[0])) return defaults.get(arguments[0]);
-            if (name.equals("getDocComment") && arguments[0] instanceof TypeElement type) {
-                var source = source(type);
-                if (source != null) return source.declaration().docComment();
+            if (name.equals("getDocComment") && arguments[0] instanceof Element element) {
+                var source = declarations.declaration(element);
+                if (source != null) return source.docComment();
             }
-            if (name.equals("getAllAnnotationMirrors") && arguments[0] instanceof TypeElement type) return allAnnotations(type);
+            if (name.equals("isDeprecated") && arguments[0] instanceof Element element) {
+                var source = declarations.declaration(element);
+                if (source != null) return source.deprecated();
+            }
+            if (name.equals("getAllAnnotationMirrors") && arguments[0] instanceof Element element)
+                return element instanceof TypeElement type ? allAnnotations(type) : annotations(element).getAnnotationMirrors();
         }
-        if (receiver instanceof TypeElement type && (name.equals("getAnnotationMirrors") || name.equals("getAnnotation") || name.equals("getAnnotationsByType"))) {
-            var view = annotations(type);
-            // Invoke the public AnnotatedConstruct contract: ProcessorReads handles its native mirrored-type exceptions.
-            return javax.lang.model.AnnotatedConstruct.class.getMethod(name, method.getParameterTypes()).invoke(view, arguments);
+        if (receiver instanceof Element element) {
+            if (name.equals("getAnnotationMirrors") || name.equals("getAnnotation") || name.equals("getAnnotationsByType")) {
+                var view = annotations(element);
+                // Invoke the public AnnotatedConstruct contract: ProcessorReads handles its native mirrored-type exceptions.
+                return javax.lang.model.AnnotatedConstruct.class.getMethod(name, method.getParameterTypes()).invoke(view, arguments);
+            }
+            var source = declarations.declaration(element);
+            if (source != null) {
+                if (name.equals("getSimpleName")) return elements.getName(source.name());
+                if (name.equals("getKind")) return source.kind();
+                if (name.equals("getModifiers")) {
+                    var modifiers = java.util.EnumSet.noneOf(javax.lang.model.element.Modifier.class);
+                    source.modifiers().forEach(m -> modifiers.add(javax.lang.model.element.Modifier.valueOf(m)));
+                    return java.util.Collections.unmodifiableSet(modifiers);
+                }
+                if (name.equals("getEnclosedElements") && element instanceof TypeElement type) return sourceList(declarations.enclosed(type));
+                if (name.equals("getDefaultValue") && element instanceof ExecutableElement executable) return defaultValue(executable);
+                if (name.equals("getParameters") && element instanceof ExecutableElement executable) return sourceList(executable.getParameters());
+                if (name.equals("getTypeParameters")) return sourceList(element instanceof ExecutableElement executable
+                        ? executable.getTypeParameters() : ((TypeElement) element).getTypeParameters());
+                if (name.equals("getRecordComponents") && element instanceof TypeElement type) return sourceList(type.getRecordComponents());
+                if (name.equals("toString")) return elementText(element);
+            }
         }
         return method.invoke(receiver, arguments);
     }
 
-    private ProcessorDeclaration.Source source(TypeElement type) {
-        if (!declarations.containsKey(type)) declarations.put(type, explicit.test(type) ? null
-                : sources.apply(elements.getBinaryName(type).toString().replace('.', '/')));
-        return declarations.get(type);
+    private java.util.List<? extends Element> sourceList(java.util.List<? extends Element> values) {
+        return new java.util.AbstractList<Element>() {
+            @Override public Element get(int index) { return values.get(index); }
+            @Override public int size() { return values.size(); }
+            @Override public String toString() { return values.stream().map(ProcessorSourceQueries.this::elementText).collect(java.util.stream.Collectors.joining(",")); }
+        };
     }
 
-    private Annotations annotations(TypeElement type) {
-        var found = annotations.get(type);
+    private String elementText(Element element) {
+        var source = declarations.declaration(element);
+        return source != null && (element instanceof javax.lang.model.element.VariableElement
+                || element instanceof javax.lang.model.element.TypeParameterElement) ? source.name() : element.toString();
+    }
+
+    /** Build only a temporary member scope. Native override/inheritance rules operate on the original owners and types. */
+    private java.util.List<Symbol> allMembers(TypeElement type) {
+        var owner = (Symbol) type;
+        var declared = com.sun.tools.javac.code.Scope.WriteableScope.create(owner);
+        for (var member : memberScope(type).reversed()) declared.enter(member);
+        var scope = declared.dupUnshared();
+        for (var inherited : compilerTypes.closure((Type) type.asType())) {
+            var declaring = (TypeElement) inherited.asElement();
+            for (var member : memberScope(declaring)) {
+                boolean overridden = false;
+                for (var candidate : scope.getSymbolsByName(member.getSimpleName())) {
+                    if (candidate.kind == member.kind && (candidate.flags() & com.sun.tools.javac.code.Flags.SYNTHETIC) == 0
+                            && candidate.getKind() == javax.lang.model.element.ElementKind.METHOD
+                            && elements.overrides((ExecutableElement) candidate, (ExecutableElement) member, declaring)) {
+                        overridden = true; break;
+                    }
+                }
+                if (overridden) continue;
+                var kind = member.getKind();
+                boolean initializer = kind == javax.lang.model.element.ElementKind.CONSTRUCTOR
+                        || kind == javax.lang.model.element.ElementKind.STATIC_INIT || kind == javax.lang.model.element.ElementKind.INSTANCE_INIT;
+                if (member.owner == owner || !initializer && member.isInheritedIn(owner, compilerTypes)) scope.enter(member);
+            }
+        }
+        var result = new java.util.ArrayList<Symbol>();
+        for (var member : scope.getSymbols(com.sun.tools.javac.code.Scope.LookupKind.NON_RECURSIVE))
+            if ((member.flags() & com.sun.tools.javac.code.Flags.SYNTHETIC) == 0) result.add(member);
+        // getAllMembers returns a standard list (with brackets), unlike javac's comma-only declaration lists.
+        return java.util.List.copyOf(result);
+    }
+
+    private java.util.List<Symbol> memberScope(TypeElement type) {
+        var source = declarations.enclosed(type);
+        // javac prepends record components to getEnclosedElements, but keeps only their backing fields in the member scope.
+        if (source != null) return source.reversed().stream()
+                .filter(e -> e.getKind() != javax.lang.model.element.ElementKind.RECORD_COMPONENT).map(e -> (Symbol) e).toList();
+        var result = new java.util.ArrayList<Symbol>();
+        for (var member : ((Symbol) type).members().getSymbols(com.sun.tools.javac.code.Scope.LookupKind.NON_RECURSIVE)) result.add(member);
+        return result;
+    }
+
+    private Annotations annotations(Element element) {
+        var found = annotations.get(element);
         if (found != null) return found;
-        var source = source(type);
+        var source = declarations.declaration(element);
         List<Attribute.Compound> mirrors;
-        if (source == null) mirrors = List.from(type.getAnnotationMirrors().stream().map(a -> (Attribute.Compound) a).toList());
-        else mirrors = List.from(source.declaration().annotations().stream().map(a -> compound(a.explicit(), a.effective())).toList());
-        var result = new Annotations(type, mirrors); annotations.put(type, result); return result;
+        if (source == null) mirrors = List.from(element.getAnnotationMirrors().stream().map(a -> (Attribute.Compound) a).toList());
+        else mirrors = List.from(source.annotations().stream().map(a -> compound(a.explicit(), a.effective())).toList());
+        var result = new Annotations(element, mirrors); annotations.put(element, result); return result;
     }
 
     private TypeElement parent(TypeElement type) {
@@ -107,17 +180,17 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
     }
 
     private final class Annotations extends AnnoConstruct {
-        private final TypeElement owner;
+        private final Element owner;
         private final List<Attribute.Compound> mirrors;
-        Annotations(TypeElement owner, List<Attribute.Compound> mirrors) { this.owner = owner; this.mirrors = mirrors; }
+        Annotations(Element owner, List<Attribute.Compound> mirrors) { this.owner = owner; this.mirrors = mirrors; }
         @Override public List<Attribute.Compound> getAnnotationMirrors() { return mirrors; }
         @Override protected <A extends Annotation> Attribute.Compound getAttribute(Class<A> annotation) {
             var direct = super.getAttribute(annotation);
-            var parent = direct == null && annotation.isAnnotationPresent(Inherited.class) ? parent(owner) : null;
+            var parent = direct == null && annotation.isAnnotationPresent(Inherited.class) && owner instanceof TypeElement type ? parent(type) : null;
             return parent == null ? direct : annotations(parent).getAttribute(annotation);
         }
         @Override protected <A extends Annotation> A[] getInheritedAnnotations(Class<A> annotation) {
-            var parent = parent(owner);
+            var parent = owner instanceof TypeElement type ? parent(type) : null;
             return parent == null ? super.getInheritedAnnotations(annotation) : annotations(parent).getAnnotationsByType(annotation);
         }
     }
@@ -140,29 +213,92 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
         var complete = new LinkedHashMap<ExecutableElement, AnnotationValue>();
         for (var entry : effective.elements()) {
             var method = required(methods, entry.name());
-            complete.put(method, values.containsKey(method) ? values.get(method) : defaultValue(method, entry.value()));
+            complete.put(method, values.containsKey(method) ? values.get(method) : java.util.Objects.requireNonNull(defaultValue(method)));
         }
         defaults.put(result, java.util.Collections.unmodifiableMap(complete));
         return result;
     }
 
-    private AnnotationValue defaultValue(Symbol.MethodSymbol method, Ann.Val effective) {
-        var source = source((TypeElement) method.getEnclosingElement());
-        if (source == null) return java.util.Objects.requireNonNull(method.getDefaultValue());
-        // Annotation members have distinct names and no parameters. The effective map alone loses explicit presence
-        // inside a default such as @Nested; its declaration retains the exact explicit default, including nested arrays.
-        var declaration = (ProcessorDeclaration.TypeDeclaration) source.declaration().detail();
-        var member = declaration.enclosed().stream().filter(e -> e.kind() == javax.lang.model.element.ElementKind.METHOD
-                && e.name().contentEquals(method.getSimpleName())).findFirst().orElseThrow();
-        var literal = ((ProcessorDeclaration.Executable) member.detail()).explicitDefault();
-        if (literal == null) throw new IllegalStateException("Source annotation member has no declared default: " + method);
-        return value(literal, effective, method.getReturnType());
+    private AnnotationValue defaultValue(ExecutableElement method) {
+        if (defaultValues.containsKey(method)) return defaultValues.get(method);
+        var declaration = declarations.declaration(method);
+        if (declaration == null) return method.getDefaultValue();
+        var executable = (ProcessorDeclaration.Executable) declaration.detail();
+        var result = executable.explicitDefault() == null ? null : value(executable.explicitDefault(), executable.effectiveDefault(), (Type) method.getReturnType());
+        defaultValues.put(method, result); return result;
     }
 
     private static <T> T required(Map<String, T> values, String name) {
         var value = values.get(name);
         if (value == null) throw new IllegalStateException("Processor declaration has no native annotation member: " + name);
         return value;
+    }
+
+    /** T deliberately omits private members. Give processors detached native handles without inserting them into javac's scopes. */
+    private Element privateMember(TypeElement owner, ProcessorDeclaration declaration) {
+        if (!declaration.modifiers().contains("PRIVATE"))
+            throw new IllegalStateException("Source declaration has no native element: " + declaration.kind() + " " + declaration.name());
+        long flags = 0;
+        for (var modifier : declaration.modifiers()) flags |= switch (modifier) {
+            case "PRIVATE" -> com.sun.tools.javac.code.Flags.PRIVATE;
+            case "STATIC" -> com.sun.tools.javac.code.Flags.STATIC;
+            case "FINAL" -> com.sun.tools.javac.code.Flags.FINAL;
+            case "TRANSIENT" -> com.sun.tools.javac.code.Flags.TRANSIENT;
+            case "VOLATILE" -> com.sun.tools.javac.code.Flags.VOLATILE;
+            case "SYNCHRONIZED" -> com.sun.tools.javac.code.Flags.SYNCHRONIZED;
+            case "NATIVE" -> com.sun.tools.javac.code.Flags.NATIVE;
+            case "STRICTFP" -> com.sun.tools.javac.code.Flags.STRICTFP;
+            default -> throw new IllegalStateException("Unexpected private member modifier: " + modifier);
+        };
+        if (declaration.detail() instanceof ProcessorDeclaration.Variable variable) {
+            var type = type(variable.type(), Map.of());
+            var symbol = new Symbol.VarSymbol(flags, names.fromString(declaration.name()), type, (Symbol) owner);
+            if (variable.constant() != null) symbol.setData(((Attribute.Constant) value(variable.constant(), variable.constant(), type)).value);
+            return symbol;
+        }
+        var executable = (ProcessorDeclaration.Executable) declaration.detail();
+        if (executable.varargs()) flags |= com.sun.tools.javac.code.Flags.VARARGS;
+        var symbol = new Symbol.MethodSymbol(flags, names.fromString(declaration.name()), null, (Symbol) owner);
+        var variables = new LinkedHashMap<ProcessorDeclaration.Key, Type>();
+        for (var parameter : executable.typeParameters()) variables.put(parameter.key(), new Type.TypeVar(names.fromString(parameter.name()), symbol, symbols.botType));
+        for (var parameter : executable.typeParameters()) {
+            var bounds = ((ProcessorDeclaration.Parameter) parameter.detail()).bounds().stream().map(t -> type(t, variables)).toList();
+            compilerTypes.setBounds((Type.TypeVar) variables.get(parameter.key()), List.from(bounds));
+        }
+        var arguments = executable.parameters().stream().map(p -> type(((ProcessorDeclaration.Variable) p.detail()).type(), variables)).toList();
+        var thrown = executable.thrown().stream().map(t -> type(t, variables)).toList();
+        var method = new Type.MethodType(List.from(arguments), type(executable.returns(), variables), List.from(thrown), symbols.methodClass);
+        method.recvtype = type(executable.receiver(), variables);
+        symbol.type = variables.isEmpty() ? method : new Type.ForAll(List.from(variables.values()), method);
+        return symbol;
+    }
+
+    private Type type(ProcessorDeclaration.Type source, Map<ProcessorDeclaration.Key, Type> variables) {
+        return (Type) switch (source.kind()) {
+            case BOOLEAN, BYTE, CHAR, SHORT, INT, LONG, FLOAT, DOUBLE -> types.getPrimitiveType(source.kind());
+            case NONE, VOID, PACKAGE, MODULE -> types.getNoType(source.kind());
+            case NULL -> types.getNullType();
+            case ARRAY -> types.getArrayType(type(((ProcessorDeclaration.Array) source.shape()).component(), variables));
+            case DECLARED -> {
+                var declared = (ProcessorDeclaration.Declared) source.shape();
+                var symbol = (TypeElement) descriptor("L" + declared.binaryName().replace('.', '/') + ";").asElement();
+                var arguments = declared.arguments().stream().map(t -> type(t, variables)).toArray(javax.lang.model.type.TypeMirror[]::new);
+                var enclosing = type(declared.enclosing(), variables);
+                yield enclosing.getKind() == TypeKind.DECLARED ? types.getDeclaredType((javax.lang.model.type.DeclaredType) enclosing, symbol, arguments)
+                        : types.getDeclaredType(symbol, arguments);
+            }
+            case TYPEVAR -> {
+                var key = new ProcessorDeclaration.Key(((ProcessorDeclaration.VariableReference) source.shape()).elementKey());
+                yield variables.containsKey(key) ? variables.get(key) : declarations.variable(key);
+            }
+            case WILDCARD -> {
+                var wildcard = (ProcessorDeclaration.Wildcard) source.shape();
+                yield types.getWildcardType(wildcard.extendsBound() == null ? null : type(wildcard.extendsBound(), variables),
+                        wildcard.superBound() == null ? null : type(wildcard.superBound(), variables));
+            }
+            case INTERSECTION -> compilerTypes.makeIntersectionType(List.from(((ProcessorDeclaration.Intersection) source.shape()).bounds().stream().map(t -> type(t, variables)).toList()));
+            default -> throw new IllegalStateException("Unsupported private declaration type: " + source.kind());
+        };
     }
 
     private Attribute value(Ann.Val explicit, Ann.Val effective, Type expected) {

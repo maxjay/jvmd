@@ -105,12 +105,12 @@ class RocksLocalBootTest {
                     assertThat(store.get(dependency.key(consumer.project(), consumer.path()))).isEmpty();
                 }
             }
-            // Neither old header-proof layout may take the current-format skip branch.
-            for (int legacy : List.of(1, 2, 3, 4)) {
+            // No previous LOCAL layout may take the current-format skip branch, even with identical runtime and locale.
+            for (int legacy : List.of(1, 2, 3, 4, 5, 6, 7, 8)) {
                 try (var store = Generation.of(indexDir, format).openLocal()) {
                     var root = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(projectKey)));
                     store.putLocalRoot(projectKey, LocalRoot.encode(digest,
-                            format + ";local=" + legacy + ";javac=" + Runtime.version().feature(), root.local(), root.machineRoot(), root.modelHash()));
+                            LocalFormat.of(format).replace(";local=" + LocalFormat.LAYOUT + ";", ";local=" + legacy + ";"), root.local(), root.machineRoot(), root.modelHash()));
                 }
                 var rebuilt = BootDecision.local(indexDir, model, repository);
                 assertThat(rebuilt).as("local=" + legacy + " must not skip the current LOCAL cold boot").isPresent();

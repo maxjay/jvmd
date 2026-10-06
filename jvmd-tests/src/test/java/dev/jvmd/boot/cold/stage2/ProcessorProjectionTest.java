@@ -120,8 +120,12 @@ class ProcessorProjectionTest {
             var field = type.getEnclosedElements().stream().filter(e -> e.getKind() == javax.lang.model.element.ElementKind.FIELD).findFirst().orElseThrow();
             assertThat(component.getSimpleName()).isEqualTo(field.getSimpleName());
             assertThat(projection.key(component)).isNotEqualTo(projection.key(field));
-            assertThat(dev.jvmd.index.layer.local.ProcessorDeclaration.decode(projection.of(component, "R.java")).declaration().kind())
-                    .isEqualTo(javax.lang.model.element.ElementKind.RECORD_COMPONENT);
+            var decoded = dev.jvmd.index.layer.local.ProcessorDeclaration.decode(projection.of(component, "R.java")).declaration();
+            assertThat(decoded.kind()).isEqualTo(javax.lang.model.element.ElementKind.RECORD_COMPONENT);
+            assertThat(decoded.key().bytes()).isEqualTo(projection.key(component));
+            var mutable = decoded.key().bytes(); mutable[0] ^= 1;
+            assertThat(decoded.key().bytes()).isEqualTo(projection.key(component));
+            assertThat(decoded).isEqualTo(dev.jvmd.index.layer.local.ProcessorDeclaration.decode(projection.of(component, "R.java")).declaration());
         }
     }
 

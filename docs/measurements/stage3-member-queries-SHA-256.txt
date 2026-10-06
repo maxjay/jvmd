@@ -1,0 +1,36 @@
+digest: SHA-256
+project: C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566
+model obtained from Maven in 29945 ms (not part of stage 2)
+peak heap during the boot (sampled): 961 MB above a 161 MB baseline
+modules=13 source_files=544 parsed_files=544 source_leaves=15
+workers=4 wall=4721 ms  (jars indexed on the spot: 93; nodes written: 25202; faults: 0)
+header compile: 2964 ms summed over jobs = 5449 ms per thousand files
+facts (Φ_src): 1819 ms; definer indexes: 137 ms for 22 distinct leaf sets over 26 routes
+  equal: jvmd-core/main (1048 facts)
+  equal: jvmd-core/test (0 facts)
+  equal: jvmd-analyzer/main (992 facts)
+  equal: jvmd-analyzer/test (0 facts)
+  equal: jvmd-resolver/main (177 facts)
+  equal: jvmd-resolver/test (0 facts)
+  equal: jvmd-resolver/maven3/main (125 facts)
+  equal: jvmd-resolver/maven3/test (0 facts)
+  equal: jvmd-resolver/maven4/main (156 facts)
+  equal: jvmd-resolver/maven4/test (0 facts)
+  equal: jvmd-index/main (2746 facts)
+  equal: jvmd-index/test (0 facts)
+  equal: jvmd-index-rocks/main (436 facts)
+  equal: jvmd-index-rocks/test (87 facts)
+  equal: jvmd-boot/main (732 facts)
+  equal: jvmd-boot/test (0 facts)
+  equal: jvmd-runtime/main (232 facts)
+  equal: jvmd-runtime/test (0 facts)
+  equal: jvmd-mcp/main (6 facts)
+  equal: jvmd-mcp/test (0 facts)
+  equal: jvmd-lsp/main (18 facts)
+  equal: jvmd-lsp/test (0 facts)
+  equal: jvmd-dist/main (235 facts)
+  equal: jvmd-dist/test (0 facts)
+  equal: jvmd-tests/main (0 facts)
+  equal: jvmd-tests/test (2385 facts)
+source-vs-class k equality: 26 of 26 module scopes; 0 more differ only by the module-info descriptor
+annotation identity differences: []

@@ -294,6 +294,8 @@ class ProcessedAttributeTest {
                 for (var annotation : type.getAnnotationMirrors()) {
                     text.append("|").append(annotation).append("|").append(annotation.getAnnotationType());
                     text.append("|").append(annotation.getElementValues()).append("|").append(elements.getElementValuesWithDefaults(annotation));
+                    for(var entry:elements.getElementValuesWithDefaults(annotation).entrySet()) if(!annotation.getElementValues().containsKey(entry.getKey()))
+                        text.append("|default-handle=").append(entry.getValue()==entry.getKey().getDefaultValue());
                     for(var value : elements.getElementValuesWithDefaults(annotation).values()) {
                         text.append("|").append(value.accept(new javax.lang.model.util.SimpleAnnotationValueVisitor14<String,Void>() {
                             protected String defaultAction(Object value, Void ignored) {return value.getClass().getSimpleName()+":"+value;}
@@ -355,6 +357,100 @@ class ProcessedAttributeTest {
                 "p/Metadata.java", "package p; @fixture.Tag(\"first\") @fixture.Tag(value=\"second\",type=int[].class) public class Metadata {}"),
                 List.of(processor), List.of(processor));
         assertThat(state.faults()).isEmpty(); allFiles(state, true);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void memberDeclarationsRetainNativeSourceOrderNamesAnnotationsAndComments(Digest digest) throws Exception {
+        var processor = processor("""
+                var elements=processingEnv.getElementUtils(); var text=new StringBuilder();
+                new javax.lang.model.util.ElementScanner14<Void,StringBuilder>() {
+                    public Void scan(Element element, StringBuilder text) {
+                        text.append("|").append(element.getKind()).append(":").append(element.getSimpleName());
+                        text.append(":").append(element.getModifiers()).append(":").append(elements.getDocComment(element));
+                        text.append(":deprecated=").append(elements.isDeprecated(element));
+                        text.append(":").append(element.getAnnotationMirrors()).append(":").append(elements.getAllAnnotationMirrors(element));
+                        if(element instanceof TypeElement type) {
+                            text.append(":all=").append(elements.getAllMembers(type));
+                            for(var parameter:type.getTypeParameters()) scan(parameter,text);
+                            for(var component:type.getRecordComponents()) scan(component,text);
+                        }
+                        if(element instanceof ExecutableElement method) {
+                            for(var parameter:method.getTypeParameters()) scan(parameter,text);
+                            text.append(":default=").append(method.getDefaultValue());
+                            text.append(":params=").append(method.getParameters()).append(":types=").append(method.getTypeParameters());
+                            text.append(":signature=").append(method.asType()).append(":receiver=").append(method.getReceiverType());
+                        }
+                        if(element instanceof VariableElement variable) text.append(":").append(variable.getConstantValue()).append(":").append(variable).append(":").append(variable.asType());
+                        if(element.getEnclosingElement() instanceof TypeElement owner && (element.getKind()==ElementKind.FIELD || element.getKind()==ElementKind.METHOD))
+                            text.append(":member=").append(processingEnv.getTypeUtils().asMemberOf((javax.lang.model.type.DeclaredType)owner.asType(),element));
+                        return super.scan(element,text);
+                    }
+                }.scan(elements.getTypeElement("p.Metadata"),text);
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,text,root);
+                """, "isolating");
+        var state=boot(digest,Map.of("p/Input.java","package p; public class Input {}", "p/Metadata.java", """
+                package p;
+                import java.lang.annotation.*;
+                @Retention(RetentionPolicy.SOURCE) @Target({ElementType.TYPE,ElementType.METHOD,ElementType.FIELD,
+                    ElementType.CONSTRUCTOR,ElementType.PARAMETER,ElementType.TYPE_PARAMETER,ElementType.RECORD_COMPONENT})
+                @interface Label {String value();}
+                class Base<V> { @Label("inherited") protected V inherited(V argument){return argument;} public int hiding; class Inherited {} }
+                public class Metadata<@Label("type parameter") T extends Number & Comparable<T>> extends Base<T> {
+                    /** Last by name, first in source. */ @Label("field") private static final String z="constant";
+                    @Label("no-arg constructor") Metadata() {}
+                    /** Generic overload. */ @Label("generic") <@Label("method type") V extends T> V call(@Label("generic arg") final V sourceName){return sourceName;}
+                    /** String overload. */ @Label("string") String call(@Label("string arg") String otherName){return otherName;}
+                    @Label("constructor") Metadata(@Label("constructor arg") T argument) {}
+                    /** Private generic method. */ @Label("private method") private <@Label("private variable") V extends T>
+                        java.util.List<? super V[]> secret(@Label("private parameter") final V[] sourcePrivateName) throws java.io.IOException {return null;}
+                    private java.util.Map<String, ? extends T[]> hidden;
+                    /** @deprecated documentation only. */ @SuppressWarnings("dep-ann") private int documentedDeprecated;
+                    @Deprecated(since="phase") private int annotationDeprecated;
+                    class Inner$Named { @Label("inner constructor") Inner$Named(@Label("inner arg") String argument) {} }
+                    record Data(@Label("component") String sourceComponent) {}
+                    enum Choice { @Label("constant") ONE; @Label("enum constructor") Choice() {} }
+                    @interface Defaults {String z() default "z"; String a() default "a";}
+                    interface DefaultType { @Label("default method") default int size(@Label("size arg") int count){return count;} }
+                    @Label("last field") int a;
+                    private int hiding;
+                    @Override public T inherited(T namedOverride){return namedOverride;}
+                }
+                """),List.of(processor),List.of());
+        assertThat(state.faults()).isEmpty(); allFiles(state,true);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void privateMemberReadsRemainIndependentOfUnconsumedSignatureAndBodyChanges(Digest digest) throws Exception {
+        var processor=processor("""
+                var type=processingEnv.getElementUtils().getTypeElement("p.Metadata");
+                for(var element:type.getEnclosedElements()) if(element.getSimpleName().contentEquals("secret")) {
+                    var method=(ExecutableElement)element;
+                    processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,method.getParameters().get(0).getSimpleName(),root);
+                }
+                ""","isolating");
+        var states=new ArrayList<State>(); var results=new ArrayList<Attribute.Computed>();
+        for(var change:List.of(new String[]{"int","named","1","unread"},new String[]{"long","named","2","changed"},new String[]{"long","renamed","2","changed"})) {
+            states.add(boot(digest,Map.of("p/Input.java","package p; public class Input {}","p/Metadata.java","""
+                    package p;
+                    @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE) @interface Label {String value();}
+                    public class Metadata {
+                        @Label("%s") private String unread;
+                        private int secret(final %s %s) {return %s;}
+                    }
+                    """.formatted(change[3],change[0],change[1],change[2])),List.of(processor),List.of()));
+        }
+        assertThat(states).allSatisfy(state -> assertThat(state.faults()).isEmpty());
+        assertThat(states).extracting(state -> state.own().k()).containsOnly(states.getFirst().own().k());
+        Files.delete(dir.resolve("app/src/main/java/p/Metadata.java"));
+        try(var pool=new Pool(states.getFirst().pool(),1)) {
+            for(var state:states) results.add(run(state,attribute(state,pool),"app/src/main/java/p/Input.java"));
+            assertThat(pool.statistics().contexts()).isEqualTo(1);
+        }
+        assertThat(results).allSatisfy(r -> assertThat(r.reusable()).as(r.faults().toString()).isTrue());
+        assertThat(results.get(1)).isEqualTo(results.get(0));
+        assertThat(results.get(2).aci()).isNotEqualTo(results.get(0).aci());
+        assertThat(results.get(0).result().diagnostics().getFirst().message()).isEqualTo("named");
+        assertThat(results.get(2).result().diagnostics().getFirst().message()).isEqualTo("renamed");
     }
 
     @ParameterizedTest @MethodSource("digests")

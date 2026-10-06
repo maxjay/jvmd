@@ -9,10 +9,17 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.type.TypeKind;
 
 /** Detached, queryable declaration data from {@link ProcessorElementProjection}; never retains a javac object. */
-public record ProcessorDeclaration(ElementKind kind, String name, String docComment, List<String> modifiers,
+public record ProcessorDeclaration(ElementKind kind, String name, Key key, String docComment, boolean deprecated, List<String> modifiers,
                                    List<Annotation> annotations, Detail detail) {
     public ProcessorDeclaration { modifiers = List.copyOf(modifiers); annotations = List.copyOf(annotations); }
     public record Source(String path, ProcessorDeclaration declaration) { }
+    /** Exact declaration identity, distinct for overloads, type parameters and record components/backing fields. */
+    public record Key(byte[] bytes) {
+        public Key { bytes = bytes.clone(); }
+        @Override public byte[] bytes() { return bytes.clone(); }
+        @Override public boolean equals(Object other) { return other instanceof Key key && java.util.Arrays.equals(bytes, key.bytes); }
+        @Override public int hashCode() { return java.util.Arrays.hashCode(bytes); }
+    }
     /** Both maps are observable, including explicit presence and defaults of nested annotations. */
     public record Annotation(Ann explicit, Ann effective) { }
 
@@ -68,7 +75,9 @@ public record ProcessorDeclaration(ElementKind kind, String name, String docComm
     private static ProcessorDeclaration declaration(Reader in) {
         var kind = ElementKind.valueOf(in.str());
         var name = in.str();
+        var key = new Key(in.lenBytes());
         var comment = flag(in) ? in.text() : null;
+        boolean deprecated = flag(in);
         var modifiers = list(in, in::str);
         var annotations = annotations(in);
         Detail detail = switch (kind) {
@@ -87,7 +96,7 @@ public record ProcessorDeclaration(ElementKind kind, String name, String docComm
             case PACKAGE -> new Package(in.str(), declarations(in));
             default -> new Other(type(in));
         };
-        return new ProcessorDeclaration(kind, name, comment, modifiers, annotations, detail);
+        return new ProcessorDeclaration(kind, name, key, comment, deprecated, modifiers, annotations, detail);
     }
 
     private static Type type(Reader in) {

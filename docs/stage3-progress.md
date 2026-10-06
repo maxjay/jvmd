@@ -712,3 +712,24 @@ The final clean gate `stage3-source-queries-frozen-gate.log` passed **578 tests,
 Maven model/build time (26.2/25.3s) is excluded. Sampled heap above baseline was 904/1,561 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-source-queries-SHA-256.txt), [SHA3-256](measurements/stage3-source-queries-SHA3-256.txt).
 
 Stage 3 authority SHA-256 is `d1bfa956f020830e983cb34d2b00f2ca5812076da40c69de78bba187052d4c2b`; unchanged Stage 2 authority is `0eee5d39b6cbca93c21175adf8debac903644873f948f61b8ce499f0fc62fbaa`. Repository authorities exactly match their Downloads copies. The type declaration annotation/doc-comment regression is closed; the broader member/type-use, full admission/verification, driver and oracle obligations listed above remain open. The goal stays active and no PR was merged.
+
+
+### Source-backed member declarations and private handles
+
+The body-task source adapter now matches native members to saved declarations by exact element key, preserving overload identity, declaration order, source parameter names, annotations, doc comments and deprecation. Each detached declaration carries its own immutable key; record components remain distinct from their backing fields. LOCAL is now 9, with MACHINE layout 4/parser 5 and bodies 4 unchanged. Rocks-backed skip tests reject every prior LOCAL layout (1 through 8) even when the remaining runtime/locale format fields match.
+
+Private members absent from T receive detached native handles with their original class owner and reconstructed generic structural types, including enclosing type variables, arrays, wildcards, intersection bounds and throws. These handles are never inserted into cached compiler member scopes. getAllMembers builds a temporary scope, preserves javac ordering and uses native inheritance/override rules. Its regression exposed the distinction between record components in getEnclosedElements and backing fields in the actual member scope; the adapter now preserves that distinction. Source annotation defaults also retain the native handle identity shared with getDefaultValue. Doc-comment-only deprecation is saved explicitly rather than inferred from @Deprecated.
+
+The new native oracle scans overloaded methods, private fields/methods, generic declarations, constructors, nested dollar names, records, enums, annotation members, inherited members and overrides. It compares exact class bytes and ordered diagnostics under both digests across repeated pool borrows. A second regression deletes the metadata source after three cold boots and reuses one compiler context: unread private signature, annotation and body edits leave the proof/result unchanged, while a consumed parameter-name edit changes ACI and the diagnostic. `stage3-member-queries-focused-final.log` passes **108 tests, zero failures/errors/skips**. The full combined clean gate follows with all Java inputs frozen.
+
+Stage 3 authority SHA-256 is `7ecc1cf89518efbaec96b6fee5bae4846229d2d42b84a276d2a59360b7ede127`, exactly matching Downloads after preserving the distinct before-member-source-queries backup. The Stage 2-only authority remains unchanged and synchronized. Type-use annotation views, package/module/origin and implicit-state observations, complete processor admission, persisted query verification, cold storage boundaries, the Stage3/BROOT driver and the remaining full invariants stay open. Warm is untouched; the full goal remains active and no PR is merged.
+
+
+The final clean gate `stage3-member-queries-frozen-gate.log` passed **582 tests, zero failures/errors/skips**, in 4m32s. The complete set of **549 Java files** and every source digest match the pre-run freeze. With four workers, the repository oracle covered **13 modules, 26 scopes and 544 sources**, 93 on-the-spot jars and 22 distinct leaf sets. Both digests produced **26/26 exact source/class k matches, no annotation differences and zero boot faults**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,721 | 2,964 | 1,819 | 137 | 25,202 |
+| SHA3-256 | 3,507 | 1,804 | 1,126 | 124 | 25,193 |
+
+Maven model/build time (29.9/25.0s) is excluded. Sampled heap above baseline was 961/1,146 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-member-queries-SHA-256.txt), [SHA3-256](measurements/stage3-member-queries-SHA3-256.txt). The source member declaration regression is closed; the broader type-use, admission/verification, driver and oracle obligations remain open. The goal stays active and no PR was merged.

@@ -80,7 +80,8 @@ public final class ProcessorSources {
         if (tag == 0) {
             var source = ProcessorDeclaration.decode(in.raw(in.remaining()));
             if (!(source.declaration().detail() instanceof ProcessorDeclaration.TypeDeclaration type)
-                    || !type.binaryName().replace('.', '/').equals(internalName))
+                    || !type.binaryName().replace('.', '/').equals(internalName)
+                    || !java.util.Arrays.equals(source.declaration().key().bytes(), key))
                 throw new IllegalStateException("Processor declaration key differs from its binary name");
             return source;
         }

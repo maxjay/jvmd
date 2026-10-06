@@ -79,7 +79,8 @@ public final class ProcessorRecords {
     }
 
     /** Ordered, detached observations. Output conservation and current-input admission are separate obligations. */
-    public record Body(List<Observation> processors) {
+    public record Body(List<Observation> processors, boolean rejected) {
+        public Body(List<Observation> processors) { this(processors, false); }
         public Body {
             processors = List.copyOf(processors);
             var names = new java.util.HashSet<String>();
@@ -87,8 +88,10 @@ public final class ProcessorRecords {
                 throw new IllegalArgumentException("Duplicate body processor");
         }
         public boolean reusable() {
-            return processors.stream().allMatch(p -> p.capability().declared() == ISOLATING && p.capability().reusable());
+            return !rejected && processors.stream().allMatch(p -> p.capability().declared() == ISOLATING && p.capability().reusable());
         }
+        /** Scope admission or generated-output conservation can fail even when no body processor was invoked. */
+        public Body rejectReuse() { return new Body(processors, true); }
         /** Classification controls admission; only execution order and observed answers are result inputs. */
         public boolean sameInputs(Body other) {
             if (other == null || processors.size() != other.processors.size()) return false;
@@ -103,10 +106,12 @@ public final class ProcessorRecords {
             for (var processor : processors) processor.inputs(out);
         }
         public void encode(Codec.Writer out) {
-            out.u32(processors.size());
+            out.u8(rejected ? 1 : 0).u32(processors.size());
             for (var processor : processors) { processor.inputs(out); out.raw(processor.capability().encode()); }
         }
         public static Body decode(Codec.Reader in) {
+            int rejected = in.u8();
+            if (rejected > 1) throw new IllegalArgumentException("Invalid processor rejection flag");
             var processors = new ArrayList<Observation>();
             for (int i = 0, n = in.count(); i < n; i++) {
                 var name = in.str(); int presence = in.u8();
@@ -114,7 +119,7 @@ public final class ProcessorRecords {
                 var answers = presence == 0 ? null : in.lenBytes();
                 processors.add(new Observation(name, new Capability(in.u8(), in.u8()), answers));
             }
-            return new Body(processors);
+            return new Body(processors, rejected == 1);
         }
     }
 

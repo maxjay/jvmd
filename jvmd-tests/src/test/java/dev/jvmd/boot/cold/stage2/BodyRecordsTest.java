@@ -87,6 +87,7 @@ class BodyRecordsTest {
         assertThat(BodiesRoot.decode(original, digest.width())).isEqualTo(bodies);
         assertThat(bodies.current(local)).isTrue();
         assertThat(new BodiesRoot(local.format() + ";bodies=1", c, a, b, c).current(local)).isFalse();
+        assertThat(new BodiesRoot(local.format() + ";bodies=2", c, a, b, c).current(local)).isFalse();
         var recommitted = LocalRoot.decode(digest, LocalRoot.encode(digest, local.format(), new Root(c, a, 3, 0), b, c));
         assertThat(bodies.current(recommitted)).isFalse();
         assertThat(bodies.encode()).isEqualTo(original);

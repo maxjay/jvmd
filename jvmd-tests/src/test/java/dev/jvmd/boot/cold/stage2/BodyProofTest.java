@@ -220,6 +220,11 @@ class BodyProofTest {
         var decoded = Proof.decode(proof.encode(), digest.width());
         assertThat(decoded).isEqualTo(proof); assertThat(decoded.hashCode()).isEqualTo(proof.hashCode());
         assertThat(decoded.valid(state.tree, state.own, state.route, context, observations, noReads)).isTrue();
+        var rejected = decoded.withProcessorBody(observations.rejectReuse());
+        assertThat(Proof.decode(rejected.encode(), digest.width())).isEqualTo(rejected);
+        assertThat(rejected.valid(state.tree, state.own, state.route, context, observations, noReads)).isFalse();
+        assertThatThrownBy(() -> rejected.aci(digest, "App.java", one, two)).isInstanceOf(IllegalStateException.class);
+        assertThat(decoded.valid(state.tree, state.own, state.route, context, observations.rejectReuse(), noReads)).isFalse();
         assertThat(decoded.valid(state.tree, state.own, state.route, context, noReads)).isFalse();
         var changed = new ProcessorRecords.Body(List.of(new ProcessorRecords.Observation("fixture.Reader", supported, new byte[]{1, 2, 4})));
         assertThat(decoded.valid(state.tree, state.own, state.route, context, changed, noReads)).isFalse();

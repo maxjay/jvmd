@@ -49,12 +49,35 @@ public final class ProcessorConfiguration {
     }
 
     public List<ProcessorRecords.ConfigEntry> proof(String source) {
+        return proof(tree.digest(), project, source, file -> tree.get(root.hash(), reader, Keys.resourceKey(path(project, file))));
+    }
+
+    /** Bind a body task's native configuration lookup to the committed source/configuration snapshot. */
+    public record Snapshot(List<ProcessorRecords.ConfigEntry> proof, List<String> unmodelledImports) { }
+
+    public static Snapshot current(Digest digest, Path project, String source) throws IOException {
+        var checkedProject = project.toAbsolutePath().normalize();
+        var imports = new ArrayList<String>();
+        try {
+            var proof = proof(digest, checkedProject, source, file -> {
+                try {
+                    if (!Files.isRegularFile(file)) return null;
+                    var bytes = Files.readAllBytes(file); var key = Keys.resourceKey(path(checkedProject, file));
+                    if (imports(bytes)) imports.add(path(checkedProject, file));
+                    return new Entry(key, bytes, digest.hash(key, digest.hash(bytes).view()));
+                } catch (IOException failure) { throw new java.io.UncheckedIOException(failure); }
+            });
+            return new Snapshot(proof, List.copyOf(imports));
+        } catch (java.io.UncheckedIOException failure) { throw failure.getCause(); }
+    }
+
+    private static List<ProcessorRecords.ConfigEntry> proof(Digest digest, Path project, String source, Function<Path, Entry> read) {
         var out = new ArrayList<ProcessorRecords.ConfigEntry>();
         // Lombok's default bubbling reaches the filesystem root, including ancestors outside the project unless stopped.
         for (var parent = project.resolve(source).normalize().getParent(); parent != null; parent = parent.getParent()) {
             var path = path(project, parent.resolve("lombok.config"));
-            var entry = tree.get(root.hash(), reader, Keys.resourceKey(path));
-            out.add(new ProcessorRecords.ConfigEntry(path, entry == null ? tree.sums().zero() : entry.h()));
+            var entry = read.apply(parent.resolve("lombok.config"));
+            out.add(new ProcessorRecords.ConfigEntry(path, entry == null ? Identity.zero(digest.width()) : entry.h()));
             if (entry != null && stop(entry.value())) break;
         }
         return List.copyOf(out);
@@ -65,10 +88,14 @@ public final class ProcessorConfiguration {
         var out = new ArrayList<String>();
         for (var observation : proof(source)) {
             var entry = tree.get(root.hash(), reader, Keys.resourceKey(observation.path()));
-            if (entry != null && new String(entry.value(), StandardCharsets.UTF_8).lines().anyMatch(l -> l.strip().startsWith("import ")))
+            if (entry != null && imports(entry.value()))
                 out.add(observation.path());
         }
         return List.copyOf(out);
+    }
+
+    private static boolean imports(byte[] bytes) {
+        return new String(bytes, StandardCharsets.UTF_8).lines().anyMatch(l -> l.strip().startsWith("import "));
     }
 
     private static boolean stop(byte[] bytes) {

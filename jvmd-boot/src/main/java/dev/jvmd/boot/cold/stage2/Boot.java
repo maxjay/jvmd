@@ -16,9 +16,7 @@ import dev.jvmd.index.layer.machine.Keys;
 import dev.jvmd.index.layer.machine.MachineLeaf;
 import dev.jvmd.index.layer.machine.MachineStore;
 import dev.jvmd.index.layer.machine.Res;
-import dev.jvmd.index.layer.machine.Stubs;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.lang.classfile.Attributes;
 import java.lang.classfile.ClassFile;
 import java.nio.file.FileSystem;
@@ -26,7 +24,6 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -71,10 +68,9 @@ final class Boot implements AutoCloseable {
     /** Summed over jobs, so with several workers they exceed the wall time: header compilation (parse, enter, member completion), Φ_src, and definer indexes. */
     final AtomicLong headerNanos = new AtomicLong(), factsNanos = new AtomicLong(), definerNanos = new AtomicLong();
     private final ConcurrentHashMap<Identity, MachineLeaf> machineLeaves = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Identity, Path> stubDirs = new ConcurrentHashMap<>();
+    private final StubDirectories stubs;
     private final ConcurrentHashMap<String, Optional<String>> systemVersions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Identity, Optional<String[]>> moduleFacts = new ConcurrentHashMap<>();
-    private volatile Path stubRoot;
     private FileSystem jrt;
 
     Boot(Digest digest, ContentTree tree, LocalStore store, ProjectModel model, Identity projectKey, Path repository) {
@@ -85,6 +81,7 @@ final class Boot implements AutoCloseable {
         this.projectKey = projectKey;
         this.repository = repository;
         this.sink = written.through(store);
+        this.stubs = new StubDirectories(tree, store, this::leaf);
     }
 
     static String routeKey(String module, int scope) { return module + "\0" + scope; }
@@ -147,26 +144,7 @@ final class Boot implements AutoCloseable {
      * one type's, shared across leaves and projects, and {@code S|k} is the leaf's list of them: both are read first, and only a type
      * whose stub is missing is synthesised and written, so an edit costs the types it changed and not the module.
      */
-    Path stubDir(Identity k) {
-        return stubDirs.computeIfAbsent(k, key -> {
-            try {
-                var stubs = Stubs.stubs(digest, tree, leaf(key), this::node, new Stubs.Cache() {
-                    @Override public byte[] list(Identity k) { return store.get(LocalStore.stubKey(k)); }
-                    @Override public void putList(Identity k, byte[] value) { store.put(LocalStore.stubKey(k), value); }
-                    @Override public byte[] type(Identity stKey) { return store.get(LocalStore.stubTypeKey(stKey)); }
-                    @Override public void putType(Identity stKey, byte[] value) { store.put(LocalStore.stubTypeKey(stKey), value); }
-                });
-                if (stubRoot == null) synchronized (this) { if (stubRoot == null) stubRoot = Files.createTempDirectory("jvmd-stubs-"); }
-                var dir = Files.createTempDirectory(stubRoot, "s");
-                for (var stub : stubs) {
-                    var file = dir.resolve(stub.internalName() + ".class");
-                    Files.createDirectories(file.getParent());
-                    Files.write(file, stub.bytes());
-                }
-                return dir;
-            } catch (IOException e) { throw new UncheckedIOException(e); }
-        });
-    }
+    Path stubDir(Identity k) { return stubs.get(k).path(); }
 
     /**
      * The version javac records for {@code requires <module>} in a module descriptor (E.3): the version in the required module's own
@@ -214,10 +192,6 @@ final class Boot implements AutoCloseable {
 
     @Override public void close() {
         try { if (jrt != null && jrt != FileSystems.getFileSystem(java.net.URI.create("jrt:/"))) jrt.close(); } catch (IOException | RuntimeException ignored) { /* nothing to recover */ }
-        var root = stubRoot;
-        if (root == null) return;
-        try (var walk = Files.walk(root)) {
-            for (var p : walk.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(p);
-        } catch (IOException ignored) { /* a temporary directory the OS will collect */ }
+        stubs.close();
     }
 }

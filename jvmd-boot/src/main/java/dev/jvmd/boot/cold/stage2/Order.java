@@ -18,9 +18,9 @@ import java.util.Set;
  * @param modules      every module, dependencies first
  * @param dependencies the modules each module depends on, over both scopes: a test route binds its dependencies' {@code main} leaves too
  */
-record Order(List<ProjectModel.Module> modules, Map<String, Set<String>> dependencies) {
+public record Order(List<ProjectModel.Module> modules, Map<String, Set<String>> dependencies) {
     /** @throws ProjectModel.Fault naming the modules of a cycle */
-    static Order of(ProjectModel model) {
+    public static Order of(ProjectModel model) {
         var deps = new LinkedHashMap<String, Set<String>>();
         for (var module : model.modules()) {
             var names = new LinkedHashSet<String>();

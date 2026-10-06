@@ -46,6 +46,18 @@ public final class RocksLocalStore implements LocalStore, AutoCloseable {
     }
 
 
+    @Override public void putBodiesRoot(Identity projectKey, byte[] value) {
+        var records = new ArrayList<byte[][]>(2);
+        var previous = machine.get(LocalStore.bodiesRootKey(projectKey));
+        if (previous != null) {
+            int n = 1;
+            while (machine.get(LocalStore.bodiesRootHistoryKey(projectKey, n)) != null) n++;
+            records.add(new byte[][] {LocalStore.bodiesRootHistoryKey(projectKey, n), previous});
+        }
+        records.add(new byte[][] {LocalStore.bodiesRootKey(projectKey), value});
+        machine.commit(List.copyOf(records));
+    }
+
     /** For tests: every key in the store, in order. */
     public List<byte[]> keys() { return machine.keys(); }
 

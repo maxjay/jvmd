@@ -4,13 +4,22 @@ Specification snapshot: [jvmd-stage3-bodies.md](jvmd-stage3-bodies.md), authorit
 Base: `617dbfd8`, Stage 2 (#58). Working branch: `feat/jvmd-stage-3`.
 The objective is the entire specification. None of the gates below is complete until its evidence is recorded.
 
+
+## Current status, 2026-10-06
+
+The full specification is **not complete**. The initial Stage 3 driver and BROOT publication checkpoint now passes **638 tests, zero failures/errors/skips**, including both digests and the repository Stage 2 oracle. All 556 Java files were frozen throughout the clean gate. PR #61 is the separate Stage 2 reconciliation; the dedicated Stage 3 draft is stacked on its branch. The cumulative implementation, synchronized authority and remaining gates are recorded here. This checkpoint supersedes the 614-test package-model checkpoint `032d74cf`.
+
+Implemented components include body proofs/results/uses and reverse indexes, the reusable one-unit compiler pool, body collection and processor-aware attribution, generated-output ContentTrees, persisted source declaration/package views, and now the initial dependency-ordered driver with rooted reads, generation buffering, BROOT/history publication and output materialisation.
+
+Outstanding completion gates include full source/module/file processor views and capability admission, persisted query verification, module-info handling under the accepted classpath-mode boundary and cold-start integration, the 2,000-file processor invariant, own-project Stage 3 byte/diagnostic equality and the independent two-sided read oracle. Existing fixture coverage does not close those full-spec obligations. The implementation still attributes every file on a rerun. Warm remains untouched.
+
 ## Ordered delivery
 
 1. PR A: Appendix A, LAYOUT 4. Separate T/res and A/tail, EA edges, key-bound sums, warning annotations in res and stubs, annotation identities on bindings, own-first header proofs with absences. Stage 1/2 regressions, source/binary equality on fixtures and this project, conservation and cost checks. Land on main before Stage 3.
 2. PR B: Appendix F, Stage 2 processors. Processor declarations and recording host, per-file configuration proofs, generated rows/GEN, domains/PD, RES/PROC codecs, byte-based processor identity. All six F.2 tests.
 3. Stage 3: write the invariant fixtures/oracles first; implement proof codecs/descent, per-file javac context pool, symbol-based collector, results/uses/reverse indexes, driver/BROOT, output/materialisation, and measurements. No LIVE, warm boot, or LSP work.
 
-## Evidence gates (all pending)
+## Full-spec evidence gates (partial fixture coverage; completion pending)
 
 | Invariant | Required evidence |
 | --- | --- |
@@ -821,3 +830,32 @@ The final clean gate `stage3-package-model-final-frozen-gate.log` passed **614 t
 | SHA3-256 | 3,559 | 1,778 | 1,348 | 115 | 25,211 |
 
 Maven model/build time (26.8/25.6s) is excluded. Sampled heap above baseline was 611/1,058 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-package-model-SHA-256.txt), [SHA3-256](measurements/stage3-package-model-SHA3-256.txt). Both authority/Downloads pairs remain synchronized. This closes the tested package metadata, presence, package-info extraction and package-annotation proof gaps. The remaining model/admission, verification, driver and oracle obligations listed above stay open. Warm is unchanged and no PR was merged.
+
+
+### Initial Stage 3 driver and BROOT publication
+
+`Stage3.run` now plans from rooted F records, shares Stage 2's module DAG and temporary S/ST stub directories, schedules dependency-ready modules and main-before-test scopes, and attributes files through the existing bounded one-unit compiler pool. Source bytes are read only when a worker attributes the selected file, and Attribute verifies the committed byte identity. Empty scopes get empty output trees. The current driver always attributes all files, including on a rerun.
+
+`BodyGeneration` isolates provisional worker records from persisted publication. Cold generations never probe persisted C/RS/CF/U/OUT/body-reverse records. Compatible previous BROOT membership and value digests gate rerun body reads; U is derivable outside the tree and is admitted through its rooted RS. Header inputs use only the selected current LOCAL tree. Removed current LOCAL records cannot fall through to an older bodies tree. An incompatible bodies format is a cold input.
+
+The driver rejects all reusable results in a processor scope if any body task discovers a capability violation, including results computed earlier in the scope. It retains fresh class blobs, proofs, output manifests and faults while withholding every provisional RS/U for that scope. It exposes captured aggregate PDIAG messages separately in scope order, without making the aggregate domain a body-result identity.
+
+Publication edits the previous bodies root with the exact LOCAL Diff and then the body delta, asserting conservation at each apply. U remains outside the tree. Immutable record conflicts and moved committed roots are checked before publishing selected records; unused provisional records are discarded. After flush/sync, BROOT and its previous value are committed atomically by RocksDB. LROOT is never written. Completed buffers reject further worker reads/writes. A rooted read rejects an interrupted mutable value whose digest differs; a fresh publication may repair that value. Unreachable stale records may remain physically stored, but their tree memberships and reverse consumers are removed. Materialisation first validates current BROOT and the selected OUT digest, then uses the existing exact output Diff.
+
+The focused gate passed **181 tests**, and the final boundary gate passed **20 tests**, with no failures/errors/skips. The added fixtures run with SHA-256 and SHA3-256. They compare dependency/main/test class bytes with native javac using real compiled dependency jars, include package-info and nested output, compare one/four workers and shuffled modules, keep compiler errors local, reject a changed source snapshot without replacing the prior BROOT, delete stale classes and reverse consumers, preserve history across RocksDB reopen, retain aggregate diagnostics once, and reject earlier provisional scope results after a late processor violation. The storage fixtures compare edited roots to an independently rebuilt expected tree, check exact record write counts and instrument forbidden cold reads.
+
+Input/projection audit: file bytes, URI and effective compiler/processor options remain Attribute inputs. Route, own leaf and model/MACHINE/LOCAL roots select or guard a generation; the driver adds none of these broad roots to ACI or GEN. Proof-range and ordered processor observations retain their existing exact semantics. C/RS/CF/OUT values use their record digests in the bodies tree; reverse entries use the digest of the empty value and retain path identity in their key. Root hashes answer exact content/structure; sums assert additive conservation and retain the existing semantic range projections. Reordering modules/workers preserves the root; added/replaced/deleted records match the independent tree oracle. No new format version is needed: LOCAL 11, MACHINE layout 4/parser 5 and bodies 4 are unchanged.
+
+Remaining driver and full-stage obligations: module-info handling under the accepted classpath-mode boundary, cold-start integration, complete ordered diagnostic assembly, whole-project Stage 3 native equality, persisted actual-query verification, complete processor admission and source/module/file views, the 2,000-file reuse fixture and the independent two-sided proof oracle. The generation buffer currently retains all selected fresh records until publication; this checkpoint does not claim final memory or performance bounds. The synchronized authority now distinguishes tested driver behavior from these outstanding requirements. Warm is untouched.
+
+
+The final clean gate `stage3-driver-frozen-gate.log` passed **638 tests, zero failures/errors/skips**, in **4m49s**. The complete set of **556 Java files** and every source digest match the pre-run freeze. With four workers, the repository Stage 2 oracle covered **13 modules, 26 scopes and 551 sources**, 93 on-the-spot jars and 22 distinct leaf sets. Both digests produced **26/26 exact source/class k matches, no annotation differences and zero boot faults**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,489 | 2,720 | 2,130 | 119 | 25,249 |
+| SHA3-256 | 3,695 | 1,795 | 1,448 | 150 | 25,214 |
+
+Maven model/build time (27.0/26.2s) is excluded. Sampled heap above baseline was 643/1,081 MB with uncontrolled GC; these sequential runs are not a performance comparison. These measurements validate the Stage 2 repository regression boundary after sharing stub directories; they are not the still-required Stage 3 whole-project body oracle or performance measurements. Raw reports: [SHA-256](measurements/stage3-driver-SHA-256.txt), [SHA3-256](measurements/stage3-driver-SHA3-256.txt).
+
+The Stage 3 authority and Downloads copy are byte-identical, SHA-256 `c23ad3b488fdcbbd61ce74af9e17a1d80f25441d7db8c7f824cfca1c0c3584f9`, after the distinct `jvmd-stage3-bodies.before-driver-publication.md` backup. Both Stage 2 copies are unchanged. Module-path builds remain deferred by section 8; module-info behavior must still be established within the accepted classpath-mode boundary. This checkpoint closes the tested initial driver/publication slice only. Full Stage 3 completion remains open, and no PR was merged.

@@ -33,7 +33,7 @@ class ProcessedAttributeTest {
     static Stream<Digest> digests() { return Stream.of(Sha256.INSTANCE, new Digests.Sha3()); }
     @AfterAll static void release() { Stage2Support.release(); }
 
-    record State(ContentTree tree, InMemoryLocalStore store, Identity project, MachineLeaf own, Route route, ModuleRecord module,
+    record State(ContentTree tree, InMemoryLocalStore store, Identity project, MachineLeaf own, Route route, ModuleRecord module, ProjectModel model,
                  ProcessorPlan plan, Attribute.Options options, Pool.Configuration pool, List<Path> processors, List<Path> classpath,
                  Map<String,FileRow> rows, List<Path> original, List<String> faults) {
         Map<String,byte[]> classes(Attribute.Computed computed) {
@@ -83,7 +83,7 @@ class ProcessedAttributeTest {
             var name = new String(entry.getKey(), prefix, entry.getKey().length - prefix, java.nio.charset.StandardCharsets.UTF_8);
             rows.put(name, FileRow.decode(name, entry.getValue(), digest.width()));
         }
-        return new State(tree, store, project, own, route, module, plan, options, pool, processors, classpath, rows, original, result.faults());
+        return new State(tree, store, project, own, route, module, model, plan, options, pool, processors, classpath, rows, original, result.faults());
     }
 
     private Attribute attribute(State state, Pool pool) {
@@ -792,6 +792,53 @@ class ProcessedAttributeTest {
         assertThat(state.faults()).isEmpty(); assertThat(state.options().javac()).contains("-proc:none");
         assertThat(state.plan().generation("fixture.Generate", "").outputs().count()).isEqualTo(2);
         allFiles(state, true);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void driverPreservesAggregateDiagnosticsAndCompilesEveryGeneratedRow(Digest digest) throws Exception {
+        var processor=processor(GENERATE+"processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,\"aggregate\",root);","aggregating");
+        var state=boot(digest,Map.of("p/Input.java","package p; public class Input {int read(){return One.VALUE+Two.VALUE;}}"),List.of(processor),List.of());
+        var expected=oracle(state);var diagnostics=ProcessorRecords.Diagnostics.decode(state.store().get(LocalStore.processorDiagnosticsKey(state.project(),"app",0)));
+        var result=new dev.jvmd.boot.cold.stage3.Stage3(digest,state.tree(),Stage2Support.FEATURE,3,dir).run(state.store(),state.model());
+        var scope=result.scopes().get("app/main");assertThat(scope.files()).hasSize(3);assertThat(result.faults()).isEmpty();
+        assertThat(scope.aggregateDiagnostics()).isEqualTo(diagnostics.messages());assertThat(scope.aggregateDiagnostics()).hasSize(1);
+        var actual=new TreeMap<String,byte[]>();
+        for(var file:scope.files()) {
+            assertThat(file.computed().reusable()).isTrue();assertThat(file.computed().result().diagnostics()).isEmpty();
+            actual.putAll(state.classes(file.computed()));
+        }
+        sameBytes(actual,expected.classes());
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void driverRejectsEarlierScopeResultsWhenALaterBodyProcessorViolatesAdmission(Digest digest) throws Exception {
+        String property="jvmd.fixture.late-driver-violation";
+        var processor=processor("""
+                if(Boolean.getBoolean("jvmd.fixture.late-driver-violation")) {
+                    try(var ignored=processingEnv.getFiler().getResource(javax.tools.StandardLocation.CLASS_PATH,"","missing-resource").openInputStream()) {}
+                    catch(java.io.IOException expected) {}
+                }
+                """+GENERATE,"isolating");
+        var state=boot(digest,Map.of("p/Input.java","package p; public class Input {int read(){return One.VALUE;}}",
+                "p/Empty.java","package p; public class Empty {}"),List.of(processor),List.of());
+        assertThat(state.faults()).isEmpty();allFiles(state,true); // Deliberately leave unrooted RS/U from a previous attribution.
+        var watched=state.store().withPrefix("RS").keySet().stream().map(state.store()::watchReads).toList();
+        long writes=state.store().withPrefix("RS").keySet().stream().mapToLong(state.store()::writes).sum();
+        String previous=System.getProperty(property);
+        try {
+            System.setProperty(property,"true");var expected=oracle(state);
+            var result=new dev.jvmd.boot.cold.stage3.Stage3(digest,state.tree(),Stage2Support.FEATURE,1,dir).run(state.store(),state.model());
+            assertThat(result.faults()).anyMatch(f->f.contains("fixture.Generate")&&f.contains("resource read"));
+            var actual=new TreeMap<String,byte[]>();
+            for(var file:result.scopes().get("app/main").files()) {
+                assertThat(file.computed().reusable()).isFalse();assertThat(file.computed().proof().processorBody().rejected()).isTrue();
+                actual.putAll(state.classes(file.computed()));
+            }
+            sameBytes(actual,expected.classes());assertThat(watched).allSatisfy(n->assertThat(n.get()).isZero());
+            assertThat(state.store().withPrefix("RS").keySet().stream().mapToLong(state.store()::writes).sum()).isEqualTo(writes);
+            state.tree().forEach(result.bodies().bodiesRoot(),id->state.store().get(MachineStore.nodeKey(id)),entry->
+                    assertThat(new String(entry.key(),0,Math.min(3,entry.key().length),java.nio.charset.StandardCharsets.US_ASCII)).isNotEqualTo("RS|"));
+        } finally {if(previous==null)System.clearProperty(property);else System.setProperty(property,previous);}
     }
 
     @ParameterizedTest @MethodSource("digests")

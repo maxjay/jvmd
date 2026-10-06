@@ -111,6 +111,18 @@ final class InMemoryLocalStore implements LocalStore {
     }
 
     @Override public void sync() { events.add("sync"); }
+    @Override public void putBodiesRoot(Identity projectKey, byte[] value) {
+        events.add("putBodiesRoot");
+        synchronized (records) {
+            var previous = records.get(LocalStore.bodiesRootKey(projectKey));
+            if (previous != null) {
+                int n = 1;
+                while (records.containsKey(LocalStore.bodiesRootHistoryKey(projectKey, n))) n++;
+                records.put(LocalStore.bodiesRootHistoryKey(projectKey, n), previous);
+            }
+            records.put(LocalStore.bodiesRootKey(projectKey), value);
+        }
+    }
     @Override public boolean hasRoot() { synchronized (records) { return records.containsKey(MachineStore.ROOT_KEY); } }
     /** Every read, by kind, up to the first putLocalRoot (or all of them if none): what invariant 11 inspects. */
     List<String> readsBeforeRoot() {

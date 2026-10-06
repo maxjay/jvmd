@@ -28,6 +28,9 @@ public interface LocalStore extends MachineStore {
     /** Commits at once. The previous root of this project, if any, is kept under {@code LROOT|projectKey|n} (9.1). */
     void putLocalRoot(Identity projectKey, byte[] value);
 
+    /** Commits BROOT and its previous-root history in one atomic write, after sync. Never changes LROOT. */
+    void putBodiesRoot(Identity projectKey, byte[] value);
+
     default boolean hasLocalRoot(Identity projectKey) { return get(localRootKey(projectKey)) != null; }
 
     // ---- key layout (section 4). Defined here so every implementation writes the same bytes. -------------------------------

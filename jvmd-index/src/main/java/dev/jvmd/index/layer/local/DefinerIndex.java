@@ -25,18 +25,17 @@ import java.util.function.Function;
  * <ul>
  *   <li>the <b>external</b> disjoint index over the JDK and jar leaves, keyed by {@code leafSetExt}: large, shared across projects,
  *       and untouched by an edit;</li>
- *   <li>the <b>sibling</b> disjoint index over this project's leaves, keyed by {@code leafSetSib}: small, rebuilt on an edit;</li>
+ *   <li>the <b>sibling</b> disjoint index over this project's leaves, keyed by {@code leafSetSib}: updated at touched types;</li>
  *   <li>the <b>conflict table</b>, keyed by {@code routeHash}: every type declared by more than one leaf anywhere on the route, with
  *       its route-order definer. It is the only place the two parts meet.</li>
  * </ul>
  *
  * Each disjoint part is a fold of a commutative merge over the <em>distinct</em> leaves it covers, so it depends on the set of leaves
- * and not on their order, and it is built from the nearest known state by adding and removing leaves. A leaf listed twice on a
+ * and not on their order, and it is built from a supplied ancestor by adding and removing leaves. A leaf listed twice on a
  * classpath is one leaf and is never in conflict with itself.
  *
- * <p>Every stored identity is resolution-level: an entry's {@code h} is {@code Digest(typeKey || oSum)}, never a function of
- * {@code k}, so a jar swapped for an API-identical source leaf changes the stored {@code k} and leaves every definer identity
- * unchanged (B.4).
+ * <p>DD/DS/DC entry h is the resolution projection {@code Digest(typeKey || oSum)}. Exact hashes also bind provider k;
+ * {@code Diff.content} detects provider changes even at equal h. DF separately persists the exact fold multimap.
  */
 public final class DefinerIndex {
     private DefinerIndex() { }
@@ -46,20 +45,21 @@ public final class DefinerIndex {
 
     /**
      * What a fold leaves behind for building the next one by difference: for each type (by internal name; names become key bytes only
-     * where an entry is written) the leaves that declare it, the types declared by more than one leaf, and the sorted distinct leaves it
-     * covers. Immutable: a derived state shares unchanged map branches as well as the lists they hold.
+     * where an entry is written) the leaves that declare it, the multiple-definer projection and the canonical leaf-set root.
+     * Published states are immutable; derived states share unchanged tree nodes.
      */
     public static final class State {
-        final DefinerCounts counts;
-        final List<Identity> leaves;
+        DefinerCounts counts;
+        final Root leafSet;
+        long leafSetEntriesCompared;
         /** The types whose definers differ from the state this one was folded from, and the disjoint tree of that state: an edit's input. */
         final Set<String> touched;
         final Root baseDisjoint;
         private volatile Root disjoint;
 
-        State(DefinerCounts counts, List<Identity> leaves, Set<String> touched, Root baseDisjoint) {
+        State(DefinerCounts counts, Root leafSet, Set<String> touched, Root baseDisjoint) {
             this.counts = counts;
-            this.leaves = leaves;
+            this.leafSet = leafSet;
             this.touched = touched;
             this.baseDisjoint = baseDisjoint;
         }
@@ -69,8 +69,28 @@ public final class DefinerIndex {
 
         public void disjoint(Root root) { this.disjoint = root; }
 
-        /** The sorted distinct leaf keys this state covers. */
-        public List<Identity> leaves() { return leaves; }
+        /** The canonical persistent set of leaves this state covers. */
+        public Root leafSet() { return leafSet; }
+        public long leafSetEntriesCompared() { return leafSetEntriesCompared; }
+    }
+
+    /** Persist the exact multimap and its multiple-definer projection; later folds open only changed O leaves. */
+    public static byte[] persist(ContentTree tree, State state, Function<Identity, byte[]> reader, NodeSink sink) {
+        state.counts = state.counts.persist(tree, reader, sink);
+        return new Codec.Writer().raw(encodeRoot(state.counts.allRoot())).raw(encodeRoot(state.counts.multipleRoot()))
+                .raw(encodeRoot(state.disjoint())).toBytes();
+    }
+
+    /** Reopen roots lazily: no O traversal and no reconstruction of the external type universe. */
+    public static State restore(ContentTree tree, Root leafSet, byte[] bytes, Function<Identity, byte[]> reader, NodeSink sink) {
+        int size = tree.digest().width() * 2 + 5;
+        if (bytes.length != size * 3) throw new IllegalArgumentException("Invalid stored definer state");
+        var all = decodeRoot(Arrays.copyOfRange(bytes, 0, size), tree.digest().width());
+        var multiple = decodeRoot(Arrays.copyOfRange(bytes, size, size * 2), tree.digest().width());
+        var disjoint = decodeRoot(Arrays.copyOfRange(bytes, size * 2, size * 3), tree.digest().width());
+        var state = new State(DefinerCounts.stored(tree, all, multiple, reader, sink), leafSet, Set.of(), null);
+        state.disjoint(disjoint);
+        return state;
     }
 
     /**
@@ -81,10 +101,21 @@ public final class DefinerIndex {
      * @param leafOf reads {@code L|k}
      * @param reader reads {@code N|hash}
      */
-    public static State fold(ContentTree tree, List<Identity> distinct, State base, Function<Identity, MachineLeaf> leafOf, Function<Identity, byte[]> reader) {
+    public static State fold(ContentTree tree, List<Identity> distinct, Root leafSet, State base, Function<Identity, MachineLeaf> leafOf, Function<Identity, byte[]> reader) {
         var removed = new ArrayList<Identity>();
         var added = new ArrayList<Identity>();
-        difference(base == null ? List.of() : base.leaves, distinct, removed, added);
+        long[] compared = {0};
+        if (base == null) added.addAll(distinct);
+        else {
+            var delta = dev.jvmd.core.tree.Diff.trees(tree.digest(), base.leafSet, leafSet, id -> {
+                var bytes = reader.apply(id);
+                if (dev.jvmd.core.tree.Node.level(bytes) == 0)
+                    compared[0] += dev.jvmd.core.tree.Node.entries(bytes, tree.digest().width()).size();
+                return bytes;
+            });
+            for (var entry : delta.removed()) removed.add(Identity.of(entry.key()));
+            for (var entry : delta.added()) added.add(Identity.of(entry.key()));
+        }
 
         var counts = base == null ? DefinerCounts.EMPTY : base.counts;
         var changed = new HashMap<String, List<Def>>();
@@ -102,7 +133,9 @@ public final class DefinerIndex {
                 defs.add(new Def(k, entry.h()));
             });
         }
-        return new State(counts.with(changed), List.copyOf(distinct), Set.copyOf(changed.keySet()), base == null ? null : base.disjoint);
+        var state = new State(counts.with(changed), leafSet, Set.copyOf(changed.keySet()), base == null ? null : base.disjoint);
+        state.leafSetEntriesCompared = compared[0];
+        return state;
     }
 
     /**
@@ -150,15 +183,43 @@ public final class DefinerIndex {
         candidates.addAll(sibling.counts.keySet());
         var entries = new ArrayList<Entry>();
         for (var key : candidates) {
-            var defs = resolver.definers(key);
-            if (defs.size() < 2) continue;
-            var bytes = Keys.ownerKey(key);
-            var value = new Codec.Writer(64 + defs.size() * digest.width()).id(defs.get(0).k()).u32(defs.size());
-            for (var d : defs) value.id(d.k());
-            entries.add(new Entry(bytes, value.toBytes(), digest.hash(bytes, defs.get(0).oSum().view())));
+            var entry = conflictEntry(digest, key, resolver);
+            if (entry != null) entries.add(entry);
         }
         entries.sort((a, b) -> Arrays.compareUnsigned(a.key(), b.key()));
         return tree.build(entries, sink);
+    }
+
+    private static Entry conflictEntry(Digest digest, String type, Resolver resolver) {
+        var defs = resolver.definers(type);
+        if (defs.size() < 2) return null;
+        var key = Keys.ownerKey(type);
+        var value = new Codec.Writer().id(defs.getFirst().k()).u32(defs.size());
+        for (var def : defs) value.id(def.k());
+        return new Entry(key, value.toBytes(), digest.hash(key, defs.getFirst().oSum().view()));
+    }
+
+    public record ConflictUpdate(Root root, int ownerOpens, int touched) { }
+
+    /** Recompute only types declared by leaves inserted, removed or moved in the ordered route delta. */
+    public static ConflictUpdate conflicts(ContentTree tree, State external, State sibling, List<Identity> sequence,
+                                           Root parentRoute, Root route, Root parentConflicts,
+                                           Function<Identity, MachineLeaf> leafOf, Function<Identity, byte[]> reader, NodeSink sink) {
+        var delta = dev.jvmd.core.tree.Diff.lists(tree.digest(), parentRoute, route, reader);
+        var changed = new HashSet<Identity>();
+        for (var entries : List.of(delta.removed(), delta.added()))
+            for (var entry : entries) changed.add(Identity.of(entry.element().key()));
+        var touched = new HashSet<String>();
+        for (var k : changed) tree.forEach(leafOf.apply(k).oHash(), reader, entry -> touched.add(Keys.ownerOf(entry.key())));
+        var resolver = new Resolver(external, sibling, sequence);
+        var removed = new ArrayList<byte[]>();
+        var added = new ArrayList<Entry>();
+        for (var type : touched) {
+            removed.add(Keys.ownerKey(type));
+            var entry = conflictEntry(tree.digest(), type, resolver);
+            if (entry != null) added.add(entry);
+        }
+        return new ConflictUpdate(tree.apply(parentConflicts, removed, added, reader, sink), changed.size(), touched.size());
     }
 
     /** Resolves a type key through the two parts the way a lookup does: the definer that is first in route order, and what it resolves to. */
@@ -238,29 +299,6 @@ public final class DefinerIndex {
                     && tree.rangeSum(ds.hash(), nodes, key).equals(zero)
                     && tree.rangeSum(dc.hash(), nodes, key).equals(zero);
         }
-    }
-
-    /** The multiset difference of two sorted key lists: {@code removed = old \ now}, {@code added = now \ old}. */
-    static void difference(List<Identity> old, List<Identity> now, List<Identity> removed, List<Identity> added) {
-        int i = 0, j = 0;
-        while (i < old.size() || j < now.size()) {
-            int c = i == old.size() ? 1 : j == now.size() ? -1 : old.get(i).compareTo(now.get(j));
-            if (c < 0) removed.add(old.get(i++));
-            else if (c > 0) added.add(now.get(j++));
-            else { i++; j++; }
-        }
-    }
-
-    /** The size of the symmetric difference of two sorted leaf lists: how far {@code a} is from {@code b}. */
-    public static int distance(List<Identity> a, List<Identity> b) {
-        int i = 0, j = 0, distance = 0;
-        while (i < a.size() && j < b.size()) {
-            int comparison = a.get(i).compareTo(b.get(j));
-            if (comparison < 0) { i++; distance++; }
-            else if (comparison > 0) { j++; distance++; }
-            else { i++; j++; }
-        }
-        return distance + a.size() - i + b.size() - j;
     }
 
     /** B.4: {@code id root.hash || id root.sum || u32 count || u8 level}, the value of {@code DD|}, {@code DS|} and {@code DC|}. */

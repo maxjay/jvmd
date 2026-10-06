@@ -15,7 +15,8 @@ import java.util.List;
  * @param sibling  the distinct sibling leaves, sorted by unsigned bytes: what the sibling definer index covers
  */
 public record Bound(List<Binding> bindings, List<Identity> sequence, Identity routeHash, Identity r, Identity leafSetExt, Identity leafSetSib,
-                    List<Identity> external, List<Identity> sibling) {
+                    List<Identity> external, List<Identity> sibling, dev.jvmd.core.tree.Root routeRoot,
+                    dev.jvmd.core.tree.Root externalRoot, dev.jvmd.core.tree.Root siblingRoot) {
     /** Which provider supplied a leaf (3.16). */
     public enum Origin { SESSION, SIBLING, EXTERNAL }
 

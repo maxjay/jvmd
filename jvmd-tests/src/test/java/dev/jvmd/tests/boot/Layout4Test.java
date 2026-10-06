@@ -4,12 +4,14 @@ import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.hash.digests.Sha256;
 import dev.jvmd.core.tree.ContentTree;
+import dev.jvmd.core.tree.Codec;
 import dev.jvmd.core.tree.Diff;
 import dev.jvmd.core.tree.Entry;
 import dev.jvmd.core.tree.Node;
 import dev.jvmd.core.tree.NodeSink;
 import dev.jvmd.core.tree.Root;
 import dev.jvmd.index.layer.machine.ClassFacts;
+import dev.jvmd.index.layer.machine.Ann;
 import dev.jvmd.index.layer.machine.Keys;
 import dev.jvmd.index.layer.machine.LeafBuilder;
 import dev.jvmd.index.layer.machine.MachineLeaf;
@@ -86,7 +88,7 @@ class Layout4Test {
         assertThat(reads).contains(annotated.value.k(), annotated.value.oHash());
         var ownerNodes = new HashSet<Identity>();
         reach(annotated.value.oHash(), annotated, ownerNodes);
-        DefinerIndex.fold(annotated.tree, List.of(annotated.value.k()), null, h -> annotated.value, h -> {
+        DefinerIndex.fold(annotated.tree, List.of(annotated.value.k()), dev.jvmd.index.layer.local.Bind.leafSetRoot(digest, List.of(annotated.value.k()), new NodeSink() { public void write(Node n) { annotated.nodes.put(n.hash(), n.bytes()); } public void flush() { } }), null, h -> annotated.value, h -> {
             assertThat(ownerNodes).as("definer fold reads only O").contains(h);
             return annotated.nodes.get(h);
         });
@@ -153,10 +155,23 @@ class Layout4Test {
     }
 
     @ParameterizedTest @MethodSource("digests")
-    void deprecationSinceIsNotAResolutionInput(Digest digest) throws Exception {
+    void deprecationSinceChangesOnlyRetainedMetadata(Digest digest) throws Exception {
         var before = leaf(digest, "since-before", "package p; @Deprecated(since=\"1\") public class K { @Deprecated(since=\"1\") public int f; @Deprecated(since=\"1\") public void m() {} }");
-        var after = leaf(digest, "since-after", "package p; @Deprecated(since=\"2\", forRemoval=false) public class K { @Deprecated(since=\"2\", forRemoval=false) public int f; @Deprecated(since=\"2\", forRemoval=false) public void m() {} }");
+        var after = leaf(digest, "since-after", "package p; @Deprecated(since=\"2\") public class K { @Deprecated(since=\"2\") public int f; @Deprecated(since=\"2\") public void m() {} }");
         assertThat(after.value.encode()).isEqualTo(before.value.encode());
+        assertThat(after.a).isNotEqualTo(before.a);
+        assertThat(after.annotationEdges).isEqualTo(before.annotationEdges);
+        var nodes = new HashMap<>(before.nodes);
+        nodes.putAll(after.nodes);
+        var delta = Diff.trees(digest, before.annotations, after.annotations, nodes::get);
+        assertThat(delta.removed()).hasSize(3);
+        assertThat(delta.added()).hasSize(3);
+        assertThat(delta.added().stream().map(e -> Keys.Member.decode(e.key()).kind()).toList())
+                .containsExactlyInAnyOrder(Keys.TYPE, Keys.FIELD, Keys.METHOD);
+        for (var entry : delta.added()) {
+            assertThat(visibleAnnotations(entry.value())).containsExactly(
+                    new Ann("Ljava/lang/Deprecated;", List.of(new Ann.Element("since", new Ann.Val.Str("2")))));
+        }
         assertThat(Stubs.stubs(digest, after.tree, after.value, after.nodes::get, Stubs.Cache.NONE).getFirst().bytes())
                 .isEqualTo(Stubs.stubs(digest, before.tree, before.value, before.nodes::get, Stubs.Cache.NONE).getFirst().bytes());
     }
@@ -166,6 +181,12 @@ class Layout4Test {
         var plain = leaf(digest, "plain-warning", "package p; public class K { public static <T> void f(T... xs) {} }");
         var marked = leaf(digest, "marked-warning", "package p; public class K { @Deprecated(forRemoval=true) @SafeVarargs public static <T> void f(T... xs) {} }");
         assertThat(marked.value.r()).isNotEqualTo(plain.value.r());
+        var metadata = marked.tree.get(marked.annotations.hash(), marked.nodes::get,
+                Keys.memberKey("p/K", Keys.METHOD, "f", "([Ljava/lang/Object;)V"));
+        assertThat(metadata).isNotNull();
+        assertThat(visibleAnnotations(metadata.value())).containsExactly(
+                new Ann("Ljava/lang/Deprecated;", List.of(new Ann.Element("forRemoval", new Ann.Val.Prim('Z', 1)))),
+                new Ann("Ljava/lang/SafeVarargs;", List.of()));
         var bytes = Stubs.stubs(digest, marked.tree, marked.value, marked.nodes::get, Stubs.Cache.NONE).getFirst().bytes();
         var stub = ClassFacts.of(digest, bytes, "p/K");
         var expected = marked.tree.get(marked.value.k(), marked.nodes::get, Keys.memberKey("p/K", Keys.METHOD, "f", "([Ljava/lang/Object;)V"));
@@ -222,10 +243,10 @@ class Layout4Test {
         assertThat(rangeDelta).as("delta oSum equals the sum of touched member ranges").isEqualTo(rDelta);
 
         var leaves = Map.of(before.value.k(), before.value, after.value.k(), after.value);
-        var state = DefinerIndex.fold(tree, List.of(before.value.k()), null, leaves::get, nodes::get);
+        var state = DefinerIndex.fold(tree, List.of(before.value.k()), dev.jvmd.index.layer.local.Bind.leafSetRoot(digest, List.of(before.value.k()), sink), null, leaves::get, nodes::get);
         var dd0 = DefinerIndex.disjoint(digest, tree, state, nodes::get, sink);
         state.disjoint(dd0);
-        var edited = DefinerIndex.fold(tree, List.of(after.value.k()), state, leaves::get, nodes::get);
+        var edited = DefinerIndex.fold(tree, List.of(after.value.k()), dev.jvmd.index.layer.local.Bind.leafSetRoot(digest, List.of(after.value.k()), sink), state, leaves::get, nodes::get);
         var dd1 = DefinerIndex.disjoint(digest, tree, edited, nodes::get, sink);
         conserved(tree, dd0, dd1, nodes, sink);
     }
@@ -270,6 +291,14 @@ class Layout4Test {
             tree.verify(leaf.edges(), h -> store.get(dev.jvmd.index.layer.machine.MachineStore.nodeKey(h)));
         }
         assertThat(ids).hasSize(2);
+    }
+
+    private List<Ann> visibleAnnotations(byte[] tail) {
+        var in = new Codec.Reader(tail);
+        int count = in.count();
+        var annotations = new java.util.ArrayList<Ann>(count);
+        for (int i = 0; i < count; i++) annotations.add(Ann.decode(in));
+        return annotations;
     }
 
     @ParameterizedTest @MethodSource("digests")

@@ -54,22 +54,26 @@ final class Boot implements AutoCloseable {
     final IndexMemo indexMemo = new IndexMemo();
     /** The routes as step 1 resolved them: {@code module \0 scope -> entries}. */
     final Map<String, List<RouteEntry>> entries = new ConcurrentHashMap<>();
+    /** Planned ancestry: a test extends its main route; a main extends its first declared sibling's main route. */
+    final Map<String, String> parents = new ConcurrentHashMap<>();
+    /** Common external base for root modules, bound by step 1 before jobs start. */
+    List<Identity> jdkLeaves;
+    Identity jdkLeafSet;
+    dev.jvmd.core.tree.Root jdkSetRoot;
     /** The bound routes as the jobs wrote them. */
     final Map<String, Route> routes = new ConcurrentHashMap<>();
     final Map<String, FileRow> files = new ConcurrentHashMap<>();
-    /**
-     * For each type key (an internal name) the files whose header proof names it, each under the external part of its route: the kind 7
-     * entries of {@code X|} (B.5, B.9). Without them, checking header proofs after an edit is a scan of every dependent's file row.
-     */
-    final Map<String, java.util.Set<dev.jvmd.index.layer.local.ReverseIndex.Consumer>> headerConsumers = new ConcurrentHashMap<>();
-    /** The same for a type only a constant initialiser resolved through (kind 8): its value is inlined into the file's facts. */
-    final Map<String, java.util.Set<dev.jvmd.index.layer.local.ReverseIndex.Consumer>> constantConsumers = new ConcurrentHashMap<>();
     /** {@code DD|}, {@code DS|} and {@code DC|} records this boot used: they are part of the LOCAL tree of the project that used them. */
     final ConcurrentSkipListMap<byte[], byte[]> definers = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);
     final ConcurrentLinkedQueue<String> faults = new ConcurrentLinkedQueue<>();
     final AtomicInteger sourceFiles = new AtomicInteger(), parsedFiles = new AtomicInteger(), sourceLeaves = new AtomicInteger();
     /** Summed over jobs, so with several workers they exceed the wall time: header compilation (parse, enter, member completion), Φ_src, and definer indexes. */
     final AtomicLong headerNanos = new AtomicLong(), factsNanos = new AtomicLong(), definerNanos = new AtomicLong();
+    final AtomicInteger conflictCacheHits = new AtomicInteger(), conflictBuilds = new AtomicInteger();
+    final AtomicLong conflictNodeWrites = new AtomicLong();
+    final AtomicInteger definerCacheHits = new AtomicInteger(), definerOwnerOpens = new AtomicInteger();
+    final AtomicLong leafSetEntriesCompared = new AtomicLong();
+    final AtomicInteger conflictApplies = new AtomicInteger(), conflictOwnerOpens = new AtomicInteger(), conflictTouched = new AtomicInteger();
     private final ConcurrentHashMap<Identity, MachineLeaf> machineLeaves = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Identity, Path> stubDirs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Optional<String>> systemVersions = new ConcurrentHashMap<>();
@@ -84,7 +88,7 @@ final class Boot implements AutoCloseable {
         this.model = model;
         this.projectKey = projectKey;
         this.repository = repository;
-        this.sink = written.through(store);
+        this.sink = written.throughShared(store);
     }
 
     static String routeKey(String module, int scope) { return module + "\0" + scope; }

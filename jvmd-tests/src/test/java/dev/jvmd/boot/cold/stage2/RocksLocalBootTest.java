@@ -70,10 +70,10 @@ class RocksLocalBootTest {
             try (var store = Generation.of(indexDir, format).open()) {
                 var kinds = new TreeMap<String, Integer>();
                 for (var key : store.keys()) kinds.merge(kind(key), 1, Integer::sum);
-                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT");
+                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT");
                 assertThat(kinds).as("C| and RS| are empty after a cold boot").doesNotContainKeys("C", "RS");
-                for (var key : store.keys()) if (kind(key).equals("X")) assertThat(key[2]).as("header types and declaration lookup reads use the two legacy reverse categories").isIn((byte) 7, (byte) 8);
-                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT");
+                for (var key : store.keys()) if (kind(key).equals("X")) assertThat(key[2]).as("header range reverse keys have their own namespace").isEqualTo((byte) 'H');
+                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT");
                 assertThat(kinds.get("MOD")).isEqualTo(4);
                 assertThat(kinds.get("RT")).isEqualTo(8);
                 assertThat(kinds.get("SL")).isEqualTo(8);
@@ -93,11 +93,23 @@ class RocksLocalBootTest {
                 }
                 assertThat(root.local().count()).as("every record is in the LOCAL tree").isGreaterThan(kinds.get("MOD") + kinds.get("RT") + kinds.get("F"));
             }
+            // The production reader uses RocksDB seek(prefix), and every returned path has a committed reverse record.
+            try (var store = Generation.of(indexDir, format).openLocal()) {
+                var dependency = new dev.jvmd.index.layer.local.ReverseIndex.Dependency(
+                        dev.jvmd.index.layer.local.ReverseIndex.T, "common/Base", dev.jvmd.index.layer.machine.Keys.TYPE, "");
+                var consumers = dev.jvmd.index.layer.local.ReverseIndex.consumers(digest, store, dependency);
+                assertThat(consumers).extracting(dev.jvmd.index.layer.local.ReverseIndex.Consumer::path)
+                        .contains("server-a/src/main/java/a/Server.java");
+                for (var consumer : consumers) {
+                    assertThat(consumer.project()).isEqualTo(projectKey);
+                    assertThat(store.get(dependency.key(consumer.project(), consumer.path()))).isEmpty();
+                }
+            }
             // Neither old header-proof layout may take the current-format skip branch.
-            for (int legacy : List.of(1, 2)) {
+            for (int legacy : List.of(1, 2, 3, 4)) {
                 try (var store = Generation.of(indexDir, format).openLocal()) {
                     var root = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(projectKey)));
-                    store.putLocalRoot(projectKey, LocalRoot.encode(digest,
+                    store.putLocalRoot(digest, projectKey, LocalRoot.encode(digest,
                             format + ";local=" + legacy + ";javac=" + Runtime.version().feature(), root.local(), root.machineRoot(), root.modelHash()));
                 }
                 var rebuilt = BootDecision.local(indexDir, model, repository);
@@ -115,7 +127,7 @@ class RocksLocalBootTest {
     private static String kind(byte[] key) {
         if (new String(key, StandardCharsets.US_ASCII).equals("ROOT")) return "ROOT";
         var text = new String(key, StandardCharsets.ISO_8859_1);
-        for (var tag : List.of("LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
+        for (var tag : List.of("LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "DF|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
         if (key[0] == 'L' && key.length == 33) return "L";
         if (key[0] == 'N' && key.length == 33) return "N";
         if (key[0] == 'P') return "P";

@@ -92,8 +92,9 @@ class LocalCodecsTest {
             assertThat(back.dependencies().get(i).identity()).isEqualTo(consumer.dependencies().get(i).identity());
             assertThat(back.dependencies().get(i).key()).isEqualTo(consumer.dependencies().get(i).key());
         }
-        var reverse = new ReverseIndex(List.of(new ReverseIndex.Consumer(id("k1"), id("r1")), new ReverseIndex.Consumer(id("k2"), id("r2"))));
-        assertThat(ReverseIndex.decode(reverse.encode(), 32).consumers()).isEqualTo(reverse.consumers());
+        var dependency = new ReverseIndex.Dependency(ReverseIndex.T, "p/T", 1, "value");
+        assertThat(dependency.key(id("project"), "src/T.java")).startsWith(dependency.prefix());
+        assertThat(dependency.key(id("project"), "src/T.java")).isNotEqualTo(dependency.key(id("project"), "test/T.java"));
         var result = new ResultRecord(1, List.of(new ResultRecord.Diagnostic(1, 5, 9, "compiler.err.x", "boom")),
                 List.of(new ResultRecord.Reference(1, 4, ConsumerRecord.TYPE, id("t"), type)), List.of(new ResultRecord.ClassFile("p/T", id("bytes"))));
         var resultBack = ResultRecord.decode(result.encode(), 32);

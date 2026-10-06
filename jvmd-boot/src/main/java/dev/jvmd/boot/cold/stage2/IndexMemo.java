@@ -2,19 +2,15 @@ package dev.jvmd.boot.cold.stage2;
 
 import dev.jvmd.core.hash.Identity;
 import dev.jvmd.index.layer.local.DefinerIndex;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import dev.jvmd.core.tree.Root;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
- * {@code IndexMemo} (stage 2, 2.6, 3.6 and 3.17): the built definer states, per kind, so that the next index of a kind is folded from
- * the nearest one by leaf difference. Nearest is the state of the same kind with the smallest symmetric difference of leaf keys; an
- * external state is never a base for a sibling one, because they hold different leaves and change at different rates.
+ * {@code IndexMemo} (stage 2, 2.6, 3.6 and 3.17): the built definer states, per kind. The route plan supplies the parent state;
+ * selecting it never searches the set of completed routes. External and sibling states remain independent.
  *
  * <p>A state is folded once per {@code (kind, key)} in a boot, however many jobs want it at the same moment: the first to ask claims
  * the key and folds, and the others wait for that fold and take its result ({@link #once}). Without the claim, sixteen workers whose
@@ -25,11 +21,11 @@ final class IndexMemo {
 
     private record Key(Kind kind, Identity key) { }
 
-    private record Entry(Kind kind, Identity key, DefinerIndex.State state) { }
+    record States(DefinerIndex.State external, DefinerIndex.State sibling, Root route, Root conflicts) { }
 
     private final ConcurrentHashMap<Key, CompletableFuture<DefinerIndex.State>> folds = new ConcurrentHashMap<>();
-    private final List<Entry> entries = new ArrayList<>();
-    private final Set<Identity> conflicts = new HashSet<>();
+    private final ConcurrentHashMap<String, States> routes = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Identity, CompletableFuture<Root>> conflicts = new ConcurrentHashMap<>();
     private final AtomicInteger externalFolds = new AtomicInteger(), siblingFolds = new AtomicInteger();
 
     /**
@@ -42,7 +38,6 @@ final class IndexMemo {
         if (existing != null) return existing.join();
         try {
             var state = fold.get();
-            synchronized (this) { entries.add(new Entry(kind, key, state)); }
             (kind == Kind.EXTERNAL ? externalFolds : siblingFolds).incrementAndGet();
             mine.complete(state);
             return state;
@@ -52,20 +47,29 @@ final class IndexMemo {
         }
     }
 
-    /** The finished state of {@code kind} whose leaves differ least from {@code sorted} (sorted distinct leaves), or null if none is known. */
-    synchronized DefinerIndex.State nearest(Kind kind, List<Identity> sorted) {
-        DefinerIndex.State best = null;
-        int bestDistance = Integer.MAX_VALUE;
-        for (var e : entries) {
-            if (e.kind() != kind) continue;
-            int d = DefinerIndex.distance(e.state().leaves(), sorted);
-            if (d < bestDistance) { best = e.state(); bestDistance = d; }
-        }
-        return best;
+    /** Published only after the disjoint, leaf-set, ordered-route and conflict roots can be read by a dependent job. */
+    void route(String route, States states) { routes.put(route, states); }
+
+    States route(String route) {
+        var states = routes.get(route);
+        if (states == null) throw new IllegalStateException("Route parent is not built: " + route);
+        return states;
     }
 
-    /** True the first time it is asked for this route in this boot: the caller then builds and writes its conflict table. */
-    synchronized boolean claimConflicts(Identity routeHash) { return conflicts.add(routeHash); }
+    /** Publish a readable conflict root once per exact ordered route, propagating failures to every waiter. */
+    Root conflicts(Identity routeHash, Supplier<Root> build) {
+        var mine = new CompletableFuture<Root>();
+        var existing = conflicts.putIfAbsent(routeHash, mine);
+        if (existing != null) return existing.join();
+        try {
+            var root = build.get();
+            mine.complete(root);
+            return root;
+        } catch (RuntimeException | Error failed) {
+            mine.completeExceptionally(failed);
+            throw failed;
+        }
+    }
 
     /** How many distinct leaf sets have an index, external and sibling: the {@code U} of the cost model (7.2). */
     int distinctLeafSets() { return folds.size(); }

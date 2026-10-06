@@ -261,7 +261,7 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         return Res.Warnings.of(element.findAttribute(Attributes.deprecated()).isPresent(), deprecated, safeVarargs != null);
     }
 
-    /** Annotation metadata javac does not read during dependency resolution. */
+    /** Full retained annotation metadata, including annotations whose minimal warning projection also belongs to res. */
     private static byte[] tail(AttributedElement element, boolean method) {
         var out = new Codec.Writer();
         var visible = element.findAttribute(Attributes.runtimeVisibleAnnotations());
@@ -287,7 +287,7 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
 
     private static void writeAnnotations(Codec.Writer out, List<Annotation> annotations) {
         var list = new ArrayList<Ann>(annotations.size());
-        for (var a : annotations) if (!Res.Warnings.reads(a.className().stringValue())) list.add(annotation(a));
+        for (var a : annotations) list.add(annotation(a));
         Ann.encodeList(out, list);
     }
 

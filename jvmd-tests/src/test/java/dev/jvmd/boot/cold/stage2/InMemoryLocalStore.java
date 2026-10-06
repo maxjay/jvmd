@@ -21,6 +21,13 @@ final class InMemoryLocalStore implements LocalStore {
     private final ThreadLocal<List<byte[][]>> pending = ThreadLocal.withInitial(ArrayList::new);
     private final List<String> events = Collections.synchronizedList(new ArrayList<>());
     private final List<byte[]> recordWrites = Collections.synchronizedList(new ArrayList<>());
+    private final Map<java.nio.ByteBuffer, java.util.concurrent.atomic.AtomicInteger> watchedReads = new java.util.concurrent.ConcurrentHashMap<>();
+
+    java.util.concurrent.atomic.AtomicInteger watchReads(byte[] key) {
+        var count = new java.util.concurrent.atomic.AtomicInteger();
+        watchedReads.put(java.nio.ByteBuffer.wrap(key), count);
+        return count;
+    }
 
     InMemoryLocalStore copy() {
         var out = new InMemoryLocalStore();
@@ -29,6 +36,8 @@ final class InMemoryLocalStore implements LocalStore {
     }
 
     @Override public void put(byte[] key, byte[] value) {
+        if (dev.jvmd.index.layer.local.ReverseIndex.isHeaderKey(key))
+            throw new IllegalArgumentException("Current reverse keys are published with LROOT");
         if (key[0] != 'N') recordWrites.add(key);
         pending.get().add(new byte[][] {key, value});
     }
@@ -40,10 +49,26 @@ final class InMemoryLocalStore implements LocalStore {
     /** The record under a key, recorded by kind: the tag before the first {@code |} of a LOCAL key, or the one-byte tag of a MACHINE key. */
     @Override public byte[] get(byte[] key) {
         events.add("read:" + kindOf(key));
+        if (!watchedReads.isEmpty()) {
+            var count = watchedReads.get(java.nio.ByteBuffer.wrap(key));
+            if (count != null) count.incrementAndGet();
+        }
         synchronized (records) { return records.get(key); }
     }
 
-    private static final List<String> LOCAL_TAGS = List.of("LROOT", "SL", "AL", "MOD", "RT", "F", "DD", "DS", "DC", "C", "X", "RS", "ST", "S");
+    @Override public void forEachKey(byte[] prefix, java.util.function.Consumer<byte[]> action) {
+        events.add("prefix:" + kindOf(prefix));
+        var keys = new ArrayList<byte[]>();
+        synchronized (records) {
+            for (var key : records.tailMap(prefix).keySet()) {
+                if (key.length < prefix.length || !Arrays.equals(key, 0, prefix.length, prefix, 0, prefix.length)) break;
+                keys.add(key);
+            }
+        }
+        keys.forEach(action);
+    }
+
+    private static final List<String> LOCAL_TAGS = List.of("LROOT", "SL", "AL", "MOD", "RT", "F", "DD", "DS", "DC", "DF", "C", "X", "RS", "ST", "S");
 
     private static String kindOf(byte[] key) {
         if (Arrays.equals(key, MachineStore.ROOT_KEY)) return "ROOT";
@@ -68,10 +93,13 @@ final class InMemoryLocalStore implements LocalStore {
 
     @Override public void putRoot(byte[] value) { synchronized (records) { records.put(MachineStore.ROOT_KEY, value); } }
 
-    @Override public void putLocalRoot(Identity projectKey, byte[] value) {
+    @Override public void putLocalRoot(dev.jvmd.core.hash.Digest digest, Identity projectKey, byte[] value) {
         events.add("putLocalRoot");
         synchronized (records) {
             var previous = records.get(LocalStore.localRootKey(projectKey));
+            for (var mutation : dev.jvmd.index.layer.local.ReverseIndex.publication(digest, this, previous, value)) {
+                if (mutation[1] == null) records.remove(mutation[0]); else records.put(mutation[0], mutation[1]);
+            }
             if (previous != null) {
                 int n = 1;
                 while (records.containsKey(LocalStore.localRootHistoryKey(projectKey, n))) n++;

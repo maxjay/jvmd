@@ -498,12 +498,12 @@ public final class SourceFacts {
         return Res.Warnings.of(elements.isDeprecated(element), deprecated, safeVarargs != null);
     }
 
-    /** Annotation metadata outside the resolution projection. */
+    /** Full retained annotation metadata; warning annotations overlap the minimal resolution projection. */
     private byte[] tail(Element element, List<AnnotationMirror> retained, boolean method, TypeElement innerOwner) {
         var out = new Codec.Writer();
         for (var wanted : new Retention[] {Retention.RUNTIME, Retention.CLASS}) {
             var chosen = new ArrayList<AnnotationMirror>();
-            for (var a : retained) if (retention(a) == wanted && !Res.Warnings.reads(descriptor(a.getAnnotationType(), new ArrayList<>()))) chosen.add(a);
+            for (var a : retained) if (retention(a) == wanted) chosen.add(a);
             var list = new ArrayList<Ann>(chosen.size());
             for (var a : chosen) list.add(annotation(a));
             Ann.encodeList(out, list);

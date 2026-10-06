@@ -63,6 +63,7 @@ public final class ProcessorHost implements AutoCloseable {
     private Map<String, List<Entry>> closedDomains;
     private Map<String, List<URI>> closedInputs;
     private Map<String, byte[]> closedModelProofs;
+    private final Map<String, Map<String, byte[]>> originModelProofs = new TreeMap<>();
     private final Map<String, List<ProcessorReads.Read>> modelReads = new TreeMap<>();
     private Wrapped active;
     private int internalReads;
@@ -152,13 +153,13 @@ public final class ProcessorHost implements AutoCloseable {
         modelReads.forEach((name, reads) -> out.put(name, List.copyOf(reads)));
         return Map.copyOf(out);
     }
-    /** A single-origin invocation has an unambiguous consumer for its model queries. Multiple origins need finer attribution. */
+    /** Header dependencies observed by the independently checked invocation for this source origin. */
     List<ProcessorReads.Read> readsFor(URI origin) {
         var reads = new ArrayList<ProcessorReads.Read>();
         for (var processor : processors) {
             if (processor.declared != ProcessorRecords.ISOLATING || TESTED_OVERLAYS.contains(processor.name)) continue;
-            var origins = List.copyOf(processor.inputs);
-            if (origins.size() == 1 && origins.getFirst().equals(origin)) reads.addAll(modelReads.getOrDefault(processor.name, List.of()));
+            var result = processor.isolated.get(origin);
+            if (result != null) reads.addAll(result.reads());
         }
         return List.copyOf(reads);
     }
@@ -181,11 +182,12 @@ public final class ProcessorHost implements AutoCloseable {
         for (var processor : processors) out.put(processor.name, List.copyOf(processor.inputs));
         return Map.copyOf(out);
     }
-    /** Fresh query answers for an aggregate, or an isolating invocation with one unambiguous source input. */
+    /** Aggregate invocation answers, or the checked isolated invocation for exactly one source file. */
     byte[] modelProof(String processor, String origin) {
         if (origin != null) {
-            var inputs = inputs().getOrDefault(processor, List.of());
-            if (inputs.size() != 1 || !sourcePath(inputs.getFirst()).equals(origin)) return new byte[0];
+            var proof = originModelProofs.getOrDefault(processor, Map.of()).get(origin);
+            if (proof == null) throw new IllegalStateException("Missing isolated processor proof: " + processor + " from " + origin);
+            return proof;
         }
         return modelProofs().getOrDefault(processor, new byte[0]);
     }
@@ -194,6 +196,29 @@ public final class ProcessorHost implements AutoCloseable {
         var proofs = new TreeMap<String, byte[]>();
         for (var processor : processors) if (processor.reads != null) proofs.put(processor.name, processor.reads.proof());
         return Map.copyOf(proofs);
+    }
+
+    /** Runs against captured provenance and model answers only; no completed-compiler query fallback. */
+    void proveIsolating(java.nio.charset.Charset charset) {
+        for (var processor : processors) {
+            if (processor.declared != ProcessorRecords.ISOLATING || processor.observed != ProcessorRecords.GENERATOR || processor.reads == null) continue;
+            var proofs = new TreeMap<String, byte[]>();
+            for (var origin : processor.inputs) {
+                try {
+                    var expected = outputs.stream().filter(o -> o.processorClass().equals(processor.name)
+                            && o.origins().size() == 1 && o.origins().getFirst().equals(origin)).toList();
+                    var result = ProcessorReplay.run(loader.getURLs(), processor.name, processor.environment, processor.setup, processor.rounds,
+                            processor.reads, origin, processor.origins::get, charset, expected);
+                    processor.isolated.put(origin, result);
+                    proofs.put(sourcePath(origin), result.proof());
+                } catch (ReflectiveOperationException | IOException | RuntimeException | LinkageError failure) {
+                    processor.unsupported("cannot prove isolated origin " + sourcePath(origin) + ": " + failure);
+                    proofs.clear(); processor.isolated.clear();
+                    break;
+                }
+            }
+            originModelProofs.put(processor.name, Map.copyOf(proofs));
+        }
     }
     @Override public void close() throws IOException {
         closedCapabilities = capabilities();
@@ -214,6 +239,11 @@ public final class ProcessorHost implements AutoCloseable {
         Trees trees;
         ProcessorElementProjection projection;
         ProcessorReads reads;
+        ProcessorReplay.Environment environment;
+        final List<String> setup = new ArrayList<>();
+        final List<ProcessorReplay.Round> rounds = new ArrayList<>();
+        final Map<URI, ProcessorReplay.Result> isolated = new TreeMap<>();
+        final ProcessorReplay.Origins origins = new ProcessorReplay.Origins();
         int roundNumber;
         final TreeMap<byte[], Entry> domain = new TreeMap<>(Arrays::compareUnsigned);
         final Set<URI> inputs = new java.util.TreeSet<>();
@@ -228,6 +258,8 @@ public final class ProcessorHost implements AutoCloseable {
             finally { active = previous; }
         }
         @Override public void init(ProcessingEnvironment environment) {
+            this.environment = ProcessorReplay.Environment.of(environment);
+            setup.add("init");
             trees = Trees.instance(environment);
             projection = new ProcessorElementProjection(environment.getElementUtils(), environment.getTypeUtils());
             if (!TESTED_OVERLAYS.contains(name)) reads = new ProcessorReads(environment.getElementUtils(), environment.getTypeUtils(),
@@ -258,10 +290,12 @@ public final class ProcessorHost implements AutoCloseable {
                 }
             }
             if (reads != null) reads.phase(roundNumber);
+            var snapshot = new ProcessorReplay.Round(roundNumber, annotations, round, this::origin);
+            rounds.add(snapshot);
             var roundPrefix = "round." + roundNumber++ + ".";
             @SuppressWarnings("unchecked") var wrappedAnnotations = reads == null ? annotations
                     : (Set<? extends TypeElement>) reads.answer(roundPrefix + "annotations", null, annotations);
-            boolean claimed = observe(() -> delegate.process(wrappedAnnotations, new RecordingRound(round, this, roundPrefix)));
+            boolean claimed = observe(() -> delegate.process(wrappedAnnotations, new RecordingRound(round, this, roundPrefix, snapshot)));
             for (var entry : declarations.entrySet()) {
                 var origin = origin(entry.getKey());
                 if (origin == null || !Arrays.equals(entry.getValue(), projection.of(entry.getKey(), sourcePath(origin))))
@@ -272,13 +306,14 @@ public final class ProcessorHost implements AutoCloseable {
         URI origin(Element element) {
             internalReads++;
             try {
-                var path = trees.getPath(reads == null ? element : (Element) reads.unwrap(element));
-                return path == null ? null : path.getCompilationUnit().getSourceFile().toUri();
+                var nativeElement = reads == null ? element : (Element) reads.unwrap(element);
+                var path = trees.getPath(nativeElement);
+                return origins.capture(nativeElement, path == null ? null : path.getCompilationUnit().getSourceFile().toUri());
             } finally { internalReads--; }
         }
-        @Override public Set<String> getSupportedOptions() { return observe(delegate::getSupportedOptions); }
-        @Override public Set<String> getSupportedAnnotationTypes() { return observe(delegate::getSupportedAnnotationTypes); }
-        @Override public SourceVersion getSupportedSourceVersion() { return observe(delegate::getSupportedSourceVersion); }
+        @Override public Set<String> getSupportedOptions() { if (roundNumber == 0) setup.add("options"); return observe(delegate::getSupportedOptions); }
+        @Override public Set<String> getSupportedAnnotationTypes() { if (roundNumber == 0) setup.add("annotations"); return observe(delegate::getSupportedAnnotationTypes); }
+        @Override public SourceVersion getSupportedSourceVersion() { if (roundNumber == 0) setup.add("version"); return observe(delegate::getSupportedSourceVersion); }
         @Override public Iterable<? extends Completion> getCompletions(Element element, AnnotationMirror annotation, ExecutableElement member, String userText) {
             return observe(() -> delegate.getCompletions(element, annotation, member, userText));
         }
@@ -288,7 +323,10 @@ public final class ProcessorHost implements AutoCloseable {
         final RoundEnvironment delegate;
         final Wrapped processor;
         final String prefix;
-        RecordingRound(RoundEnvironment delegate, Wrapped processor, String prefix) { this.delegate = delegate; this.processor = processor; this.prefix = prefix; }
+        final ProcessorReplay.Round snapshot;
+        RecordingRound(RoundEnvironment delegate, Wrapped processor, String prefix, ProcessorReplay.Round snapshot) {
+            this.delegate = delegate; this.processor = processor; this.prefix = prefix; this.snapshot = snapshot;
+        }
         private Set<? extends Element> record(String operation, Object[] args, Set<? extends Element> elements) {
             for (var element : elements) {
                 var origin = processor.origin(element);
@@ -305,11 +343,15 @@ public final class ProcessorHost implements AutoCloseable {
         @Override public boolean errorRaised() { return (Boolean) answer("errorRaised", null, delegate.errorRaised()); }
         @Override public Set<? extends Element> getRootElements() { return record("getRootElements", null, delegate.getRootElements()); }
         @Override public Set<? extends Element> getElementsAnnotatedWith(TypeElement annotation) {
-            return record("getElementsAnnotatedWith", new Object[] {annotation},
-                    delegate.getElementsAnnotatedWith(processor.reads == null ? annotation : (TypeElement) processor.reads.unwrap(annotation)));
+            var nativeAnnotation = processor.reads == null ? annotation : (TypeElement) processor.reads.unwrap(annotation);
+            var found = delegate.getElementsAnnotatedWith(nativeAnnotation);
+            snapshot.query(nativeAnnotation, found);
+            return record("getElementsAnnotatedWith", new Object[] {annotation}, found);
         }
         @Override public Set<? extends Element> getElementsAnnotatedWith(Class<? extends java.lang.annotation.Annotation> annotation) {
-            return record("getElementsAnnotatedWith", new Object[] {annotation}, delegate.getElementsAnnotatedWith(annotation));
+            var found = delegate.getElementsAnnotatedWith(annotation);
+            snapshot.query(annotation.getCanonicalName(), found);
+            return record("getElementsAnnotatedWith", new Object[] {annotation}, found);
         }
     }
 

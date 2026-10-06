@@ -31,7 +31,7 @@ class ProcessorReadTest {
         var api = api(1);
         var file = dir.resolve("src/p/Input.java");
         Files.createDirectories(file.getParent());
-        Files.writeString(file, "package p; public class Input {}");
+        Files.writeString(file, "package p; @interface Trigger {} @Trigger public class Input {}");
         try (var host = new ProcessorHost(List.of(processor), List.of(), digest, dir.resolve("generated"));
              var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("src/p/Input.java", file)), List.of(api),
                      Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest, host)) {
@@ -51,7 +51,7 @@ class ProcessorReadTest {
         var api = dir.resolve("api.jar");
         Files.copy(api(1), api);
         String input = "m/src/main/java/p/Input.java";
-        Stage2Support.write(dir, Map.of(input, "package p; public class Input {}"));
+        Stage2Support.write(dir, Map.of(input, "package p; @interface Trigger {} @Trigger public class Input {}"));
         var model = model(processor, api);
         var project = Stage2.projectKey(digest, model);
         var driver = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 1, dir, ClassFacts::of);
@@ -147,6 +147,119 @@ class ProcessorReadTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void batchedOriginsEachProveACachedModelReadAndKeepSeparateDerivations(Digest digest) throws Exception {
+        var work = dir.resolve("cached-origins");
+        var source = """
+                package fixture;
+                import java.util.*;
+                import javax.annotation.processing.*;
+                import javax.lang.model.*;
+                import javax.lang.model.element.*;
+                @SupportedAnnotationTypes("p.Entity")
+                public class Cached extends AbstractProcessor {
+                    static Integer cached;
+                    public SourceVersion getSupportedSourceVersion() { return SourceVersion.latestSupported(); }
+                    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
+                        for (var annotation : annotations) for (var input : round.getElementsAnnotatedWith(annotation)) {
+                            if (cached == null) {
+                                var api = processingEnv.getElementUtils().getTypeElement("ext.Api");
+                                var field = api.getEnclosedElements().stream().filter(e -> e.getSimpleName().contentEquals("field")).findFirst().orElseThrow();
+                                cached = (Integer) field.getAnnotationMirrors().getFirst().getElementValues().values().iterator().next().getValue();
+                            }
+                            String name = input.getSimpleName() + "Result";
+                            try (var out = processingEnv.getFiler().createSourceFile("p." + name, input).openWriter()) {
+                                out.write("package p; public class " + name + " { public static final int VALUE = " + cached + "; }");
+                            } catch (java.io.IOException failure) { throw new RuntimeException(failure); }
+                        }
+                        return true;
+                    }
+                }
+                """;
+        var entries = new java.util.LinkedHashMap<>(Stage2Support.compile(work, Map.of("fixture/Cached.java", source), List.of(), List.of()));
+        entries.put("META-INF/services/javax.annotation.processing.Processor", Stage2Support.text("fixture.Cached\n"));
+        entries.put("META-INF/gradle/incremental.annotation.processors", Stage2Support.text("fixture.Cached,isolating\n"));
+        var processor = Stage2Support.pack(work.resolve("processor.jar"), entries);
+        var api = dir.resolve("cached-api.jar");
+        Files.copy(annotatedApi(1), api);
+        String firstPath = "m/src/main/java/p/First.java";
+        Stage2Support.write(dir, Map.of("m/src/main/java/p/Entity.java", "package p; @interface Entity {}",
+                firstPath, "package p; @Entity class First { int body() { return 1; } }",
+                "m/src/main/java/p/Second.java", "package p; @Entity class Second {}"));
+        var model = model(processor, api);
+        var driver = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 1, dir, ClassFacts::of);
+        var first = Stage2Support.jdkOnly(digest).copy();
+        assertThat(driver.run(first, model).faults()).isEmpty();
+        var oldOutputs = generatedByType(first, digest);
+        assertThat(oldOutputs).containsOnlyKeys("p/FirstResult", "p/SecondResult");
+        Files.copy(annotatedApi(2), api, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        var second = first.copy();
+        assertThat(driver.run(second, model).faults()).isEmpty();
+        var changed = generatedByType(second, digest);
+        for (var name : oldOutputs.keySet()) {
+            assertThat(changed.get(name).genId()).isNotEqualTo(oldOutputs.get(name).genId());
+            assertThat(new String(second.get(LocalStore.generatedSourceKey(changed.get(name).kappa())), java.nio.charset.StandardCharsets.UTF_8))
+                    .contains("VALUE = 2;");
+        }
+        Files.writeString(dir.resolve(firstPath), "package p; @Entity class First { int body() { return 2; } }");
+        var third = second.copy();
+        assertThat(driver.run(third, model).faults()).isEmpty();
+        var body = generatedByType(third, digest);
+        assertThat(body.get("p/FirstResult").genId()).isNotEqualTo(changed.get("p/FirstResult").genId());
+        assertThat(body.get("p/SecondResult").genId()).isEqualTo(changed.get("p/SecondResult").genId());
+        assertThat(third.writes(LocalStore.generatedKey(body.get("p/SecondResult").genId()))).isZero();
+    }
+
+    private Map<String, FileRow> generatedByType(InMemoryLocalStore store, Digest digest) {
+        var rows = new java.util.TreeMap<String, FileRow>();
+        store.withPrefix("F").values().stream().map(bytes -> FileRow.decode("", bytes, digest.width())).filter(FileRow::generated)
+                .forEach(row -> rows.put(row.typeKeys().getFirst(), row));
+        return rows;
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void crossOriginStateThatChangesOutputsIsReportedWithoutWideningTheDerivation(Digest digest) throws Exception {
+        var work = dir.resolve("counter-processor");
+        var source = """
+                package fixture;
+                import java.util.*;
+                import javax.annotation.processing.*;
+                import javax.lang.model.*;
+                import javax.lang.model.element.*;
+                @SupportedAnnotationTypes("p.Entity")
+                public class Counter extends AbstractProcessor {
+                    static int count;
+                    public SourceVersion getSupportedSourceVersion() { return SourceVersion.latestSupported(); }
+                    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
+                        for (var annotation : annotations) for (var input : round.getElementsAnnotatedWith(annotation)) {
+                            String name = input.getSimpleName() + "Result";
+                            try (var out = processingEnv.getFiler().createSourceFile("p." + name, input).openWriter()) {
+                                out.write("package p; public class " + name + " { public static final int VALUE = " + ++count + "; }");
+                            } catch (java.io.IOException failure) { throw new RuntimeException(failure); }
+                        }
+                        return true;
+                    }
+                }
+                """;
+        var entries = new java.util.LinkedHashMap<>(Stage2Support.compile(work, Map.of("fixture/Counter.java", source), List.of(), List.of()));
+        entries.put("META-INF/services/javax.annotation.processing.Processor", Stage2Support.text("fixture.Counter\n"));
+        entries.put("META-INF/gradle/incremental.annotation.processors", Stage2Support.text("fixture.Counter,isolating\n"));
+        var processor = Stage2Support.pack(work.resolve("processor.jar"), entries);
+        Stage2Support.write(dir, Map.of("m/src/main/java/p/Entity.java", "package p; @interface Entity {}",
+                "m/src/main/java/p/First.java", "package p; @Entity class First {}",
+                "m/src/main/java/p/Second.java", "package p; @Entity class Second {}"));
+        var driver = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 1, dir, ClassFacts::of);
+        var store = Stage2Support.jdkOnly(digest).copy();
+        var result = driver.run(store, model(processor, null));
+        assertThat(result.faults()).anyMatch(f -> f.contains("fixture.Counter") && f.contains("isolated generated bytes differ"));
+        assertThat(generatedByType(store, digest)).hasSize(2).allSatisfy((name, row) -> assertThat(row.genId()).isNull());
+        assertThat(store.withPrefix("GEN")).isEmpty();
+        assertThat(store.withPrefix("PROC").values()).allSatisfy(bytes ->
+                assertThat(dev.jvmd.index.layer.local.ProcessorRecords.Capability.decode(bytes).reusable()).isFalse());
+        assertThat(Files.readString(dir.resolve(".jvmd/generated/bQ/0/p/FirstResult.java"))).contains("VALUE = 1;");
+        assertThat(Files.readString(dir.resolve(".jvmd/generated/bQ/0/p/SecondResult.java"))).contains("VALUE = 2;");
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void aggregateQueriesSourceAnnotationsOutsideItsDomainWithoutDependingOnBodies(Digest digest) throws Exception {
         var work = dir.resolve("aggregate-graph");
         var source = """
@@ -231,14 +344,14 @@ class ProcessorReadTest {
                 import javax.annotation.processing.*;
                 import javax.lang.model.*;
                 import javax.lang.model.element.*;
-                @SupportedAnnotationTypes("*")
+                @SupportedAnnotationTypes("p.Trigger")
                 public class Lookup extends AbstractProcessor {
                     boolean done;
                     public SourceVersion getSupportedSourceVersion() { return SourceVersion.latestSupported(); }
                     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
                         if (done || round.processingOver()) return false;
                         done = true;
-                        var input = round.getRootElements().stream().filter(e -> e.getSimpleName().contentEquals("Input")).findFirst().orElseThrow();
+                        var input = round.getElementsAnnotatedWith(annotations.iterator().next()).iterator().next();
                         var elements = processingEnv.getElementUtils();
                         var api = elements.getTypeElement("ext.Api");
                         var field = (VariableElement) elements.getAllMembers(api).stream().filter(e -> e.getSimpleName().contentEquals("VALUE")).findFirst().orElseThrow();

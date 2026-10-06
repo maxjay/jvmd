@@ -293,7 +293,10 @@ final class HeaderCompiler {
                     else unit.faults.add(new FileRow.Fault(typeKey(tree, klass), "duplicate class " + klass.getSimpleName()));
                 }
             }
-            if (host != null) host.diagnostics(new dev.jvmd.index.layer.local.ProcessorRecords.Diagnostics(processorMessages));
+            if (host != null) {
+                host.diagnostics(new dev.jvmd.index.layer.local.ProcessorRecords.Diagnostics(processorMessages));
+                host.proveIsolating(charset);
+            }
             return new Compiled(units, task.getElements(), task.getTypes(), trees, task, files);
         } catch (IOException e) {
             release(task, files);

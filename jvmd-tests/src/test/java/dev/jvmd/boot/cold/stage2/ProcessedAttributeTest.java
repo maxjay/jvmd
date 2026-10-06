@@ -427,6 +427,11 @@ class ProcessedAttributeTest {
                     void scan(javax.lang.model.type.TypeMirror type,int depth) {
                         text.append("[").append(type.getKind()).append(":").append(type).append(":").append(type.getAnnotationMirrors());
                         for(var annotation:type.getAnnotationMirrors()) text.append(elements.getElementValuesWithDefaults(annotation));
+                        for(var spot:type.getAnnotationsByType(fixture.Spot.class)) {
+                            text.append(":repeat=").append(spot.value());
+                            try {spot.type();throw new AssertionError("expected mirror");}
+                            catch(javax.lang.model.type.MirroredTypeException e){text.append(":type=").append(e.getTypeMirror());}
+                        }
                         if(depth>0) type.accept(this,depth-1); text.append("]");
                     }
                     public Void visitArray(javax.lang.model.type.ArrayType t,Integer d){scan(t.getComponentType(),d);return null;}

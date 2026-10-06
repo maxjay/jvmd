@@ -49,12 +49,14 @@ final class ProcessorReads {
     private final Map<String, Class<? extends java.lang.annotation.Annotation>> annotationInterfaces = new LinkedHashMap<>();
     private final List<byte[]> answers = new ArrayList<>();
     private final Map<Query, Observed> queries = new LinkedHashMap<>();
+    private final Map<Query, List<Observed>> allocations = new LinkedHashMap<>();
+    private final Map<Query, Integer> allocationCursors = new LinkedHashMap<>();
     private final Set<Query> ambiguous = new java.util.HashSet<>();
     private final ProcessorReads captured;
     private final Model model;
     private int phase = -1;
 
-    private record Query(int phase, String operation, java.nio.ByteBuffer arguments) { }
+    private record Query(int phase, String operation, java.nio.ByteBuffer arguments, boolean allocating) { }
     private record Observed(Object value, Throwable failure, Read read, byte[] identity) { }
     private record Dispatch(Method method, Object value) { }
     @FunctionalInterface interface Model { Object invoke(Object receiver, Method method, Object[] arguments) throws Throwable; }
@@ -90,14 +92,26 @@ final class ProcessorReads {
     void phase(int phase) { this.phase = phase; }
 
     private Query query(String operation, Object receiver, Object args) {
+        return query(operation, receiver, args, false);
+    }
+
+    private Query query(String operation, Object receiver, Object args, boolean allocating) {
         var out = new Codec.Writer();
         var source = captured == null ? this : captured;
         source.encode(out, receiver);
         source.encode(out, args);
-        return new Query(phase, operation, java.nio.ByteBuffer.wrap(out.toBytes()));
+        return new Query(phase, operation, java.nio.ByteBuffer.wrap(out.toBytes()), allocating);
     }
 
     private Observed lookup(Query query) {
+        if (query.allocating()) {
+            var sequence = captured.allocations.get(query);
+            if (sequence == null) throw new ReplayUnavailable("unobserved allocating processor query in phase " + phase + ": " + query.operation());
+            int cursor = allocationCursors.getOrDefault(query, 0);
+            if (cursor == sequence.size()) throw new ReplayUnavailable("exhausted allocating processor query in phase " + phase + ": " + query.operation());
+            allocationCursors.put(query, cursor + 1);
+            return sequence.get(cursor);
+        }
         String reason = captured.ambiguous.contains(query) ? "ambiguous" : !captured.queries.containsKey(query) ? "unobserved" : null;
         if (reason != null) throw new ReplayUnavailable(reason + " processor query in phase " + phase + ": " + query.operation());
         return captured.queries.get(query);
@@ -115,8 +129,25 @@ final class ProcessorReads {
             out.str(MirroredTypesException.class.getName()); encode(out, mirrors.getTypeMirrors());
         } else out.str(failure == null ? "" : failure.getClass().getName());
         var next = new Observed(freeze(value), failure, read, out.toBytes());
+        if (query.allocating()) {
+            // Retain every occurrence, including repeated aliases. Each isolated replay owns its own bounded cursor.
+            allocations.computeIfAbsent(query, ignored -> new ArrayList<>()).add(next);
+            return;
+        }
         var previous = queries.putIfAbsent(query, next);
         if (previous != null && !java.util.Arrays.equals(previous.identity(), next.identity())) ambiguous.add(query);
+    }
+
+    /** These public contracts can allocate fresh handles from the same immutable phase inputs. Lookup/scalar changes are not allocations. */
+    private static boolean allocating(Method method) {
+        if (method.getDeclaringClass() == Types.class) return switch (method.getName()) {
+            case "getArrayType", "getDeclaredType", "getWildcardType", "asMemberOf", "directSupertypes", "erasure", "capture", "stripAnnotations" -> true;
+            default -> false;
+        };
+        if (javax.lang.model.AnnotatedConstruct.class.isAssignableFrom(method.getDeclaringClass()))
+            return method.getName().equals("getAnnotation") || method.getName().equals("getAnnotationsByType");
+        return method.getDeclaringClass().isAnnotation() && (method.getReturnType().isArray()
+                || java.lang.annotation.Annotation.class.isAssignableFrom(method.getReturnType()));
     }
 
     /** Containers are snapshots, model objects are opaque handles. A replay can only ask recorded methods of those handles. */
@@ -213,7 +244,7 @@ final class ProcessorReads {
             boolean objectIdentity = method.getName().equals("hashCode") && method.getParameterCount() == 0
                     && !(delegate instanceof java.lang.annotation.Annotation);
             if (!objectIdentity) encode(query, nativeArgs);
-            var key = query(method.toGenericString(), delegate, nativeArgs);
+            var key = query(method.toGenericString(), delegate, nativeArgs, allocating(method));
             Object result = null;
             Throwable cause = null;
             Read read = null;

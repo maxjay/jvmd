@@ -163,6 +163,11 @@ class ProcessorReadTest {
                         for (var annotation : annotations) for (var input : round.getElementsAnnotatedWith(annotation)) {
                             if (cached == null) {
                                 var api = processingEnv.getElementUtils().getTypeElement("ext.Api");
+                                var type = api.asType();
+                                var first = processingEnv.getTypeUtils().getArrayType(type);
+                                var second = processingEnv.getTypeUtils().getArrayType(type);
+                                if (first == second || !first.equals(second) || first.getComponentType() != second.getComponentType())
+                                    throw new AssertionError("Factory allocation or component aliasing changed");
                                 var field = api.getEnclosedElements().stream().filter(e -> e.getSimpleName().contentEquals("field")).findFirst().orElseThrow();
                                 cached = (Integer) field.getAnnotationMirrors().getFirst().getElementValues().values().iterator().next().getValue();
                             }
@@ -257,6 +262,51 @@ class ProcessorReadTest {
                 assertThat(dev.jvmd.index.layer.local.ProcessorRecords.Capability.decode(bytes).reusable()).isFalse());
         assertThat(Files.readString(dir.resolve(".jvmd/generated/bQ/0/p/FirstResult.java"))).contains("VALUE = 1;");
         assertThat(Files.readString(dir.resolve(".jvmd/generated/bQ/0/p/SecondResult.java"))).contains("VALUE = 2;");
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void isolatedReplayCannotInventAnAllocationToMatchBatchedAliasSensitiveOutput(Digest digest) throws Exception {
+        var work = dir.resolve("allocation-exhaustion");
+        var source = """
+                package fixture;
+                import java.util.*;
+                import javax.annotation.processing.*;
+                import javax.lang.model.*;
+                import javax.lang.model.element.*;
+                @SupportedAnnotationTypes("p.Entity")
+                public class Allocating extends AbstractProcessor {
+                    public SourceVersion getSupportedSourceVersion(){return SourceVersion.latestSupported();}
+                    public boolean process(Set<? extends TypeElement> annotations,RoundEnvironment round) {
+                        for(var annotation:annotations) {
+                            var inputs=round.getElementsAnnotatedWith(annotation);
+                            var type=processingEnv.getElementUtils().getTypeElement("java.lang.String").asType();
+                            var first=processingEnv.getTypeUtils().getArrayType(type);
+                            var second=inputs.size()==1?processingEnv.getTypeUtils().getArrayType(type):first;
+                            for(var input:inputs) {
+                                String name=input.getSimpleName()+"Result";
+                                try(var out=processingEnv.getFiler().createSourceFile("p."+name,input).openWriter()) {
+                                    out.write("package p; public class "+name+" { public static final boolean VALUE = "+(first==second)+"; }");
+                                } catch(java.io.IOException e){throw new RuntimeException(e);}
+                            }
+                        }
+                        return true;
+                    }
+                }
+                """;
+        var entries = new java.util.LinkedHashMap<>(Stage2Support.compile(work, Map.of("fixture/Allocating.java", source), List.of(), List.of()));
+        entries.put("META-INF/services/javax.annotation.processing.Processor", Stage2Support.text("fixture.Allocating\n"));
+        entries.put("META-INF/gradle/incremental.annotation.processors", Stage2Support.text("fixture.Allocating,isolating\n"));
+        var processor = Stage2Support.pack(work.resolve("processor.jar"), entries);
+        Stage2Support.write(dir, Map.of("m/src/main/java/p/Entity.java", "package p; @interface Entity {}",
+                "m/src/main/java/p/First.java", "package p; @Entity class First {}",
+                "m/src/main/java/p/Second.java", "package p; @Entity class Second {}"));
+        var store = Stage2Support.jdkOnly(digest).copy();
+        var result = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 1, dir, ClassFacts::of).run(store, model(processor, null));
+        assertThat(result.faults()).anyMatch(f -> f.contains("fixture.Allocating") && f.contains("exhausted allocating processor query"));
+        assertThat(generatedByType(store, digest)).hasSize(2).allSatisfy((name,row) -> assertThat(row.genId()).isNull());
+        assertThat(store.withPrefix("GEN")).isEmpty();
+        for(var name:List.of("FirstResult","SecondResult"))
+            assertThat(Files.readString(dir.resolve(".jvmd/generated/bQ/0/p/"+name+".java"))).contains("VALUE = true;");
     }
 
     @ParameterizedTest @MethodSource("digests")

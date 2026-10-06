@@ -69,24 +69,33 @@ class ProcessorModelTest {
         var file = dir.resolve("Api.java"); Files.writeString(file, SOURCE);
         try (var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("Api.java", file)), List.of(),
                 Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest)) {
-            var reads = new ProcessorReads(compiled.elements, compiled.types, ignored -> {}, reason -> { throw new AssertionError(reason); });
+            var blocked = new java.util.concurrent.atomic.AtomicBoolean();
+            var reads = new ProcessorReads(compiled.elements, compiled.types, ignored -> {}, reason -> { throw new AssertionError(reason); },
+                    (receiver, method, arguments) -> {
+                        if (blocked.get()) throw new AssertionError("Replay entered the native model: " + method);
+                        return method.invoke(receiver, arguments);
+                    });
             var api = reads.elements.getTypeElement("p.Api"); var other = reads.elements.getTypeElement("p.Unrelated");
             var before = reads.proof();
             for (int i = 0; i < 10; i++) {
                 assertThat(api.equals(api)).isTrue(); assertThat(api.equals(other)).isFalse(); assertThat(api.equals(null)).isFalse();
             }
             assertThat(reads.proof()).isEqualTo(before);
-            // Factory calls return distinct native handles; use separate phases as the captured replay requires.
+            // Equal factory calls in one phase return distinct handles; replay must retain both, including their equality query.
             reads.phase(0); var a = reads.types.getArrayType(api.asType());
-            reads.phase(1); var b = reads.types.getArrayType(api.asType());
+            var b = reads.types.getArrayType(api.asType());
             assertThat(a).isNotSameAs(b); before = reads.proof();
             assertThat(a.equals(b)).isTrue();
             assertThat(reads.proof()).isNotEqualTo(before);
+            blocked.set(true);
             var replay = reads.replay(ignored -> {}, reason -> { throw new AssertionError(reason); });
             var replayApi = replay.elements.getTypeElement("p.Api"); replay.elements.getTypeElement("p.Unrelated");
             replay.phase(0); var replayA = replay.types.getArrayType(replayApi.asType());
-            replay.phase(1); var replayB = replay.types.getArrayType(replayApi.asType());
+            var replayB = replay.types.getArrayType(replayApi.asType());
+            assertThat(replayA).isNotSameAs(replayB);
             assertThat(replayA.equals(replayB)).isTrue(); assertThat(replay.proof()).isEqualTo(reads.proof());
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> replay.types.getArrayType(replayApi.asType()))
+                    .isInstanceOf(ProcessorReads.ReplayUnavailable.class).hasMessageContaining("exhausted");
         }
     }
 
@@ -129,7 +138,7 @@ class ProcessorModelTest {
         assertThat(repeated).hasSize(1);
         assertThat(repeated[0].annotationType()).isSameAs(annotation);
         var names = new ArrayList<String>();
-        for (var method : List.of("value", "many")) {
+        for (var method : List.of("value", "many", "many")) {
             try { annotation.getMethod(method).invoke(instance); throw new AssertionError("javac must return mirrors through the model exception"); }
             catch (java.lang.reflect.InvocationTargetException failure) {
                 assertThat(failure.getCause()).isInstanceOf(javax.lang.model.type.MirroredTypesException.class);
@@ -141,11 +150,49 @@ class ProcessorModelTest {
                 }
             }
         }
-        assertThat(names).containsExactly("java.lang.String", "java.lang.Integer", "java.lang.Number");
+        assertThat(names).containsExactly("java.lang.String", "java.lang.Integer", "java.lang.Number", "java.lang.Integer", "java.lang.Number");
         return names;
     }
 
     private record Snapshot(byte[] proof) { }
+
+    @ParameterizedTest @MethodSource("digests")
+    void allocatingReplayRetainsAliasesPerPhaseAndPerIsolatedInvocation(Digest digest) throws Exception {
+        var file = dir.resolve("Api.java"); Files.writeString(file, SOURCE);
+        var blocked = new java.util.concurrent.atomic.AtomicBoolean();
+        ProcessorReads reads;
+        try (var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("Api.java", file)), List.of(),
+                Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest)) {
+            var type = compiled.elements.getTypeElement("p.Api").asType();
+            var first = compiled.types.getArrayType(type); var second = compiled.types.getArrayType(type);
+            var current = new java.util.concurrent.atomic.AtomicReference<TypeMirror>(first);
+            reads = new ProcessorReads(compiled.elements, compiled.types, ignored -> {}, reason -> { throw new AssertionError(reason); },
+                    (receiver, method, args) -> {
+                        if (blocked.get()) throw new AssertionError("Replay entered the native model: " + method);
+                        if (method.getName().equals("getArrayType")) return current.get();
+                        return method.invoke(receiver, args);
+                    });
+            var input = reads.elements.getTypeElement("p.Api").asType();
+            reads.phase(0);
+            var a = reads.types.getArrayType(input); var b = reads.types.getArrayType(input);
+            current.set(second); var c = reads.types.getArrayType(input);
+            assertThat(a).isSameAs(b).isNotSameAs(c);
+            reads.phase(1); current.set(first);
+            assertThat(reads.types.getArrayType(input)).isSameAs(a);
+        }
+        blocked.set(true);
+        for (int origin = 0; origin < 2; origin++) {
+            var replay = reads.replay(ignored -> {}, reason -> { throw new AssertionError(reason); });
+            var input = replay.elements.getTypeElement("p.Api").asType();
+            replay.phase(0);
+            var a = replay.types.getArrayType(input); var b = replay.types.getArrayType(input); var c = replay.types.getArrayType(input);
+            assertThat(a).isSameAs(b).isNotSameAs(c);
+            replay.phase(1); assertThat(replay.types.getArrayType(input)).isSameAs(a);
+            assertThat(replay.proof()).isEqualTo(reads.proof());
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> replay.types.getArrayType(input))
+                    .isInstanceOf(ProcessorReads.ReplayUnavailable.class).hasMessageContaining("exhausted").hasMessageContaining("phase 1");
+        }
+    }
 
     @ParameterizedTest @MethodSource("digests")
     void replayUsesObservedAnswersWithoutReenteringTheCompletedCompiler(Digest digest) throws Exception {
@@ -175,8 +222,10 @@ class ProcessorModelTest {
         try (var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("Api.java", file)), List.of(),
                 Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest)) {
             var current = new java.util.concurrent.atomic.AtomicReference<>("first round");
+            var selected = new java.util.concurrent.atomic.AtomicReference<TypeElement>();
             var elements = (Elements) Proxy.newProxyInstance(Elements.class.getClassLoader(), new Class<?>[] {Elements.class}, (p, m, a) -> {
                 if (m.getName().equals("getDocComment")) return current.get();
+                if (m.getName().equals("getTypeElement") && selected.get() != null) return selected.get();
                 try { return m.invoke(compiled.elements, a); }
                 catch (java.lang.reflect.InvocationTargetException failure) { throw failure.getCause(); }
             });
@@ -207,6 +256,14 @@ class ProcessorModelTest {
             replay.phase(2);
             org.assertj.core.api.Assertions.assertThatThrownBy(() -> replay.elements.getDocComment(replayType))
                     .isInstanceOf(ProcessorReads.ReplayUnavailable.class).hasMessageContaining("ambiguous").hasMessageContaining("phase 2");
+
+            // An opaque handle changing in a lookup is not permission to treat that lookup as an allocating factory.
+            reads.phase(3); selected.set(compiled.elements.getTypeElement("p.Api"));
+            reads.elements.getTypeElement("p.Api");
+            selected.set(compiled.elements.getTypeElement("p.Unrelated")); reads.elements.getTypeElement("p.Api");
+            replay.phase(3);
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> replay.elements.getTypeElement("p.Api"))
+                    .isInstanceOf(ProcessorReads.ReplayUnavailable.class).hasMessageContaining("ambiguous").hasMessageContaining("phase 3");
         }
     }
 

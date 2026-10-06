@@ -756,3 +756,24 @@ The final clean gate `stage3-type-queries-frozen-gate.log` passed **586 tests, z
 | SHA3-256 | 3,486 | 1,802 | 1,111 | 125 | 25,198 |
 
 Maven model/build time (26.0/25.6s) is excluded. Sampled heap above baseline was 940/1,143 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-type-queries-SHA-256.txt), [SHA3-256](measurements/stage3-type-queries-SHA3-256.txt). The synchronized Stage 3 authority SHA-256 is `dbc7e16b444235634edbe1286ad62b6aa5ce84255c237388504d28feca9903de`; Stage 2 remains unchanged. The type-use regression is closed, while the explicitly listed model/admission, verification, driver and oracle requirements remain open. The full goal stays active and no PR was merged.
+
+
+### Captured allocation sequences for isolated replay
+
+ProcessorReads now distinguishes known allocating public contracts from lookups and scalar queries. Type factories/projections and annotation proxy getters retain every captured occurrence, including repeated aliases, failures and mirrored class values. Each isolated replay consumes an independent cursor for each query and phase. An unobserved or exhausted sequence fails closed; replay never enters the completed compiler, fabricates a result or reuses the last handle to satisfy an extra allocation. Ordinary changing lookups and scalar answers remain ambiguous and rejected. The ordered answer proof and persisted formats are unchanged; no broad identity is introduced.
+
+`stage3-replay-allocations-red.log` reproduced both the type-use annotation scan rejection and same-phase array factory rejection. The scan now repeats annotation-proxy queries at every visited type site. The model regression checks distinct arrays, overridden structural equality, reused aliases, phase separation, independent replay invocations, bounded exhaustion and mirrored array-valued exceptions with native query entry blocked after capture. A changed opaque getTypeElement answer remains rejected, just like a changed doc comment.
+
+The two-origin cached-read fixture now captures one pair of array allocations and a shared component handle, then independently reproduces those relationships for both isolated origins. Consumed binary annotation edits still move both GEN ids, while a body edit moves only its own isolating derivation. A separate processor uses one allocation in its two-origin batch but requests an extra allocation when isolated: recycling the first handle could falsely reproduce its alias-sensitive output. Replay now rejects exhaustion, names the processor, retains its fresh generated files and publishes no GEN. Existing cross-origin counter and nondeterministic-output rejection tests continue to pass.
+
+`stage3-replay-allocations-green.log` passes **94 tests, zero failures/errors/skips**. The Stage 3 authority and Downloads copy are synchronized after a distinct before-replay-allocations backup; Stage 2 is unchanged. LOCAL 9, MACHINE layout 4/parser 5 and bodies 4 remain unchanged. This closes the observed allocating-query replay gap; it does not claim universal allocation-sensitive processor admission or a persisted query verifier. Package/module/origin and implicit-state queries, full admission and persisted verification, cold storage boundaries, the Stage3/BROOT driver, the two-sided oracle and all remaining full invariants stay required. Warm is untouched and the goal remains active. The full combined clean gate follows with all Java files frozen.
+
+
+The final clean gate `stage3-replay-allocations-frozen-gate.log` passed **590 tests, zero failures/errors/skips**, in 4m28s. The complete set of **550 Java files** and every source digest match the pre-run freeze. With four workers, the repository oracle covered **13 modules, 26 scopes and 545 sources**, 93 on-the-spot jars and 22 distinct leaf sets. Both digests produced **26/26 exact source/class k matches, no annotation differences and zero boot faults**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,208 | 2,630 | 1,628 | 126 | 25,216 |
+| SHA3-256 | 3,507 | 1,808 | 1,101 | 132 | 25,204 |
+
+Maven model/build time (26.1/25.5s) is excluded. Sampled heap above baseline was 956/1,169 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-replay-allocations-SHA-256.txt), [SHA3-256](measurements/stage3-replay-allocations-SHA3-256.txt). The synchronized Stage 3 authority SHA-256 is `f790a8e3b49e291ecac92169e9fbc585d36de33a582980a83cbf0b00a19dd2d0`; Stage 2 remains unchanged. The full goal remains active with the model/admission, verification, driver and oracle obligations listed above. No PR was merged.

@@ -91,10 +91,10 @@ final class ProcessorSourceElements {
         if (source != null) parameters(type.getTypeParameters(), ((ProcessorDeclaration.TypeDeclaration) source.detail()).parameters());
     }
 
-    javax.lang.model.type.TypeMirror variable(ProcessorDeclaration.Key key) {
+    Element variable(ProcessorDeclaration.Key key) {
         var element = parameters.get(key);
         if (element == null) throw new IllegalStateException("Source type variable has no native declaration");
-        return element.asType();
+        return element;
     }
 
     private void bind(Map<ProcessorDeclaration.Key, Element> nativeMembers, ProcessorDeclaration declaration) {

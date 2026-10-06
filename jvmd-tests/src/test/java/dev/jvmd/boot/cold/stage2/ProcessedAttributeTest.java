@@ -420,6 +420,133 @@ class ProcessedAttributeTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void sourceTypeUsesRetainNativeAnnotationsAndStructure(Digest digest) throws Exception {
+        var processor=processor("""
+                var elements=processingEnv.getElementUtils(); var types=processingEnv.getTypeUtils(); var text=new StringBuilder();
+                var visitor=new javax.lang.model.util.SimpleTypeVisitor14<Void,Integer>() {
+                    void scan(javax.lang.model.type.TypeMirror type,int depth) {
+                        text.append("[").append(type.getKind()).append(":").append(type).append(":").append(type.getAnnotationMirrors());
+                        for(var annotation:type.getAnnotationMirrors()) text.append(elements.getElementValuesWithDefaults(annotation));
+                        if(depth>0) type.accept(this,depth-1); text.append("]");
+                    }
+                    public Void visitArray(javax.lang.model.type.ArrayType t,Integer d){scan(t.getComponentType(),d);return null;}
+                    public Void visitDeclared(javax.lang.model.type.DeclaredType t,Integer d){scan(t.getEnclosingType(),d);for(var a:t.getTypeArguments())scan(a,d);return null;}
+                    public Void visitTypeVariable(javax.lang.model.type.TypeVariable t,Integer d){scan(t.getUpperBound(),d);scan(t.getLowerBound(),d);return null;}
+                    public Void visitWildcard(javax.lang.model.type.WildcardType t,Integer d){if(t.getExtendsBound()!=null)scan(t.getExtendsBound(),d);if(t.getSuperBound()!=null)scan(t.getSuperBound(),d);return null;}
+                    public Void visitIntersection(javax.lang.model.type.IntersectionType t,Integer d){for(var b:t.getBounds())scan(b,d);return null;}
+                    public Void visitExecutable(javax.lang.model.type.ExecutableType t,Integer d){
+                        scan(t.getReturnType(),d);scan(t.getReceiverType(),d);
+                        for(var a:t.getParameterTypes())scan(a,d);for(var v:t.getTypeVariables())scan(v,d);for(var e:t.getThrownTypes())scan(e,d);return null;
+                    }
+                };
+                new javax.lang.model.util.ElementScanner14<Void,Void>() {
+                    public Void scan(Element element,Void ignored) {
+                        text.append("|").append(element.getKind()).append(":").append(element.getSimpleName()).append(":element=").append(element);visitor.scan(element.asType(),3);
+                        if(element instanceof TypeElement type){
+                            text.append(":members=").append(elements.getAllMembers(type));
+                            visitor.scan(type.getSuperclass(),3);for(var i:type.getInterfaces())visitor.scan(i,3);
+                            for(var p:type.getTypeParameters())scan(p,null);
+                            for(var s:types.directSupertypes(type.asType()))visitor.scan(s,2);
+                        }
+                        if(element instanceof javax.lang.model.element.TypeParameterElement p)for(var b:p.getBounds())visitor.scan(b,3);
+                        if(element instanceof ExecutableElement method){
+                            visitor.scan(method.getReturnType(),3);visitor.scan(method.getReceiverType(),3);
+                            for(var e:method.getThrownTypes())visitor.scan(e,3);for(var p:method.getTypeParameters())scan(p,null);
+                        }
+                        if(element.getEnclosingElement() instanceof TypeElement owner && (element.getKind()==ElementKind.FIELD||element.getKind()==ElementKind.METHOD))
+                            visitor.scan(types.asMemberOf((javax.lang.model.type.DeclaredType)owner.asType(),element),3);
+                        return super.scan(element,ignored);
+                    }
+                }.scan(elements.getTypeElement("p.Metadata"),null);
+                var metadata=elements.getTypeElement("p.Metadata");
+                for(var site:java.util.List.of(types.getDeclaredType(metadata),types.getDeclaredType(metadata,elements.getTypeElement("java.lang.Integer").asType()))) {
+                    text.append("|factory");visitor.scan(site,3);
+                    for(var parent:types.directSupertypes(site))visitor.scan(parent,3);
+                    for(var member:elements.getAllMembers(metadata))if(member.getKind()==ElementKind.FIELD||member.getKind()==ElementKind.METHOD)
+                        visitor.scan(types.asMemberOf(site,member),2);
+                    visitor.scan(types.erasure(site),2);visitor.scan(types.capture(site),2);visitor.scan(types.getArrayType(site),2);
+                }
+                for(var field:metadata.getEnclosedElements())if(field.getSimpleName().contentEquals("repeated")) {
+                    var type=((javax.lang.model.type.DeclaredType)field.asType()).getTypeArguments().get(0);
+                    text.append(":container=").append(type.getAnnotation(fixture.Spots.class));
+                    for(var spot:type.getAnnotationsByType(fixture.Spot.class)) {
+                        text.append(":spot=").append(spot.value());
+                        try {spot.type();throw new AssertionError("expected mirror");}
+                        catch(javax.lang.model.type.MirroredTypeException e){text.append(":mirror=").append(e.getTypeMirror());}
+                    }
+                }
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,text,root);
+                ""","isolating",Map.of("fixture/Spot.java","""
+                package fixture;import java.lang.annotation.*;
+                @Target(ElementType.TYPE_USE) @Retention(RetentionPolicy.SOURCE) @Repeatable(Spots.class)
+                public @interface Spot {String value();Class<?> type() default String.class;}
+                ""","fixture/Spots.java","""
+                package fixture;import java.lang.annotation.*;
+                @Target(ElementType.TYPE_USE) @Retention(RetentionPolicy.SOURCE)
+                public @interface Spots {Spot[] value();}
+                """));
+        var state=boot(digest,Map.of("p/Input.java","package p; public class Input {}","p/Metadata.java","""
+                package p;
+                import java.lang.annotation.*; import java.util.*; import java.io.*;
+                @Retention(RetentionPolicy.SOURCE) @Target({ElementType.TYPE_USE,ElementType.TYPE_PARAMETER})
+                @interface Use {String value(); int number() default 7;}
+                class Base<V> { @Use("inherited-return") V inherited(@Use("inherited-arg") V argument){return argument;} } interface Face<V> {}
+                public class Metadata<@Use("parameter") T extends @Use("bound") Number & @Use("interface-bound") Comparable<@Use("self") T>>
+                    extends @Use("super") Base<@Use("base-arg") T> implements @Use("face") Face<@Use("face-arg") T> {
+                    @Use("field") String @Use("array") [] @Use("inner-array") [] field;
+                    List<@Use("wildcard") ? extends @Use("wild-bound") T @Use("bound-array") []> list;
+                    private List<@Use("private-wildcard") ? super @Use("private-bound") T> hidden;
+                    List<@fixture.Spot("first") @fixture.Spot(value="second",type=int[].class) String> repeated;
+                    <@Use("method-var") V extends @Use("method-bound") T> @Use("return") V @Use("return-array") [] call(
+                        @Use("receiver") Metadata<T> this, @Use("arg") V @Use("arg-array") [] named) throws @Use("throws") IOException {return named;}
+                    private @Use("private-return") T secret(@Use("private-receiver") Metadata<T> this,@Use("private-arg") T named){return named;}
+                    class Inner { Inner(@Use("outer-receiver") Metadata<T> Metadata.this) {} }
+                    record Data(@Use("component") String @Use("component-array") [] component) {}
+                }
+                """),List.of(processor),List.of(processor));
+        assertThat(state.faults()).isEmpty();allFiles(state,true);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void onlyConsumedTypeUseMetadataChangesTheProcessorProof(Digest digest) throws Exception {
+        var processor=processor("""
+                var type=processingEnv.getElementUtils().getTypeElement("p.Metadata");
+                for(var field:type.getEnclosedElements())if(field.getSimpleName().contentEquals("observed")) {
+                    var argument=((javax.lang.model.type.DeclaredType)field.asType()).getTypeArguments().get(0);
+                    processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,argument.getAnnotationMirrors().toString(),root);
+                }
+                ""","isolating");
+        var states=new ArrayList<State>();var results=new ArrayList<Attribute.Computed>();var expected=new ArrayList<Oracle>();
+        for(var change:List.of(new String[]{"read","unread","1"},new String[]{"read","changed","2"},new String[]{"changed","changed","2"})) {
+            var state=boot(digest,Map.of("p/Input.java","package p; public class Input {}","p/Metadata.java","""
+                    package p;
+                    @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE)
+                    @java.lang.annotation.Target(java.lang.annotation.ElementType.TYPE_USE) @interface Use {String value();}
+                    public class Metadata {
+                        java.util.List<@Use("%s") String> observed;
+                        private java.util.List<@Use("%s") String> unread;
+                        int body(){return %s;}
+                    }
+                    """.formatted(change[0],change[1],change[2])),List.of(processor),List.of());
+            assertThat(state.faults()).isEmpty();states.add(state);expected.add(oracle(state));
+        }
+        assertThat(states).extracting(state->state.own().k()).containsOnly(states.getFirst().own().k());
+        Files.delete(dir.resolve("app/src/main/java/p/Metadata.java"));
+        try(var pool=new Pool(states.getFirst().pool(),1)) {
+            for(var state:states)results.add(run(state,attribute(state,pool),"app/src/main/java/p/Input.java"));
+            assertThat(run(states.getFirst(),attribute(states.getFirst(),pool),"app/src/main/java/p/Input.java")).isEqualTo(results.getFirst());
+            assertThat(pool.statistics().contexts()).isEqualTo(1);
+        }
+        for(int i=0;i<results.size();i++) {
+            assertThat(results.get(i).reusable()).as(results.get(i).faults().toString()).isTrue();
+            assertThat(results.get(i).result().diagnostics()).isEqualTo(expected.get(i).messages());
+        }
+        assertThat(results.get(1)).isEqualTo(results.get(0));
+        assertThat(results.get(2).aci()).isNotEqualTo(results.get(0).aci());
+        assertThat(results.get(2).proof().processorBody()).isNotEqualTo(results.get(0).proof().processorBody());
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void privateMemberReadsRemainIndependentOfUnconsumedSignatureAndBodyChanges(Digest digest) throws Exception {
         var processor=processor("""
                 var type=processingEnv.getElementUtils().getTypeElement("p.Metadata");

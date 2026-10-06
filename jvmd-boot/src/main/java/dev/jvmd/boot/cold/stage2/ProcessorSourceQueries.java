@@ -29,7 +29,7 @@ import javax.lang.model.util.Elements;
 /**
  * Source-side declaration queries for a body task. Native symbols remain the handles passed to javac utilities,
  * Filer and Messager. Detached annotation values use javac's value/visitor/formatting implementation, without installing
- * metadata in the shared symbols. Type-use and package/module source views are separate outstanding adapters.
+ * metadata in the shared symbols. ProcessorSourceTypes supplies detached native type-use views; package/module views remain separate.
  */
 final class ProcessorSourceQueries implements ProcessorReads.Model {
     private final Elements elements;
@@ -38,6 +38,7 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
     private final com.sun.tools.javac.code.Symtab symbols;
     private final com.sun.tools.javac.util.Names names;
     private final ProcessorSourceElements declarations;
+    private final ProcessorSourceTypes sourceTypes;
     private final Map<Element, Annotations> annotations = new IdentityHashMap<>();
     private final Map<ExecutableElement, AnnotationValue> defaultValues = new IdentityHashMap<>();
     private final Map<AnnotationMirror, Map<? extends ExecutableElement, ? extends AnnotationValue>> defaults = new IdentityHashMap<>();
@@ -48,10 +49,15 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
         compilerTypes = com.sun.tools.javac.code.Types.instance(context);
         symbols = com.sun.tools.javac.code.Symtab.instance(context); names = com.sun.tools.javac.util.Names.instance(context);
         declarations = new ProcessorSourceElements(elements, types, sources, explicit, this::privateMember);
+        sourceTypes = new ProcessorSourceTypes(types, compilerTypes, symbols, declarations, this::descriptor, this::typeAnnotations);
     }
 
     @Override public Object invoke(Object receiver, Method method, Object[] arguments) throws Throwable {
         String name = method.getName();
+        if (receiver == types) {
+            if (name.equals("asMemberOf")) return sourceTypes.member((Type) arguments[0], (Element) arguments[1]);
+            if (name.equals("directSupertypes")) return sourceTypes.directSupertypes((Type) arguments[0]);
+        }
         if (receiver == elements) {
             if (name.equals("getAllMembers") && arguments[0] instanceof TypeElement type) return allMembers(type);
             if (name.equals("getElementValuesWithDefaults") && defaults.containsKey(arguments[0])) return defaults.get(arguments[0]);
@@ -74,6 +80,19 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
             }
             var source = declarations.declaration(element);
             if (source != null) {
+                if (name.equals("asType")) return sourceTypes.of(element);
+                if (source.detail() instanceof ProcessorDeclaration.TypeDeclaration declaration) {
+                    if (name.equals("getSuperclass")) return sourceTypes.type(declaration.superclass());
+                    if (name.equals("getInterfaces")) return sourceTypes.list(declaration.interfaces());
+                    if (name.equals("getPermittedSubclasses")) return sourceTypes.list(declaration.permitted());
+                }
+                if (source.detail() instanceof ProcessorDeclaration.Parameter && name.equals("getBounds"))
+                    return compilerTypes.getBounds((Type.TypeVar) sourceTypes.of(element));
+                if (source.detail() instanceof ProcessorDeclaration.Executable) {
+                    if (name.equals("getReturnType")) return sourceTypes.of(element).getReturnType();
+                    if (name.equals("getReceiverType")) return sourceTypes.of(element).getReceiverType();
+                    if (name.equals("getThrownTypes")) return sourceTypes.of(element).getThrownTypes();
+                }
                 if (name.equals("getSimpleName")) return elements.getName(source.name());
                 if (name.equals("getKind")) return source.kind();
                 if (name.equals("getModifiers")) {
@@ -103,6 +122,8 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
 
     private String elementText(Element element) {
         var source = declarations.declaration(element);
+        if (source != null && element instanceof Symbol.MethodSymbol method)
+            return new Symbol.MethodSymbol(method.flags(), method.name, sourceTypes.of(element), method.owner).toString();
         return source != null && (element instanceof javax.lang.model.element.VariableElement
                 || element instanceof javax.lang.model.element.TypeParameterElement) ? source.name() : element.toString();
     }
@@ -135,7 +156,13 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
         for (var member : scope.getSymbols(com.sun.tools.javac.code.Scope.LookupKind.NON_RECURSIVE))
             if ((member.flags() & com.sun.tools.javac.code.Flags.SYNTHETIC) == 0) result.add(member);
         // getAllMembers returns a standard list (with brackets), unlike javac's comma-only declaration lists.
-        return java.util.List.copyOf(result);
+        var values = java.util.List.copyOf(result);
+        return new java.util.AbstractList<Symbol>() {
+            @Override public Symbol get(int index) { return values.get(index); }
+            @Override public int size() { return values.size(); }
+            @Override public String toString() { return values.stream().map(ProcessorSourceQueries.this::elementText)
+                    .collect(java.util.stream.Collectors.joining(", ", "[", "]")); }
+        };
     }
 
     private java.util.List<Symbol> memberScope(TypeElement type) {
@@ -274,31 +301,15 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
     }
 
     private Type type(ProcessorDeclaration.Type source, Map<ProcessorDeclaration.Key, Type> variables) {
-        return (Type) switch (source.kind()) {
-            case BOOLEAN, BYTE, CHAR, SHORT, INT, LONG, FLOAT, DOUBLE -> types.getPrimitiveType(source.kind());
-            case NONE, VOID, PACKAGE, MODULE -> types.getNoType(source.kind());
-            case NULL -> types.getNullType();
-            case ARRAY -> types.getArrayType(type(((ProcessorDeclaration.Array) source.shape()).component(), variables));
-            case DECLARED -> {
-                var declared = (ProcessorDeclaration.Declared) source.shape();
-                var symbol = (TypeElement) descriptor("L" + declared.binaryName().replace('.', '/') + ";").asElement();
-                var arguments = declared.arguments().stream().map(t -> type(t, variables)).toArray(javax.lang.model.type.TypeMirror[]::new);
-                var enclosing = type(declared.enclosing(), variables);
-                yield enclosing.getKind() == TypeKind.DECLARED ? types.getDeclaredType((javax.lang.model.type.DeclaredType) enclosing, symbol, arguments)
-                        : types.getDeclaredType(symbol, arguments);
-            }
-            case TYPEVAR -> {
-                var key = new ProcessorDeclaration.Key(((ProcessorDeclaration.VariableReference) source.shape()).elementKey());
-                yield variables.containsKey(key) ? variables.get(key) : declarations.variable(key);
-            }
-            case WILDCARD -> {
-                var wildcard = (ProcessorDeclaration.Wildcard) source.shape();
-                yield types.getWildcardType(wildcard.extendsBound() == null ? null : type(wildcard.extendsBound(), variables),
-                        wildcard.superBound() == null ? null : type(wildcard.superBound(), variables));
-            }
-            case INTERSECTION -> compilerTypes.makeIntersectionType(List.from(((ProcessorDeclaration.Intersection) source.shape()).bounds().stream().map(t -> type(t, variables)).toList()));
-            default -> throw new IllegalStateException("Unsupported private declaration type: " + source.kind());
-        };
+        return sourceTypes.type(source, variables);
+    }
+
+    private List<Attribute.TypeCompound> typeAnnotations(java.util.List<ProcessorDeclaration.Annotation> source) {
+        return List.from(source.stream().map(annotation -> {
+            var value = compound(annotation.explicit(), annotation.effective());
+            var result = new Attribute.TypeCompound(value, com.sun.tools.javac.code.TypeAnnotationPosition.unknown);
+            defaults.put(result, defaults.get(value)); return result;
+        }).toList());
     }
 
     private Attribute value(Ann.Val explicit, Ann.Val effective, Type expected) {

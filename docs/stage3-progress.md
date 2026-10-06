@@ -733,3 +733,26 @@ The final clean gate `stage3-member-queries-frozen-gate.log` passed **582 tests,
 | SHA3-256 | 3,507 | 1,804 | 1,126 | 124 | 25,193 |
 
 Maven model/build time (29.9/25.0s) is excluded. Sampled heap above baseline was 961/1,146 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-member-queries-SHA-256.txt), [SHA3-256](measurements/stage3-member-queries-SHA3-256.txt). The source member declaration regression is closed; the broader type-use, admission/verification, driver and oracle obligations remain open. The goal stays active and no PR was merged.
+
+
+### Source-backed type-use views
+
+ProcessorSourceTypes now constructs per-task native type views from rooted source declarations. It retains recursive type-variable element handles and source annotations through asType, bounds, superclass/interfaces, arrays, wildcards, executable returns/receivers/parameters/throws and record component propagation. Private structural type reconstruction shares this adapter. Native cached symbols and types are never given source metadata: hierarchy queries copy native factory/erasure types before setting fields on detached instances. The architecture check grants compiler-internal access to this one additional adapter, not the package.
+
+The native oracle exposed two distinct substitution rules: directSupertypes on the original declaration preserves its source annotations, while parameterized substitution strips annotations according to javac's type metadata rules. Detached copies preserve that stripping behavior. asMemberOf handles raw, parameterized and inherited members. Method and member-list toString also need the source type view, including annotated constructor parameters; their exact diagnostics now match fresh native javac. Repeated type-use annotations preserve explicit/defaulted maps, annotation proxies and mirrored class values.
+
+`stage3-type-queries-red.log` reproduced the missing type annotations. The factory and rendering regressions then independently exposed annotation-stripping and native MethodSymbol text mismatches. `stage3-type-queries-green.log` now passes **101 tests, zero failures/errors/skips**, including exact native classes/ordered diagnostics and repeated pool borrows. A separate mutation test cold-boots three snapshots with equal T, deletes the metadata source, and uses one context for all snapshots plus a return to the first: unread annotation/body edits preserve the proof/result, a consumed type-use annotation changes ACI/diagnostics, and the first snapshot still reproduces its first result.
+
+A broad repeated proxy scan also reproduced the existing capture limitation for multiple allocating getAnnotationsByType queries on the same handle in one phase: native answers allocate distinct proxy identities and captured replay currently rejects the query as ambiguous. The native type/proxy regression makes that query once per inspected annotation site; it does not normalize answers or claim to solve allocation-sensitive replay. Full admission/replay support remains required. Package/module/origin and implicit-state queries, persisted verification, cold storage boundaries, the Stage3/BROOT driver, the two-sided oracle and remaining full invariants are still open. LOCAL 9, MACHINE layout 4/parser 5 and bodies 4 remain unchanged. Warm is untouched; the goal stays active and no PR is merged.
+
+The Stage 3 authority and Downloads copy are synchronized after a distinct before-type-use-queries backup. Stage 2's authority is unchanged. The full combined clean gate follows with the complete Java input set frozen.
+
+
+The final clean gate `stage3-type-queries-frozen-gate.log` passed **586 tests, zero failures/errors/skips**, in 4m28s. The complete set of **550 Java files** and every source digest match the pre-run freeze. With four workers, the repository oracle covered **13 modules, 26 scopes and 545 sources**, 93 on-the-spot jars and 22 distinct leaf sets. Both digests produced **26/26 exact source/class k matches, no annotation differences and zero boot faults**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,193 | 2,541 | 1,601 | 144 | 25,208 |
+| SHA3-256 | 3,486 | 1,802 | 1,111 | 125 | 25,198 |
+
+Maven model/build time (26.0/25.6s) is excluded. Sampled heap above baseline was 940/1,143 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-type-queries-SHA-256.txt), [SHA3-256](measurements/stage3-type-queries-SHA3-256.txt). The synchronized Stage 3 authority SHA-256 is `dbc7e16b444235634edbe1286ad62b6aa5ce84255c237388504d28feca9903de`; Stage 2 remains unchanged. The type-use regression is closed, while the explicitly listed model/admission, verification, driver and oracle requirements remain open. The full goal stays active and no PR was merged.

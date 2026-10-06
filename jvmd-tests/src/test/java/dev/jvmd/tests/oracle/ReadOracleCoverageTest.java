@@ -34,6 +34,15 @@ class ReadOracleCoverageTest {
                 .containsExactly("ABSENT " + missing);
     }
 
+    @Test void ordinaryTypeEntriesCannotCoverModuleQualifiedDescriptorReads() {
+        var type = new Proof.Type("java/base/module-info", NONZERO,
+                List.of(new Proof.Entry(new Proof.Range(Proof.T, "java/base/module-info", 0, ""), NONZERO)));
+        var proof = new Proof(new Proof.Header(NONZERO, NONZERO, NONZERO, NONZERO, NONZERO, null),
+                List.of(type), List.of());
+        assertThat(ReadOracleTrace.uncovered(proof, List.of("java/base/module-info"), List.of("java.base"), List.of()))
+                .containsExactly("MODULE java.base");
+    }
+
     @Test void zeroMustHaveTheExactOwnerNamespaceAndNameOrAnEmptyWholeKind() {
         var proof = proof(List.of(entry(Proof.T, 1, "value", ZERO), entry(Proof.T, 2, "", ZERO),
                 entry(Proof.N, 0, "Nested", ZERO)), List.of("p/Missing"));

@@ -22,12 +22,13 @@ public final class ReadOracleTrace {
     public record Missing(String kind, String owner, String name) implements Comparable<Missing> {
         @Override public int compareTo(Missing other) { return toString().compareTo(other.toString()); }
     }
-    public record Snapshot(String file, List<String> loaded, List<Missing> absent, List<Missing> predefined) { }
+    public record Snapshot(String file, List<String> loaded, List<String> modules, List<Missing> absent, List<Missing> predefined) { }
     private static final class Trace {
         final String file;
         final Set<String> own;
         final boolean poolOnly;
         final Set<String> loaded = new TreeSet<>();
+        final Set<String> modules = new TreeSet<>();
         final Set<Missing> absent = new TreeSet<>();
         final Set<Missing> predefined = new TreeSet<>();
         final Set<Object> nonemptyIterators = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
@@ -57,7 +58,7 @@ public final class ReadOracleTrace {
         if (trace == null) throw new AssertionError("Read oracle did not start");
         if (trace.suspended != 0) throw new AssertionError("Unbalanced collector exclusion");
         if (trace.globalTypes != 0) throw new AssertionError("Unbalanced global type lookup");
-        return new Snapshot(trace.file, List.copyOf(trace.loaded), List.copyOf(trace.absent), List.copyOf(trace.predefined));
+        return new Snapshot(trace.file, List.copyOf(trace.loaded), List.copyOf(trace.modules), List.copyOf(trace.absent), List.copyOf(trace.predefined));
     }
     public static void suspend() { var trace = CURRENT.get(); if (trace != null) trace.suspended++; }
     public static void resume() { var trace = CURRENT.get(); if (trace != null) trace.suspended--; }
@@ -96,6 +97,14 @@ public final class ReadOracleTrace {
         if (trace == null || trace.suspended != 0 || !symbol.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol")) return;
         var file = field(symbol, "classfile");
         if (fileKind(file).equals("CLASS")) {
+            var owner = field(symbol, "owner");
+            if (owner != null && owner.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ModuleSymbol")
+                    && field(owner, "module_info") == symbol) {
+                // This is the actual descriptor symbol, not an ordinary class whose flatname happens to contain module-info.
+                // Keep the qualified module read visible; an unqualified body type proof cannot discharge it.
+                trace.modules.add(field(owner, "name").toString());
+                return;
+            }
             String name = binary(symbol);
             if (!trace.own(name)) trace.loaded.add(name);
         }
@@ -141,11 +150,12 @@ public final class ReadOracleTrace {
     }
 
     private static void report(Snapshot trace, Object proof) {
-        var uncovered = uncovered(proof, trace.loaded(), trace.absent());
+        var uncovered = uncovered(proof, trace.loaded(), trace.modules(), trace.absent());
         var lines = new ArrayList<String>();
-        lines.add("FILE " + trace.file() + " loaded=" + trace.loaded().size() + " absent=" + trace.absent().size()
+        lines.add("FILE " + trace.file() + " loaded=" + trace.loaded().size() + " modules=" + trace.modules().size() + " absent=" + trace.absent().size()
                 + " predefined=" + trace.predefined().size() + " uncovered=" + uncovered.size());
         trace.loaded().forEach(value -> lines.add("LOAD " + value));
+        trace.modules().forEach(value -> lines.add("MODULE " + value));
         trace.absent().forEach(value -> lines.add("ABSENT " + value));
         trace.predefined().forEach(value -> lines.add("PREDEFINED " + value));
         uncovered.forEach(value -> lines.add("UNCOVERED " + value));
@@ -162,6 +172,10 @@ public final class ReadOracleTrace {
 
     /** Only named proof entries and actual zero sums count; shortcuts and aggregate identities never cover a read. */
     public static List<String> uncovered(Object proof, Collection<String> loaded, Collection<Missing> absent) {
+        return uncovered(proof, loaded, List.of(), absent);
+    }
+
+    public static List<String> uncovered(Object proof, Collection<String> loaded, Collection<String> modules, Collection<Missing> absent) {
         var types = new TreeSet<String>(); var zero = new TreeSet<Missing>();
         for (var type : values(call(proof, "types"))) {
             String owner = call(type, "key").toString(); types.add(owner);
@@ -178,6 +192,8 @@ public final class ReadOracleTrace {
         for (String type : strings(call(proof, "absent"))) zero.add(new Missing("D", type, ""));
         var result = new ArrayList<String>();
         for (String type : loaded) if (!types.contains(type)) result.add("LOAD " + type);
+        // No existing ordinary-body proof entry has module-qualified descriptor semantics.
+        for (String module : modules) result.add("MODULE " + module);
         for (var missing : absent) if (!zero.contains(missing) && !zero.contains(new Missing(missing.kind(), missing.owner(), "")))
             result.add("ABSENT " + missing);
         return List.copyOf(result);

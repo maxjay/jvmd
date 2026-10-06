@@ -26,9 +26,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * Stage 2 through {@link BootDecision} on the real store: a MACHINE boot of a small repository and the JDK, a LOCAL cold boot of a
+ * Stages 2 and 3 through {@link BootDecision} on the real store: a MACHINE boot of a small repository and the JDK, a LOCAL cold boot of a
  * project, a second start that logs the skip and touches nothing, and the records on disk, which are exactly those of the section 4
- * table with {@code C|}, {@code X|} and {@code RS|} empty.
+ * table with rooted {@code C|}, {@code CF|}, {@code RS|} and {@code OUT|} records.
  */
 @Tag("phase-3")
 class RocksLocalBootTest {
@@ -59,8 +59,8 @@ class RocksLocalBootTest {
 
             var first = BootDecision.local(indexDir, model, repository);
             assertThat(first).as("a cold boot").isPresent();
-            assertThat(first.get().faults()).isEmpty();
-            assertThat(first.get().modules()).isEqualTo(4);
+            assertThat(first.get().headers().orElseThrow().faults()).isEmpty();
+            assertThat(first.get().headers().orElseThrow().modules()).isEqualTo(4);
             var second = BootDecision.local(indexDir, model, repository);
             assertThat(second).as("the second start logs the skip line and does nothing else").isEmpty();
 
@@ -70,10 +70,10 @@ class RocksLocalBootTest {
             try (var store = Generation.of(indexDir, format).open()) {
                 var kinds = new TreeMap<String, Integer>();
                 for (var key : store.keys()) kinds.merge(kind(key), 1, Integer::sum);
-                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT");
-                assertThat(kinds).as("C| and RS| are empty after a cold boot").doesNotContainKeys("C", "RS");
-                for (var key : store.keys()) if (kind(key).equals("X")) assertThat(key[2]).as("header range reverse keys have their own namespace").isEqualTo((byte) 'H');
-                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT");
+                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT", "BROOT", "CF", "C", "RS", "U", "OUT");
+                assertThat(kinds.get("C")).as("one body proof per compiled source").isEqualTo(Fixtures.multi().size());
+                for (var key : store.keys()) if (kind(key).equals("X")) assertThat(key[2]).as("header and body reverse namespaces").isIn((byte) 'H', (byte) 'G', (byte) 'D');
+                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT", "BROOT", "CF", "C", "RS", "U", "OUT");
                 assertThat(kinds.get("MOD")).isEqualTo(4);
                 assertThat(kinds.get("RT")).isEqualTo(8);
                 assertThat(kinds.get("SL")).isEqualTo(8);
@@ -114,7 +114,7 @@ class RocksLocalBootTest {
                 }
                 var rebuilt = BootDecision.local(indexDir, model, repository);
                 assertThat(rebuilt).as("local=" + legacy + " must not skip the current LOCAL cold boot").isPresent();
-                assertThat(rebuilt.orElseThrow().faults()).isEmpty();
+                assertThat(rebuilt.orElseThrow().headers().orElseThrow().faults()).isEmpty();
                 try (var store = Generation.of(indexDir, format).open()) {
                     assertThat(LocalRoot.formatOf(store.get(LocalStore.localRootKey(projectKey)))).isEqualTo(LocalFormat.of(format));
                 }
@@ -127,7 +127,7 @@ class RocksLocalBootTest {
     private static String kind(byte[] key) {
         if (new String(key, StandardCharsets.US_ASCII).equals("ROOT")) return "ROOT";
         var text = new String(key, StandardCharsets.ISO_8859_1);
-        for (var tag : List.of("LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
+        for (var tag : List.of("BROOT|", "CF|", "OUT|", "U|", "LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
         if (key[0] == 'L' && key.length == 33) return "L";
         if (key[0] == 'N' && key.length == 33) return "N";
         if (key[0] == 'P') return "P";

@@ -336,6 +336,7 @@ class ProcessedAttributeTest {
                 for(var name:java.util.List.of("p.Metadata", "p.Middle", "p.Input")) {
                     var type=elements.getTypeElement(name);
                     text.append("|").append(elements.getAllAnnotationMirrors(type));
+                    for(var annotation:elements.getAllAnnotationMirrors(type)) text.append(":origin=").append(elements.getOrigin(type,annotation));
                     text.append("|").append(type.getAnnotation(fixture.Tag.class));
                     for(var tag:type.getAnnotationsByType(fixture.Tag.class)) {
                         text.append("|").append(tag).append("|").append(tag.value());
@@ -367,7 +368,7 @@ class ProcessedAttributeTest {
                     public Void scan(Element element, StringBuilder text) {
                         text.append("|").append(element.getKind()).append(":").append(element.getSimpleName());
                         text.append(":").append(element.getModifiers()).append(":").append(elements.getDocComment(element));
-                        text.append(":deprecated=").append(elements.isDeprecated(element));
+                        text.append(":deprecated=").append(elements.isDeprecated(element)).append(":origin=").append(elements.getOrigin(element));
                         text.append(":").append(element.getAnnotationMirrors()).append(":").append(elements.getAllAnnotationMirrors(element));
                         if(element instanceof TypeElement type) {
                             text.append(":all=").append(elements.getAllMembers(type));
@@ -377,6 +378,8 @@ class ProcessedAttributeTest {
                         if(element instanceof ExecutableElement method) {
                             for(var parameter:method.getTypeParameters()) scan(parameter,text);
                             text.append(":default=").append(method.getDefaultValue());
+                            text.append(":bridge=").append(elements.isBridge(method)).append(":compact=").append(elements.isCompactConstructor(method));
+                            text.append(":canonical=").append(elements.isCanonicalConstructor(method)).append(":component=").append(elements.recordComponentFor(method));
                             text.append(":params=").append(method.getParameters()).append(":types=").append(method.getTypeParameters());
                             text.append(":signature=").append(method.asType()).append(":receiver=").append(method.getReceiverType());
                         }
@@ -408,6 +411,10 @@ class ProcessedAttributeTest {
                     @Deprecated(since="phase") private int annotationDeprecated;
                     class Inner$Named { @Label("inner constructor") Inner$Named(@Label("inner arg") String argument) {} }
                     record Data(@Label("component") String sourceComponent) {}
+                    record ExplicitData(String value) {ExplicitData(String value){this.value=value;}}
+                    record CompactData(String value) {CompactData {java.util.Objects.requireNonNull(value);}}
+                    class Implicit {} class Explicit {Explicit(){}}
+                    enum ImplicitChoice {ONE}
                     enum Choice { @Label("constant") ONE; @Label("enum constructor") Choice() {} }
                     @interface Defaults {String z() default "z"; String a() default "a";}
                     interface DefaultType { @Label("default method") default int size(@Label("size arg") int count){return count;} }
@@ -426,7 +433,7 @@ class ProcessedAttributeTest {
                 var visitor=new javax.lang.model.util.SimpleTypeVisitor14<Void,Integer>() {
                     void scan(javax.lang.model.type.TypeMirror type,int depth) {
                         text.append("[").append(type.getKind()).append(":").append(type).append(":").append(type.getAnnotationMirrors());
-                        for(var annotation:type.getAnnotationMirrors()) text.append(elements.getElementValuesWithDefaults(annotation));
+                        for(var annotation:type.getAnnotationMirrors()) text.append(elements.getElementValuesWithDefaults(annotation)).append(":origin=").append(elements.getOrigin(type,annotation));
                         for(var spot:type.getAnnotationsByType(fixture.Spot.class)) {
                             text.append(":repeat=").append(spot.value());
                             try {spot.type();throw new AssertionError("expected mirror");}
@@ -549,6 +556,38 @@ class ProcessedAttributeTest {
         assertThat(results.get(1)).isEqualTo(results.get(0));
         assertThat(results.get(2).aci()).isNotEqualTo(results.get(0).aci());
         assertThat(results.get(2).proof().processorBody()).isNotEqualTo(results.get(0).proof().processorBody());
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void constructorOriginChangesTheProofWithoutChangingTheStubApi(Digest digest) throws Exception {
+        var processor=processor("""
+                var elements=processingEnv.getElementUtils();
+                var type=elements.getTypeElement("p.Metadata");
+                for(var member:type.getEnclosedElements())if(member.getKind()==javax.lang.model.element.ElementKind.CONSTRUCTOR)
+                    processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,elements.getOrigin(member).name(),root);
+                ""","isolating");
+        var states=new ArrayList<State>();var results=new ArrayList<Attribute.Computed>();var expected=new ArrayList<Oracle>();
+        for(var change:List.of(new String[]{"","1"},new String[]{"","2"},new String[]{"public Metadata() {}","2"})) {
+            var state=boot(digest,Map.of("p/Input.java","package p; public class Input {}","p/Metadata.java",
+                    "package p; public class Metadata {%s int body(){return %s;}}".formatted(change[0],change[1])),List.of(processor),List.of());
+            assertThat(state.faults()).isEmpty();states.add(state);expected.add(oracle(state));
+        }
+        assertThat(states).extracting(state->state.own().k()).containsOnly(states.getFirst().own().k());
+        Files.delete(dir.resolve("app/src/main/java/p/Metadata.java"));
+        try(var pool=new Pool(states.getFirst().pool(),1)) {
+            for(var state:states)results.add(run(state,attribute(state,pool),"app/src/main/java/p/Input.java"));
+            assertThat(run(states.getFirst(),attribute(states.getFirst(),pool),"app/src/main/java/p/Input.java")).isEqualTo(results.getFirst());
+            assertThat(pool.statistics().contexts()).isEqualTo(1);
+        }
+        for(int i=0;i<results.size();i++) {
+            assertThat(results.get(i).reusable()).as(results.get(i).faults().toString()).isTrue();
+            assertThat(results.get(i).result().diagnostics()).isEqualTo(expected.get(i).messages());
+        }
+        assertThat(results.get(1)).isEqualTo(results.get(0));
+        assertThat(results.get(2).aci()).isNotEqualTo(results.get(0).aci());
+        assertThat(results.get(2).proof().processorBody()).isNotEqualTo(results.get(0).proof().processorBody());
+        assertThat(results.get(0).result().diagnostics().getFirst().message()).isEqualTo("MANDATED");
+        assertThat(results.get(2).result().diagnostics().getFirst().message()).isEqualTo("EXPLICIT");
     }
 
     @ParameterizedTest @MethodSource("digests")

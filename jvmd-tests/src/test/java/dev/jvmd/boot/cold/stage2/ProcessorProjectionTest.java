@@ -152,6 +152,42 @@ class ProcessorProjectionTest {
         assertThat(project(digest, source.replace("default 1", "default 2"), "p/E.java").root).isNotEqualTo(before.root);
     }
 
+    @ParameterizedTest @MethodSource("digests")
+    void annotationContainerOriginIsPartOfTheProcessorProjection(Digest digest) throws Exception {
+        String source="""
+                package p;
+                import java.lang.annotation.*;
+                @Retention(RetentionPolicy.SOURCE) @Repeatable(Entity.class) @interface Tag {}
+                @Retention(RetentionPolicy.SOURCE) @interface Entity {Tag[] value();}
+                @Tag @Tag class E {}
+                """;
+        var implicit=project(digest,source,"p/E.java");
+        var explicit=project(digest,source.replace("@Tag @Tag class", "@Entity({@Tag,@Tag}) class"),"p/E.java");
+        var before=dev.jvmd.index.layer.local.ProcessorDeclaration.decode(implicit.entries.getFirst().value()).declaration().annotations().getFirst();
+        var after=dev.jvmd.index.layer.local.ProcessorDeclaration.decode(explicit.entries.getFirst().value()).declaration().annotations().getFirst();
+        assertThat(after.explicit()).isEqualTo(before.explicit());assertThat(after.effective()).isEqualTo(before.effective());
+        assertThat(before.origin()).isEqualTo(javax.lang.model.util.Elements.Origin.MANDATED);
+        assertThat(after.origin()).isEqualTo(javax.lang.model.util.Elements.Origin.EXPLICIT);
+        assertThat(explicit.root.hash()).isNotEqualTo(implicit.root.hash());
+        assertThat(explicit.root.sum()).isNotEqualTo(implicit.root.sum());
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void compactConstructorBodiesAreExcludedButTheirPublicModelStateIsRetained(Digest digest) throws Exception {
+        String source="package p; @interface Entity {} @Entity record E(int value) { E {if(value<0)throw new IllegalArgumentException();} }";
+        var compact=project(digest,source,"p/E.java");
+        assertThat(project(digest,source.replace("value<0","value<1"),"p/E.java").root).isEqualTo(compact.root);
+        var explicit=project(digest,source.replace("E {if(value<0)throw new IllegalArgumentException();}","E(int value) {this.value=value;}"),"p/E.java");
+        var declaration=dev.jvmd.index.layer.local.ProcessorDeclaration.decode(compact.entries.getFirst().value()).declaration();
+        var members=((dev.jvmd.index.layer.local.ProcessorDeclaration.TypeDeclaration)declaration.detail()).enclosed();
+        var constructor=(dev.jvmd.index.layer.local.ProcessorDeclaration.Executable)members.stream()
+                .filter(member->member.kind()==javax.lang.model.element.ElementKind.CONSTRUCTOR).findFirst().orElseThrow().detail();
+        assertThat(constructor.compactConstructor()).isTrue();assertThat(constructor.canonicalConstructor()).isTrue();
+        assertThat(constructor.parameters().getFirst().origin()).isEqualTo(javax.lang.model.util.Elements.Origin.MANDATED);
+        assertThat(explicit.root.hash()).isNotEqualTo(compact.root.hash());
+        assertThat(explicit.root.sum()).isNotEqualTo(compact.root.sum());
+    }
+
     private Domain project(Digest digest, String source, String sourcePath) throws Exception {
         var file = dir.resolve(sourcePath);
         Files.createDirectories(file.getParent());

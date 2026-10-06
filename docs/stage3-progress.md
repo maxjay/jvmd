@@ -777,3 +777,24 @@ The final clean gate `stage3-replay-allocations-frozen-gate.log` passed **590 te
 | SHA3-256 | 3,507 | 1,808 | 1,101 | 132 | 25,204 |
 
 Maven model/build time (26.1/25.5s) is excluded. Sampled heap above baseline was 956/1,169 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-replay-allocations-SHA-256.txt), [SHA3-256](measurements/stage3-replay-allocations-SHA3-256.txt). The synchronized Stage 3 authority SHA-256 is `f790a8e3b49e291ecac92169e9fbc585d36de33a582980a83cbf0b00a19dd2d0`; Stage 2 remains unchanged. The full goal remains active with the model/admission, verification, driver and oracle obligations listed above. No PR was merged.
+
+
+### Source declaration origins and executable state
+
+ProcessorElementProjection now records native Elements.getOrigin answers for declarations and annotation mirrors, and the public isBridge/isCompactConstructor/isCanonicalConstructor answers for executable elements. ProcessorDeclaration decodes these typed fields after the header compiler closes. The body-task adapter answers the corresponding element queries from the rooted source model and preserves synthesized-container state on detached native annotation mirrors, including inherited containers and TypeCompound copies. It does not mutate compiler symbol flags or infer source origin from a binary constructor. LOCAL is now 10; MACHINE layout 4/parser 5 and bodies 4 are unchanged. Legacy-format rejection now includes LOCAL 9.
+
+The native comparison first reproduced four failures across the two digests: implicit constructors and record/enum parameters lost their origins, record executable-state queries lost their native answers, and synthesized inherited repeatable containers appeared explicit. The regression now covers implicit and explicit class/enum constructors, implicit/explicit/compact record constructors, record members, source type-use annotations and annotation containers. The adapter preserves even javac's executable-state answers on non-constructor record members; it does not replace native behavior with an interpretation of the API name.
+
+Three added mutation regressions establish the projection boundary. With equal T leaves and one reused compiler context, a body-only edit preserves the result/proof while an implicit-to-explicit public constructor change moves the consumed proof and diagnostic. Metadata source is deleted before body tasks and rebinding the first snapshot recovers the original result. An explicit repeatable container and a synthesized container have equal annotation values but distinct native origins and PD hashes/sums. A compact-constructor body edit preserves the declaration projection; changing to an explicit canonical constructor changes the saved public state.
+
+`stage3-source-origins-focused-final.log` passes **86 tests, zero failures/errors/skips**. Stage 3 authority SHA-256 is `f98719ab07512f41a69512d96c917e0117b5b5a248bc50e72f2f0dda9f1c8ee6`, byte-identical to Downloads after the distinct before-source-origins backup. Stage 2 remains unchanged and synchronized. Package/module/file views, other public-model edges and error declarations, complete processor admission, persisted verification, cold storage boundaries, the Stage3/BROOT driver and the remaining full invariants are still required. Warm is untouched, no PR is merged and the full goal remains active. The full combined clean gate follows with all Java inputs frozen.
+
+
+The final clean gate `stage3-source-origins-frozen-gate.log` passed **596 tests, zero failures/errors/skips**, in 4m30s. The complete set of **550 Java files** and every source digest match the pre-run freeze. With four workers, the repository oracle covered **13 modules, 26 scopes and 545 sources**, 93 on-the-spot jars and 22 distinct leaf sets. Both digests produced **26/26 exact source/class k matches, no annotation differences and zero boot faults**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,286 | 2,622 | 1,657 | 140 | 25,221 |
+| SHA3-256 | 3,529 | 1,824 | 1,213 | 136 | 25,209 |
+
+Maven model/build time (26.2/25.9s) is excluded. Sampled heap above baseline was 944/1,173 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-source-origins-SHA-256.txt), [SHA3-256](measurements/stage3-source-origins-SHA3-256.txt). The synchronized Stage 3 authority SHA-256 is `f98719ab07512f41a69512d96c917e0117b5b5a248bc50e72f2f0dda9f1c8ee6`; Stage 2 remains unchanged. This closes the tested source-origin and executable-state gap. The full goal remains active with the model/admission, verification, driver and oracle obligations listed above. No PR was merged.

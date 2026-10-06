@@ -7,9 +7,10 @@ import java.util.List;
 import java.util.function.Supplier;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.type.TypeKind;
+import javax.lang.model.util.Elements;
 
 /** Detached, queryable declaration data from {@link ProcessorElementProjection}; never retains a javac object. */
-public record ProcessorDeclaration(ElementKind kind, String name, Key key, String docComment, boolean deprecated, List<String> modifiers,
+public record ProcessorDeclaration(ElementKind kind, String name, Key key, String docComment, boolean deprecated, Elements.Origin origin, List<String> modifiers,
                                    List<Annotation> annotations, Detail detail) {
     public ProcessorDeclaration { modifiers = List.copyOf(modifiers); annotations = List.copyOf(annotations); }
     public record Source(String path, ProcessorDeclaration declaration) { }
@@ -21,7 +22,7 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
         @Override public int hashCode() { return java.util.Arrays.hashCode(bytes); }
     }
     /** Both maps are observable, including explicit presence and defaults of nested annotations. */
-    public record Annotation(Ann explicit, Ann effective) { }
+    public record Annotation(Ann explicit, Ann effective, Elements.Origin origin) { }
 
     public sealed interface Detail { }
     public record TypeDeclaration(String binaryName, String nesting, List<ProcessorDeclaration> parameters, Type superclass,
@@ -34,6 +35,7 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
     }
     public record Executable(List<ProcessorDeclaration> typeParameters, Type returns, Type receiver,
                              List<ProcessorDeclaration> parameters, List<Type> thrown, boolean varargs, boolean defaultMethod,
+                             boolean bridge, boolean compactConstructor, boolean canonicalConstructor,
                              Ann.Val explicitDefault, Ann.Val effectiveDefault) implements Detail {
         public Executable { typeParameters = List.copyOf(typeParameters); parameters = List.copyOf(parameters); thrown = List.copyOf(thrown); }
     }
@@ -78,6 +80,7 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
         var key = new Key(in.lenBytes());
         var comment = flag(in) ? in.text() : null;
         boolean deprecated = flag(in);
+        var origin = Elements.Origin.valueOf(in.str());
         var modifiers = list(in, in::str);
         var annotations = annotations(in);
         Detail detail = switch (kind) {
@@ -86,8 +89,9 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
             case METHOD, CONSTRUCTOR, STATIC_INIT, INSTANCE_INIT -> {
                 var parameters = declarations(in); var returns = type(in); var receiver = type(in);
                 var arguments = declarations(in); var thrown = types(in); boolean varargs = flag(in), defaults = flag(in);
+                boolean bridge = flag(in), compact = flag(in), canonical = flag(in);
                 boolean hasDefault = flag(in);
-                yield new Executable(parameters, returns, receiver, arguments, thrown, varargs, defaults,
+                yield new Executable(parameters, returns, receiver, arguments, thrown, varargs, defaults, bridge, compact, canonical,
                         hasDefault ? value(in) : null, hasDefault ? value(in) : null);
             }
             case FIELD, ENUM_CONSTANT, PARAMETER, LOCAL_VARIABLE, EXCEPTION_PARAMETER, RESOURCE_VARIABLE, BINDING_VARIABLE ->
@@ -96,7 +100,7 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
             case PACKAGE -> new Package(in.str(), declarations(in));
             default -> new Other(type(in));
         };
-        return new ProcessorDeclaration(kind, name, key, comment, deprecated, modifiers, annotations, detail);
+        return new ProcessorDeclaration(kind, name, key, comment, deprecated, origin, modifiers, annotations, detail);
     }
 
     private static Type type(Reader in) {
@@ -118,7 +122,7 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
     private static List<Type> types(Reader in) { return list(in, () -> type(in)); }
     private static List<ProcessorDeclaration> declarations(Reader in) { return list(in, () -> declaration(in)); }
     private static List<Annotation> annotations(Reader in) {
-        return list(in, () -> new Annotation(annotation(in), annotation(in)));
+        return list(in, () -> new Annotation(annotation(in), annotation(in), Elements.Origin.valueOf(in.str())));
     }
     private static <T> List<T> list(Reader in, Supplier<T> read) {
         int count = in.count();

@@ -8,7 +8,7 @@ import dev.jvmd.index.layer.machine.Format;
  */
 public final class LocalFormat {
     /** Bumped when any byte layout in appendix B of stage 2 changes. */
-    public static final int LAYOUT = 9;
+    public static final int LAYOUT = 10;
 
     private LocalFormat() { }
 

@@ -59,6 +59,19 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
             if (name.equals("directSupertypes")) return sourceTypes.directSupertypes((Type) arguments[0]);
         }
         if (receiver == elements) {
+            if (name.equals("getOrigin") && arguments.length == 1 && arguments[0] instanceof Element element) {
+                var source = declarations.declaration(element);
+                if (source != null) return source.origin();
+            }
+            if ((name.equals("isBridge") || name.equals("isCompactConstructor") || name.equals("isCanonicalConstructor"))
+                    && arguments[0] instanceof ExecutableElement element) {
+                var source = declarations.declaration(element);
+                if (source != null && source.detail() instanceof ProcessorDeclaration.Executable executable) return switch (name) {
+                    case "isBridge" -> executable.bridge();
+                    case "isCompactConstructor" -> executable.compactConstructor();
+                    default -> executable.canonicalConstructor();
+                };
+            }
             if (name.equals("getAllMembers") && arguments[0] instanceof TypeElement type) return allMembers(type);
             if (name.equals("getElementValuesWithDefaults") && defaults.containsKey(arguments[0])) return defaults.get(arguments[0]);
             if (name.equals("getDocComment") && arguments[0] instanceof Element element) {
@@ -181,7 +194,7 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
         var source = declarations.declaration(element);
         List<Attribute.Compound> mirrors;
         if (source == null) mirrors = List.from(element.getAnnotationMirrors().stream().map(a -> (Attribute.Compound) a).toList());
-        else mirrors = List.from(source.annotations().stream().map(a -> compound(a.explicit(), a.effective())).toList());
+        else mirrors = List.from(source.annotations().stream().map(this::compound).toList());
         var result = new Annotations(element, mirrors); annotations.put(element, result); return result;
     }
 
@@ -220,6 +233,13 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
             var parent = owner instanceof TypeElement type ? parent(type) : null;
             return parent == null ? super.getInheritedAnnotations(annotation) : annotations(parent).getAnnotationsByType(annotation);
         }
+    }
+
+    private Attribute.Compound compound(ProcessorDeclaration.Annotation annotation) {
+        var result = compound(annotation.explicit(), annotation.effective());
+        // JavacElements.getOrigin reads this detached compound's synthesized bit, also for inherited containers.
+        result.setSynthesized(annotation.origin() == Elements.Origin.MANDATED);
+        return result;
     }
 
     private Attribute.Compound compound(Ann explicit, Ann effective) {
@@ -306,8 +326,10 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
 
     private List<Attribute.TypeCompound> typeAnnotations(java.util.List<ProcessorDeclaration.Annotation> source) {
         return List.from(source.stream().map(annotation -> {
-            var value = compound(annotation.explicit(), annotation.effective());
+            var value = compound(annotation);
             var result = new Attribute.TypeCompound(value, com.sun.tools.javac.code.TypeAnnotationPosition.unknown);
+            // TypeCompound does not copy Compound's synthesized bit.
+            result.setSynthesized(value.isSynthesized());
             defaults.put(result, defaults.get(value)); return result;
         }).toList());
     }

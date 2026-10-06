@@ -5,6 +5,7 @@ import dev.jvmd.index.layer.machine.Ann;
 import dev.jvmd.index.layer.machine.Keys;
 import java.util.ArrayList;
 import java.util.List;
+import javax.lang.model.AnnotatedConstruct;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
@@ -66,11 +67,11 @@ public final class ProcessorElementProjection {
         var comment = elements.getDocComment(element);
         out.u8(comment == null ? 0 : 1);
         if (comment != null) out.utf16(comment);
-        out.u8(elements.isDeprecated(element) ? 1 : 0);
+        out.u8(elements.isDeprecated(element) ? 1 : 0).str(elements.getOrigin(element).name());
         var modifiers = element.getModifiers().stream().map(Enum::name).sorted().toList();
         out.u32(modifiers.size());
         for (var modifier : modifiers) out.str(modifier);
-        annotations(out, element.getAnnotationMirrors());
+        annotations(out, element);
         switch (element) {
             case TypeElement type -> {
                 out.str(elements.getBinaryName(type).toString()).str(type.getNestingKind().name());
@@ -89,6 +90,8 @@ public final class ProcessorElementProjection {
                 declarations(out, method.getParameters());
                 typeList(out, method.getThrownTypes());
                 out.u8(method.isVarArgs() ? 1 : 0).u8(method.isDefault() ? 1 : 0);
+                out.u8(elements.isBridge(method) ? 1 : 0).u8(elements.isCompactConstructor(method) ? 1 : 0)
+                        .u8(elements.isCanonicalConstructor(method) ? 1 : 0);
                 var value = method.getDefaultValue();
                 out.u8(value == null ? 0 : 1);
                 if (value != null) {
@@ -125,7 +128,7 @@ public final class ProcessorElementProjection {
 
     private void type(Codec.Writer out, TypeMirror type) {
         out.str(type.getKind().name());
-        annotations(out, type.getAnnotationMirrors());
+        annotations(out, type);
         switch (type) {
             case ArrayType array -> type(out, array.getComponentType());
             case DeclaredType declared -> {
@@ -144,12 +147,14 @@ public final class ProcessorElementProjection {
 
     private void optionalType(Codec.Writer out, TypeMirror value) { out.u8(value == null ? 0 : 1); if (value != null) type(out, value); }
 
-    private void annotations(Codec.Writer out, List<? extends AnnotationMirror> annotations) {
+    private void annotations(Codec.Writer out, AnnotatedConstruct owner) {
+        var annotations = owner.getAnnotationMirrors();
         out.u32(annotations.size());
         for (var annotation : annotations) {
             annotation(annotation, false).encode(out);
             // Both explicit presence and effective defaults are observable, including SOURCE-retention annotations.
             annotation(annotation, true).encode(out);
+            out.str(elements.getOrigin(owner, annotation).name());
         }
     }
 

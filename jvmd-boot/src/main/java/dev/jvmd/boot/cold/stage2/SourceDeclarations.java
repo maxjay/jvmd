@@ -15,19 +15,24 @@ import javax.lang.model.element.TypeElement;
 final class SourceDeclarations {
     private final Boot boot;
     private final ProcessorElementProjection projection;
+    private final javax.lang.model.util.Elements elements;
     private final TreeMap<byte[], Entry> entries = new TreeMap<>(Arrays::compareUnsigned);
 
     SourceDeclarations(Boot boot, HeaderCompiler.Compiled compiled) {
         this.boot = boot;
+        elements = compiled.elements;
         projection = new ProcessorElementProjection(compiled.elements, compiled.types);
     }
 
     void add(String path, List<TypeElement> declared, javax.lang.model.element.PackageElement pkg, List<FileRow.Fault> faults) {
         for (var type : declared) {
-            presence(((javax.lang.model.element.PackageElement) type.getEnclosingElement()).getQualifiedName().toString());
+            var owner = (javax.lang.model.element.PackageElement) type.getEnclosingElement();
+            presence(owner.getQualifiedName().toString());
+            members(path, owner, faults);
             add(path, type, faults);
         }
         if (pkg != null) {
+            members(path, pkg, faults);
             presence(pkg.getQualifiedName().toString());
             var key = projection.key(pkg);
             var previous = entries.get(key);
@@ -41,6 +46,22 @@ final class SourceDeclarations {
             }
             entries.put(key, entry);
         }
+    }
+
+    private void members(String path, javax.lang.model.element.PackageElement pkg, List<FileRow.Fault> faults) {
+        String name = pkg.getQualifiedName().toString();
+        var key = ProcessorSources.packageMembersKey(name);
+        if (entries.containsKey(key)) return;
+        Entry entry;
+        try {
+            var members = pkg.getEnclosedElements().stream().map(e -> elements.getBinaryName((TypeElement) e).toString()).toList();
+            entry = ProcessorSources.packageMembers(boot.tree, name, members);
+        } catch (RuntimeException incomplete) {
+            String reason = incomplete.getClass().getSimpleName() + ": " + incomplete.getMessage();
+            entry = ProcessorSources.unavailable(boot.tree, key, path, reason);
+            faults.add(new FileRow.Fault(key, "processor package members: " + reason));
+        }
+        entries.put(key, entry);
     }
 
     private void presence(String name) {

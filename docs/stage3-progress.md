@@ -7,7 +7,7 @@ The objective is the entire specification. None of the gates below is complete u
 
 ## Current status, 2026-10-06
 
-The full specification is **not complete**. The initial Stage 3 driver and BROOT publication checkpoint now passes **638 tests, zero failures/errors/skips**, including both digests and the repository Stage 2 oracle. All 556 Java files were frozen throughout the clean gate. PR #61 is the separate Stage 2 reconciliation; the dedicated Stage 3 draft is stacked on its branch. The cumulative implementation, synchronized authority and remaining gates are recorded here. This checkpoint supersedes the 614-test package-model checkpoint `032d74cf`.
+The full specification is **not complete**. The package-member ordering correction following the initial Stage 3 driver checkpoint now passes **642 tests, zero failures/errors/skips**, including both digests and the repository Stage 2 oracle. All 556 Java files were frozen throughout the clean gate. PR #61 is the separate Stage 2 reconciliation; [Stage 3 draft #62](https://github.com/maxjay/jvmd/pull/62) is stacked on its branch. The cumulative implementation, synchronized authority and remaining gates are recorded here. This checkpoint corrects the Linux processor-order failure at `75474321`. LOCAL 12 includes the native package-member projection. The full goal remains unfinished.
 
 Implemented components include body proofs/results/uses and reverse indexes, the reusable one-unit compiler pool, body collection and processor-aware attribution, generated-output ContentTrees, persisted source declaration/package views, and now the initial dependency-ordered driver with rooted reads, generation buffering, BROOT/history publication and output materialisation.
 
@@ -859,3 +859,26 @@ The final clean gate `stage3-driver-frozen-gate.log` passed **638 tests, zero fa
 Maven model/build time (27.0/26.2s) is excluded. Sampled heap above baseline was 643/1,081 MB with uncontrolled GC; these sequential runs are not a performance comparison. These measurements validate the Stage 2 repository regression boundary after sharing stub directories; they are not the still-required Stage 3 whole-project body oracle or performance measurements. Raw reports: [SHA-256](measurements/stage3-driver-SHA-256.txt), [SHA3-256](measurements/stage3-driver-SHA3-256.txt).
 
 The Stage 3 authority and Downloads copy are byte-identical, SHA-256 `c23ad3b488fdcbbd61ce74af9e17a1d80f25441d7db8c7f824cfca1c0c3584f9`, after the distinct `jvmd-stage3-bodies.before-driver-publication.md` backup. Both Stage 2 copies are unchanged. Module-path builds remain deferred by section 8; module-info behavior must still be established within the accepted classpath-mode boundary. This checkpoint closes the tested initial driver/publication slice only. Full Stage 3 completion remains open, and no PR was merged.
+
+
+### Native package-member order and the PR #62 Linux failure
+
+GitHub Tests run `37446586281` failed the native package comparison for both digests at `75474321`. The processor saw `p.Input,p.Beta` from a stub-backed package where native whole-scope javac exposed `p.Beta,p.Input`. The test had passed on Windows; filesystem enumeration happened to hide the difference. The benchmark workflow succeeded but did not validate this processor contract.
+
+A new fixture writes identical stubs into forward/reverse archive-entry orders. Before the fix, both digests failed on Windows too (`stage3-package-order-red.log`): the processor's package-member diagnostic differed from native javac. The fix records the completed source scope's native package-member order as a separate, key-bound PM entry and resolves those exact names to native handles during body queries. It does not sort the processor's answer, mutate javac scopes, or add a package/module/PM root to ACI. Current-scope packages use the saved projection; named modules and other-scope packages retain native behavior. LOCAL is now 12, invalidating LOCAL 11 and earlier; MACHINE layout 4/parser 5 and bodies 4 are unchanged.
+
+The expanded native regression renames a package-private source file so the native declaration order changes without changing T. Across the same pooled context, the consumed package query and ACI change; rebinding the first snapshot restores its original result even after the metadata source is deleted. Package-private and additional top-level declarations retain their positions, while nested classes remain excluded by the native package contract. The source-model fixture reads the saved order after source deletion, and RocksDB format rejection now includes LOCAL 11.
+
+The focused final gate passed **87 tests, zero failures/errors/skips** (`stage3-package-order-final.log`). The full frozen gate also passes, as recorded below. This corrects the observed ordering gap; it does not close all package ambiguity, generated-round timing or processor admission questions. The next required evidence remains whole-project Stage 3 native comparison and the independent read oracle. Warm is untouched.
+
+
+The final clean gate `stage3-package-order-frozen-gate.log` passed **642 tests, zero failures/errors/skips**, in **4m48s**. All **556 Java files** and their source hashes match the pre-run freeze. The Stage 2 repository oracle covered 13 modules, 26 scopes, 551 sources, 93 on-the-spot jars and 22 distinct leaf sets. Both digests matched all 26 source/class k values, with no annotation differences and zero faults.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,580 | 2,638 | 2,098 | 108 | 25,255 |
+| SHA3-256 | 3,682 | 1,774 | 1,451 | 135 | 25,229 |
+
+Maven model/build time (26.4/26.1s) is excluded. Sampled heap above baseline was 669/659 MB with uncontrolled GC; these sequential measurements are not a digest performance comparison. Raw reports: [SHA-256](measurements/stage3-package-order-SHA-256.txt), [SHA3-256](measurements/stage3-package-order-SHA3-256.txt). These remain Stage 2 regression measurements; the own-project Stage 3 body oracle is the next implementation work.
+
+The Stage 3 authority/Downloads SHA-256 is `343e84286320e7ca49042bc754fcc288f14797a137d5ab6a5dfd0226c187e5c7`, after a separate before-package-member-order backup. Stage 2 authority copies are unchanged. GitHub's failing run is retained as evidence; the next pushed head must be checked independently. No PR was merged.

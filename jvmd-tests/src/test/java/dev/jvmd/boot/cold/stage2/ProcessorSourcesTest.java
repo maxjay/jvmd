@@ -52,7 +52,7 @@ class ProcessorSourcesTest {
         var result = new Stage2(digest, tree, Stage2Support.FEATURE, workers, dir, ClassFacts::of).run(store, model);
         var project = Stage2.projectKey(digest, model);
         var local = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(project)));
-        assertThat(local.format()).contains(";local=11;");
+        assertThat(local.format()).contains(";local=12;");
         return new State(tree, store, project, local, result);
     }
     private ProjectModel model() { return ProjectModel.parse(Stage2Support.model(dir, new Stage2Support.Mod("app", "g:app:1", List.of()))); }
@@ -108,6 +108,8 @@ class ProcessorSourcesTest {
         var labelType = sources.type("p/Label").declaration();
         assertThat(((ProcessorDeclaration.Executable) member(labelType, "value").detail()).explicitDefault()).isEqualTo(new Ann.Val.Str("default"));
         assertThat(state.sources("app", 1).root().count()).isZero();
+        assertThat(sources.packageMembers("p")).containsExactly("p.Label", "p.Use", "p.Input");
+        assertThat(sources.packageMembers("missing")).isNull();
         assertThat(state.store().readsBeforeRoot()).doesNotContain("PM");
         assertThat(state.store().events()).noneMatch(e -> e.startsWith("prefix:"));
         assertThatThrownBy(() -> type(input.declaration()).enclosed().clear()).isInstanceOf(UnsupportedOperationException.class);

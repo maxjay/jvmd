@@ -90,6 +90,10 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
                 return element instanceof TypeElement type ? allAnnotations(type) : annotations(element).getAnnotationMirrors();
         }
         if (receiver instanceof Element element) {
+            if (name.equals("getEnclosedElements") && element instanceof javax.lang.model.element.PackageElement pkg) {
+                var members = sourcePackages.enclosed(pkg);
+                if (members != null) return sourceList(members);
+            }
             if (name.equals("getAnnotationMirrors") || name.equals("getAnnotation") || name.equals("getAnnotationsByType")) {
                 var view = annotations(element);
                 // Invoke the public AnnotatedConstruct contract: ProcessorReads handles its native mirrored-type exceptions.

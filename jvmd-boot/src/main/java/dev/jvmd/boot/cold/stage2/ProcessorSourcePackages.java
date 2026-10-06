@@ -77,6 +77,20 @@ final class ProcessorSourcePackages {
         return Collections.unmodifiableSet(result);
     }
 
+    java.util.List<? extends javax.lang.model.element.Element> enclosed(PackageElement pkg) {
+        if (elements.getModuleOf(pkg) != modules.getDefaultModule()) return null;
+        var saved = sources.packageMembers(pkg.getQualifiedName().toString());
+        if (saved == null) return null;
+        var nativeMembers = new java.util.HashMap<String, javax.lang.model.element.Element>();
+        for (var member : pkg.getEnclosedElements())
+            nativeMembers.put(elements.getBinaryName((javax.lang.model.element.TypeElement) member).toString(), member);
+        return saved.stream().map(name -> {
+            var member = nativeMembers.get(name);
+            if (member == null) throw new IllegalStateException("Source package member has no native handle: " + name);
+            return member;
+        }).toList();
+    }
+
     private Symbol.PackageSymbol detached(String name) {
         var existing = detached.get(name);
         if (existing != null) return existing;

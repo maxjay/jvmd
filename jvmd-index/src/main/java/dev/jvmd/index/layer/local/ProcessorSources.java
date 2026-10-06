@@ -92,6 +92,10 @@ public final class ProcessorSources {
             for (var origin : origins) if (origin.sources() != null && origin.sources().packageExists(qualifiedName)) return true;
             return false;
         }
+        /** The current source scope's native package order; sibling source scopes are binary inputs to this task. */
+        public java.util.List<String> packageMembers(String qualifiedName) {
+            return origins.getFirst().sources().packageMembers(qualifiedName);
+        }
         private boolean defines(Origin origin, byte[] key) {
             return tree.get(origin.types(), id -> records.apply(MachineStore.nodeKey(id)), key) != null;
         }
@@ -118,6 +122,28 @@ public final class ProcessorSources {
 
     private boolean packageExists(String qualifiedName) {
         return entry(Keys.packageElementKey(qualifiedName)) != null;
+    }
+
+    public java.util.List<String> packageMembers(String qualifiedName) {
+        var entry = entry(packageMembersKey(qualifiedName));
+        if (entry == null) return null;
+        var in = new Codec.Reader(entry.value());
+        int tag = in.u8();
+        if (tag == 1) throw new Unavailable(qualifiedName, in.str(), in.str());
+        if (tag != 0) throw new IllegalStateException("Invalid package member entry tag");
+        var members = new java.util.ArrayList<String>();
+        for (long n = in.u32(); n > 0; n--) members.add(in.str());
+        if (in.remaining() != 0) throw new IllegalStateException("Trailing package member bytes");
+        return java.util.List.copyOf(members);
+    }
+
+    public static byte[] packageMembersKey(String qualifiedName) {
+        return Keys.processorElementKey(new byte[0], "PACKAGE_MEMBERS", qualifiedName);
+    }
+    public static Entry packageMembers(ContentTree tree, String qualifiedName, java.util.List<String> members) {
+        var out = new Codec.Writer().u8(0).u32(members.size());
+        members.forEach(out::str);
+        return entry(tree, packageMembersKey(qualifiedName), out.toBytes());
     }
 
     private Entry entry(byte[] key) {

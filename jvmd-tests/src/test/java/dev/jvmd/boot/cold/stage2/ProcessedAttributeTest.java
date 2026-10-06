@@ -615,6 +615,65 @@ class ProcessedAttributeTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void sourcePackageMemberOrderDoesNotFollowStubArchiveEnumeration(Digest digest) throws Exception {
+        var processor=processor("""
+                var pkg=processingEnv.getElementUtils().getPackageOf(root);
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,
+                    pkg.getEnclosedElements().toString(),root);
+                ""","isolating");
+        var state=boot(digest,Map.of("p/Input.java","package p; public class Input {class Nested {}} class Auxiliary {}",
+                "p/Beta.java","package p; class Beta {}","p/Zeta.java","package p; class Zeta {}"),List.of(processor),List.of());
+        assertThat(state.faults()).isEmpty();var expected=oracle(state);
+        var stubs=new TreeMap<String,byte[]>();
+        try(var paths=Files.walk(state.pool().ownStubs())) {
+            for(var path:paths.filter(p->p.toString().endsWith(".class")).toList())
+                stubs.put(state.pool().ownStubs().relativize(path).toString().replace('\\','/'),Files.readAllBytes(path));
+        }
+        var ordered=new ArrayList<>(stubs.entrySet());Attribute.Computed first=null;
+        for(var entries:List.of(ordered,ordered.reversed())) {
+            var archive=new java.util.LinkedHashMap<String,byte[]>();entries.forEach(e->archive.put(e.getKey(),e.getValue()));
+            var jar=Stage2Support.pack(dir.resolve("ordered-stubs-"+(sequence++)+".jar"),archive);
+            var base=state.pool();
+            var configuration=new Pool.Configuration(base.key(),jar,base.route(),base.charset(),base.options(),base.ownTypes());
+            try(var pool=new Pool(configuration,1)) {
+                var actual=run(state,attribute(state,pool),"app/src/main/java/p/Input.java");
+                assertThat(actual.reusable()).as(actual.faults().toString()).isTrue();
+                assertThat(actual.result().diagnostics()).isEqualTo(expected.messages());
+                if(first!=null)assertThat(actual).isEqualTo(first);first=actual;
+            }
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void aChangedSourcePackageOrderChangesTheConsumedProofAcrossOneContext(Digest digest) throws Exception {
+        var processor=processor("""
+                var pkg=processingEnv.getElementUtils().getPackageOf(root);
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,pkg.getEnclosedElements().toString(),root);
+                ""","isolating");
+        String input="package p; public class Input {}", beta="package p; class Beta {}";
+        var first=boot(digest,Map.of("p/Input.java",input,"p/Beta.java",beta),List.of(processor),List.of());
+        var expectedFirst=oracle(first);
+        Files.delete(dir.resolve("app/src/main/java/p/Beta.java"));
+        var second=boot(digest,Map.of("p/Input.java",input,"p/OtherName.java",beta),List.of(processor),List.of());
+        var expectedSecond=oracle(second);
+        assertThat(first.own().k()).isEqualTo(second.own().k());
+        assertThat(expectedFirst.messages()).isNotEqualTo(expectedSecond.messages());
+        Files.delete(dir.resolve("app/src/main/java/p/OtherName.java"));
+        try(var pool=new Pool(first.pool(),1)) {
+            var before=run(first,attribute(first,pool),"app/src/main/java/p/Input.java");
+            var after=run(second,attribute(second,pool),"app/src/main/java/p/Input.java");
+            assertThat(before.reusable()).as(before.faults().toString()).isTrue();
+            assertThat(after.reusable()).as(after.faults().toString()).isTrue();
+            assertThat(before.result().diagnostics()).isEqualTo(expectedFirst.messages());
+            assertThat(after.result().diagnostics()).isEqualTo(expectedSecond.messages());
+            assertThat(after.aci()).isNotEqualTo(before.aci());
+            assertThat(after.proof().processorBody()).isNotEqualTo(before.proof().processorBody());
+            assertThat(run(first,attribute(first,pool),"app/src/main/java/p/Input.java")).isEqualTo(before);
+            assertThat(pool.statistics().contexts()).isEqualTo(1);
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void onlyConsumedPackageMetadataChangesTheProofAcrossOneHotContext(Digest digest) throws Exception {
         var processor=processor("""
                 var pkg=processingEnv.getElementUtils().getPackageOf(root);

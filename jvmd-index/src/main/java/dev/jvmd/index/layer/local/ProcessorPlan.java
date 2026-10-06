@@ -49,6 +49,11 @@ public final class ProcessorPlan {
         return ProcessorSources.bind(tree, committed, project, module, scope, records);
     }
 
+    /** Only an observed question has an answer. Never substitute a post-processing or whole-module snapshot. */
+    public java.util.List<String> modulePackages(ProcessorModuleQuery query) {
+        return ProcessorModuleQuery.decode(required(LocalStore.processorModuleQueryKey(project, module, scope, query)));
+    }
+
     /** Null means this origin had no admitted derivation in that generation; it does not mean an empty output set. */
     public Generation generation(String processor, String origin) {
         var capability = currentInvocation().capability(processor);

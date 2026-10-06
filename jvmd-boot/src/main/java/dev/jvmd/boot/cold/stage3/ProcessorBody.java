@@ -41,6 +41,7 @@ final class ProcessorBody {
         var sources = plan.sources();
         var host = ProcessorHost.bodies(path, digest, project.resolve(".jvmd/body-capture"), options.charset(), plan.currentInvocation(), options.hash());
         host.sourceDeclarations(sources);
+        host.modulePackages(plan::modulePackages);
         return host;
     }
 

@@ -566,6 +566,170 @@ class ProcessedAttributeTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void moduleQueriesRetainPackagesFromTheWholeSourceScope(Digest digest) throws Exception {
+        var processor = processor("""
+                var elements=processingEnv.getElementUtils();
+                var module=elements.getModuleOf(root);var text=new StringBuilder();
+                text.append(module).append(":").append(module.getKind()).append(":").append(module.getQualifiedName())
+                    .append(":").append(module.getSimpleName()).append(":").append(module.isUnnamed()).append(":").append(module.isOpen())
+                    .append(":").append(module.getModifiers()).append(":").append(module.getDirectives())
+                    .append(":").append(module.getAnnotationMirrors()).append(":").append(module.asType().getKind())
+                    .append(":").append(elements.getOrigin(module)).append(":").append(elements.getDocComment(module))
+                    .append(":").append(module.getEnclosedElements());
+                for(var pkg:module.getEnclosedElements())text.append("|").append(pkg)
+                    .append(":").append(elements.getModuleOf(pkg)==module)
+                    .append(":").append(elements.getPackageElement(module,pkg.toString())==pkg);
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,text,root);
+                """, "isolating");
+        var state = boot(digest, Map.of("p/Input.java", "package p; public class Input {}",
+                "q/Other.java", "package q; public class Other {}", "Plain.java", "class Plain {}",
+                "empty/deep/package-info.java", "/** Documentation. */ package empty.deep;"), List.of(processor), List.of());
+        assertThat(state.faults()).isEmpty(); var expected = oracle(state);
+        try (var pool = new Pool(state.pool(), 1)) {
+            var first = run(state, attribute(state, pool), "app/src/main/java/p/Input.java");
+            assertThat(first.reusable()).as(first.faults().toString()).isTrue();
+            assertThat(first.result().diagnostics()).isEqualTo(expected.messages());
+        }
+        allFiles(state, true);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void modulePackageQueriesPreserveTheirNativeObservationPoint(Digest digest) throws Exception {
+        var dependency = Stage2Support.pack(dir.resolve("late.jar"), Stage2Support.compile(dir.resolve("late"),
+                Map.of("late/Loaded.java", "package late; public class Loaded {}"), List.of(), List.of()));
+        for (boolean before : List.of(true, false)) {
+            String query = "var packages=module.getEnclosedElements();";
+            String lookup = "elements.getTypeElement(\"late.Loaded\");";
+            var processor = processor("""
+                    var elements=processingEnv.getElementUtils();var module=elements.getModuleOf(root);
+                    %s
+                    processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,packages.toString(),root);
+                    """.formatted(before ? query + lookup : lookup + query), "isolating");
+            var state = boot(digest, Map.of("p/Input.java", "package p; public class Input {}",
+                    "q/Other.java", "package q; public class Other {}"), List.of(processor), List.of(dependency));
+            assertThat(state.faults()).isEmpty(); var expected = oracle(state);
+            try (var pool = new Pool(state.pool(), 1)) {
+                for (int repeat = 0; repeat < 2; repeat++) {
+                    var actual = run(state, attribute(state, pool), "app/src/main/java/p/Input.java");
+                    assertThat(actual.reusable()).as(actual.faults().toString()).isTrue();
+                    assertThat(actual.result().diagnostics()).as("query before lookup: %s, repeat %s", before, repeat)
+                            .isEqualTo(expected.messages());
+                }
+            }
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void modulePackageOrderIsAnExactConsumedAnswerAcrossOneHotContext(Digest digest) throws Exception {
+        var processor = processor("""
+                var elements=processingEnv.getElementUtils();
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,
+                    elements.getModuleOf(root).getEnclosedElements().toString(),root);
+                """, "isolating");
+        String input = "package p; public class Input {}";
+        String other = "package q; public class Other { int body(){return %s;} }";
+        var first = boot(digest, Map.of("p/Input.java", input, "q/Other.java", other.formatted("1")), List.of(processor), List.of());
+        var expectedFirst = oracle(first);
+        var body = boot(digest, Map.of("p/Input.java", input, "q/Other.java", other.formatted("2")), List.of(processor), List.of());
+        var expectedBody = oracle(body);
+        Files.delete(dir.resolve("app/src/main/java/q/Other.java"));
+        var reordered = boot(digest, Map.of("p/Input.java", input, "a/Other.java", other.formatted("2")), List.of(processor), List.of());
+        var expectedReordered = oracle(reordered);
+        Files.delete(dir.resolve("app/src/main/java/a/Other.java"));
+        assertThat(first.own().k()).isEqualTo(body.own().k()).isEqualTo(reordered.own().k());
+        assertThat(expectedBody.messages()).isEqualTo(expectedFirst.messages());
+        assertThat(expectedReordered.messages()).isNotEqualTo(expectedFirst.messages());
+        var question = new ProcessorModuleQuery("fixture.Generate", 0, "");
+        assertThat(first.plan().modulePackages(question)).containsExactly("p", "q");
+        assertThat(reordered.plan().modulePackages(question)).containsExactly("q", "p");
+        try (var pool = new Pool(first.pool(), 1)) {
+            var before = run(first, attribute(first, pool), "app/src/main/java/p/Input.java");
+            var changedBody = run(body, attribute(body, pool), "app/src/main/java/p/Input.java");
+            var after = run(reordered, attribute(reordered, pool), "app/src/main/java/p/Input.java");
+            assertThat(before.reusable()).as(before.faults().toString()).isTrue();
+            assertThat(changedBody).isEqualTo(before);
+            assertThat(after.reusable()).as(after.faults().toString()).isTrue();
+            assertThat(before.result().diagnostics()).isEqualTo(expectedFirst.messages());
+            assertThat(after.result().diagnostics()).isEqualTo(expectedReordered.messages());
+            assertThat(after.aci()).isNotEqualTo(before.aci());
+            assertThat(after.proof().processorBody()).isNotEqualTo(before.proof().processorBody());
+            assertThat(run(first, attribute(first, pool), "app/src/main/java/p/Input.java")).isEqualTo(before);
+            assertThat(pool.statistics().contexts()).isEqualTo(1);
+        }
+        var forged = new ProcessorModuleQuery("fixture.Generate", 1, "");
+        var key = LocalStore.processorModuleQueryKey(first.project(), "app", 0, forged);
+        first.store().put(key, ProcessorModuleQuery.encode(List.of("forged"))); first.store().flush();
+        var reads = first.store().watchReads(key);
+        assertThatThrownBy(() -> first.plan().modulePackages(forged)).hasMessageContaining("not in the committed LOCAL tree");
+        assertThat(reads.get()).isZero();
+        var observedKey = LocalStore.processorModuleQueryKey(first.project(), "app", 0, question);
+        first.store().put(observedKey, ProcessorModuleQuery.encode(List.of("forged"))); first.store().flush();
+        assertThatThrownBy(() -> first.plan().modulePackages(question)).hasMessageContaining("differs from the committed LOCAL tree");
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void modulePackageAnswersSeparateInitFromProcessingRounds(Digest digest) throws Exception {
+        var classes = new TreeMap<>(Stage2Support.compile(dir.resolve("phase-processor"), Map.of("fixture/Phases.java", """
+                package fixture;
+                @javax.annotation.processing.SupportedAnnotationTypes("*")
+                @javax.annotation.processing.SupportedSourceVersion(javax.lang.model.SourceVersion.RELEASE_25)
+                public class Phases extends javax.annotation.processing.AbstractProcessor {
+                    String initial;
+                    @Override public synchronized void init(javax.annotation.processing.ProcessingEnvironment environment) {
+                        super.init(environment);
+                        var elements=environment.getElementUtils();
+                        initial=elements.getModuleElement("").getEnclosedElements().toString();
+                        elements.getTypeElement("late.Loaded");
+                    }
+                    @Override public boolean process(java.util.Set<? extends javax.lang.model.element.TypeElement> annotations,
+                            javax.annotation.processing.RoundEnvironment round) {
+                        for(var root:round.getRootElements())if(root.getSimpleName().contentEquals("Input")) {
+                            var elements=processingEnv.getElementUtils();
+                            var current=elements.getModuleOf(root).getEnclosedElements();
+                            var platform=elements.getModuleElement("java.base").getEnclosedElements();
+                            processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,
+                                initial+"|"+current+"|"+platform,root);
+                        }
+                        return true;
+                    }
+                }
+                """), List.of(), List.of()));
+        classes.put("META-INF/services/javax.annotation.processing.Processor", Stage2Support.text("fixture.Phases\n"));
+        classes.put("META-INF/gradle/incremental.annotation.processors", Stage2Support.text("fixture.Phases,isolating\n"));
+        var processor = Stage2Support.pack(dir.resolve("phase-processor.jar"), classes);
+        var dependency = Stage2Support.pack(dir.resolve("late.jar"), Stage2Support.compile(dir.resolve("late"),
+                Map.of("late/Loaded.java", "package late; public class Loaded {}"), List.of(), List.of()));
+        var state = boot(digest, Map.of("p/Input.java", "package p; public class Input {}",
+                "q/Other.java", "package q; public class Other {}"), List.of(processor), List.of(dependency));
+        assertThat(state.faults()).isEmpty(); var expected = oracle(state);
+        assertThat(state.plan().modulePackages(new ProcessorModuleQuery("fixture.Phases", -1, ""))).containsExactly("p", "q");
+        assertThat(state.plan().modulePackages(new ProcessorModuleQuery("fixture.Phases", 0, ""))).containsExactly("p", "q", "late");
+        try (var pool = new Pool(state.pool(), 1)) {
+            for (int repeat = 0; repeat < 2; repeat++) {
+                var actual = run(state, attribute(state, pool), "app/src/main/java/p/Input.java");
+                assertThat(actual.reusable()).as(actual.faults().toString()).isTrue();
+                assertThat(actual.result().diagnostics()).isEqualTo(expected.messages());
+                assertThat(state.classes(actual)).allSatisfy((name, bytes) -> assertThat(bytes).isEqualTo(expected.classes().get(name)));
+            }
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void changingModulePackageAnswersWithinOnePhaseRevokesAdmission(Digest digest) throws Exception {
+        var dependency = Stage2Support.pack(dir.resolve("late.jar"), Stage2Support.compile(dir.resolve("late"),
+                Map.of("late/Loaded.java", "package late; public class Loaded {}"), List.of(), List.of()));
+        var processor = processor("""
+                var elements=processingEnv.getElementUtils();var module=elements.getModuleOf(root);
+                var before=module.getEnclosedElements().toString();elements.getTypeElement("late.Loaded");
+                var after=module.getEnclosedElements().toString();
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,before+"|"+after,root);
+                """, "isolating");
+        var state = boot(digest, Map.of("p/Input.java", "package p; public class Input {}"), List.of(processor), List.of(dependency));
+        assertThat(state.plan().invocation().capability("fixture.Generate").reusable()).isFalse();
+        assertThat(state.faults()).anyMatch(f -> f.contains("module package query changes within processor phase 0"));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void packageDeclarationsRetainNativeSourceMetadataAndMembers(Digest digest) throws Exception {
         var processor=processor("""
                 var elements=processingEnv.getElementUtils();var text=new StringBuilder();

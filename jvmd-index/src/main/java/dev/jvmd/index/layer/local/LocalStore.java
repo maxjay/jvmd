@@ -94,6 +94,11 @@ public interface LocalStore extends MachineStore {
     static byte[] processorSourcesKey(Identity projectKey, String module, int scope) {
         return join("PM|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
     }
+    /** An actual native module package query, separated from the source declaration and descriptor projections. */
+    static byte[] processorModuleQueryKey(Identity projectKey, String module, int scope, ProcessorModuleQuery query) {
+        return join("PQ|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope},
+                "|", query.key());
+    }
     /** Empty origin names the aggregate derivation; a source path names its isolating derivation, including empty output sets. */
     static byte[] processorGenerationKey(Identity projectKey, String module, int scope, String processorClass, String origin) {
         return join("PG|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope},

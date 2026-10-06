@@ -48,6 +48,9 @@ final class ModuleProcessing {
     }
 
     void finish(Map<String, FileRow> rows) {
+        host.moduleQueries().forEach((query, packages) -> boot.processingRecords.put(
+                LocalStore.processorModuleQueryKey(boot.projectKey, module.name(), scope, query),
+                dev.jvmd.index.layer.local.ProcessorModuleQuery.encode(packages)));
         boot.processingRecords.put(LocalStore.processorDiagnosticsKey(boot.projectKey, module.name(), scope), host.diagnostics().encode());
         for (var message : host.diagnostics().messages()) if (message.kind() == javax.tools.Diagnostic.Kind.ERROR)
             boot.faults.add((message.processorClass().isEmpty() ? "javac processing" : message.processorClass()) + ": "

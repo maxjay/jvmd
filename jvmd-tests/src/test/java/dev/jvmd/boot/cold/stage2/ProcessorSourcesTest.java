@@ -52,7 +52,7 @@ class ProcessorSourcesTest {
         var result = new Stage2(digest, tree, Stage2Support.FEATURE, workers, dir, ClassFacts::of).run(store, model);
         var project = Stage2.projectKey(digest, model);
         var local = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(project)));
-        assertThat(local.format()).contains(";local=16;");
+        assertThat(local.format()).contains(";local=17;");
         return new State(tree, store, project, local, result);
     }
     private ProjectModel model() { return ProjectModel.parse(Stage2Support.model(dir, new Stage2Support.Mod("app", "g:app:1", List.of()))); }

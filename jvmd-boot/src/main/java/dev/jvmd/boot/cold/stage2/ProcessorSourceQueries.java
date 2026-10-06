@@ -39,11 +39,14 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
     private final ProcessorSourceElements declarations;
     private final ProcessorSourceTypes sourceTypes;
     private final ProcessorSourcePackages sourcePackages;
+    private final java.util.function.Function<String, java.util.List<String>> modulePackages;
     private final Map<Element, Annotations> annotations = new IdentityHashMap<>();
     private final Map<ExecutableElement, AnnotationValue> defaultValues = new IdentityHashMap<>();
     private final Map<AnnotationMirror, Map<? extends ExecutableElement, ? extends AnnotationValue>> defaults = new IdentityHashMap<>();
 
-    ProcessorSourceQueries(ProcessingEnvironment environment, dev.jvmd.index.layer.local.ProcessorSources.Binding sources, Predicate<Element> explicit) {
+    ProcessorSourceQueries(ProcessingEnvironment environment, dev.jvmd.index.layer.local.ProcessorSources.Binding sources, Predicate<Element> explicit,
+                           java.util.function.Function<String, java.util.List<String>> modulePackages) {
+        this.modulePackages = modulePackages;
         elements = environment.getElementUtils(); types = environment.getTypeUtils();
         var context = ((JavacProcessingEnvironment) environment).getContext();
         compilerTypes = com.sun.tools.javac.code.Types.instance(context);
@@ -90,6 +93,8 @@ final class ProcessorSourceQueries implements ProcessorReads.Model {
                 return element instanceof TypeElement type ? allAnnotations(type) : annotations(element).getAnnotationMirrors();
         }
         if (receiver instanceof Element element) {
+            if (name.equals("getEnclosedElements") && element instanceof javax.lang.model.element.ModuleElement module)
+                return sourceList(sourcePackages.enclosed(module, modulePackages.apply(module.getQualifiedName().toString())));
             if (name.equals("getEnclosedElements") && element instanceof javax.lang.model.element.PackageElement pkg) {
                 var members = sourcePackages.enclosed(pkg);
                 if (members != null) return sourceList(members);

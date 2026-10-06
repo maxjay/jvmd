@@ -103,5 +103,13 @@ final class ProcessorSourcePackages {
         detached.put(name, pkg); return pkg;
     }
 
+    java.util.List<? extends PackageElement> enclosed(ModuleElement module, java.util.List<String> packages) {
+        return packages.stream().map(name -> {
+            var pkg = qualified(module, name);
+            if (pkg == null) throw new IllegalStateException("Observed module package has no native handle: " + name);
+            return pkg;
+        }).toList();
+    }
+
     private static boolean valid(CharSequence name) { return name.length() == 0 || SourceVersion.isName(name); }
 }

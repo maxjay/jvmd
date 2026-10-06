@@ -7,6 +7,7 @@ import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.tree.Entry;
 import dev.jvmd.index.layer.local.ProcessorElementProjection;
 import dev.jvmd.index.layer.local.ProcessorRecords;
+import dev.jvmd.index.layer.local.ProcessorModuleQuery;
 import java.io.FilterOutputStream;
 import java.io.FilterWriter;
 import java.io.IOException;
@@ -62,6 +63,8 @@ public final class ProcessorHost implements AutoCloseable {
     private final Identity pathHash;
     private java.util.function.Function<URI, String> sourcePaths = URI::toString;
     private dev.jvmd.index.layer.local.ProcessorSources.Binding sourceDeclarations;
+    private java.util.function.Function<ProcessorModuleQuery, List<String>> modulePackages;
+    private final Map<ProcessorModuleQuery, List<String>> moduleQueries = new LinkedHashMap<>();
     private Map<String, ProcessorRecords.Capability> closedCapabilities;
     private Map<String, List<Entry>> closedDomains;
     private Map<String, List<URI>> closedInputs;
@@ -195,6 +198,11 @@ public final class ProcessorHost implements AutoCloseable {
         if (capture == null || closedBody == null) throw new IllegalStateException("Body processor observations are not finalized");
         return closedBody;
     }
+    public void modulePackages(java.util.function.Function<ProcessorModuleQuery, List<String>> answers) {
+        if (capture == null) throw new IllegalStateException("Module query views are for body tasks");
+        modulePackages = java.util.Objects.requireNonNull(answers);
+    }
+    Map<ProcessorModuleQuery, List<String>> moduleQueries() { return Map.copyOf(moduleQueries); }
 
     /**
      * Current observations for the tested native overlays, whose inputs are the source, compiler reads and configuration.
@@ -315,6 +323,7 @@ public final class ProcessorHost implements AutoCloseable {
         final Map<URI, ProcessorReplay.Result> isolated = new TreeMap<>();
         final ProcessorReplay.Origins origins = new ProcessorReplay.Origins();
         int roundNumber;
+        int queryPhase = -1;
         boolean lastRound;
         final TreeMap<byte[], Entry> domain = new TreeMap<>(Arrays::compareUnsigned);
         final Set<URI> inputs = new java.util.TreeSet<>();
@@ -335,8 +344,20 @@ public final class ProcessorHost implements AutoCloseable {
             nativeElements = environment.getElementUtils();
             projection = new ProcessorElementProjection(environment.getElementUtils(), environment.getTypeUtils());
             if (!TESTED_OVERLAYS.contains(name)) {
-                ProcessorReads.Model model = sourceDeclarations == null ? (receiver, method, args) -> method.invoke(receiver, args)
-                        : new ProcessorSourceQueries(environment, sourceDeclarations, element -> origin(element) != null);
+                ProcessorReads.Model model = sourceDeclarations == null ? (receiver, method, args) -> {
+                    var answer = method.invoke(receiver, args);
+                    if (receiver instanceof javax.lang.model.element.ModuleElement module && method.getName().equals("getEnclosedElements")) {
+                        var packages = ((List<?>) answer).stream()
+                                .map(p -> ((javax.lang.model.element.PackageElement) p).getQualifiedName().toString()).toList();
+                        var key = new ProcessorModuleQuery(name, queryPhase, module.getQualifiedName().toString());
+                        var previous = moduleQueries.putIfAbsent(key, packages);
+                        if (previous != null && !previous.equals(packages))
+                            unsupported("module package query changes within processor phase " + queryPhase);
+                    }
+                    return answer;
+                } : new ProcessorSourceQueries(environment, sourceDeclarations, element -> origin(element) != null,
+                        module -> java.util.Objects.requireNonNull(modulePackages, "Unbound processor module query views")
+                                .apply(new ProcessorModuleQuery(name, queryPhase, module)));
                 reads = new ProcessorReads(environment.getElementUtils(), environment.getTypeUtils(),
                         read -> modelReads.computeIfAbsent(name, ignored -> new ArrayList<>()).add(read), this::unsupported, model);
             }
@@ -368,6 +389,7 @@ public final class ProcessorHost implements AutoCloseable {
                     domain.put(key, new Entry(key, value, digest.hash(key, value)));
                 }
             }
+            queryPhase = roundNumber;
             if (reads != null) reads.phase(roundNumber);
             var snapshot = new ProcessorReplay.Round(roundNumber, annotations, round, this::origin);
             rounds.add(snapshot);

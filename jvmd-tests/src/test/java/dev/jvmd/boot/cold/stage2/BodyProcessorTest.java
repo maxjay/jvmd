@@ -66,7 +66,7 @@ class BodyProcessorTest {
     }
 
     record Run(Map<String, byte[]> classes, List<ProcessorHost.Output> generated, Map<String, ProcessorRecords.Capability> capabilities,
-               List<String> faults, List<String> diagnostics) { }
+               List<String> faults, List<String> diagnostics, ProcessorRecords.Body observations) { }
 
     private Run run(Digest digest, Fixture fixture, List<Path> processors, Pool pool, Path source) throws Exception {
         var diagnostics = new ArrayList<String>();
@@ -74,6 +74,7 @@ class BodyProcessorTest {
         var scope = new ProcessorRecords.Scope(fixture.processorPath(), optionsHash, fixture.capabilities().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey()).map(e -> new ProcessorRecords.Invocation(e.getKey(), e.getValue())).toList());
         try (var host = ProcessorHost.bodies(processors, digest, dir.resolve("body-capture"), StandardCharsets.UTF_8, scope, optionsHash)) {
+            assertThatThrownBy(host::bodyObservations).hasMessage("Body processor observations are not finalized");
             var result = pool.withTask(source.toUri(), Files.readAllBytes(source), d -> diagnostics.add(d.getKind() + ":" + d.getMessage(java.util.Locale.ROOT)), task -> {
                 host.attach(task);
                 try {
@@ -83,7 +84,7 @@ class BodyProcessorTest {
             });
             host.close(); // snapshot capability faults for unclosed outputs before asserting admission
             assertThat(dir.resolve("body-capture")).doesNotExist();
-            return new Run(result.classes(), host.outputs(), host.capabilities(), host.faults(), diagnostics);
+            return new Run(result.classes(), host.outputs(), host.capabilities(), host.faults(), diagnostics, host.bodyObservations());
         }
     }
 
@@ -107,8 +108,12 @@ class BodyProcessorTest {
                 """);
         assertThat(fixture.generated()).hasSize(1);
         try (var pool = new Pool(fixture.configuration(), 1)) {
+            ProcessorRecords.Body previous = null;
             for (int repeat = 0; repeat < 2; repeat++) {
                 var result = run(digest, fixture, processors, pool, fixture.input());
+                assertThat(result.observations().reusable()).isTrue();
+                if (previous != null) assertThat(result.observations()).isEqualTo(previous);
+                previous = result.observations();
                 assertThat(result.diagnostics()).isEmpty(); assertThat(result.faults()).isEmpty();
                 sameOutputs(result.generated(), fixture.generated());
                 assertThat(result.classes()).containsOnlyKeys("p/Value");
@@ -131,8 +136,12 @@ class BodyProcessorTest {
                 }
                 """);
         try (var pool = new Pool(fixture.configuration(), 1)) {
+            ProcessorRecords.Body previous = null;
             for (int repeat = 0; repeat < 2; repeat++) {
                 var result = run(digest, fixture, processors, pool, fixture.input());
+                assertThat(result.observations().reusable()).isTrue();
+                if (previous != null) assertThat(result.observations()).isEqualTo(previous);
+                previous = result.observations();
                 assertThat(result.diagnostics()).isEmpty(); assertThat(result.faults()).isEmpty();
                 assertThat(result.generated()).isEmpty();
                 assertThat(result.classes()).containsOnlyKeys("p/Bean", "p/Bean$BeanBuilder");
@@ -246,8 +255,85 @@ class BodyProcessorTest {
             assertThat(next.classes().get("p/Input")).isEqualTo(fixture.classes().get("p/Input.class"));
             assertThat(next.faults()).anyMatch(f -> f.contains("fixture.Syntax") && f.contains("Trees.getTree"));
             assertThat(next.capabilities().get("fixture.Syntax").reusable()).isFalse();
+            assertThat(next.observations().reusable()).isFalse();
             assertThat(pool.statistics().contexts()).isEqualTo(1);
         }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void annotationAnswersMoveEvenWhenResolutionAndGeneratedBytesDoNot(Digest digest) throws Exception {
+        var entries = new TreeMap<>(Stage2Support.compile(dir.resolve("reader"), Map.of("fixture/Reader.java", """
+                package fixture;
+                import javax.annotation.processing.*;
+                import javax.lang.model.*;
+                import javax.lang.model.element.*;
+                @SupportedAnnotationTypes("*") public class Reader extends AbstractProcessor {
+                    public SourceVersion getSupportedSourceVersion() { return SourceVersion.latestSupported(); }
+                    public boolean process(java.util.Set<? extends TypeElement> annotations, RoundEnvironment round) {
+                        if (round.processingOver()) return false;
+                        for (var root : round.getRootElements()) {
+                            if (!root.getSimpleName().contentEquals("Input")) continue;
+                            var target = processingEnv.getElementUtils().getTypeElement("q.Meta");
+                            for (var annotation : target.getAnnotationMirrors())
+                                for (var value : annotation.getElementValues().entrySet())
+                                    if (value.getKey().getSimpleName().contentEquals("value"))
+                                        processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE, "read=" + value.getValue().getValue());
+                            try (var out = processingEnv.getFiler().createSourceFile("p.Made", root).openWriter()) {
+                                out.write("package p; public class Made {}");
+                            } catch (java.io.IOException e) { throw new RuntimeException(e); }
+                        }
+                        return true;
+                    }
+                }
+                """), List.of(), List.of()));
+        entries.put("META-INF/services/javax.annotation.processing.Processor", Stage2Support.text("fixture.Reader\n"));
+        entries.put("META-INF/gradle/incremental.annotation.processors", Stage2Support.text("fixture.Reader,isolating\n"));
+        var processors = List.of(Stage2Support.pack(dir.resolve("reader.jar"), entries));
+        var jars = new ArrayList<Path>(); var leaves = new ArrayList<dev.jvmd.index.layer.machine.MachineLeaf>();
+        for (int i = 0; i < 3; i++) {
+            var classes = Stage2Support.compile(dir.resolve("metadata-" + i), Map.of(
+                    "q/Mark.java", "package q; public @interface Mark { String value(); String unread(); }",
+                    "q/Meta.java", "package q; @Mark(value=\"" + (i == 2 ? "changed" : "original") + "\", unread=\"" + i + "\") public class Meta {}"),
+                    List.of(), List.of());
+            jars.add(Stage2Support.pack(dir.resolve("metadata-" + i + ".jar"), classes));
+            var store = new InMemoryLocalStore(); var builder = new LeafBuilder(new ContentTree(digest), store);
+            var facts = new ArrayList<dev.jvmd.index.layer.machine.Fact>();
+            for (var file : classes.entrySet()) {
+                var extracted = dev.jvmd.index.layer.machine.ClassFacts.of(digest, file.getValue(), file.getKey().replace(".class", ""));
+                facts.addAll(extracted.facts()); builder.edges(extracted.edges());
+            }
+            facts.stream().sorted((a,b) -> Arrays.compareUnsigned(a.m(), b.m())).forEach(builder::add);
+            builder.seal(); leaves.add(builder.build());
+        }
+        assertThat(leaves.get(1).k()).isEqualTo(leaves.getFirst().k());
+        assertThat(leaves.get(2).k()).isEqualTo(leaves.getFirst().k());
+        var fixture = fixture(digest, processors, List.of(jars.getFirst()), "p/Input.java", "package p; public class Input { Made value; }");
+        var runs = new ArrayList<Run>();
+        for (int i = 0; i < jars.size(); i++) {
+            var c = fixture.configuration();
+            var configuration = new Pool.Configuration(c.key(), c.ownStubs(), List.of(jars.get(i)), c.charset(), c.options(), c.ownTypes());
+            // A freshly opened environment observes the current physical inputs; this does not test LIVE pool rebinding.
+            try (var pool = new Pool(configuration, 1)) {
+                var result = run(digest, fixture, processors, pool, fixture.input()); runs.add(result);
+                assertThat(result.faults()).isEmpty(); assertThat(result.observations().reusable()).isTrue();
+                assertThat(result.diagnostics()).containsExactly("NOTE:read=" + (i == 2 ? "changed" : "original"));
+                sameOutputs(result.generated(), fixture.generated());
+                assertThat(result.classes().get("p/Input")).isEqualTo(fixture.classes().get("p/Input.class"));
+                assertThat(run(digest, fixture, processors, pool, fixture.input()).observations()).isEqualTo(result.observations());
+            }
+        }
+        assertThat(runs.get(1).observations()).isEqualTo(runs.getFirst().observations());
+        assertThat(runs.get(2).observations()).isNotEqualTo(runs.getFirst().observations());
+        var zero = Identity.zero(digest.width()); var context = new ProcessorRecords.Context(fixture.processorPath(), zero, List.of());
+        var route = new dev.jvmd.index.layer.local.Route(List.of(), zero, zero, zero, zero);
+        var proof = new dev.jvmd.index.layer.local.Proof(new dev.jvmd.index.layer.local.Proof.Header(zero, zero, zero, zero,
+                leaves.getFirst().r(), context), List.of(), List.of(), runs.getFirst().observations());
+        java.util.function.Function<byte[], byte[]> noReads = key -> { throw new AssertionError("Processor gate opened resolution storage"); };
+        assertThat(proof.valid(new ContentTree(digest), leaves.getFirst(), route, context, runs.get(1).observations(), noReads)).isTrue();
+        assertThat(proof.valid(new ContentTree(digest), leaves.getFirst(), route, context, runs.get(2).observations(), noReads)).isFalse();
+        var kappa = digest.hash(Files.readAllBytes(fixture.input()));
+        assertThat(proof.aci(digest, "Input.java", kappa, zero)).isEqualTo(proof.withProcessorBody(runs.get(1).observations()).aci(digest, "Input.java", kappa, zero))
+                .isNotEqualTo(proof.withProcessorBody(runs.get(2).observations()).aci(digest, "Input.java", kappa, zero));
     }
 
     @ParameterizedTest @MethodSource("digests")

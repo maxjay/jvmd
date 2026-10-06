@@ -58,6 +58,66 @@ public final class ProcessorRecords {
         }
     }
 
+    /** Actual public-model answers from one processor in a body task, never a header/API approximation.
+     * Null answers mean a tested native overlay or a processor javac did not initialize. */
+    public record Observation(String processorClass, Capability capability, byte[] answers) {
+        public Observation {
+            if (processorClass.isEmpty()) throw new IllegalArgumentException("Empty processor class");
+            java.util.Objects.requireNonNull(capability);
+            answers = answers == null ? null : answers.clone();
+        }
+        @Override public byte[] answers() { return answers == null ? null : answers.clone(); }
+        @Override public boolean equals(Object other) {
+            return other instanceof Observation o && processorClass.equals(o.processorClass) && capability.equals(o.capability)
+                    && java.util.Arrays.equals(answers, o.answers);
+        }
+        @Override public int hashCode() { return java.util.Objects.hash(processorClass, capability, java.util.Arrays.hashCode(answers)); }
+        private void inputs(Codec.Writer out) {
+            out.str(processorClass).u8(answers == null ? 0 : 1);
+            if (answers != null) out.lenBytes(answers);
+        }
+    }
+
+    /** Ordered, detached observations. Output conservation and current-input admission are separate obligations. */
+    public record Body(List<Observation> processors) {
+        public Body {
+            processors = List.copyOf(processors);
+            var names = new java.util.HashSet<String>();
+            for (var processor : processors) if (!names.add(processor.processorClass()))
+                throw new IllegalArgumentException("Duplicate body processor");
+        }
+        public boolean reusable() {
+            return processors.stream().allMatch(p -> p.capability().declared() == ISOLATING && p.capability().reusable());
+        }
+        /** Classification controls admission; only execution order and observed answers are result inputs. */
+        public boolean sameInputs(Body other) {
+            if (other == null || processors.size() != other.processors.size()) return false;
+            for (int i = 0; i < processors.size(); i++) {
+                var a = processors.get(i); var b = other.processors.get(i);
+                if (!a.processorClass.equals(b.processorClass) || !java.util.Arrays.equals(a.answers, b.answers)) return false;
+            }
+            return true;
+        }
+        public void inputs(Codec.Writer out) {
+            out.u32(processors.size());
+            for (var processor : processors) processor.inputs(out);
+        }
+        public void encode(Codec.Writer out) {
+            out.u32(processors.size());
+            for (var processor : processors) { processor.inputs(out); out.raw(processor.capability().encode()); }
+        }
+        public static Body decode(Codec.Reader in) {
+            var processors = new ArrayList<Observation>();
+            for (int i = 0, n = in.count(); i < n; i++) {
+                var name = in.str(); int presence = in.u8();
+                if (presence > 1) throw new IllegalArgumentException("Invalid processor answers presence");
+                var answers = presence == 0 ? null : in.lenBytes();
+                processors.add(new Observation(name, new Capability(in.u8(), in.u8()), answers));
+            }
+            return new Body(processors);
+        }
+    }
+
     /** The ordered processor set and classifications actually observed in one scope under these options. */
     public record Invocation(String processorClass, Capability capability) { }
 

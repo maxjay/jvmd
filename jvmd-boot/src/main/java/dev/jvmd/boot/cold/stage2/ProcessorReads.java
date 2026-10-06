@@ -183,11 +183,21 @@ final class ProcessorReads {
     private final class ModelObject implements InvocationHandler {
         final Class<?> api;
         final Object delegate;
-        ModelObject(Class<?> api, Object delegate) { this.api = api; this.delegate = delegate; }
+        final boolean identityEquality;
+        ModelObject(Class<?> api, Object delegate) {
+            this.api = api; this.delegate = delegate;
+            try { identityEquality = delegate.getClass().getMethod("equals", Object.class).getDeclaringClass() == Object.class; }
+            catch (NoSuchMethodException impossible) { throw new AssertionError(impossible); }
+        }
         @Override public Object invoke(Object receiver, Method method, Object[] args) throws Throwable {
             if (method.getName().equals("accept") && args != null && args.length == 2)
                 return accept(method, args);
             var nativeArgs = args == null ? null : (Object[]) unwrap(args);
+            // Object's implementation is exactly handle identity, already represented by opaque references. Recording its
+            // incidental hash-table collision calls makes an equal model depend on a task's allocation addresses. An
+            // overridden equals (annotations, structural TypeMirror implementations, etc.) remains an observed query.
+            if (identityEquality && method.getName().equals("equals") && method.getParameterCount() == 1)
+                return delegate == nativeArgs[0];
             if ((method.getName().equals("getAnnotation") || method.getName().equals("getAnnotationsByType"))
                     && nativeArgs != null && nativeArgs.length == 1 && nativeArgs[0] instanceof Class<?> annotation
                     && java.lang.annotation.Annotation.class.isAssignableFrom(annotation))

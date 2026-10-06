@@ -191,13 +191,58 @@ class BodyProofTest {
         assertThat(a.valid(current.tree, current.own, current.route, context, key -> { throw new AssertionError("Invalid context read storage"); })).isFalse();
         var withProcessor = Arrange.proof(current.tree, current.own, current.route, context, List.of(zeroA), List.of(), current.store::get);
         assertThat(withProcessor.valid(current.tree, current.own, current.route, null, key -> { throw new AssertionError("Removed context read storage"); })).isFalse();
+        assertThat(withProcessor.valid(current.tree, current.own, current.route, context, key -> { throw new AssertionError("Missing answers read storage"); })).isFalse();
+        assertThatThrownBy(() -> withProcessor.aci(digest, "App.java", one, two)).hasMessage("Processor result has no reusable model observations");
         assertThat(Proof.decode(withProcessor.encode(), digest.width())).isEqualTo(withProcessor);
+        var observed = withProcessor.withProcessorBody(new ProcessorRecords.Body(List.of()));
         assertThat(a.aci(digest, "App.java", one, two)).isNotEqualTo(b.aci(digest, "App.java", one, two))
                 .isNotEqualTo(a.aci(digest, "Other.java", one, two)).isNotEqualTo(a.aci(digest, "App.java", two, two))
-                .isNotEqualTo(a.aci(digest, "App.java", one, one)).isNotEqualTo(withProcessor.aci(digest, "App.java", one, two));
+                .isNotEqualTo(a.aci(digest, "App.java", one, one)).isNotEqualTo(observed.aci(digest, "App.java", one, two));
         assertThatThrownBy(() -> new Proof.Range(7, "q/Base", Keys.TYPE, "")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new Proof.Range(Proof.N, "q/Base", Keys.METHOD, "get")).isInstanceOf(IllegalArgumentException.class);
         var trailing = java.util.Arrays.copyOf(a.encode(), a.encode().length + 1);
         assertThatThrownBy(() -> Proof.decode(trailing, digest.width())).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void processorAnswersAndAdmissionPrecedeEveryResolutionShortcut(Digest digest) throws Exception {
+        var state = boot(digest, fixture()); var one = digest.hash(new byte[]{1}); var two = digest.hash(new byte[]{2});
+        var context = new ProcessorRecords.Context(one, two, List.of());
+        var supported = new ProcessorRecords.Capability(ProcessorRecords.ISOLATING, ProcessorRecords.GENERATOR);
+        var unsupported = new ProcessorRecords.Capability(ProcessorRecords.ISOLATING, ProcessorRecords.VIOLATED);
+        byte[] transcript = {1, 2, 3};
+        var observations = new ProcessorRecords.Body(List.of(new ProcessorRecords.Observation("fixture.Reader", supported, transcript)));
+        transcript[0] = 9; observations.processors().getFirst().answers()[0] = 8;
+        assertThat(observations.processors().getFirst().answers()).containsExactly((byte)1, (byte)2, (byte)3);
+        var proof = Arrange.proof(state.tree, state.own, state.route, context, List.of(METHOD), List.of(), state.store::get)
+                .withProcessorBody(observations);
+        java.util.function.Function<byte[], byte[]> noReads = key -> { throw new AssertionError("Processor gate read resolution storage"); };
+        var decoded = Proof.decode(proof.encode(), digest.width());
+        assertThat(decoded).isEqualTo(proof); assertThat(decoded.hashCode()).isEqualTo(proof.hashCode());
+        assertThat(decoded.valid(state.tree, state.own, state.route, context, observations, noReads)).isTrue();
+        assertThat(decoded.valid(state.tree, state.own, state.route, context, noReads)).isFalse();
+        var changed = new ProcessorRecords.Body(List.of(new ProcessorRecords.Observation("fixture.Reader", supported, new byte[]{1, 2, 4})));
+        assertThat(decoded.valid(state.tree, state.own, state.route, context, changed, noReads)).isFalse();
+        assertThat(decoded.aci(digest, "App.java", one, two)).isNotEqualTo(decoded.withProcessorBody(changed).aci(digest, "App.java", one, two));
+        var violation = new ProcessorRecords.Body(List.of(new ProcessorRecords.Observation("fixture.Reader", unsupported, new byte[]{1, 2, 3})));
+        assertThat(decoded.valid(state.tree, state.own, state.route, context, violation, noReads)).isFalse();
+        assertThat(decoded.withProcessorBody(violation).valid(state.tree, state.own, state.route, context, observations, noReads)).isFalse();
+        assertThatThrownBy(() -> decoded.withProcessorBody(violation).aci(digest, "App.java", one, two)).isInstanceOf(IllegalStateException.class);
+        assertThat(decoded.valid(state.tree, state.own, state.route, context, new ProcessorRecords.Body(List.of()), noReads)).isFalse();
+        var aggregate = new ProcessorRecords.Body(List.of(new ProcessorRecords.Observation("fixture.Reader",
+                new ProcessorRecords.Capability(ProcessorRecords.AGGREGATING, ProcessorRecords.GENERATOR), new byte[]{1,2,3})));
+        assertThat(decoded.valid(state.tree, state.own, state.route, context, aggregate, noReads)).isFalse();
+        var overlay = new ProcessorRecords.Observation("fixture.Overlay", new ProcessorRecords.Capability(ProcessorRecords.ISOLATING, ProcessorRecords.OVERLAY), null);
+        var ordered = new ProcessorRecords.Body(List.of(observations.processors().getFirst(), overlay));
+        var reversed = new ProcessorRecords.Body(List.of(overlay, observations.processors().getFirst()));
+        assertThat(decoded.withProcessorBody(ordered).aci(digest, "App.java", one, two))
+                .isNotEqualTo(decoded.withProcessorBody(reversed).aci(digest, "App.java", one, two));
+        assertThatThrownBy(() -> new ProcessorRecords.Body(List.of(overlay, overlay))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> state.proof(List.of(), List.of()).withProcessorBody(observations)).isInstanceOf(IllegalArgumentException.class);
+        // With processor answers unchanged, normal exact range descent must still run when a compiler input moves.
+        Files.writeString(dir.resolve("dep/src/main/java/q/Base.java"), BASE.replace("public Number", "public String get(String x) { return x; } public Number"));
+        var after = boot(digest, ProjectModel.parse(Stage2Support.model(dir, new Stage2Support.Mod("dep", "g:dep:1", List.of()),
+                new Stage2Support.Mod("app", "g:app:1", List.of(Stage2Support.Dep.module("g:dep:1", "dep"))))));
+        assertThat(decoded.valid(after.tree, after.own, after.route, context, observations, after.store::get)).isFalse();
     }
 }

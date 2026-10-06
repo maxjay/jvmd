@@ -15,7 +15,7 @@ import java.util.TreeMap;
 import java.util.function.Function;
 
 /** Stage 3 B.1: a resolution proof grouped by type, with independent T/N ranges and exact type absences. */
-public record Proof(Header header, List<Type> types, List<String> absent) {
+public record Proof(Header header, List<Type> types, List<String> absent, ProcessorRecords.Body processorBody) {
     public static final int T = 0, N = 1;
 
     public record Header(Identity routeHash, Identity ddSum, Identity dsSum, Identity dcSum, Identity ownR,
@@ -56,8 +56,14 @@ public record Proof(Header header, List<Type> types, List<String> absent) {
         }
     }
 
+    public Proof(Header header, List<Type> types, List<String> absent) { this(header, types, absent, null); }
+
+    public Proof withProcessorBody(ProcessorRecords.Body body) { return new Proof(header, types, absent, body); }
+
     public Proof {
         Objects.requireNonNull(header);
+        if (processorBody != null && header.processor() == null)
+            throw new IllegalArgumentException("Processor observations require a processor context");
         types = types.stream().sorted((a, b) -> compareNames(a.key(), b.key())).toList();
         absent = absent.stream().sorted(Proof::compareNames).toList();
         String previous = null;
@@ -77,6 +83,8 @@ public record Proof(Header header, List<Type> types, List<String> absent) {
     public byte[] encode() {
         var out = new Codec.Writer().id(header.routeHash()).id(header.ddSum()).id(header.dsSum()).id(header.dcSum()).id(header.ownR());
         processor(out, header.processor());
+        out.u8(processorBody == null ? 0 : 1);
+        if (processorBody != null) processorBody.encode(out);
         out.u32(types.size());
         for (var type : types) {
             out.zstr(type.key()).id(type.oSum()).u32(type.entries().size());
@@ -93,6 +101,9 @@ public record Proof(Header header, List<Type> types, List<String> absent) {
         int presence = in.u8();
         if (presence > 1) throw new IllegalArgumentException("Invalid processor context presence");
         var context = presence == 0 ? null : ProcessorRecords.Context.decode(in, width);
+        int bodyPresence = in.u8();
+        if (bodyPresence > 1) throw new IllegalArgumentException("Invalid processor observations presence");
+        var body = bodyPresence == 0 ? null : ProcessorRecords.Body.decode(in);
         var types = new ArrayList<Type>();
         for (int i = 0, n = in.count(); i < n; i++) {
             String key = in.zstr();
@@ -104,16 +115,26 @@ public record Proof(Header header, List<Type> types, List<String> absent) {
         var absent = new ArrayList<String>();
         for (int i = 0, n = in.count(); i < n; i++) absent.add(in.zstr());
         if (in.remaining() != 0) throw new IllegalArgumentException("Trailing proof bytes");
-        return new Proof(new Header(route, dd, ds, dc, own, context), types, absent);
+        return new Proof(new Header(route, dd, ds, dc, own, context), types, absent, body);
     }
 
     /**
-     * Resolution descent (5.3). Processor execution/model-read admission must be checked by the caller before relying on this
-     * resolution proof. The supplied processor context is checked first, including addition/removal of a processor path.
+     * Resolution descent without current processor observations. A processed proof cannot pass this overload.
      */
     public boolean valid(ContentTree tree, MachineLeaf own, Route route, ProcessorRecords.Context processor,
                          Function<byte[], byte[]> records) {
+        return valid(tree, own, route, processor, null, records);
+    }
+
+    /** Current observations must come from freshly admitted execution or verified model queries, never from this proof.
+     * Generated-output conservation is checked separately. Both processor checks precede every resolution shortcut. */
+    public boolean valid(ContentTree tree, MachineLeaf own, Route route, ProcessorRecords.Context processor,
+                         ProcessorRecords.Body currentBody, Function<byte[], byte[]> records) {
         if (!Objects.equals(header.processor(), processor)) return false;
+        if (processor != null) {
+            if (processorBody == null || currentBody == null || !processorBody.reusable() || !currentBody.reusable()
+                    || !processorBody.sameInputs(currentBody)) return false;
+        } else if (currentBody != null) return false;
         boolean sameOwn = own.r().equals(header.ownR());
         if (sameOwn && route.routeHash().equals(header.routeHash())) return true;
         var read = new DefinerIndex.Reader(tree, own, route, records);
@@ -136,8 +157,12 @@ public record Proof(Header header, List<Type> types, List<String> absent) {
 
     /** B.2: only actual entry identities and processor inputs; no route, definer-sum or own-leaf shortcut identity. */
     public Identity aci(Digest digest, String basename, Identity kappa, Identity options) {
+        if (header.processor() != null && (processorBody == null || !processorBody.reusable()))
+            throw new IllegalStateException("Processor result has no reusable model observations");
         var out = new Codec.Writer().str(basename).id(kappa).id(options);
         processor(out, header.processor());
+        out.u8(processorBody == null ? 0 : 1);
+        if (processorBody != null) processorBody.inputs(out);
         var ordered = new TreeMap<byte[], Identity>(Arrays::compareUnsigned);
         for (var type : types) for (var entry : type.entries()) ordered.put(entry.range().key(), entry.sum());
         for (var type : absent) ordered.put(new Codec.Writer().u8(2).zstr(type).toBytes(), Identity.zero(digest.width()));

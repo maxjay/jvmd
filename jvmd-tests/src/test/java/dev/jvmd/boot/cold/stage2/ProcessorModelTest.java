@@ -65,6 +65,32 @@ class ProcessorModelTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void identityComparisonsUseHandlesButOverriddenEqualityRemainsAQuery(Digest digest) throws Exception {
+        var file = dir.resolve("Api.java"); Files.writeString(file, SOURCE);
+        try (var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("Api.java", file)), List.of(),
+                Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest)) {
+            var reads = new ProcessorReads(compiled.elements, compiled.types, ignored -> {}, reason -> { throw new AssertionError(reason); });
+            var api = reads.elements.getTypeElement("p.Api"); var other = reads.elements.getTypeElement("p.Unrelated");
+            var before = reads.proof();
+            for (int i = 0; i < 10; i++) {
+                assertThat(api.equals(api)).isTrue(); assertThat(api.equals(other)).isFalse(); assertThat(api.equals(null)).isFalse();
+            }
+            assertThat(reads.proof()).isEqualTo(before);
+            // Factory calls return distinct native handles; use separate phases as the captured replay requires.
+            reads.phase(0); var a = reads.types.getArrayType(api.asType());
+            reads.phase(1); var b = reads.types.getArrayType(api.asType());
+            assertThat(a).isNotSameAs(b); before = reads.proof();
+            assertThat(a.equals(b)).isTrue();
+            assertThat(reads.proof()).isNotEqualTo(before);
+            var replay = reads.replay(ignored -> {}, reason -> { throw new AssertionError(reason); });
+            var replayApi = replay.elements.getTypeElement("p.Api"); replay.elements.getTypeElement("p.Unrelated");
+            replay.phase(0); var replayA = replay.types.getArrayType(replayApi.asType());
+            replay.phase(1); var replayB = replay.types.getArrayType(replayApi.asType());
+            assertThat(replayA.equals(replayB)).isTrue(); assertThat(replay.proof()).isEqualTo(reads.proof());
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void runtimeAnnotationClassValuesKeepTheirMirrorsWrapped(Digest digest) throws Exception {
         var work = dir.resolve("annotation");
         var classes = Stage2Support.compile(work, java.util.Map.of("fixture/WithTypes.java", """

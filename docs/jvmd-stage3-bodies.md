@@ -2,7 +2,7 @@
 
 Oct 5, 2026 · @Max
 
-Revision 123, amended 2026-10-06 for the PR #60 reviews: exact stub member identities, qualified package and member-type absences, T/N proof descent, generation isolation, exact Stage 2 header ranges and reverse keys, persistent route ancestry, full warning metadata in A, the processorElementProjection/generated-output ContentTree amendment, body collector, ordered pool binding and source-byte decoding corrections backed by mutation tests, and LOCAL 6 scope-specific processor plans and origin-to-GEN references. The companion Stage 2 specification is reconciled in `jvmd-stage2-local-cold-boot.md`.
+Revision 123, amended 2026-10-06 for the PR #60 reviews: exact stub member identities, qualified package and member-type absences, T/N proof descent, generation isolation, exact Stage 2 header ranges and reverse keys, persistent route ancestry, full warning metadata in A, the processorElementProjection/generated-output ContentTree amendment, body collector, ordered pool binding and source-byte decoding corrections backed by mutation tests, LOCAL 6 scope-specific processor plans and origin-to-GEN references, and bodies=2 ordered processor observations bound to result identities and checked before resolution shortcuts. The companion Stage 2 specification is reconciled in `jvmd-stage2-local-cold-boot.md`.
 
 Stage 3 attributes one source file at a time against stubs, writes its class files as content-addressed results, and writes a proof of exactly which identities the result depends on, verified by the same descent of sums that stages 1 and 2 built. Greenfield: nothing under `jvmd-lsp`, `jvmd-analyzer` or the old `jvmd-index` is reference or guidance.
 
@@ -44,7 +44,7 @@ Everything from stages 1 and 2 keeps its meaning: `Digest`, `Identity`, `Sum` mo
 | `Attribute(f)` | javac parse, enter, attribute and generate over one compilation unit `f`, with no other source file in the task. The classpath is, in this order: the stubs of `f`'s own module leaf (first, so that own types shadow same-named classpath types exactly as a real build's sources do), then the route in route order (jars, sibling stub directories). `f` is the only source; javac uses an explicitly given source over a classpath class of the same name, so `f`'s own types come from `f` and every other type of the module from its stub. `--system` is the bound JDK. The task runs with `Locale.ROOT` and an explicit `-encoding` (the model's, else UTF-8), so neither diagnostics nor decoding depend on the machine. |
 | task pool | `W` reusable javac contexts per `(routeHash, k_own)`, one per worker: a javac `Context` serves one task at a time. Each opens the classpath once and keeps its symbol table across the files it attributes. After each task a context drops the symbols of the module's own types (by name, from `S\|k`). All `W` are dropped when either identity changes; the ordered route hash distinguishes conflicting classpath winners even when both leaf sets stay equal. Cost `W · C` per route state, not per file. |
 | `optionsHash` | `Digest` of the module's filtered javac options, its release, its encoding, its `processorPathHash` and the κ of its processor configuration files: the inputs to attribution that are neither the file nor the route nor the own leaf. |
-| `ACI` | The attribution context identity: `Digest(basename(f) \|\| κ_file \|\| optionsHash \|\| proc? \|\| sorted (key \|\| sum) over the proof's entries)`. Exactly what the result was computed from: the bytes, the name (javac writes `SourceFile`), the options, and every identity the body read. Not in it: `routeHash`, the index sums, `ownR`, which are header shortcuts and move more often than the result does. Results and uses are keyed by it, so equal inputs anywhere share one record and different sibling states never collide. |
+| `ACI` | The attribution context identity: `Digest(basename(f) \|\| κ_file \|\| optionsHash \|\| proc? \|\| bodyInputs? \|\| sorted (key \|\| sum) over the proof's entries)`. Exactly what the result was computed from: the bytes, the name (javac writes `SourceFile`), the options, and every identity the body read. Not in it: `routeHash`, the index sums, `ownR`, which are header shortcuts and move more often than the result does. Results and uses are keyed by it, so equal inputs anywhere share one record and different sibling states never collide. |
 | result | The class files of every type `f` declares, including nested, local and anonymous classes, plus diagnostics. |
 
 **Every input of `Attribute(f)`, and what covers it.** A row without a covering identity would be a hole by construction; this table is the checklist for the worker and for any reviewer, and it is what the first four drafts lacked.
@@ -162,7 +162,7 @@ A method-body edit leaves the aggregating PD domain and declaration-only model r
 
 ### 3.6 Results are content-addressed
 
-A result is a function of exactly what the attribution read: the file's bytes and name, the options, the processor context, and every entry identity in its proof; not the header shortcuts, which are how the proof is checked and not what the bytes depend on. So it is keyed by that, `ACI = Digest(basename || κ_file || optionsHash || opt<proc> || sorted (key || sum))`. Two files anywhere with equal inputs share one `RS|`; two projects holding the same file under different sibling APIs have different proofs, different `ACI`s, and never overwrite each other. The first draft keyed results by `(κ_file, leafSetExt)` and accepted a collision in that case; `ACI` removes it and shares more, not less, because an external set that differs in leaves the file never read gives the same `ACI`. A class file is `CF|Digest(bytes)` and `RS|` holds references, so identical bytes across versions of identical code are one record and "A's class file is unchanged" is one id comparison. Diagnostics are in `RS|`, per file with positions, not in `CF|`. Finding a file's result is: its proof (per project, on its row) gives the keys; the current sums give the `ACI`; `RS|ACI` gives the result, or nothing, in which case the file is attributed.
+A result is a function of exactly what the attribution read: the file's bytes and name, the options, the processor context, and every entry identity in its proof; not the header shortcuts, which are how the proof is checked and not what the bytes depend on. So it is keyed by that, `ACI = Digest(basename || κ_file || optionsHash || opt<proc> || opt<bodyInputs> || sorted (key || sum))`. Two files anywhere with equal inputs share one `RS|`; two projects holding the same file under different sibling APIs have different proofs, different `ACI`s, and never overwrite each other. The first draft keyed results by `(κ_file, leafSetExt)` and accepted a collision in that case; `ACI` removes it and shares more, not less, because an external set that differs in leaves the file never read gives the same `ACI`. A class file is `CF|Digest(bytes)` and `RS|` holds references, so identical bytes across versions of identical code are one record and "A's class file is unchanged" is one id comparison. Diagnostics are in `RS|`, per file with positions, not in `CF|`. Finding a file's result is: its proof (per project, on its row) gives the keys; the current sums give the `ACI`; `RS|ACI` gives the result, or nothing, in which case the file is attributed.
 
 ### 3.7 The reverse index is find-references
 
@@ -201,7 +201,7 @@ The event and size test of the stage 2 audit, applied to every record here: `C|`
 3. Keep the task/context borrowed through collection and generation, then detach every native observation before task cleanup. Merge these with the tree observations before arrangement. At task exit, evict the module's own type symbols (names from `S|k`); the next borrow restores lazy stub entries before its explicit source is entered (C.3). Arrangement only needs the detached observations and the current stored binding.
 4. Before generation, the collector (5.2) walks `f`'s attributed tree once and records, for every symbol javac resolved to outside `f`, the `T` ranges of the lookup it walked (the whole closure, with sum zero where a name was absent); the closure headers of every attributed expression type; the member-type and own-package absences a simple name passed; the `D` ranges of the on-demand imports it passed; with offsets for `U|`. For each type `f` declares, the whole method set and header of every supertype in its closure. Entries that name a type of `f` itself are dropped: `f`'s own declarations are in the result, not the proof.
 5. The proof is arranged (5.4): the header (`routeHash`, the root sums of `DD|`, `DS|`, `DC|`, `ownR`, and in a processor module the processor context of `f`: `processorPathHash`, `optionsHash`, `configProof(f)` read from `RES|projectKey`), then entries grouped by type with the type's current `oSum` and each range's current sum, read off the current trees through the own-first resolver of 2.3.
-6. `ACI = Digest(basename || κ_file || optionsHash || opt<proc> || sorted (key || sum))`: the entries, never the header shortcuts (`routeHash`, the index sums, `ownR` are how the proof is checked, not what the result depends on; two routes with the same ranges give the same bytes and share the result). Results: each class file to `CF|Digest(bytes)` (a `CF|` that exists is not rewritten); `RS|ACI` with the references and diagnostics; `U|ACI` with the offsets; `C|projectKey|path` with the proof. All in memory in the boot's record map, as stage 2 does with file rows.
+6. `ACI = Digest(basename || κ_file || optionsHash || opt<proc> || opt<bodyInputs> || sorted (key || sum))`: the entries, never the header shortcuts (`routeHash`, the index sums, `ownR` are how the proof is checked, not what the result depends on; two routes with the same ranges give the same bytes and share the result). Results: each class file to `CF|Digest(bytes)` (a `CF|` that exists is not rewritten); `RS|ACI` with the references and diagnostics; `U|ACI` with the offsets; `C|projectKey|path` with the proof. All in memory in the boot's record map, as stage 2 does with file rows.
 7. Reverse entries: for each T/N range key (form included) and D key of the proof, the entry `X|G|key|projectKey|path` or `X|D|key|projectKey|path`, empty-valued, in the boot's record map.
 8. A file that fails to attribute is step 6 with its diagnostics and whatever class files javac produced, and a flag in `RS|`. The scope continues.
 
@@ -252,14 +252,14 @@ Attribute(f, scope, pool) -> (result, proof, uses, aci):
     entries += native observations retained through generation     // including descriptor queries that failed attribution
     context.evict(own module type names from S|scope.leaf.k); pool.release(context)
     proof = Arrange(entries, scope.route, scope.leaf, scope.module)   // 5.4; detached data only
-    aci = Digest(basename(f) || κ || optionsHash || (proof.proc ?? nothing) || sorted (e.key || e.sum) for e in proof.entries)   // no header shortcuts in it
+    aci = Digest(basename(f) || κ || optionsHash || (proof.proc ?? nothing) || (proof.bodyInputs ?? nothing) || sorted (e.key || e.sum) for e in proof.entries)   // no header shortcuts in it
     result = (classes as [(internalName, CF|Digest(bytes))], diagnostics, attributed = no error)
     return (result, proof, uses, aci)
 ```
 
 The source/options policy is shared with Stage 2 through JavacOptions, including source-level normalization, charset selection, filtered options and optionsHash. The executor snapshots diagnostics when javac emits them, retains native observations through generation, arranges the detached proof and stores CF/RS/U. Any error produces an unattributed result with no class references, even if javac produced partial outputs. Content publication checks existing values and flushes under a store lock, so concurrent equal attributions share their records and a conflicting value cannot overwrite an existing content-addressed result. Compilation itself remains parallel. Mutable C, reverse/output entries and BROOT publication belong to the driver.
 
-**Implementation boundary.** The current Attribute.unprocessed entry point is implemented and tested against fresh whole-module javac. It rejects a processor-bearing module or F row explicitly; it cannot satisfy such a request by silently disabling processors. The processor-aware invocation, input admission, generated-output comparison, complete two-sided proof oracle and driver/BROOT commit are still required by this specification. The unprocessed executor does not complete those requirements.
+**Implementation boundary.** The current Attribute.unprocessed entry point is implemented and tested against fresh whole-module javac. It rejects a processor-bearing module or F row explicitly; it cannot satisfy such a request by silently disabling processors. Processor capture, scoped selection, rooted output comparison and binding model observations to Proof/ACI are tested components. Connecting them in processor-aware Attribute with complete input admission, the two-sided proof oracle and driver/BROOT commit is still required by this specification. The unprocessed executor does not complete those requirements.
 
 ### 5.2 Collect: what the body resolved through
 
@@ -330,6 +330,11 @@ Selected executable types also contribute parameter, return, type-variable and t
 Valid(proof, route, own, f) -> bool:                                                      // own = the module's current leaf for this scope
     if proof.proc != processorContext(f): return false                                    // includes addition/removal of the processor path, options or configuration;
                                                                                               // checked before any shortcut, because it moves nothing in routeHash or ownR
+    if proof.proc != none:
+        current = freshlyExecutedOrVerifiedProcessorObservations(f)
+        if proof.bodyObservations == none or current == none: return false
+        if not reusable(proof.bodyObservations) or not reusable(current): return false
+        if inputs(proof.bodyObservations) != inputs(current): return false
     if route.routeHash == proof.routeHash and own.r == proof.ownR: return true               // nothing in the universe moved
     if route.DD.sum == proof.ddSum and route.DS.sum == proof.dsSum and route.DC.sum == proof.dcSum
        and own.r == proof.ownR: return true                                                   // every type still resolves to the same res
@@ -448,7 +453,7 @@ jvmd-index/
     BodiesRoot.java          BROOT| (B.7): codec; staleness = localRoot != LROOT.root
     LocalStore.java          + key functions: proofKey, resultKey (as stage 2), classFileKey, usesKey, outputKey, materialisedKey, bodiesRootKey, configTreeKey, domainKey, generatedKey, processorKey
   rocks/layer/
-    Generation.java          FORMAT gains layout=4, bodies=1, locale=root
+    Generation.java          FORMAT gains layout=4, bodies=2, locale=root
 
 jvmd-boot/
   cold/
@@ -563,7 +568,7 @@ The rule for an unlisted concern: if it needs a body attributed, it is stage 3's
 - `RS|` values are small (references and diagnostics). Inline.
 - In the LOCAL tree: `C|`, `RS|`, `CF|`, `X|`, `OUT|`. Outside it: `U|` (derivable from re-attribution; content-addressed, so it is written to the store and never to the tree) and `MAT|` (per machine). Nothing per machine or per path under `RS|`, `CF|`, `U|`; `C|`, `X|` and `OUT|` carry the project because they are the project's index of its own files.
 - Root last, after one sync; the LOCAL tree is edited by `apply`, never rebuilt; the previous root to history as stage 2.
-- FORMAT: stage 2's FORMAT with the full javac runtime version (`Runtime.version().toString()`, not the feature number: two builds of one feature release can differ in bytes, diagnostics and inference), `layout=4` (the `A` layer) and `bodies=1` and locale=root (B.6: javac's diagnostic locale is an input of the bytes and messages, so it is fixed; the source charset is an input too and is in optionsHash). A different FORMAT is a cold boot, never a migration.
+- FORMAT: stage 2's FORMAT with the full javac runtime version (`Runtime.version().toString()`, not the feature number: two builds of one feature release can differ in bytes, diagnostics and inference), `layout=4` (the `A` layer) and `bodies=2` and locale=root (B.6: javac's diagnostic locale is an input of the bytes and messages, so it is fixed; the source charset is an input too and is in optionsHash). A different FORMAT is a cold boot, never a migration.
 - Two roots per project. LROOT|projectKey is stage 2's and stage 3 never writes it. BROOT|projectKey (B.7) holds the bodies tree root and the LROOT.root it extended; bodies exist exactly when the two agree, and Diff(BROOT.localRoot, LROOT.root) is the stage 2 change set when they do not. Stage 3 edits the bodies tree with apply over the previous BROOT.root carrying that Diff, never over LROOT alone on a rerun.
 
 ### 9.2 Deferred
@@ -699,9 +704,11 @@ Primitives as stage 2 appendix B: `u8`, `u16`, `u32`, `u64`, `i64`, `str`, `zstr
 ### B.1 Proof
 
 ```
-C|projectKey|path     = header || list<type> || list<zstr absentTypeKey>   // the last proof of this file in this project
+C|projectKey|path     = header || opt<bodyObservations> || list<type> || list<zstr absentTypeKey>   // the last proof of this file in this project
 header                = id routeHash || id ddSum || id dsSum || id dcSum || id ownR || opt<proc>
 proc                  = id processorPathHash || id optionsHash || list<(zstr path || id sum)>   // only with a processor path; the list is configProof(f): one entry per directory on f's chain, sum zero where no file exists
+bodyObservations      = list<(str processorClass || opt<bytes modelAnswers> || u8 declared || u8 observed)> // invocation order; detached actual answers
+bodyInputs            = list<(str processorClass || opt<bytes modelAnswers>)> // same order; capability governs admission, not result content
 type                  = zstr typeKey || id oSum || list<entry>
 entry                 = u8 form || zstr t || u8 kind || zstr name || id sum
                         // form 0: T member range, key as Keys.groupKey; form 1: member types named name directly enclosed by t: the N range zstr name || u8 TYPE || zstr t (A.1), never a binary-name prefix
@@ -710,6 +717,12 @@ entry                 = u8 form || zstr t || u8 kind || zstr name || id sum
 ```
 
 There is no leaf level and no `k`: a type is resolved at verification through the definer indexes, and the header's index sums decide whether that resolution can have changed at all. For form 0, `kind` is `Keys.TYPE` (0), `FIELD` (1), `METHOD` (2); `name` empty means the whole kind, and `kind = 0` with empty name is the type fact. For form 1, `kind = TYPE` and `name` is the exact member simple name; the N prefix is `zstr name || u8 TYPE || zstr t`. Sorted: types by typeKey, entries by key bytes, absences by key, so the record is a function of its content.
+
+Body processor observations preserve the invocation order, class names, capability and detached public-model query transcript. The transcript contains actual query arguments/answers, opaque reference relationships, visitor dispatch and round answers; it never substitutes a whole leaf A, module source hash or generated-output root. An absent transcript denotes a tested native overlay or a processor javac did not initialize. An empty body observation list is distinct from missing observations, including scopes whose only configured processors are aggregating and excluded from body tasks. Every recorded body invocation must be classified isolating and reusable; an aggregating invocation cannot be admitted as a body result. Capabilities gate admission but are excluded from the result input encoding. Body records use version 2; version 1 roots require cold reconstruction.
+
+`ProcessorHost.bodyObservations()` is available only after closing a body host, so unclosed Filer writes and other late violations are finalized first. The returned records are immutable snapshots. `Proof.valid` without supplied current observations always rejects a processed proof; its explicit observation overload checks both admission flags and exact observed inputs before any route/own/index shortcut. `Proof.aci` refuses processor-bearing results with missing or unsupported observations. The current observation argument must come from a fresh admitted invocation or verified queries in the current environment, never by copying the old proof. Output conservation against GEN is a separate necessary check. These APIs do not yet implement the persisted query verifier or processor-aware Attribute publication.
+
+Native `Object.equals` with Object's unchanged implementation compares already-observed handles; incidental identity-hash-table collision checks add no model fact. Overridden equality (including structural array types and annotation values) remains a query. The broader processor capability audit remains necessary, including processors whose outputs depend on allocation identity or unmodelled inputs; repeatable observations alone are not a complete admission proof.
 
 ### B.2 Result
 
@@ -720,7 +733,7 @@ CF|cf                 = classBytes                                 // cf = Diges
 optionsHash           = Digest(filtered javac options as passed, -A options included || u8 release || str encoding || id processorPathHash)
 processorPathHash     = Digest(ordered bh of the processor path's jars)   // full byte hashes from P|, never k: a processor's bodies execute
 configProof(f)        = ordered (zstr path || id sum) over configChain(f)   // sum = Digest(path || κ) of the file, or zero; read from RES|projectKey (appendix F)
-ACI                   = Digest(str basename || id κ_file || id optionsHash || opt<proc> || (key bytes || id sum) for each proof entry, sorted)   // never routeHash, index sums or ownR
+ACI                   = Digest(str basename || id κ_file || id optionsHash || opt<proc> || opt<bodyInputs> || (key bytes || id sum) for each proof entry, sorted)   // never routeHash, index sums or ownR
 ```
 
 `attributed` is 1 when javac reported no error. Class files are listed for every type `f` declares, nested, local and anonymous included, in internal-name order. Diagnostic order and repeated messages are retained. Positions are javac's UTF-16 character offsets into the decoded source, not byte offsets. The u32 value 0xFFFFFFFF represents Diagnostic.NOPOS (-1); other values retain their unsigned offset. This matters for supplementary characters and non-UTF-8 source encodings.
@@ -756,10 +769,10 @@ MAT|projectKey|module|scope|dirHash = the OUT value last written to the director
 ### B.6 FORMAT
 
 ```
-FORMAT = <current LOCAL FORMAT, including full javac runtime version and locale=root>;bodies=1
+FORMAT = <current LOCAL FORMAT, including full javac runtime version and locale=root>;bodies=2
 ```
 
-`bodies=1` is the version of these codecs. A different FORMAT is a cold boot.
+`bodies=2` is the version of these codecs. A different FORMAT is a cold boot.
 
 ### B.7 Bodies root
 
@@ -1032,4 +1045,4 @@ Lombok's tested overlay path keeps the native ProcessingEnvironment delegate in 
 10. Cross-origin mutable state that changes isolated output, unobserved queries and native-model access after capture cannot silently validate. The processor is named unsupported.
 11. Processor diagnostics preserve order, duplicate messages, source positions and filtering under Locale.ROOT; replay does not publish them twice.
 
-**Implementation boundary.** The current cold-boot path runs native processors freshly, captures the queries, checks isolated replay and deduplicates exact manifests. It does not skip a processor invocation using a persisted model-query verifier; such a skip would additionally require that verifier and is not proved by the current replay. The body-task component now captures outputs outside javac rounds; scope-specific selection and rooted manifest comparison are implemented and tested from a fresh Stage 2 commit through body capture. Auditing all admitted processor inputs, binding actual body processor reads into result identities and completing the processor-aware Attribute publication/admission path remain required; these records and passing fixtures do not claim the entire stage is finished.
+**Implementation boundary.** The current cold-boot path runs native processors freshly, captures the queries, checks isolated replay and deduplicates exact manifests. It does not skip a processor invocation using a persisted model-query verifier; such a skip would additionally require that verifier and is not proved by the current replay. The body-task component now captures outputs outside javac rounds; scope-specific selection and rooted manifest comparison are implemented and tested from a fresh Stage 2 commit through body capture. The body proof codec and ACI now bind finalized ordered model observations and reject missing/unsupported observations before every resolution shortcut. Auditing all admitted processor inputs, implementing persisted query verification and completing the processor-aware Attribute publication/admission path remain required; these records and passing fixtures do not claim the entire stage is finished.

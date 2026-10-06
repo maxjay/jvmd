@@ -65,6 +65,7 @@ public final class ProcessorHost implements AutoCloseable {
     private Map<String, List<Entry>> closedDomains;
     private Map<String, List<URI>> closedInputs;
     private Map<String, byte[]> closedModelProofs;
+    private ProcessorRecords.Body closedBody;
     private final Map<String, Map<String, byte[]>> originModelProofs = new TreeMap<>();
     private final Map<String, List<ProcessorReads.Read>> modelReads = new TreeMap<>();
     private Wrapped active;
@@ -184,6 +185,11 @@ public final class ProcessorHost implements AutoCloseable {
     public List<Processor> processors() { return List.copyOf(processors); }
     public List<Output> outputs() { return List.copyOf(outputs); }
     public List<String> faults() { return List.copyOf(faults); }
+    /** Finalized actual answers, in invocation order. Call only after closing the body host so late Filer faults are included. */
+    public ProcessorRecords.Body bodyObservations() {
+        if (capture == null || closedBody == null) throw new IllegalStateException("Body processor observations are not finalized");
+        return closedBody;
+    }
     Map<String, List<ProcessorReads.Read>> modelReads() {
         var out = new TreeMap<String, List<ProcessorReads.Read>>();
         modelReads.forEach((name, reads) -> out.put(name, List.copyOf(reads)));
@@ -257,11 +263,14 @@ public final class ProcessorHost implements AutoCloseable {
         }
     }
     @Override public void close() throws IOException {
+        if (closedCapabilities != null) return;
         if (capture != null) capture.finish(this::rejectReuse);
         closedCapabilities = capabilities();
         closedDomains = domains();
         closedInputs = inputs();
         closedModelProofs = modelProofs();
+        if (capture != null) closedBody = new ProcessorRecords.Body(processors.stream().map(p ->
+                new ProcessorRecords.Observation(p.name, closedCapabilities.get(p.name), closedModelProofs.get(p.name))).toList());
         processors.clear(); // discard all javac Elements, Trees and processor instance state with this header compile
         diagnosticScope = DIRECT;
         loader.close();

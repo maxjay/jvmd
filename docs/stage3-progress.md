@@ -592,3 +592,26 @@ The final clean gate passed **508 tests, zero failures/errors/skips**, in 4m05s.
 | SHA3-256 | 3,353 | 1,914 | 800 | 133 | 25,065 |
 
 Maven model/build time (25.9/25.6s) is excluded. Sampled heap above baseline was 821/921 MB with uncontrolled GC. The sequential digest runs and prior checkpoints are not controlled performance comparisons. Raw reports: [SHA-256](measurements/stage3-processor-plan-SHA-256.txt), [SHA3-256](measurements/stage3-processor-plan-SHA3-256.txt). These gates validate the scoped plans and generated-output conservation component; the processor-read/admission, Attribute, driver and oracle obligations above remain open. No PR was merged.
+
+
+### Body processor observations and result identity
+
+Body proofs now retain immutable, ordered processor observations: class, capability and detached model-query answer bytes. ProcessorHost finalizes these only after body-host closure, including late capture faults, and preserves them across repeated close calls. ACI includes the ordered class/answer inputs; capability is an admission condition, not an extra semantic identity. Proof validation checks current observations and admission before every resolution shortcut. The overload without observations rejects processor-bearing proofs, and ACI cannot be computed for missing/unsupported observations. Aggregating invocations cannot be admitted into body observations. Bodies FORMAT is now 2; LOCAL remains 6 and MACHINE remains 4.
+
+The native regression changes a dependency annotation while keeping its T root, generated source map and original class bytes equal. Reading the changed annotation changes the processor diagnostic, body observations and ACI, and invalidates the proof even with equal resolution shortcut identities. Editing another annotation value that was returned only as an opaque handle and never queried preserves the observations and ACI. Repeated tasks verify AutoValue and Lombok observations and native output parity; codec, mutation protection, missing evidence, invocation order, unsupported capabilities and subsequent normal T-range descent are covered under both digests.
+
+The initial gate exposed unstable AutoValue transcripts caused by extra native Object.equals calls from identity-hash-table collisions. Object's unchanged equals implementation now compares captured handles directly, without adding a model query. Overridden equality remains observable: a separate regression covers distinct, structurally equal array type handles and captured replay. The first version of that regression attempted two allocating factory queries in one phase; captured replay correctly refused the ambiguous handles, and the regression now places those calls in distinct phases. No native-model fallback was added.
+
+`stage3-processor-observations-focused.log` passes 61 tests. `stage3-processor-observations-equality-green.log` passes 52 tests, including unprocessed Attribute, reverse records and architecture checks. The combined clean gate runs with 541 Java files frozen and the repository measurement explicitly using four workers; its final results follow.
+
+The Stage 3 authority and Downloads copy are synchronized after preserving `jvmd-stage3-bodies.before-body-processor-observations.md`. Stage 2's authority is unchanged. This is the observation binding and validation API, not the complete processor-aware Attribute executor or a persisted model-query verifier. Query verification against the current environment, complete processor admission (including allocation-identity-sensitive behavior and unmodelled inputs), annotation-aware current model construction, scoped GEN conservation in Attribute, unsupported fresh results, the Stage3/BROOT driver and every remaining invariant stay required. The body observation argument cannot be obtained by copying the old proof. Warm remains untouched; the goal remains active, PR #61 remains separate and no merge is authorized.
+
+
+The final combined gate `stage3-processor-observations-frozen-gate.log` passed **514 tests, zero failures/errors/skips**, in 4m07s. All 541 Java files match the pre-run digest snapshot. With four workers, the repository oracle covered **13 modules, 26 scopes and 536 sources**, 93 on-the-spot jars and 22 distinct leaf sets. Both digests produced **26/26 exact source/class k matches, no annotation differences and zero boot faults**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 3,946 | 2,559 | 1,332 | 119 | 25,049 |
+| SHA3-256 | 3,532 | 2,022 | 911 | 147 | 25,073 |
+
+Maven model/build time (26.1/25.2s) is excluded. Sampled heap above baseline was 841/1,161 MB with uncontrolled GC. These sequential runs and earlier checkpoints are not controlled performance comparisons. Raw reports: [SHA-256](measurements/stage3-processor-observations-SHA-256.txt), [SHA3-256](measurements/stage3-processor-observations-SHA3-256.txt). The synchronized Stage 3 authority hash is SHA-256 `51122a20768fe01fdddd01f60d42c58c15ec7d026212656058b46a81cf89ca84`. Stage 3 remains incomplete with the required work listed above; no PR was merged.

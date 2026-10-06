@@ -98,6 +98,44 @@ class BodyCollectorTest {
     private static Proof.Range n(String type,String name) { return new Proof.Range(Proof.N,type,Keys.TYPE,name); }
 
     @ParameterizedTest @MethodSource("digests")
+    void capturedVariablesReadFieldsOnlyAcrossInterveningClasses(Digest digest) throws Exception {
+        String source = """
+                package p;
+                public class App extends q.Outer {
+                    int direct(int x) { return x; }
+                    int f(int x) {
+                        int local = 2;
+                        class Capture extends q.Base { int get() { return x + local; } }
+                        return new Capture().get();
+                    }
+                }
+                """;
+        String base = "package q; public class Base {}";
+        String outer = "package q; public class Outer {}";
+        fixture(source, Map.of("q/Base", base, "q/Outer", outer));
+        var original = boot(digest); var before = compile(original);
+        assertThat(before.errors()).isEmpty();
+        var nativeBefore = Stage2Support.compile(dir.resolve("capture-native-before"),
+                Map.of("p/App.java", source, "q/Base.java", base, "q/Outer.java", outer), List.of("-g", "-parameters"), List.of());
+        before.classes().forEach((name, bytes) -> assertThat(bytes).as(name).isEqualTo(nativeBefore.get(name + ".class")));
+        // Changing a superclass of the lexical method owner cannot shadow its own parameters/locals.
+        Files.writeString(dir.resolve("dep/src/main/java/q/Outer.java"), outer.replace("{}", "{ public int x, local; }"));
+        assertThat(boot(digest).valid(before.proof())).isTrue();
+        // An inherited field of the intervening local class does shadow the captured parameter.
+        String changedBase = base.replace("{}", "{ public int x; }");
+        Files.writeString(dir.resolve("dep/src/main/java/q/Base.java"), changedBase);
+        var changed = boot(digest); var after = compile(changed); assertThat(after.errors()).isEmpty();
+        var nativeAfter = Stage2Support.compile(dir.resolve("capture-native-after"),
+                Map.of("p/App.java", source, "q/Base.java", changedBase, "q/Outer.java", outer.replace("{}", "{ public int x, local; }")),
+                List.of("-g", "-parameters"), List.of());
+        after.classes().forEach((name, bytes) -> assertThat(bytes).as(name).isEqualTo(nativeAfter.get(name + ".class")));
+        assertThat(after.classes().get("p/App$1Capture")).isNotEqualTo(before.classes().get("p/App$1Capture"));
+        assertThat(changed.valid(before.proof())).as("captured-variable shadowing must invalidate").isFalse();
+        assertThat(before.reads().ranges()).contains(t("q/Base", Keys.FIELD, "x"), t("q/Base", Keys.FIELD, "local"))
+                .doesNotContain(t("q/Outer", Keys.FIELD, "x"), t("q/Outer", Keys.FIELD, "local"));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void packageAnnotationConstantsAreExactBodyReadsWithSourceSpans(Digest digest) throws Exception {
         String source="@q.Mark(q.Values.VALUE) package p;";
         String values="package q; public class Values {public static final String VALUE=\"before\", UNUSED=\"unused\";}";

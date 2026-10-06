@@ -12,4 +12,17 @@
     </plugin>
   </plugins></build>
 
+  <profiles><profile>
+    <id>read-oracle</id>
+    <properties><readOracleAgent>"-javaagent:${project.build.directory}/${project.build.finalName}-read-oracle.jar=${project.build.directory}/${project.build.finalName}-read-oracle.jar"</readOracleAgent><excludedGroups>corpus,benchmark</excludedGroups></properties>
+    <build><plugins><plugin>
+      <groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId>
+      <executions><execution><id>native-read-oracle-agent</id><phase>process-test-classes</phase><goals><goal>test-jar</goal></goals>
+        <configuration><classifier>read-oracle</classifier>
+          <includes><include>dev/jvmd/tests/oracle/ReadOracleAgent*.class</include><include>dev/jvmd/tests/oracle/ReadOracleTrace*.class</include></includes>
+          <archive><manifestEntries><Premain-Class>dev.jvmd.tests.oracle.ReadOracleAgent</Premain-Class></manifestEntries></archive>
+        </configuration>
+      </execution></executions>
+    </plugin></plugins></build>
+  </profile></profiles>
 </project>

@@ -338,6 +338,8 @@ The collector uses javac's attributed symbols and native query observations; it 
 
 An attributed tree alone does not retain every candidate javac tested. For example, `pick(null)` with overloads taking unrelated `First` and `Second` is ambiguous. Making either interface extend the other repairs the error without changing the overload group. The compiler adapter therefore observes native `Types.supertype` and `Types.interfaces` queries and contributes the exact queried binary type headers, including rejected candidates. It does not traverse every candidate signature: a wrong-arity overload does not acquire a dependency on its unused parameter hierarchy. Observations reset per task and repeat on cached contexts; compiler-created pseudo-types are not persisted as binary dependencies. Queries without a syntax position carry an empty span list, not an invented location. The complete two-sided oracle remains required to establish coverage beyond these fixtures.
 
+A local or anonymous class can resolve an identifier to a captured enclosing parameter or local only after looking for fields in the intervening classes. Those exact field groups, including their zero entries, are proof inputs: adding an inherited field can shadow the capture and change emitted bytes. Stop at the common lexical scope of declaration and use. An enclosing method's own parameters and locals are not shadowed by fields of that method owner's superclass. Bodies format 7 fences the earlier proofs that omitted this distinction.
+
 Native functional-descriptor queries also contribute the target's method contract, including when an invalid target leaves an erroneous lambda type. Removing one of two abstract methods can repair that error without changing the target's type header. A class, annotation type or sealed interface is rejected by javac's initial header check, so that rejection does not acquire a whole-method-set dependency. Native observations remain enabled through generation; the adapter detaches them after the callback completes, then merges them with the pre-lowering tree observations while retaining existing source spans. A record/string-concatenation fixture exercises generation-only observations on cold and warm contexts.
 
 Member-type lookup records the exact N range at every visited owner, including a nonempty direct declaration before stopping that branch. Two inherited declarations with the same simple name are ambiguous; removing either moves its recorded range and invalidates the error result even when the enclosing type header stays equal.
@@ -812,10 +814,10 @@ MAT|projectKey|module|scope|dirHash = the OUT value last written to the director
 ### B.6 FORMAT
 
 ```
-FORMAT = <current LOCAL FORMAT, including full javac runtime version and locale=root>;bodies=4
+FORMAT = <current LOCAL FORMAT, including full javac runtime version and locale=root>;bodies=7
 ```
 
-`bodies=4` preserves exact diagnostic message code units; bodies 3 encoded messages through UTF-8. It is the version of these codecs. A different FORMAT is a cold boot.
+`bodies=7` fences proofs that omitted inherited-field absences for captured parameters and locals. Earlier changes preserve exact diagnostic message code units (4), basename display for native diagnostic source arguments (5), and processor capability-history admission (6). A different FORMAT is a cold body boot; it does not require rebuilding unchanged Stage 2 headers.
 
 ### B.7 Bodies root
 

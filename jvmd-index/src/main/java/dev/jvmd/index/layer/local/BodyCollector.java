@@ -190,6 +190,8 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
         String name = node.getName().toString();
         if (name.equals("this") || name.equals("super") || methodSelect(getCurrentPath())) return null;
         var symbol = trees.getElement(getCurrentPath());
+        if (symbol instanceof VariableElement variable && !(variable.getEnclosingElement() instanceof TypeElement))
+            capturedFields(variable, name, node);
         var parent = getCurrentPath().getParentPath();
         boolean expressionHead = !typePosition(getCurrentPath()) && parent != null
                 && (parent.getLeaf() instanceof MemberSelectTree selection && selection.getExpression() == node
@@ -246,6 +248,17 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
     }
 
     private List<TypeElement> staticOwners(String name) { return singleStatics.getOrDefault(name, staticImports); }
+
+    /** A captured local/parameter loses to fields only in classes between its declaration and this use. */
+    private void capturedFields(VariableElement variable, String name, Tree node) {
+        var declaration = trees.getPath(variable);
+        if (declaration == null) return;
+        var ancestors = Collections.newSetFromMap(new IdentityHashMap<Tree, Boolean>());
+        for (var path = declaration; path != null; path = path.getParentPath()) ancestors.add(path.getLeaf());
+        for (var path = getCurrentPath(); path != null && !ancestors.contains(path.getLeaf()); path = path.getParentPath())
+            if (path.getLeaf() instanceof ClassTree && trees.getElement(path) instanceof TypeElement type)
+                fieldReads(type.asType(), name, node, new HashSet<>());
+    }
 
     private void lexicalFields(String name,Tree node) {
         for (var enclosing : enclosing()) if (fieldReads(enclosing.asType(),name,node,new HashSet<>())) return;

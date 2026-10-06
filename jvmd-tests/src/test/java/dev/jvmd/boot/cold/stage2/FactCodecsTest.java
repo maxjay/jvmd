@@ -43,7 +43,8 @@ class FactCodecsTest {
         assertThat(Res.Type.decode(type.encode()).encode()).isEqualTo(type.encode());
 
         var module = new Res.Module("m.x", 0x20, "1.0", List.of(new Res.Requires("java.base", 0x8000, "25")), List.of(new Res.Directive("p/q", 0, List.of("m.y"))), List.of(),
-                List.of("p/Service"), List.of(new Res.Provides("p/Service", List.of("p/Impl"))));
+                List.of("p/Service"), List.of(new Res.Provides("p/Service", List.of("p/Impl"))),
+                List.of(new Res.Inner("p/Outer$Service", "p/Outer", "Service", 0x609)));
         var descriptor = new Res.Type(Res.Type.MODULE, 0x8000, null, null, List.of(), List.of(), null, null, null, List.of(), List.of(), module, Res.Warnings.NONE);
         assertThat(Res.Type.decode(descriptor.encode())).isEqualTo(descriptor);
 

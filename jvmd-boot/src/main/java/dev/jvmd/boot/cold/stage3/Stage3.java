@@ -33,9 +33,12 @@ import java.util.concurrent.Executors;
 /** Cold body attribution: every committed file, dependency-ordered scopes, and a separate bodies-root commit. */
 public final class Stage3 {
     public record File(String path,Attribute.Computed computed) { }
-    public record Scope(List<File> files,Root output,List<ProcessorRecords.Message> aggregateDiagnostics,int descriptorEmissions) {
-        public Scope {files=List.copyOf(files);aggregateDiagnostics=List.copyOf(aggregateDiagnostics);}
-        public List<Diagnostics.Message> diagnostics() {return Diagnostics.assemble(files,aggregateDiagnostics);}
+    public record Scope(List<File> files,Root output,List<ProcessorRecords.Message> aggregateDiagnostics,int descriptorEmissions,
+                        List<Diagnostics.Message> headerDiagnostics) {
+        public Scope {files=List.copyOf(files);aggregateDiagnostics=List.copyOf(aggregateDiagnostics);headerDiagnostics=List.copyOf(headerDiagnostics);}
+        public List<Diagnostics.Message> diagnostics() {
+            var messages=new ArrayList<>(headerDiagnostics);messages.addAll(Diagnostics.assemble(files,aggregateDiagnostics));return List.copyOf(messages);
+        }
     }
     public record Result(Identity project,BodiesRoot bodies,Map<String,Scope> scopes,int files,List<String> faults,long wallMillis) {
         public Result {scopes=java.util.Collections.unmodifiableMap(new TreeMap<>(scopes));faults=List.copyOf(faults);}
@@ -100,7 +103,7 @@ public final class Stage3 {
 
     private Scope scope(ProjectModel model,Identity project,LocalRoot local,BodyGeneration generation,ProjectModel.Module module,int scope,
                         List<FileRow> rows,StubDirectories stubs,java.util.function.Function<Identity,MachineLeaf> leaves,ExecutorService workers) {
-        if(rows.isEmpty())return new Scope(List.of(),Output.build(tree,generation,List.of()),List.of(),0);
+        if(rows.isEmpty())return new Scope(List.of(),Output.build(tree,generation,List.of()),List.of(),0,List.of());
         var descriptor=ModuleRecord.decode(required(generation.local(LocalStore.moduleKey(project,module.name()))));
         var own=SourceLeaf.decode(required(generation.local(LocalStore.sourceLeafKey(project,module.name(),scope))),digest.width());
         var route=Route.decode(required(generation.local(LocalStore.routeKey(project,module.name(),scope))),digest.width());
@@ -120,7 +123,10 @@ public final class Stage3 {
         var ownStubs=stubs.get(own.k());var configuration=new Pool.Configuration(new Pool.Key(route.routeHash(),own.k()),ownStubs.path(),classpath,
                 options.charset(),options.javac(),ownStubs.types());
         var descriptorOptions=new ArrayList<>(descriptor.javacOptions());descriptorOptions.addAll(descriptor.processing().options());
+        var headerOptions=dev.jvmd.boot.cold.stage2.JavacOptions.optionsHash(digest,descriptorOptions,
+                dev.jvmd.boot.cold.stage2.JavacOptions.effectiveRelease(descriptor.release(),descriptorOptions.contains("--enable-preview"),Runtime.version().feature()),null,List.of());
         var results=new ArrayList<File>();int descriptorEmissions=0;
+        var headerDiagnostics=new ArrayList<Diagnostics.Message>();
         try(var pool=new Pool(configuration,this.workers)) {
             var attribute=processed?Attribute.processed(tree,generation,leaves.apply(own.k()),route,pool,options,plan,
                     descriptor.processing().path().stream().map(p->repository.resolve(p.location())).toList(),Path.of(model.root()))
@@ -128,7 +134,11 @@ public final class Stage3 {
             var tasks=new ArrayList<java.util.concurrent.Future<File>>();
             for(var row:rows) {
                 if(row.path().equals("module-info.java") || row.path().endsWith("/module-info.java")) {
-                    var derived=ModuleDescriptor.derive(tree,generation,leaves.apply(own.k()),route,ModuleDescriptor.Options.of(descriptorOptions));
+                    var diagnostics=HeaderDiagnostics.decode(required(generation.local(LocalStore.headerDiagnosticsKey(project,
+                            new SourceUnit(module.name(),scope,row.path())))),digest.width());
+                    var derived=diagnostics.failed()?ModuleDescriptor.failed(tree,generation,leaves.apply(own.k()),route,row,diagnostics,headerOptions)
+                            :ModuleDescriptor.derive(tree,generation,leaves.apply(own.k()),route,ModuleDescriptor.Options.of(descriptorOptions));
+                    if(!diagnostics.failed())for(var message:diagnostics.messages())headerDiagnostics.add(new Diagnostics.Message(row.path(),message));
                     results.add(new File(row.path(),derived.computed()));if(derived.emitted())descriptorEmissions++;
                 } else tasks.add(workers.submit(()->{
                     var path=model.resolve(row.path());return new File(row.path(),attribute.run(row,path.toUri(),Files.readAllBytes(path)));
@@ -156,7 +166,7 @@ public final class Stage3 {
             }
         }
         results.sort(java.util.Comparator.comparing(File::path));
-        return new Scope(results,Output.build(tree,generation,results.stream().map(f->f.computed().result()).toList()),aggregate,descriptorEmissions);
+        return new Scope(results,Output.build(tree,generation,results.stream().map(f->f.computed().result()).toList()),aggregate,descriptorEmissions,headerDiagnostics);
     }
 
     private Map<ScopeKey,List<FileRow>> rows(ProjectModel model,Identity project,LocalRoot local,BodyGeneration generation) {

@@ -12,6 +12,7 @@ import java.lang.classfile.ClassFile;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
@@ -104,7 +105,7 @@ public final class SourceFacts {
 
     /**
      * The module descriptor fact of a {@code module-info.java} (stage 1, A.4 item 10; stage 2, section 8 and E.3): names and flags read
-     * from the parsed directives, no resolution, so the file need not be entered. It is encoded as {@code ClassFacts} encodes
+     * from the parsed directives and completed service type references. It is encoded as {@code ClassFacts} encodes
      * {@code module-info.class}: type key {@code module-info}, kind 5, access {@code ACC_MODULE}, then the {@code Module} attribute.
      * javac writes the implicit {@code requires java.base} first, as mandated, and a {@code requires_version} for every required module
      * that has a version, which is the one thing here that is not in the file; {@code versionOf} supplies it.
@@ -112,13 +113,29 @@ public final class SourceFacts {
      * @param moduleVersion the {@code --module-version} the build passed, which javac records as this module's own version; or null
      * @param versionOf     the version of a required module as javac would read it, or null
      */
-    public Result ofModule(com.sun.source.tree.ModuleTree module, String moduleVersion, Function<String, String> versionOf) {
+    public Result ofModule(com.sun.source.tree.ModuleTree module, String moduleVersion, Function<String, String> versionOf,
+                           Function<com.sun.source.tree.ExpressionTree, TypeElement> resolvedType) {
+        try { return module(module, moduleVersion, versionOf, resolvedType); }
+        catch (RuntimeException | StackOverflowError failure) {
+            return new Result(List.of(), List.of(), List.of(), List.of(),
+                    List.of(new FileRow.Fault(Keys.typeKey("module-info"), "module declaration could not be read: " + failure)));
+        }
+    }
+
+    private Result module(com.sun.source.tree.ModuleTree module, String moduleVersion, Function<String, String> versionOf,
+                          Function<com.sun.source.tree.ExpressionTree, TypeElement> resolvedType) {
         var out = new Out();
         var requires = new ArrayList<Res.Requires>();
         var exports = new ArrayList<Res.Directive>();
         var opens = new ArrayList<Res.Directive>();
         var uses = new ArrayList<String>();
         var provides = new ArrayList<Res.Provides>();
+        var resolved = new java.util.HashMap<String, TypeElement>();
+        Function<com.sun.source.tree.ExpressionTree, TypeElement> recordType = reference -> {
+            var type = resolvedType.apply(reference);
+            if (type != null) resolved.put(binaryName(type), type);
+            return type;
+        };
         boolean explicitBase = false;
         for (var directive : module.getDirectives()) {
             switch (directive) {
@@ -129,23 +146,45 @@ public final class SourceFacts {
                 }
                 case com.sun.source.tree.ExportsTree e -> exports.add(packageDirective(e.getPackageName().toString(), e.getModuleNames()));
                 case com.sun.source.tree.OpensTree o -> opens.add(packageDirective(o.getPackageName().toString(), o.getModuleNames()));
-                case com.sun.source.tree.UsesTree u -> uses.add(u.getServiceName().toString().replace('.', '/'));
+                case com.sun.source.tree.UsesTree u -> uses.add(moduleType(u.getServiceName(), recordType));
                 case com.sun.source.tree.ProvidesTree p -> {
                     var with = new ArrayList<String>();
-                    for (var implementation : p.getImplementationNames()) with.add(implementation.toString().replace('.', '/'));
-                    provides.add(new Res.Provides(p.getServiceName().toString().replace('.', '/'), with));
+                    for (var implementation : p.getImplementationNames()) with.add(moduleType(implementation, recordType));
+                    provides.add(new Res.Provides(moduleType(p.getServiceName(), recordType), with));
                 }
                 default -> { }
             }
         }
         if (!explicitBase) requires.add(0, new Res.Requires("java.base", MANDATED, versionOf.apply("java.base")));
+        var inners = new java.util.LinkedHashMap<String, Res.Inner>();
+        for (var name : uses) moduleInner(resolved.get(name), inners);
+        for (var provide : provides) {
+            moduleInner(resolved.get(provide.service()), inners);
+            for (var name : provide.with()) moduleInner(resolved.get(name), inners);
+        }
         var descriptor = new Res.Module(module.getName().toString(), module.getModuleType() == com.sun.source.tree.ModuleTree.ModuleKind.OPEN ? 0x0020 : 0,
-                moduleVersion, requires, exports, opens, uses, provides);
+                moduleVersion, requires, exports, opens, uses, provides, List.copyOf(inners.values()));
         var res = new Res.Type(Res.Type.MODULE, ClassFile.ACC_MODULE, null, null, List.of(), List.of(), null, null, null, List.of(), List.of(), descriptor, Res.Warnings.NONE);
         var tail = Entry.NONE;
         add(out, Keys.typeKey("module-info"), "module-info", res.encode(), tail);
         out.typeKeys.add("module-info");
-        return new Result(List.copyOf(out.facts), List.of(), List.of(), List.copyOf(out.typeKeys), List.of());
+        return new Result(List.copyOf(out.facts), List.of(), inners.keySet().stream().sorted().toList(), List.copyOf(out.typeKeys), List.of());
+    }
+
+    private String moduleType(com.sun.source.tree.ExpressionTree reference, Function<com.sun.source.tree.ExpressionTree, TypeElement> resolvedType) {
+        var type = resolvedType.apply(reference);
+        if (type == null || type.asType().getKind() == TypeKind.ERROR)
+            throw new IllegalArgumentException("Unresolved module service type: " + reference);
+        return binaryName(type);
+    }
+
+    private void moduleInner(TypeElement type, Map<String, Res.Inner> into) {
+        if (!(type.getEnclosingElement() instanceof TypeElement outer)) return;
+        String name = binaryName(type);
+        if (into.containsKey(name)) return;
+        moduleInner(outer, into);
+        int flags = (int) ((com.sun.tools.javac.code.Symbol.ClassSymbol) type).flags() & 0x761f;
+        into.put(name, new Res.Inner(name, binaryName(outer), type.getSimpleName().toString(), flags));
     }
 
     private void packageFact(javax.lang.model.element.PackageElement pkg, Out out) {

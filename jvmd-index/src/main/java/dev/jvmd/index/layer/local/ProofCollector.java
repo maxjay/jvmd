@@ -60,6 +60,16 @@ public final class ProofCollector {
         var root = trees.getPath(declarations.getFirst());
         if (root == null) return Observations.NONE;
         var unit = root.getCompilationUnit();
+        return headers(declarations, unit, new TreePath(unit), trees, elements, types);
+    }
+
+    /** Descriptor service names share the ordinary classpath header lookup grammar, including imports and nested types. */
+    public static Observations module(CompilationUnitTree unit, ModuleTree module, Trees trees, Elements elements, Types types) {
+        return headers(List.of(), unit, new TreePath(new TreePath(unit), module), trees, elements, types);
+    }
+
+    private static Observations headers(List<? extends Element> declarations, CompilationUnitTree unit, TreePath scan,
+                                        Trees trees, Elements elements, Types types) {
         var packages = new LinkedHashSet<String>();
         packages.add("java/lang");
         var explicit = new HashSet<String>();
@@ -68,7 +78,7 @@ public final class ProofCollector {
         var explicitStatics = new HashSet<String>();
         var found = new LinkedHashSet<HeaderProof.Absence>();
         var ranges = new java.util.TreeSet<HeaderProof.Range>();
-        var hierarchy = new Hierarchy(types, elements, ranges);
+        var hierarchy = new Hierarchy(types, elements, trees, ranges);
         for (var imported : unit.getImports()) {
             // Imports classify absolute package/type prefixes too; the main scanner deliberately skips imports.
             qualifiedPrefixes(TreePath.getPath(unit, imported.getQualifiedIdentifier()), trees, hierarchy, found);
@@ -205,7 +215,7 @@ public final class ProofCollector {
                 for (var imported : memberImports) hierarchy.memberAbsences(imported, simple, found);
                 return null;
             }
-        }.scan(unit, null);
+        }.scan(scan, null);
         // A file's own declarations are already bound by its source content. Do not prove their unpersisted private members.
         ranges.removeIf(range -> own.contains(range.type()));
         found.removeIf(absence -> absence.form() == 1 && own.contains(absence.type()));
@@ -253,16 +263,22 @@ public final class ProofCollector {
     private static final class Hierarchy {
         private final Types types;
         private final Elements elements;
+        private final Trees trees;
         private final Map<String, List<TypeElement>> closures = new HashMap<>();
         private final Map<String, List<HeaderProof.Absence>> members = new HashMap<>();
         private final Set<String> fields = new HashSet<>();
         private final Set<HeaderProof.Range> ranges;
 
-        Hierarchy(Types types, Elements elements, Set<HeaderProof.Range> ranges) {
-            this.types = types; this.elements = elements; this.ranges = ranges;
+        Hierarchy(Types types, Elements elements, Trees trees, Set<HeaderProof.Range> ranges) {
+            this.types = types; this.elements = elements; this.trees = trees; this.ranges = ranges;
         }
 
         void note(Element element) {
+            // Access errors retain the actual declaration in javac's public original-type view, even for nested types.
+            if (element instanceof TypeElement type && type.asType() instanceof javax.lang.model.type.ErrorType error) {
+                var original = trees.getOriginalType(error);
+                if (original instanceof DeclaredType declared && original.getKind() != TypeKind.ERROR) element = declared.asElement();
+            }
             if (element instanceof TypeElement type && type.asType().getKind() != TypeKind.ERROR)
                 ranges.add(new HeaderProof.Range(binary(type, elements), Keys.TYPE, ""));
             else if (element instanceof VariableElement field && field.getEnclosingElement() instanceof TypeElement owner) {

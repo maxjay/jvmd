@@ -9,8 +9,8 @@ import dev.jvmd.core.hash.Digest;
 public record Format(int layout, String digestName, int jdkFeature, String parser) {
     /** The storage family. 4 separates T/res from A/tail, binds fact hashes to keys and carries a beside k. Incompatible fact projections bump PARSER too. */
     public static final int LAYOUT = 4;
-    /** Bumped when {@link ClassFacts} would produce different facts for the same class bytes. "5": lossless Java String values in T/A. */
-    public static final String PARSER = "5";
+    /** Bumped when {@link ClassFacts} would produce different facts for the same class bytes. "6": descriptor InnerClasses metadata. */
+    public static final String PARSER = "6";
 
     public static Format of(Digest digest, int jdkFeature) { return new Format(LAYOUT, digest.name(), jdkFeature, PARSER); }
 

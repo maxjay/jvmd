@@ -104,6 +104,9 @@ final class ModuleJob {
             // 4. Each compilation unit, in path order.
             for (var file : found) {
                 var unit = unitsByPath.get(file.path());
+                if (file.path().equals("module-info.java") || file.path().endsWith("/module-info.java"))
+                    boot.headerDiagnostics.put(new dev.jvmd.index.layer.local.SourceUnit(module.name(), scope, file.path()),
+                            new dev.jvmd.index.layer.local.HeaderDiagnostics(unit.moduleDiagnostics));
                 var kappa = unit.kappa == null ? sums.zero() : unit.kappa; // javac could not read it: the file is a parse fault
                 if (!unit.parsed()) {
                     pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sums.zero(), List.of(),
@@ -115,12 +118,14 @@ final class ModuleJob {
                 SourceFacts.Result result;
                 if (unit.module != null) {
                     // The descriptor of the module's own main code; a test scope has none (its module is patched, not declared).
-                    result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)))
+                    result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)),
+                            unit.moduleTypes::get)
                             : SourceFacts.Result.NONE;
                 } else result = extract.of(unit.declared, unit.packageDeclaration, unit.packageClass);
                 var proofDeclarations = new ArrayList<javax.lang.model.element.Element>(unit.declared);
                 if (unit.packageDeclaration != null) proofDeclarations.add(unit.packageDeclaration);
-                var reads = ProofCollector.headers(proofDeclarations, compiled.trees, compiled.elements, compiled.types);
+                var reads = unit.module != null ? ProofCollector.module(unit.moduleUnit, unit.module, compiled.trees, compiled.elements, compiled.types)
+                        : ProofCollector.headers(proofDeclarations, compiled.trees, compiled.elements, compiled.types);
                 boot.parsedFiles.incrementAndGet();
                 var faults = new ArrayList<>(result.faults());
                 faults.addAll(unit.faults);
@@ -188,6 +193,10 @@ final class ModuleJob {
                 var external = resolver.definer(type);
                 return external == null ? null : boot.leaf(external);
             };
+            // A failed lookup may have found an inaccessible declaration. Its flags can repair the error, so a present
+            // candidate becomes a type-header read instead of disappearing when the expected-absence candidates bind.
+            for (var candidate : p.reads().absences()) if (candidate.form() == 0 && definer.apply(candidate.type()) != null)
+                all.add(new HeaderProof.Range(candidate.type(), Keys.TYPE, ""));
             var absences = p.reads().absences().stream().filter(a -> HeaderProof.absent(a, boot.tree, definer, boot::node)).toList();
             var row = new FileRow(p.path(), p.kappa(), p.size(), p.mtimeNanos(), p.sum(), List.copyOf(p.types()), List.copyOf(p.faults()), headerProof(all, definer), leaf.r(), absences);
             boot.files.put(new dev.jvmd.index.layer.local.SourceUnit(module.name(), scope, row.path()), row);

@@ -46,6 +46,7 @@ public interface LocalStore extends MachineStore {
     static byte[] filePrefix(Identity projectKey) { return join("F|", projectKey.view(), "|"); }
     static byte[] fileKey(Identity projectKey, SourceUnit unit) { return join("F|", projectKey.view(), "|", unit.encode()); }
     static byte[] fileKey(Identity projectKey, String module, int scope, String path) { return fileKey(projectKey, new SourceUnit(module, scope, path)); }
+    static byte[] headerDiagnosticsKey(Identity projectKey, SourceUnit unit) { return join("HD|", projectKey.view(), "|", unit.encode()); }
     static byte[] disjointKey(Identity leafSetExt) { return join("DD|", leafSetExt.view()); }
     static byte[] siblingKey(Identity leafSetSib) { return join("DS|", leafSetSib.view()); }
     static byte[] conflictsKey(Identity routeHash) { return join("DC|", routeHash.view()); }

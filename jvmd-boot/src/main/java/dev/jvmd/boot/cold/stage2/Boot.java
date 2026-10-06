@@ -60,6 +60,7 @@ final class Boot implements AutoCloseable {
     /** The bound routes as the jobs wrote them. */
     final Map<String, Route> routes = new ConcurrentHashMap<>();
     final Map<SourceUnit, FileRow> files = new ConcurrentHashMap<>();
+    final Map<SourceUnit, dev.jvmd.index.layer.local.HeaderDiagnostics> headerDiagnostics = new ConcurrentHashMap<>();
     /** {@code DD|}, {@code DS|} and {@code DC|} records this boot used: they are part of the LOCAL tree of the project that used them. */
     final ConcurrentSkipListMap<byte[], byte[]> definers = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);
     final ConcurrentSkipListMap<byte[], byte[]> processingRecords = new ConcurrentSkipListMap<>(Arrays::compareUnsigned);

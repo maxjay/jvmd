@@ -63,6 +63,10 @@ final class HeaderCompiler {
         final List<FileRow.Fault> faults = new ArrayList<>();
         /** The module declaration of a {@code module-info.java}: parsed, never entered (E.3). Null for every other file. */
         com.sun.source.tree.ModuleTree module;
+        /** Entered import environment for the descriptor's type references, under the existing classpath policy. */
+        CompilationUnitTree moduleUnit;
+        final java.util.Map<com.sun.source.tree.ExpressionTree, TypeElement> moduleTypes = new java.util.IdentityHashMap<>();
+        List<dev.jvmd.index.layer.local.ResultRecord.Diagnostic> moduleDiagnostics = List.of();
 
         Unit(String path) { this.path = path; }
 
@@ -155,8 +159,33 @@ final class HeaderCompiler {
         var diagnostics = new DiagnosticCollector<JavaFileObject>();
         var processorOwners = host == null ? null : new java.util.IdentityHashMap<com.sun.tools.javac.util.JCDiagnostic, String>();
         var processorMessages = host == null ? null : new ArrayList<dev.jvmd.index.layer.local.ProcessorRecords.Message>();
+        var moduleMessages = new java.util.HashMap<URI, List<dev.jvmd.index.layer.local.ResultRecord.Diagnostic>>();
+        var messageContext = new java.util.concurrent.atomic.AtomicReference<com.sun.tools.javac.util.Context>();
         javax.tools.DiagnosticListener<JavaFileObject> listener = diagnostic -> {
             diagnostics.report(diagnostic);
+            if (diagnostic.getSource() != null && diagnostic.getSource().isNameCompatible("module-info", JavaFileObject.Kind.SOURCE)
+                    && !diagnostic.getCode().contains(".proc.")) {
+                String text = diagnostic.getMessage(Locale.ROOT);
+                var raw = rawDiagnostic(diagnostic);
+                if (raw != null && messageContext.get() != null) {
+                    var context = messageContext.get();
+                    var formatter = new com.sun.tools.javac.util.BasicDiagnosticFormatter(com.sun.tools.javac.util.Options.instance(context),
+                            com.sun.tools.javac.util.JavacMessages.instance(context)) {
+                        @Override protected String formatArgument(com.sun.tools.javac.util.JCDiagnostic message, Object argument, Locale locale) {
+                            if (argument instanceof JavaFileObject file && file.getKind() == JavaFileObject.Kind.SOURCE) {
+                                var path = file.toUri().getPath();
+                                if (path != null) return path.substring(path.lastIndexOf('/') + 1);
+                            }
+                            return super.formatArgument(message, argument, locale);
+                        }
+                    };
+                    text = formatter.formatMessage(raw, Locale.ROOT);
+                }
+                moduleMessages.computeIfAbsent(diagnostic.getSource().toUri(), ignored -> new ArrayList<>()).add(
+                        new dev.jvmd.index.layer.local.ResultRecord.Diagnostic(switch (diagnostic.getKind()) {
+                            case ERROR -> 0; case WARNING, MANDATORY_WARNING -> 1; default -> 2;
+                        }, diagnostic.getStartPosition(), diagnostic.getEndPosition(), diagnostic.getCode(), text));
+            }
             if (host == null) return;
             String processor = processorOwners.get(rawDiagnostic(diagnostic));
             if (processor == null && !diagnostic.getCode().contains(".proc.")) return;
@@ -182,6 +211,7 @@ final class HeaderCompiler {
         JavacTaskImpl task = null;
         try {
             task = (JavacTaskImpl) compiler.getTask(null, files, listener, options, null, objects);
+            messageContext.set(task.getContext());
             task.setLocale(Locale.ROOT);
             if (host != null) {
                 new ProcessorTrees(task.getContext(), host);
@@ -223,8 +253,15 @@ final class HeaderCompiler {
             var consumed = new ArrayList<CompilationUnitTree>();
             for (var tree : parsed) {
                 var unit = byUri.get(tree.getSourceFile().toUri());
-                // Classpath mode has no use for a module declaration: its descriptor fact is read from the parsed directives.
-                if (unit.parsed() && tree.getModule() != null) unit.module = tree.getModule();
+                // Keep the descriptor's imports in its native header environment, without entering a module graph.
+                if (unit.parsed() && tree.getModule() != null) {
+                    unit.module = tree.getModule();
+                    unit.moduleUnit = tree;
+                    var nativeTree = (com.sun.tools.javac.tree.JCTree.JCCompilationUnit) tree;
+                    nativeTree.defs = com.sun.tools.javac.util.List.filter(nativeTree.defs, (com.sun.tools.javac.tree.JCTree) unit.module);
+                    consumed.add(tree);
+                    continue;
+                }
                 if (unit.parsed() && tree.getModule() == null) {
                     entered.add(tree);
                     consumed.add(tree);
@@ -273,6 +310,28 @@ final class HeaderCompiler {
             var trees = Trees.instance(task);
             var packagePolicy = com.sun.tools.javac.main.Option.PkgInfo.get(com.sun.tools.javac.util.Options.instance(task.getContext()));
             var nativeTypes = com.sun.tools.javac.code.Types.instance(task.getContext());
+            for (var unit : units) if (unit.module != null) {
+                var environment = com.sun.tools.javac.comp.Enter.instance(task.getContext()).getTopLevelEnv(
+                        (com.sun.tools.javac.tree.JCTree.JCCompilationUnit) unit.moduleUnit);
+                var attr = com.sun.tools.javac.comp.Attr.instance(task.getContext());
+                var log = com.sun.tools.javac.util.Log.instance(task.getContext());
+                var previous = log.useSource(unit.moduleUnit.getSourceFile());
+                java.util.function.Consumer<com.sun.source.tree.ExpressionTree> resolve = reference -> {
+                    var type = attr.attribType((com.sun.tools.javac.tree.JCTree) reference, environment);
+                    if (type.tsym instanceof TypeElement element) unit.moduleTypes.put(reference, element);
+                };
+                try {
+                    for (var directive : unit.module.getDirectives()) {
+                        if (directive instanceof com.sun.source.tree.UsesTree use)
+                            resolve.accept(use.getServiceName());
+                        else if (directive instanceof com.sun.source.tree.ProvidesTree provide) {
+                            resolve.accept(provide.getServiceName());
+                            for (var implementation : provide.getImplementationNames())
+                                resolve.accept(implementation);
+                        }
+                    }
+                } finally { log.useSource(previous); }
+            }
             for (var tree : entered) {
                 var unit = byUri.get(tree.getSourceFile().toUri());
                 if (!unit.parsed()) continue;
@@ -300,6 +359,8 @@ final class HeaderCompiler {
                 host.diagnostics(new dev.jvmd.index.layer.local.ProcessorRecords.Diagnostics(processorMessages));
                 host.proveIsolating(charset);
             }
+            for (var object : objects) if (object.isNameCompatible("module-info", JavaFileObject.Kind.SOURCE))
+                byUri.get(object.toUri()).moduleDiagnostics = List.copyOf(moduleMessages.getOrDefault(object.toUri(), List.of()));
             return new Compiled(units, task.getElements(), task.getTypes(), trees, task, files);
         } catch (IOException e) {
             release(task, files);

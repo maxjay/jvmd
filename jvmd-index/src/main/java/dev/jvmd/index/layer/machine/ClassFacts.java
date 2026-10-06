@@ -191,7 +191,7 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
             Res.Module moduleRes = null;
             if (kind == Res.Type.MODULE) {
                 var module0 = cm.findAttribute(Attributes.module());
-                if (module0.isPresent()) moduleRes = module(module0.get());
+                if (module0.isPresent()) moduleRes = module(module0.get(), inner.map(a -> a.classes()).orElse(List.of()));
             }
             var res = new Res.Type(kind, access, signature, superclass.map(c -> c.asInternalName()).orElse(null), interfaces, permitNames,
                     host.map(h -> h.nestHost().asInternalName()).orElse(null), outer, self == null ? null : self.innerName().map(n -> n.stringValue()).orElse(null), components, metas, moduleRes, warnings(cm));
@@ -203,7 +203,7 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
             if (outer != null) edge(outer, ENCLOSES, key);
         }
 
-        Res.Module module(ModuleAttribute m) {
+        Res.Module module(ModuleAttribute m, List<InnerClassInfo> innerClasses) {
             var requires = new ArrayList<Res.Requires>();
             for (var r : m.requires())
                 requires.add(new Res.Requires(r.requires().name().stringValue(), r.requiresFlagsMask(), r.requiresVersion().map(v -> v.stringValue()).orElse(null)));
@@ -228,7 +228,8 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                 provides.add(new Res.Provides(p.provides().asInternalName(), with));
             }
             return new Res.Module(m.moduleName().name().stringValue(), m.moduleFlagsMask(), m.moduleVersion().map(v -> v.stringValue()).orElse(null),
-                    requires, exports, opens, uses, provides);
+                    requires, exports, opens, uses, provides, innerClasses.stream().map(i -> new Res.Inner(i.innerClass().asInternalName(),
+                            i.outerClass().map(c -> c.asInternalName()).orElse(null), i.innerName().map(n -> n.stringValue()).orElse(null), i.flagsMask())).toList());
         }
 
         void edge(String target, int kind, byte[] source) {

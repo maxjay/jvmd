@@ -139,6 +139,8 @@ public final class Stage2 {
                     for (var dependency : dev.jvmd.index.layer.local.ReverseIndex.dependencies(row))
                         put(store, records, dependency.key(projectKey, file.getKey()), Entry.NONE);
                 }
+                for (var diagnostics : new java.util.TreeMap<>(boot.headerDiagnostics).entrySet())
+                    put(store, records, LocalStore.headerDiagnosticsKey(projectKey, diagnostics.getKey()), diagnostics.getValue().encode());
                 store.flush();
                 var entries = new ArrayList<Entry>(records.size());
                 for (var e : records.entrySet()) entries.add(new Entry(e.getKey(), Entry.NONE, digest.hash(e.getValue())));

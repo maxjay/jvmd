@@ -5,6 +5,8 @@ import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.tree.Codec;
 import dev.jvmd.core.tree.ContentTree;
 import dev.jvmd.index.layer.local.LocalStore;
+import dev.jvmd.index.layer.local.FileRow;
+import dev.jvmd.index.layer.local.HeaderDiagnostics;
 import dev.jvmd.index.layer.local.Proof;
 import dev.jvmd.index.layer.local.ResultRecord;
 import dev.jvmd.index.layer.local.Route;
@@ -72,6 +74,25 @@ public final class ModuleDescriptor {
         return new Derived(new Attribute.Computed(aci, result, proof, uses, List.of()), true);
     }
 
+    /** Failed header results consume the source and its exact header observations; they never enter the body compiler. */
+    public static Derived failed(ContentTree tree, LocalStore store, MachineLeaf own, Route route, FileRow row,
+                                 HeaderDiagnostics diagnostics, Identity headerOptions) {
+        if (!diagnostics.failed()) throw new IllegalArgumentException("A failed descriptor needs a native header error");
+        var ranges = new ArrayList<Proof.Range>(); var absent = new ArrayList<String>();
+        for (var entry : row.headerProof()) ranges.add(new Proof.Range(Proof.T, entry.typeKey(), entry.kind(), entry.name()));
+        for (var entry : row.absences()) {
+            if (entry.form() == 0) absent.add(entry.type());
+            else ranges.add(new Proof.Range(Proof.N, entry.type(), Keys.TYPE, entry.name()));
+        }
+        var proof = Arrange.proof(tree, own, route, null, ranges, absent, store::get);
+        var aci = tree.digest().hash(new Codec.Writer().str("module-info header error v1")
+                .id(proof.aci(tree.digest(), "module-info.java", row.kappa(), headerOptions)).toBytes());
+        var result = new ResultRecord(false, List.of(), diagnostics.messages());
+        var uses = new UsesRecord(List.of());
+        store.put(LocalStore.resultKey(aci), result.encode()); store.put(LocalStore.usesKey(aci), uses.encode());
+        return new Derived(new Attribute.Computed(aci, result, proof, uses, List.of()), false);
+    }
+
     /** Domain separated from source ACI; no source bytes, route, own leaf or unrelated javac options enter this key. */
     public static Identity identity(Digest digest, Identity fact, Options options) {
         return digest.hash(new Codec.Writer().str("module-info derivation v1").raw(Keys.typeKey("module-info"))
@@ -82,7 +103,7 @@ public final class ModuleDescriptor {
     public static byte[] emit(Res.Module module, Options options) {
         var pool = new Pool();
         var body = new Codec.Writer().u16(0x8000).u16(pool.reference(7, "module-info")).u16(0).u16(0).u16(0).u16(0);
-        body.u16(options.sourceFile ? 2 : 1);
+        body.u16((options.sourceFile ? 2 : 1) + (module.innerClasses().isEmpty() ? 0 : 1));
         if (options.sourceFile) body.u16(pool.utf("SourceFile")).u32(2).u16(pool.utf("module-info.java"));
         int name = pool.utf("Module");
         var value = new Codec.Writer().u16(pool.reference(19, module.name())).u16(module.flags()).u16(pool.optional(module.version()));
@@ -97,6 +118,13 @@ public final class ModuleDescriptor {
             for (var implementation : provide.with()) value.u16(pool.reference(7, implementation));
         }
         body.u16(name).lenBytes(value.toBytes());
+        if (!module.innerClasses().isEmpty()) {
+            int innerName = pool.utf("InnerClasses");
+            var inners = new Codec.Writer().u16(module.innerClasses().size());
+            for (var inner : module.innerClasses()) inners.u16(pool.reference(7, inner.name()))
+                    .u16(inner.outer() == null ? 0 : pool.reference(7, inner.outer())).u16(pool.optional(inner.simpleName())).u16(inner.flags());
+            body.u16(innerName).lenBytes(inners.toBytes());
+        }
         return new Codec.Writer().u32(0xcafebabeL).u16(0).u16(options.majorVersion).raw(pool.bytes()).raw(body.toBytes()).toBytes();
     }
 

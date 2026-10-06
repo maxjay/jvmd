@@ -1,0 +1,29 @@
+PR #61 review closeout — 2026-10-06
+Base reviewed: 66d27412dcb7ce559acda2e3f0a6e3a1352aad9b
+JDK: Temurin 25.0.4.1+1
+Maven: 3.9.16
+Platform: Windows, 4 Stage 2 workers
+
+Final gate: 292 tests, 0 failures, 0 errors, 0 skips; 3m00s.
+501 Java source paths and their SHA-256 hashes compared unchanged before/after.
+Freeze manifest SHA-256: ea0c8dc7a06e073a7a88e7e9a360d5e638ee0137f64f46f13769d24858f173f0
+Both SHA-256 and SHA3-256: source/class k equal for all 26 scopes, no annotation differences, no header faults.
+
+mvn -B -pl jvmd-tests -am test -Dtest=DefinerStateTest,MachineColdBootTest,ClassMemoTest,ContentTreeTest,ContentTreeEditTest,ZipReaderTest,RocksMachineBootTest,LocalColdBootTest,LocalCodecsTest,FactCodecsTest,RocksLocalBootTest,Layout4Test,HeaderAbsencesTest,HeaderReverseTest,CurrentReverseTest,SourceAnnotationProjectionTest,TailStrippingTest,StubProjectionTest,PersistedLeavesTest,MavenProjectTest,Stage2Measurement,ModuleArchitectureTest,ForbiddenIdentifiersTest -DexcludedGroups=none -Djvmd.stage2.workers=4 -Dsurefire.failIfNoSpecifiedTests=false
+
+Direct cost assertions (both digests):
+- 6,000 retired reverse consumers, in 12 rounds: one current prefix hit and zero point/LOCAL reads after every round, memory and Rocks/reopen.
+- A 32,768-type persisted DF restores with zero reads; small replacement opens just removed/added O leaves, fewer than 100 persisted DF path reads, canonical roots equal fresh construction.
+- A one-leaf replacement among 16,384 leaves compares <=512 leaf-set entries; order/repeated membership changes compare zero.
+- Incremental DC add/remove/move/repeat cases never open the unrelated 32,768-type leaf, open at most two changed leaves per transition, touch at most four types, and equal fresh construction.
+- Pure provider-route permutation supplies empty T/N/O deltas and reaches T and N consumers through exact DC changes.
+- N/O same-key h replacements and same-winner loser-order changes cause no corresponding absence/definer fan-out.
+- Exact DF/DC reuse works on a fresh cold boot and another checkout.
+
+Own-project fresh repeat (each digest):
+DF cache hits=22; fold O opens=0; leaf-set entries compared=0.
+DC cache hits=22; full builds=0; applies=0; O opens=0; touched types=0; node emissions=0.
+Full cold metrics, timing/heap limits, and all scope equality lines are in stage2-review61-SHA-256.txt and stage2-review61-SHA3-256.txt.
+
+Focused publication boundary gate: 127 tests, 0 failures/errors/skips; 58.525s.
+Includes original Stage 1 streaming and Rocks tests after limiting shared publication to Stage 2.

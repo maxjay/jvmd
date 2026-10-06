@@ -220,11 +220,10 @@ class LocalColdBootTest {
         } finally { Stage2Support.delete(project); }
     }
 
-    /** {@code Digest} of the sorted distinct keys, concatenated: how a leaf set is named. */
+    /** Independent construction of the canonical leaf-set tree. */
     static Identity distinctDigest(Digest digest, java.util.SortedSet<Identity> leaves) {
-        var hasher = digest.hasher();
-        for (var k : leaves) hasher.update(k.view(), 0, k.view().length);
-        return hasher.finish();
+        return new ContentTree(digest).build(leaves.stream()
+                .map(k -> new Entry(k.bytes(), Entry.NONE, digest.hash(k.view()))).toList(), DISCARD).hash();
     }
 
     // ---- 7.3.3 -------------------------------------------------------------------------------------------------------------
@@ -295,11 +294,12 @@ class LocalColdBootTest {
 
     /** The definer state of a leaf set, folded from {@code base} (or nothing) over the stage 1 leaves of {@code store}. */
     static DefinerIndex.State fold(Digest digest, InMemoryLocalStore store, List<Identity> leaves, DefinerIndex.State base) {
-        return fold(digest, leaf -> leaf(digest, store, leaf), nodes(store), leaves, base);
+        return fold(digest, leaf -> leaf(digest, store, leaf), nodes(store), leaves, base, store);
     }
 
-    static DefinerIndex.State fold(Digest digest, Function<Identity, MachineLeaf> leafOf, Function<Identity, byte[]> reader, List<Identity> leaves, DefinerIndex.State base) {
-        return DefinerIndex.fold(new ContentTree(digest), leaves.stream().distinct().sorted().toList(), base, leafOf, reader);
+    static DefinerIndex.State fold(Digest digest, Function<Identity, MachineLeaf> leafOf, Function<Identity, byte[]> reader, List<Identity> leaves, DefinerIndex.State base, NodeSink sink) {
+        var root = Bind.leafSetRoot(digest, leaves, sink); sink.flush();
+        return DefinerIndex.fold(new ContentTree(digest), leaves.stream().distinct().sorted().toList(), root, base, leafOf, reader);
     }
 
     // ---- 7.3.5 -------------------------------------------------------------------------------------------------------------
@@ -437,10 +437,10 @@ class LocalColdBootTest {
         Function<Identity, MachineLeaf> leafOf = k -> leaf(digest, store, k);
         var written = new TreeMapSink(); // the index nodes, so the conflict tables can be read back
         Function<Identity, byte[]> reader = h -> written.nodes.containsKey(h) ? written.nodes.get(h) : nodes(store).apply(h);
-        var none = fold(digest, leafOf, reader, List.of(), null);
+        var none = fold(digest, leafOf, reader, List.of(), null, written);
 
         // Two external leaves that both declare ab.Util: it is in neither disjoint index's single-definer set, and is in the conflict table with the first leaf in route order.
-        var both = fold(digest, leafOf, reader, List.of(ab, x), null);
+        var both = fold(digest, leafOf, reader, List.of(ab, x), null, written);
         var abFirst = DefinerIndex.conflicts(digest, tree, both, none, List.of(ab, x), written);
         var xFirst = DefinerIndex.conflicts(digest, tree, both, none, List.of(x, ab), written);
         var conflictsOne = entries(digest, abFirst, reader);
@@ -449,14 +449,14 @@ class LocalColdBootTest {
         assertThat(zstr(conflictsOne.get(0).key())).isEqualTo("ab/Util");
         assertThat(firstDefiner(conflictsOne.get(0), digest.width())).isEqualTo(ab);
         assertThat(firstDefiner(conflictsTwo.get(0), digest.width())).isEqualTo(x);
-        var disjointOne = DefinerIndex.disjoint(digest, tree, fold(digest, leafOf, reader, List.of(ab, x), null), reader, written);
-        var disjointTwo = DefinerIndex.disjoint(digest, tree, fold(digest, leafOf, reader, List.of(x, ab), null), reader, written);
+        var disjointOne = DefinerIndex.disjoint(digest, tree, fold(digest, leafOf, reader, List.of(ab, x), null, written), reader, written);
+        var disjointTwo = DefinerIndex.disjoint(digest, tree, fold(digest, leafOf, reader, List.of(x, ab), null, written), reader, written);
         assertThat(disjointTwo).as("the disjoint part is byte-identical for a permuted route").isEqualTo(disjointOne);
         assertThat(entries(digest, disjointOne, reader).stream().map(e -> zstr(e.key()))).as("shadowed types are not in it").doesNotContain("ab/Util").contains("x/Thing", "ab/Api");
 
         // The same type split across the two parts (a sibling module that shadows a jar's class) is a conflict too: the parts meet only there.
-        var external = fold(digest, leafOf, reader, List.of(ab), null);
-        var sibling = fold(digest, leafOf, reader, List.of(x), null);
+        var external = fold(digest, leafOf, reader, List.of(ab), null, written);
+        var sibling = fold(digest, leafOf, reader, List.of(x), null, written);
         var split = entries(digest, DefinerIndex.conflicts(digest, tree, external, sibling, List.of(ab, x), written), reader);
         assertThat(split).hasSize(1);
         assertThat(zstr(split.get(0).key())).isEqualTo("ab/Util");
@@ -467,14 +467,14 @@ class LocalColdBootTest {
         // From a base by difference, adding and removing leaves, equals from nothing; a leaf listed twice is one leaf. The base has its tree,
         // so the new disjoint tree is an edit of it (ContentTree.apply) and must be the tree a build over all its types gives.
         both.disjoint(DefinerIndex.disjoint(digest, tree, both, reader, written));
-        var grown = fold(digest, leafOf, reader, List.of(x, ab, t, ab), both);
-        var scratch = fold(digest, leafOf, reader, List.of(x, ab, t), null);
+        var grown = fold(digest, leafOf, reader, List.of(x, ab, t, ab), both, written);
+        var scratch = fold(digest, leafOf, reader, List.of(x, ab, t), null, written);
         var grownTree = DefinerIndex.disjoint(digest, tree, grown, reader, written);
         assertThat(grownTree).isEqualTo(DefinerIndex.disjoint(digest, tree, scratch, reader, written));
         assertThat(DefinerIndex.conflicts(digest, tree, grown, none, List.of(x, ab, t), written)).isEqualTo(DefinerIndex.conflicts(digest, tree, scratch, none, List.of(x, ab, t), written));
         grown.disjoint(grownTree);
-        var shrunk = fold(digest, leafOf, reader, List.of(ab), grown);
-        var alone = fold(digest, leafOf, reader, List.of(ab), null);
+        var shrunk = fold(digest, leafOf, reader, List.of(ab), grown, written);
+        var alone = fold(digest, leafOf, reader, List.of(ab), null, written);
         assertThat(DefinerIndex.disjoint(digest, tree, shrunk, reader, written)).as("removing leaves, by edit").isEqualTo(DefinerIndex.disjoint(digest, tree, alone, reader, written));
         assertThat(entries(digest, DefinerIndex.conflicts(digest, tree, shrunk, none, List.of(ab), written), reader)).as("removing x leaves ab as the only definer: no conflict left").isEmpty();
         assertThat(entries(digest, DefinerIndex.conflicts(digest, tree, alone, none, List.of(ab, ab), written), reader)).as("a leaf is never in conflict with itself").isEmpty();
@@ -613,9 +613,9 @@ class LocalColdBootTest {
         var project = multiProject();
         try {
             var booted = boot(digest, multiModel(project, false), 4);
-            // MACHINE (P, L, N, ROOT) and the shared derivable records (DD, DS, S, ST: another project may have written them) may be read; nothing of the project's own.
-            assertThat(booted.store().readsBeforeRoot()).isNotEmpty().doesNotContainAnyElementsOf(List.of("MOD", "RT", "F", "DC", "C", "X", "RS", "LROOT"));
-            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "ROOT", "DD", "DS", "S", "ST");
+            // MACHINE and shared DF/DD/DS/DC/S/ST records may be read; nothing of the project's own.
+            assertThat(booted.store().readsBeforeRoot()).isNotEmpty().doesNotContainAnyElementsOf(List.of("MOD", "RT", "F", "C", "X", "RS", "LROOT"));
+            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "ROOT", "DD", "DS", "DC", "DF", "S", "ST");
             var events = booted.store().events();
             assertThat(events.indexOf("sync")).as("sync once, then the root").isLessThan(events.indexOf("putLocalRoot"));
             assertThat(events.stream().filter("sync"::equals).count()).isEqualTo(1);
@@ -1417,8 +1417,11 @@ class LocalColdBootTest {
                 var result = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, workers, repository, ClassFacts::of)
                         .run(store, model);
                 assertThat(result.faults()).isEmpty();
-                // JDK is common to both root modules; AB is inherited from common, X is shared by two children, T added by test.
-                watched.forEach((location, count) -> assertThat(count.get()).as("owner tree opens for %s with %s workers", location, workers).isEqualTo(1));
+                // JDK/AB never move in these routes. X and T are also read when their insertion changes DC.
+                assertThat(watched.get(jdkLocation).get()).as("shared JDK O opens").isOne();
+                assertThat(watched.get(Fixtures.LIB_AB_14).get()).as("inherited AB O opens").isOne();
+                assertThat(watched.get(Fixtures.LIB_X).get()).as("one fold and two route insertions").isEqualTo(3);
+                assertThat(watched.get(Fixtures.LIB_T).get()).as("one fold and one route insertion").isEqualTo(2);
                 assertThat(result.timings().externalFolds()).isEqualTo(4);
                 if (serial == null) serial = result.root();
                 else assertThat(result.root()).as("ancestry and exact-set reuse preserve deterministic roots under parallel execution").isEqualTo(serial);

@@ -87,6 +87,24 @@ class Stage2Measurement {
         report.append(String.format("workers=%d wall=%d ms  (jars indexed on the spot: %d; nodes written: %d; faults: %d)%n", workers, result.wallMillis(), result.indexedOnTheSpot(), result.nodes(), result.faults().size()));
         report.append(String.format("header compile: %d ms summed over jobs = %.0f ms per thousand files%n", t.headerCompileMillis(), 1000.0 * t.headerCompileMillis() / Math.max(1, result.sourceFiles())));
         report.append(String.format("facts (Φ_src): %d ms; definer indexes: %d ms for %d distinct leaf sets over %d routes%n", t.factsMillis(), t.definerIndexMillis(), result.distinctLeafSets(), result.modules() * 2));
+        report.append(String.format("definer work: O opens=%d, DF cache hits=%d, DC cache hits=%d, DC builds=%d, DC node emissions=%d%n",
+                t.definerOwnerOpens(), t.definerCacheHits(), t.conflictCacheHits(), t.conflictBuilds(), t.conflictNodeWrites()));
+        report.append(String.format("delta work: leaf-set entries compared=%d, DC applies=%d, DC O opens=%d, DC touched types=%d%n",
+                t.leafSetEntriesCompared(), t.conflictApplies(), t.conflictOwnerOpens(), t.conflictTouched()));
+        var repeated = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, workers, MavenProjectTest.repository(), ClassFacts::of).run(machine, parsed);
+        assertThat(repeated.root()).isEqualTo(result.root());
+        var reused = repeated.timings();
+        assertThat(reused.definerOwnerOpens()).isZero();
+        assertThat(reused.conflictBuilds()).isZero();
+        assertThat(reused.conflictNodeWrites()).isZero();
+        assertThat(reused.conflictApplies()).isZero();
+        assertThat(reused.conflictOwnerOpens()).isZero();
+        assertThat(reused.conflictTouched()).isZero();
+        assertThat(reused.leafSetEntriesCompared()).isZero();
+        report.append(String.format("fresh repeated delta work: leaf-set entries compared=%d, DC applies=%d, DC O opens=%d, DC touched types=%d%n",
+                reused.leafSetEntriesCompared(), reused.conflictApplies(), reused.conflictOwnerOpens(), reused.conflictTouched()));
+        report.append(String.format("fresh repeated cold boot: wall=%d ms, O opens=%d, DF cache hits=%d, DC cache hits=%d, DC builds=%d, DC node emissions=%d%n",
+                repeated.wallMillis(), reused.definerOwnerOpens(), reused.definerCacheHits(), reused.conflictCacheHits(), reused.conflictBuilds(), reused.conflictNodeWrites()));
 
         var classStore = new InMemoryLocalStore();
         var maven = MavenProjectTest.outputLeaves(digest, model, work, classStore);

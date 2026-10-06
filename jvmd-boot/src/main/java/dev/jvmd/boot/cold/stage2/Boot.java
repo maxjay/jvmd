@@ -57,6 +57,7 @@ final class Boot implements AutoCloseable {
     /** Common external base for root modules, bound by step 1 before jobs start. */
     List<Identity> jdkLeaves;
     Identity jdkLeafSet;
+    dev.jvmd.core.tree.Root jdkSetRoot;
     /** The bound routes as the jobs wrote them. */
     final Map<String, Route> routes = new ConcurrentHashMap<>();
     final Map<SourceUnit, FileRow> files = new ConcurrentHashMap<>();
@@ -71,6 +72,11 @@ final class Boot implements AutoCloseable {
     final AtomicInteger sourceFiles = new AtomicInteger(), parsedFiles = new AtomicInteger(), sourceLeaves = new AtomicInteger();
     /** Summed over jobs, so with several workers they exceed the wall time: header compilation (parse, enter, member completion), Φ_src, and definer indexes. */
     final AtomicLong headerNanos = new AtomicLong(), factsNanos = new AtomicLong(), definerNanos = new AtomicLong();
+    final AtomicInteger conflictCacheHits = new AtomicInteger(), conflictBuilds = new AtomicInteger();
+    final AtomicLong conflictNodeWrites = new AtomicLong();
+    final AtomicInteger definerCacheHits = new AtomicInteger(), definerOwnerOpens = new AtomicInteger();
+    final AtomicLong leafSetEntriesCompared = new AtomicLong();
+    final AtomicInteger conflictApplies = new AtomicInteger(), conflictOwnerOpens = new AtomicInteger(), conflictTouched = new AtomicInteger();
     private final ConcurrentHashMap<Identity, MachineLeaf> machineLeaves = new ConcurrentHashMap<>();
     private final StubDirectories stubs;
     private final ConcurrentHashMap<String, Optional<String>> systemVersions = new ConcurrentHashMap<>();
@@ -84,7 +90,7 @@ final class Boot implements AutoCloseable {
         this.model = model;
         this.projectKey = projectKey;
         this.repository = repository;
-        this.sink = written.through(store);
+        this.sink = written.throughShared(store);
         this.stubs = new StubDirectories(tree, store, this::leaf);
     }
 

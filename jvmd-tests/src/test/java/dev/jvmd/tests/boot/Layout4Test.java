@@ -88,7 +88,7 @@ class Layout4Test {
         assertThat(reads).contains(annotated.value.k(), annotated.value.oHash());
         var ownerNodes = new HashSet<Identity>();
         reach(annotated.value.oHash(), annotated, ownerNodes);
-        DefinerIndex.fold(annotated.tree, List.of(annotated.value.k()), null, h -> annotated.value, h -> {
+        DefinerIndex.fold(annotated.tree, List.of(annotated.value.k()), dev.jvmd.index.layer.local.Bind.leafSetRoot(digest, List.of(annotated.value.k()), new NodeSink() { public void write(Node n) { annotated.nodes.put(n.hash(), n.bytes()); } public void flush() { } }), null, h -> annotated.value, h -> {
             assertThat(ownerNodes).as("definer fold reads only O").contains(h);
             return annotated.nodes.get(h);
         });
@@ -253,10 +253,10 @@ class Layout4Test {
         assertThat(rangeDelta).as("delta oSum equals the sum of touched member ranges").isEqualTo(rDelta);
 
         var leaves = Map.of(before.value.k(), before.value, after.value.k(), after.value);
-        var state = DefinerIndex.fold(tree, List.of(before.value.k()), null, leaves::get, nodes::get);
+        var state = DefinerIndex.fold(tree, List.of(before.value.k()), dev.jvmd.index.layer.local.Bind.leafSetRoot(digest, List.of(before.value.k()), sink), null, leaves::get, nodes::get);
         var dd0 = DefinerIndex.disjoint(digest, tree, state, nodes::get, sink);
         state.disjoint(dd0);
-        var edited = DefinerIndex.fold(tree, List.of(after.value.k()), state, leaves::get, nodes::get);
+        var edited = DefinerIndex.fold(tree, List.of(after.value.k()), dev.jvmd.index.layer.local.Bind.leafSetRoot(digest, List.of(after.value.k()), sink), state, leaves::get, nodes::get);
         var dd1 = DefinerIndex.disjoint(digest, tree, edited, nodes::get, sink);
         conserved(tree, dd0, dd1, nodes, sink);
     }

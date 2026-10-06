@@ -2,8 +2,7 @@ package dev.jvmd.boot.cold.stage2;
 
 import dev.jvmd.core.hash.Identity;
 import dev.jvmd.index.layer.local.DefinerIndex;
-import java.util.HashSet;
-import java.util.Set;
+import dev.jvmd.core.tree.Root;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -22,11 +21,11 @@ final class IndexMemo {
 
     private record Key(Kind kind, Identity key) { }
 
-    record States(DefinerIndex.State external, DefinerIndex.State sibling) { }
+    record States(DefinerIndex.State external, DefinerIndex.State sibling, Root route, Root conflicts) { }
 
     private final ConcurrentHashMap<Key, CompletableFuture<DefinerIndex.State>> folds = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, States> routes = new ConcurrentHashMap<>();
-    private final Set<Identity> conflicts = new HashSet<>();
+    private final ConcurrentHashMap<Identity, CompletableFuture<Root>> conflicts = new ConcurrentHashMap<>();
     private final AtomicInteger externalFolds = new AtomicInteger(), siblingFolds = new AtomicInteger();
 
     /**
@@ -48,7 +47,7 @@ final class IndexMemo {
         }
     }
 
-    /** Published only after both disjoint roots can be read by a dependent job. */
+    /** Published only after the disjoint, leaf-set, ordered-route and conflict roots can be read by a dependent job. */
     void route(String route, States states) { routes.put(route, states); }
 
     States route(String route) {
@@ -57,8 +56,20 @@ final class IndexMemo {
         return states;
     }
 
-    /** True the first time it is asked for this route in this boot: the caller then builds and writes its conflict table. */
-    synchronized boolean claimConflicts(Identity routeHash) { return conflicts.add(routeHash); }
+    /** Publish a readable conflict root once per exact ordered route, propagating failures to every waiter. */
+    Root conflicts(Identity routeHash, Supplier<Root> build) {
+        var mine = new CompletableFuture<Root>();
+        var existing = conflicts.putIfAbsent(routeHash, mine);
+        if (existing != null) return existing.join();
+        try {
+            var root = build.get();
+            mine.complete(root);
+            return root;
+        } catch (RuntimeException | Error failed) {
+            mine.completeExceptionally(failed);
+            throw failed;
+        }
+    }
 
     /** How many distinct leaf sets have an index, external and sibling: the {@code U} of the cost model (7.2). */
     int distinctLeafSets() { return folds.size(); }

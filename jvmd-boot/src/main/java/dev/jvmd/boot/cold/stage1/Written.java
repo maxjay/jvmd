@@ -14,23 +14,42 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class Written {
     private final Set<Identity> hashes = ConcurrentHashMap.newKeySet();
+    private final java.util.Map<Identity, Node> pending = new java.util.LinkedHashMap<>();
     private final AtomicLong nodes = new AtomicLong();
     private final AtomicLong produced = new AtomicLong();
 
     /** The sink every tree of this boot writes through: it drops a node whose hash was already written. */
     public NodeSink through(MachineStore store) {
-        return through(store, "unlabelled");
+        return through(store, "unlabelled", false);
     }
 
-    private NodeSink through(MachineStore store, String tree) {
+    /** For stages that read shared roots before all jobs finish: any flush publishes every claimed node. */
+    public NodeSink throughShared(MachineStore store) {
+        return through(store, "unlabelled", true);
+    }
+
+    private NodeSink through(MachineStore store, String tree, boolean shared) {
         return new NodeSink() {
             @Override public void write(Node node) {
                 store.nodeBuilt(tree, node);
                 produced.incrementAndGet();
-                if (hashes.add(node.hash())) { nodes.incrementAndGet(); store.write(node); }
+                if (!shared) {
+                    if (hashes.add(node.hash())) { nodes.incrementAndGet(); store.write(node); }
+                } else synchronized (pending) {
+                    if (hashes.add(node.hash())) { nodes.incrementAndGet(); pending.put(node.hash(), node); }
+                }
             }
-            @Override public void flush() { store.flush(); }
-            @Override public NodeSink named(String name) { return through(store, name); }
+            @Override public void flush() {
+                if (!shared) { store.flush(); return; }
+                // A duplicate can have been produced by another worker. Drain the shared node batch
+                // before publishing any root, rather than flushing only this worker's earlier nodes.
+                synchronized (pending) {
+                    for (var node : pending.values()) store.write(node);
+                    store.flush();
+                    pending.clear();
+                }
+            }
+            @Override public NodeSink named(String name) { return through(store, name, shared); }
         };
     }
 

@@ -41,6 +41,8 @@ final class InMemoryLocalStore implements LocalStore {
     }
 
     @Override public void put(byte[] key, byte[] value) {
+        if (dev.jvmd.index.layer.local.ReverseIndex.isHeaderKey(key))
+            throw new IllegalArgumentException("Current reverse keys are published with LROOT");
         if (key[0] != 'N') recordWrites.add(key);
         pending.get().add(new byte[][] {key, value});
     }
@@ -59,7 +61,7 @@ final class InMemoryLocalStore implements LocalStore {
         synchronized (records) { return records.get(key); }
     }
 
-    private static final List<String> LOCAL_TAGS = List.of("LROOT", "SL", "AL", "MOD", "RT", "F", "DD", "DS", "DC", "C", "X", "RS", "CF", "U", "OUT", "MAT", "BROOT", "ST", "S", "PROC", "PD", "PDIAG", "PS", "PG", "PM", "RES", "GEN", "GS");
+    private static final List<String> LOCAL_TAGS = List.of("LROOT", "SL", "AL", "MOD", "RT", "F", "DD", "DS", "DC", "DF", "C", "X", "RS", "CF", "U", "OUT", "MAT", "BROOT", "ST", "S", "PROC", "PD", "PDIAG", "PS", "PG", "PM", "RES", "GEN", "GS");
 
     @Override public void forEachKey(byte[] prefix, java.util.function.Consumer<byte[]> action) {
         events.add("prefix:" + kindOf(prefix));
@@ -97,10 +99,13 @@ final class InMemoryLocalStore implements LocalStore {
 
     @Override public void putRoot(byte[] value) { synchronized (records) { records.put(MachineStore.ROOT_KEY, value); } }
 
-    @Override public void putLocalRoot(Identity projectKey, byte[] value) {
+    @Override public void putLocalRoot(dev.jvmd.core.hash.Digest digest, Identity projectKey, byte[] value) {
         events.add("putLocalRoot");
         synchronized (records) {
             var previous = records.get(LocalStore.localRootKey(projectKey));
+            for (var mutation : dev.jvmd.index.layer.local.ReverseIndex.publication(digest, this, previous, value)) {
+                if (mutation[1] == null) records.remove(mutation[0]); else records.put(mutation[0], mutation[1]);
+            }
             if (previous != null) {
                 int n = 1;
                 while (records.containsKey(LocalStore.localRootHistoryKey(projectKey, n))) n++;

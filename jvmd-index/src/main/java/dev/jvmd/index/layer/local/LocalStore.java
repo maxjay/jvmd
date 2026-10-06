@@ -12,8 +12,9 @@ import dev.jvmd.index.layer.machine.MachineStore;
  * <p>One put and one get, over keys from the layout below: a record kind is a key function, not a method. {@link #put} buffers in the
  * calling thread's batch and is committed by {@link #flush()}, as stage 1's. {@link #putLocalRoot} commits at once and is called only
  * after {@link #sync()}. Stage 2 itself reads only MACHINE's records ({@code L|}, {@code N|}, {@code P|}, {@code ROOT}) and the shared,
- * derivable ones ({@code DD|}, {@code DS|}, {@code S|}, {@code ST|}, {@code GEN|}, {@code GS|}), and the byte-keyed processor capability
+ * derivable ones ({@code DF|}, {@code DD|}, {@code DS|}, {@code DC|}, {@code S|}, {@code ST|}, {@code GEN|}, {@code GS|}), and the byte-keyed processor capability
  * record ({@code PROC|}) before its root; the others are for warm boot and attribution. PROC retains observed violations across boots.
+ * Root publication alone reads the previous root to reconcile the current header reverse index.
  */
 public interface LocalStore extends MachineStore {
     /** Buffers one record under {@code key}. */
@@ -25,8 +26,8 @@ public interface LocalStore extends MachineStore {
     /** Visit keys beginning with this exact prefix, in store order; seek directly to the prefix, never scan the record universe. */
     void forEachKey(byte[] prefix, java.util.function.Consumer<byte[]> action);
 
-    /** Commits at once. The previous root of this project, if any, is kept under {@code LROOT|projectKey|n} (9.1). */
-    void putLocalRoot(Identity projectKey, byte[] value);
+    /** Atomically commits the current reverse delta and root, retaining the previous root under {@code LROOT|projectKey|n}. */
+    void putLocalRoot(dev.jvmd.core.hash.Digest digest, Identity projectKey, byte[] value);
 
     /** Commits BROOT and its previous-root history in one atomic write, after sync. Never changes LROOT. */
     void putBodiesRoot(Identity projectKey, byte[] value);
@@ -76,6 +77,7 @@ public interface LocalStore extends MachineStore {
     static byte[] bodiesRootHistoryKey(Identity projectKey, int n) {
         return join("BROOT|", projectKey.view(), "|", new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes());
     }
+    static byte[] definerStateKey(Identity leafSet) { return join("DF|", leafSet.view()); }
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }
     static byte[] stubTypeKey(Identity stKey) { return join("ST|", stKey.view()); }
     static byte[] generatedKey(Identity derivation) { return join("GEN|", derivation.view()); }

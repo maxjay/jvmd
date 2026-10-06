@@ -33,7 +33,7 @@ class BodyGenerationTest {
         var sorted=records();sorted.putAll(values);sorted.forEach(store::put);store.flush();
         var root=tree.build(sorted.entrySet().stream().map(e->new Entry(e.getKey(),Entry.NONE,tree.digest().hash(e.getValue()))).toList(),store);
         store.flush();store.sync();
-        store.putLocalRoot(project,LocalRoot.encode(tree.digest(),"fixture;local=11",root,project,project));
+        store.putLocalRoot(tree.digest(),project,LocalRoot.encode(tree.digest(),"fixture;local=11",root,project,project));
         return new State(tree,store,project,LocalRoot.decode(tree.digest(),store.get(LocalStore.localRootKey(project))));
     }
     private void sameTree(State state,Root actual,Map<byte[],byte[]> values) {
@@ -140,7 +140,7 @@ class BodyGenerationTest {
         var encodedLocal=LocalRoot.encode(digest,local.format(),local.local(),local.machineRoot(),local.modelHash());byte[] first;
         var key=LocalStore.proofKey(project, Stage2Support.source("A.java"));
         try(var store=disk.openLocal()) {
-            store.putLocalRoot(project,encodedLocal);
+            store.putLocalRoot(digest,project,encodedLocal);
             first=BodyGeneration.begin(tree,store,project,local).commit(Map.of(key,new byte[]{2})).encode();
         }
         try(var store=disk.openLocal()) {

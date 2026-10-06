@@ -197,7 +197,7 @@ public final class BodyGeneration implements LocalStore {
     @Override public void putAnnotationLeaf(Identity id,byte[] bytes) {throw new UnsupportedOperationException("Stage 3 does not write MACHINE");}
     @Override public void putPath(String path,byte[] bytes) {throw new UnsupportedOperationException("Stage 3 does not write MACHINE");}
     @Override public void putRoot(byte[] bytes) {throw new UnsupportedOperationException("Stage 3 does not write MACHINE");}
-    @Override public void putLocalRoot(Identity project,byte[] bytes) {throw new UnsupportedOperationException("Stage 3 does not write LOCAL");}
+    @Override public void putLocalRoot(dev.jvmd.core.hash.Digest digest, Identity project,byte[] bytes) {throw new UnsupportedOperationException("Stage 3 does not write LOCAL");}
     @Override public void putBodiesRoot(Identity project,byte[] bytes) {throw new UnsupportedOperationException("Use commit");}
     @Override public void sync() {throw new UnsupportedOperationException("Use commit");}
     @Override public boolean hasRoot() {return store.hasRoot();}

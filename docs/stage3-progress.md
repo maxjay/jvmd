@@ -1102,3 +1102,26 @@ Inspection of native module resolution found that the read oracle flattened desc
 The diagnostic run `stage3-read-oracle-module-kind.log` passes **161 tests, zero failures/errors/skips**, in **1m05s**. Its 500 traces contain 4,872 ordinary loaded-class observations and 18,340 descriptor observations, which together equal the earlier 23,212 flattened loads. The 2,138 external absences, 342 predefined absences and **21,886 uncovered observations / 190 distinct observations** are unchanged. The [module-kind inventory](measurements/stage3-native-module-kind-oracle.txt) preserves both descriptor names and all uncovered observations. The separate strict captured-variable fixture still fails both digest cases (`stage3-read-oracle-module-kind-strict.log`); no observation has been admitted merely by relabeling it.
 
 Production sources remain at c72edfaa, with its 713-test regression and whole-project byte evidence above. Module descriptor validation needs exact module-qualified header observations; the existing unqualified type proof cannot represent distinct dependencies' module-info entries. This discovery changes neither the zero-body descriptor emission inputs nor the unfinished status of the module-validation and read-coverage gates.
+
+
+### PR #61 review closeout, 2026-10-06
+
+The review at `66d27412dcb7ce559acda2e3f0a6e3a1352aad9b` exposed a real route-only missed-consumer bug. All seven findings are addressed in this follow-up: distinct semantic delta domains and exact provider Diff; current raw header keys atomically published with LROOT; lazy persisted DF multimap/projection roots; exact DC cache reuse; conflict apply from ordered-route ancestry; and persistent leaf-set trees. LOCAL is now 5. The earlier notes accepting stale raw prefix scans and temporary-only fold state are superseded.
+
+The controlled regressions also found and fixed cross-worker node publication for Stage 2 without changing Stage 1 streaming. The final gate passed 292 tests in 3m00s, with all 501 Java sources frozen, exact source/class k in 26/26 scopes and no annotation differences/faults under both digests. Fresh repeated boots hit 22 DF and 22 DC records with zero fold O opens, leaf-set comparisons, conflict builds/applies/O opens/touched entries/node emissions. Reverse churn leaves one current prefix hit and zero LOCAL reads after 6,000 retired consumers in memory and Rocks.
+
+See [the review closeout](stage2-pr61-review-closeout.md) and `docs/measurements/stage2-review61-*` for the contracts, command and measured limits. The Downloads Stage 2 document received the same scheduler changes while preserving its later parser-5 Java String amendment. The later Stage 3 branch's module descriptor, diagnostic and processor work remains unfinished and must retain its own subsequent format versions when these fixes are integrated. PR #61 merge still depends on hosted checks for the pushed fix commit.
+
+
+
+### PR #61 merged and integrated into Stage 3, 2026-10-06
+
+PR #61 merged as `33a9032d0a22f87f2ee306f5e2d935190db6b691` at 16:48 UTC, after both [Tests](https://github.com/maxjay/jvmd/actions/runs/37497035261) and [benchmarks](https://github.com/maxjay/jvmd/actions/runs/37497035519) passed on exact head `aead8ee60969f27d79a85396136a388d2c006731`. All seven review findings are closed by the committed regressions and cost counters.
+
+Stage 3 integrates the same changes while preserving SourceUnit(module, scope, path), processor records/history, native module facts/lint and zero-body descriptor emission. Its **LOCAL 19** and **X|H19|** namespace isolate the scoped suffix; MACHINE parser 6 and bodies 7 remain unchanged. The body reverse namespace still uses BROOT membership and is outside this header-index correction.
+
+The integrated frozen gate passed **730 tests**, no failures/errors/skips, in **5m56s**, with all **575 Java sources** verified unchanged. Both digests match source/class k in all 26 scopes, with no annotation differences/faults; repeated cold boots have 22 DF/22 DC hits and zero fold O opens, leaf-set comparisons or conflict reconstruction. [Validation and command](measurements/stage3-review61-integration.txt) and both measurement reports are committed. The focused merge-boundary run passed 46 tests before the full gate.
+
+The Stage 3 specification and Downloads authority are byte-identical (SHA-256 `93255c5f3674f5335ce84ee21c0369832b12e81732e211f81f6c083f11ad5af3`). The Stage 2 authority and integrated snapshot also agree (`5e5a6361bc945f0b95d1e31606b46dbfd77464a895a9b33bb43d99c2ce98a656`). These add the review contracts without discarding the later module/processor amendments.
+
+PR #62 remains a draft. The independent whole-project diagnostic and strict two-sided read oracles still have the previously recorded open failures; this integration does not claim to resolve them. Native module validation, processor-view/query completeness, body reverse publication and the remaining Stage 3 invariants remain ongoing work.

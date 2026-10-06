@@ -26,7 +26,7 @@ public final class Bind {
 
     /**
      * session over built over default. The list of bound {@code k} becomes a {@link ContentList}: {@code routeHash} is its root hash,
-     * {@code R} its root sum ({@code Σ r}). {@code leafSetExt} and {@code leafSetSib} are the digests of the sorted distinct external
+     * {@code R} its root sum ({@code Σ r}). {@code leafSetExt} and {@code leafSetSib} are the Merkle hashes of canonical external
      * and sibling {@code k}. An entry with no binding (a jar whose file is missing) is left out of the sequence; a sibling entry whose
      * module has not been built is a bug in the build order and throws.
      */
@@ -56,18 +56,27 @@ public final class Bind {
         var root = list.finish();
         var external = distinct(bindings, false);
         var sibling = distinct(bindings, true);
-        return new Bound(List.copyOf(bindings), List.copyOf(sequence), root.hash(), root.sum(), leafSet(digest, external), leafSet(digest, sibling), external, sibling);
+        var externalRoot = leafSetRoot(digest, external, sink);
+        var siblingRoot = leafSetRoot(digest, sibling, sink);
+        return new Bound(List.copyOf(bindings), List.copyOf(sequence), root.hash(), root.sum(), externalRoot.hash(), siblingRoot.hash(),
+                external, sibling, root, externalRoot, siblingRoot);
     }
 
     private static List<Identity> distinct(List<Bound.Binding> bindings, boolean sibling) {
         return bindings.stream().filter(b -> (b.origin() == Bound.Origin.SIBLING) == sibling).map(Bound.Binding::k).distinct().sorted().toList();
     }
 
-    /** {@code Digest(sort(distinct(k)))} over the unsigned bytes: the same for any order of the same leaves, and a leaf listed twice is one leaf. */
+    /** Canonical leaf-set hash: independent of order and repeated membership. */
     public static Identity leafSet(Digest digest, List<Identity> leaves) {
-        var sorted = leaves.stream().distinct().sorted().toList();
-        var hasher = digest.hasher();
-        for (var k : sorted) { var bytes = k.view(); hasher.update(bytes, 0, bytes.length); }
-        return hasher.finish();
+        return leafSetRoot(digest, leaves, new NodeSink() {
+            public void write(dev.jvmd.core.tree.Node node) { }
+            public void flush() { }
+        }).hash();
+    }
+
+    /** Canonical persistent set: k -> empty, h=H(k). Its Merkle root is the identity; its sum is not a proof. */
+    public static dev.jvmd.core.tree.Root leafSetRoot(Digest digest, List<Identity> leaves, NodeSink sink) {
+        return new dev.jvmd.core.tree.ContentTree(digest).build(leaves.stream().distinct().sorted()
+                .map(k -> new dev.jvmd.core.tree.Entry(k.bytes(), dev.jvmd.core.tree.Entry.NONE, digest.hash(k.view()))).toList(), sink);
     }
 }

@@ -1,0 +1,26 @@
+Stage 3 integration of PR #61 — 2026-10-06
+Stage 3 parent: 2e0b63822d95315b5eeae3811c6f488ec1afa9ba
+Integrated fix: aead8ee60969f27d79a85396136a388d2c006731
+PR #61 merged as: 33a9032d0a22f87f2ee306f5e2d935190db6b691
+
+730 tests passed, 0 failures/errors/skips, 5m56s.
+575 Java paths frozen and verified byte-identical across the gate.
+Freeze manifest SHA-256: 1fd37a8057631a2fa8466bc0ef69a02c3d1580b36b917c60dff04ec28681c3ab
+JDK 25.0.4.1+1; Maven 3.9.16; Windows; 4 Stage 2 workers.
+
+mvn -B -pl jvmd-tests -am test -Dtest=DefinerStateTest,MachineColdBootTest,ClassMemoTest,ContentTreeTest,ContentTreeEditTest,ZipReaderTest,RocksMachineBootTest,LocalColdBootTest,LocalCodecsTest,FactCodecsTest,RocksLocalBootTest,Layout4Test,HeaderAbsencesTest,HeaderReverseTest,HeaderEnvironmentTest,SourceAnnotationProjectionTest,TailStrippingTest,StubProjectionTest,PersistedLeavesTest,MavenProjectTest,Stage2Measurement,GeneratedOutputsTest,ProcessorConfigurationTest,ProcessorDiagnosticsTest,ProcessorEmptyOutputTest,ProcessorHostTest,ProcessorModelTest,ProcessorProjectionTest,ProcessorReadTest,ProcessorReplayTest,ProcessorRoundsTest,ProcessorStage2Test,ProcessorPlanTest,ProcessorSourcesTest,BodyProofTest,BodyRecordsTest,BodyReverseTest,BodyPoolTest,BodyOutputTest,BodyCollectorTest,BodyAttributeTest,BodyProcessorTest,ProcessorCaptureTest,ProcessedAttributeTest,BodyGenerationTest,Stage3Test,ModuleDescriptorTest,ModuleArchitectureTest,ForbiddenIdentifiersTest,ScopeDiagnosticsTest,ColdProjectBootTest,ProcessorHistoryTest,ModuleAnnotationProjectionTest,ModuleDerivationTest,ReadOracleCoverageTest,ModuleHeaderLintTest,CurrentReverseTest -DexcludedGroups=none -Djvmd.stage2.workers=4 -Dsurefire.failIfNoSpecifiedTests=false
+
+Source/class k: 26/26 scopes, both digests; no annotation differences or faults.
+Repeated cold boot: DF hits=22, DC hits=22; fold O opens=0; leaf-set comparisons=0;
+DC builds/applies/O opens/touched types/node emissions all zero.
+Reports: stage3-review61-integration-SHA-256.txt and stage3-review61-integration-SHA3-256.txt.
+
+Integration preserves SourceUnit(module,scope,path), processor records/admission history,
+native module annotations/lint and exact zero-body descriptor derivation.
+LOCAL 19 with X|H19| isolates the scoped current header namespace from older raw history
+and Stage 2-only X|H5| suffixes. MACHINE parser 6 and bodies 7 remain unchanged.
+Body reverse records still use BROOT membership; that separate path is not claimed fixed here.
+
+This is regression validation, not completion of the independent whole-project or strict
+read-set oracles. Their previously recorded missing automatic-module warning, module
+validation and uncovered observations remain open. PR #62 remains a draft.

@@ -41,7 +41,11 @@ class BodyReverseTest {
         publish(digest, tree, store, b, List.of(named, absent));
         // A raw stale key and a header key with the same spelling are not body consumers.
         store.put(ReverseIndex.bodyKey(method, a, Stage2Support.source("stale/Old.java")), Entry.NONE);
-        store.put(method.key(a, Stage2Support.source("header/Only.java")), Entry.NONE);
+        var header = method.key(a, Stage2Support.source("header/Only.java"));
+        var headerRoot = tree.build(List.of(new Entry(header, Entry.NONE, digest.hash(Entry.NONE))), store);
+        store.flush();
+        store.putLocalRoot(digest, a, LocalRoot.encode(digest,
+                LocalFormat.of(dev.jvmd.index.layer.machine.Format.of(digest, Runtime.version().feature())), headerRoot, a, a));
         store.put(new Codec.Writer().raw(ReverseIndex.bodyPrefix(method)).id(a).zstr("legacy/Old.java").toBytes(), Entry.NONE);
         store.flush();
         var t = delta(digest, tree, store, Keys.memberKey("q/Base", Keys.METHOD, "get", "()Ljava/lang/Number;"), true);
@@ -84,7 +88,8 @@ class BodyReverseTest {
         var dependency=new ReverseIndex.Dependency(ReverseIndex.T,"p/T",Keys.METHOD,"x");
         String format=LocalFormat.of(dev.jvmd.index.layer.machine.Format.of(digest,Runtime.version().feature()))
                 .replace(";local="+LocalFormat.LAYOUT+";",";local=12;");
-        byte[] header=new Codec.Writer().raw(dependency.prefix()).id(project).zstr("same/Source.java").toBytes();
+        byte[] header=new Codec.Writer().raw(new byte[]{'X','|','H','|'}).u8(dependency.form())
+                .zstr(dependency.type()).u8(dependency.kind()).zstr(dependency.name()).id(project).zstr("same/Source.java").toBytes();
         byte[] body=new Codec.Writer().raw(ReverseIndex.bodyPrefix(dependency)).id(project).zstr("same/Source.java").toBytes();
         store.put(header,Entry.NONE);store.put(body,Entry.NONE);
         var local=tree.build(List.of(new Entry(header,Entry.NONE,digest.hash(Entry.NONE))),store);

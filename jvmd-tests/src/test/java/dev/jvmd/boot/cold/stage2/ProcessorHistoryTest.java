@@ -38,7 +38,7 @@ class ProcessorHistoryTest {
         try (var store = generation.openLocal()) {
             var root = tree.build(List.of(), store); store.flush(); store.sync();
             local = LocalRoot.encode(digest, LocalFormat.of(format), root, project, project);
-            store.putLocalRoot(project, local);
+            store.putLocalRoot(digest, project, local);
             store.observeProcessor(nextBytes, "fixture.Processor", overlay);
             store.observeProcessor(firstBytes, "fixture.Other", overlay);
             try (var threads = java.util.concurrent.Executors.newFixedThreadPool(3)) {

@@ -19,15 +19,18 @@ public class ReadOracleInstrumentationTest {
         assertThat(System.getProperty("jvmd.readOracle.active")).isEqualTo("true");
         var compiler = ToolProvider.getSystemJavaCompiler();
         var base = directory.resolve("Base.java");
-        Files.writeString(base, "package q; public class Base {}");
+        Files.writeString(base, "package q; public class Base { public static int inherited(){return 1;} }");
+        var child = directory.resolve("Child.java");
+        Files.writeString(child, "package q; public class Child extends Base {}");
         var dependencies = Files.createDirectories(directory.resolve("dependencies"));
-        assertThat(compiler.run(null, null, null, "-proc:none", "-d", dependencies.toString(), base.toString())).isZero();
+        assertThat(compiler.run(null, null, null, "-proc:none", "-d", dependencies.toString(), base.toString(), child.toString())).isZero();
         var source = directory.resolve("App.java");
         Files.writeString(source, """
                 package p;
                 class App {
                     Object field() { return q.Base.noField; }
                     Object method() { return q.Base.noMethod(); }
+                    int inherited() { return q.Child.inherited(); }
                     q.Base.Nested nested;
                     q.Missing absent;
                 }
@@ -43,7 +46,9 @@ public class ReadOracleInstrumentationTest {
         assertThat(trace.absent()).contains(new ReadOracleTrace.Missing("D", "q/Missing", ""),
                 new ReadOracleTrace.Missing("N", "q/Base", "Nested"),
                 new ReadOracleTrace.Missing("FIELD", "q/Base", "noField"),
-                new ReadOracleTrace.Missing("METHOD", "q/Base", "noMethod"));
+                new ReadOracleTrace.Missing("METHOD", "q/Base", "noMethod"),
+                new ReadOracleTrace.Missing("METHOD", "q/Child", "inherited"))
+                .doesNotContain(new ReadOracleTrace.Missing("METHOD", "q/Base", "inherited"));
         ReadOracleTrace.begin(new Row("p/App.java", List.of("p/App")));
         ReadOracleTrace.suspend();
         compiler.run(null, null, errors, "-proc:none", "-classpath", dependencies.toString(), source.toString());

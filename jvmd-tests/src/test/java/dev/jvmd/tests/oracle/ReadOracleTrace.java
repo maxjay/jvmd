@@ -11,9 +11,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
-/** Bootstrap-visible tap: detached strings only, with no dependency on JVMD's collector or tree implementation. */
+/** Bootstrap-visible tap: completed traces are detached, with no dependency on JVMD's collector or tree implementation. */
 public final class ReadOracleTrace {
     private static final ThreadLocal<Trace> CURRENT = new ThreadLocal<>();
+    private static final ThreadLocal<Snapshot> PENDING = new ThreadLocal<>();
     private static final Object REPORT_LOCK = new Object();
     private static final Set<String> INSTALLED = java.util.concurrent.ConcurrentHashMap.newKeySet();
     public static void installed(String name) { INSTALLED.add(name); }
@@ -25,14 +26,30 @@ public final class ReadOracleTrace {
     private static final class Trace {
         final String file;
         final Set<String> own;
+        final boolean poolOnly;
         final Set<String> loaded = new TreeSet<>();
         final Set<Missing> absent = new TreeSet<>();
+        final Set<Object> nonemptyIterators = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         int suspended;
-        Trace(Object row) { file = call(row, "path").toString(); own = new TreeSet<>(strings(call(row, "typeKeys"))); }
+        Trace(Object row) { file = call(row, "path").toString(); own = new TreeSet<>(strings(call(row, "typeKeys"))); poolOnly = false; }
+        Trace(String file) { this.file = file; own = Set.of(); poolOnly = true; }
         boolean own(String type) { return own.contains(type); }
     }
 
-    public static void begin(Object row) { CURRENT.set(new Trace(row)); }
+    public static void begin(Object row) { PENDING.remove(); CURRENT.set(new Trace(row)); }
+    public static void beginPool(Object file) {
+        PENDING.remove();
+        if (CURRENT.get() == null) CURRENT.set(new Trace(fileProperty(file, "getName")));
+    }
+    public static void endPool() {
+        var trace = CURRENT.get();
+        if (trace != null && trace.poolOnly) PENDING.set(finish());
+    }
+    public static void arranged(Object body) {
+        var trace = PENDING.get(); PENDING.remove();
+        if (trace != null) report(trace, call(body, "proof"));
+    }
+    public static void abort() { CURRENT.remove(); PENDING.remove(); }
     public static Snapshot finish() {
         var trace = CURRENT.get(); CURRENT.remove();
         if (trace == null) throw new AssertionError("Read oracle did not start");
@@ -72,9 +89,26 @@ public final class ReadOracleTrace {
         trace.absent.add(new Missing(form, owner, name.toString()));
     }
 
+    /** Observe the iterator that javac itself consumed, including an empty child scope before a successful inherited lookup. */
+    public static boolean methodScope(Object iterator, boolean hasNext, Object scope, Object name) {
+        var trace = CURRENT.get();
+        if (trace == null || trace.suspended != 0) return hasNext;
+        if (hasNext) trace.nonemptyIterators.add(iterator);
+        else if (!trace.nonemptyIterators.remove(iterator)) {
+            var owner = field(scope, "owner");
+            if (owner != null && owner.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol")
+                    && !trace.own(binary(owner)) && !fileKind(field(owner, "classfile")).equals("SOURCE"))
+                trace.absent.add(new Missing("METHOD", binary(owner), name.toString()));
+        }
+        return hasNext;
+    }
+
     public static void end(Object computed) {
-        var trace = finish();
-        var uncovered = uncovered(call(computed, "proof"), trace.loaded(), trace.absent());
+        report(finish(), call(computed, "proof"));
+    }
+
+    private static void report(Snapshot trace, Object proof) {
+        var uncovered = uncovered(proof, trace.loaded(), trace.absent());
         var lines = new ArrayList<String>();
         lines.add("FILE " + trace.file() + " loaded=" + trace.loaded().size() + " absent=" + trace.absent().size() + " uncovered=" + uncovered.size());
         trace.loaded().forEach(value -> lines.add("LOAD " + value));
@@ -115,11 +149,12 @@ public final class ReadOracleTrace {
     }
 
     private static String binary(Object symbol) { return field(symbol, "flatname").toString().replace('.', '/'); }
-    private static String fileKind(Object file) {
+    private static String fileKind(Object file) { return fileProperty(file, "getKind"); }
+    private static String fileProperty(Object file, String method) {
         if (file == null) return "";
         try { return Class.forName("javax.tools.JavaFileObject", false, ClassLoader.getPlatformClassLoader())
-                .getMethod("getKind").invoke(file).toString(); }
-        catch (ReflectiveOperationException failure) { throw new AssertionError("Oracle class-file kind", failure); }
+                .getMethod(method).invoke(file).toString(); }
+        catch (ReflectiveOperationException failure) { throw new AssertionError("Oracle file property " + method, failure); }
     }
     private static Object field(Object object, String name) {
         try { return object.getClass().getField(name).get(object); }

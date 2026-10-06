@@ -2,7 +2,7 @@
 
 Oct 5, 2026 · @Max
 
-Revision 123, amended 2026-10-06 for the PR #60 reviews: exact stub member identities, qualified package and member-type absences, T/N proof descent, and generation isolation.
+Revision 123, amended 2026-10-06 for the PR #60 reviews: exact stub member identities, qualified package and member-type absences, T/N proof descent, generation isolation, and exact Stage 2 header ranges.
 
 Stage 3 attributes one source file at a time against stubs, writes its class files as content-addressed results, and writes a proof of exactly which identities the result depends on, verified by the same descent of sums that stages 1 and 2 built. Greenfield: nothing under `jvmd-lsp`, `jvmd-analyzer` or the old `jvmd-index` is reference or guidance.
 
@@ -578,7 +578,7 @@ LAYOUT 4 is on `main` with stage 1 and 2 green and invariant 1 of stage 2 at equ
 
 ## Appendix A. LAYOUT 4: the A layer
 
-An amendment to stage 1 (sections 2, 5.4, B.1, B.3, A.4) and stage 2 (3.14, 5.2a, 5.3, 5.4, B.1, B.3, B.5, invariant 1). It lands as its own PR (PR A) before any stage 3 record exists. FORMAT changes; MACHINE and LOCAL cold boot. The corrected Appendix A representation is `layout=4;parser=3` and `local=2`: parser 3 changes the facts for identical class bytes (exact innerName, N keys and warning projection), while LOCAL 2 includes SL/AL recovery and the revised header proofs. A committed `layout=4;parser=2` generation from PR #59 is a different directory and remains untouched. A LOCAL root with `local=1` cannot take the current-format skip branch. No migration or per-record legacy decoding. Stage 2's processor work (the wrapper, the declaration, `RES|`, `PD|`, `GEN|`, generated rows, `processorPathHash` and `-encoding` in the header compile) is appendix F and a second PR (PR B); nothing in this appendix depends on it.
+An amendment to stage 1 (sections 2, 5.4, B.1, B.3, A.4) and stage 2 (3.14, 5.2a, 5.3, 5.4, B.1, B.3, B.5, invariant 1). It lands as its own PR (PR A) before any stage 3 record exists. FORMAT changes; MACHINE and LOCAL cold boot. The corrected Appendix A representation is `layout=4;parser=3` and `local=3`: parser 3 changes the facts for identical class bytes (exact innerName, N keys and warning projection), while LOCAL 3 replaces the LOCAL 2 whole-type header proof with exact T ranges, retaining SL/AL recovery. A committed `layout=4;parser=2` generation from PR #59 is a different directory and remains untouched. A LOCAL root with `local=1` or `local=2` cannot take the current-format skip branch. No migration or per-record legacy decoding. Stage 2's processor work (the wrapper, the declaration, `RES|`, `PD|`, `GEN|`, generated rows, `processorPathHash` and `-encoding` in the header compile) is appendix F and a second PR (PR B); nothing in this appendix depends on it.
 
 ### A.1 What moves
 
@@ -632,6 +632,18 @@ build() -> L as before                            // E root is res-level only; n
 ### A.5 Cost
 
 The same bytes as LAYOUT 3, moved from `T` values to `A` values; one more tree per leaf whose node count is at most `T`'s and in practice far smaller (most members have no annotations). `k` stops moving on annotation edits, so `S|k`, `routeHash` and `DC|` stop moving with it. Stage 1 cold boot cost is unchanged to within the extra tree build.
+
+### A.5a Stage 2 header-range reconciliation (2026-10-06)
+
+A persisted header dependency is `(typeKey, kind, name, sum)`, with `sum = rangeSum(T_definer, groupKey(typeKey, kind, name))` under the own-module-first binding. TYPE selects one type header; FIELD selects a named field range; METHOD selects a named group, or the complete annotation element contract when checking an annotation. Expected-zero member ranges have the same representation as positive reads. Package/type absences remain exact D/O zeros and inherited member-type absences remain exact N `(name, TYPE, directOuter)` zeros. Neither a definer's whole `oSum` nor a containing module identity is the actual read identity.
+
+The LOCAL file codec's header-proof list is `list<(zstr typeKey || u8 kind || zstr name || id sum)>`, followed by `id ownR || list<absence>` as before. `ownR` and DD/DS/DC sums can be validation shortcuts only. Old LOCAL 1/2 file proofs are not decoded into this layout; the LOCAL root requires a cold rebuild.
+
+Collect source reads after declaration completion and before releasing javac's context. The scanner includes annotations, default values, and final primitive/String initializers even when they have no constant value today; private constants can feed exported constants or annotations. Exclude method/initializer bodies and lambdas. Combine these observations with the implicit type headers used by the emitted facts. Record a named field's winning range and empty ranges preceding it, and each hierarchy header actually traversed to reach a further owner. Qualified member-type lookup likewise consumes the intermediate hierarchy headers as well as N absences, stopping on each branch at a direct declaration. An unresolved header name must retain the corresponding expected-zero observations.
+
+Required mutations: unrelated methods of a type-only or constant-field dependency preserve validity; a consumed constant changes it; an intermediate superclass change invalidates an inherited lookup even when old winners and N zeros remain; a newly available type or constant invalidates its old proof; static on-demand field ambiguities invalidate their consumers; annotation element/default changes invalidate annotation checking while unused annotation constant fields do not. Executable-body-only edits preserve every header proof.
+
+The reverse-index reconciliation is separately required before PR B: one empty dependency/project/path record for every positive or expected-zero T/N/D observation, with candidates obtained from Diff and prefix reads. This paragraph does not claim that path-based reverse fan-out or the Stage 3 body-read oracle is implemented.
 
 ### A.6 Tests added to stages 1 and 2 by this amendment
 

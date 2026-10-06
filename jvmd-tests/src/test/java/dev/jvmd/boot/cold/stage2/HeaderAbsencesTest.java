@@ -275,6 +275,136 @@ class HeaderAbsencesTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void typeOnlyHeaderReadsIgnoreUnrelatedMembers(Digest digest) throws Exception {
+        Stage2Support.write(root, Map.of(
+                "dep/src/main/java/q/K.java", "package q; public class K {}",
+                "app/src/main/java/p/B.java", "package p; public class B { q.K field; }"));
+        var before = boot(digest);
+        assertThat(before.result.faults()).isEmpty();
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/K.java", "package q; public class K { public void unrelated() {} }"));
+        var after = boot(digest);
+        assertThat(after.result.faults()).isEmpty();
+        assertThat(row(digest, after, "B").sum()).isEqualTo(row(digest, before, "B").sum());
+        assertThat(valid(digest, row(digest, before, "B"), after)).as("the type header read did not consume K's method set").isTrue();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void constantHeaderReadsDependOnTheFieldAndNotUnrelatedMethods(Digest digest) throws Exception {
+        Stage2Support.write(root, Map.of(
+                "dep/src/main/java/q/K.java", "package q; public class K { public static final int VALUE = 1; }",
+                "app/src/main/java/p/B.java", "package p; public class B { public static final int VALUE = q.K.VALUE; }",
+                "app/src/main/java/p/Imported.java", "package p; import static q.K.VALUE; public class Imported { public static final int COPY = VALUE; }"));
+        var before = boot(digest);
+        assertThat(before.result.faults()).isEmpty();
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/K.java",
+                "package q; public class K { public static final int VALUE = 1; public void unrelated() {} }"));
+        var unrelated = boot(digest);
+        assertThat(unrelated.result.faults()).isEmpty();
+        for (var name : List.of("B", "Imported")) {
+            assertThat(row(digest, unrelated, name).sum()).isEqualTo(row(digest, before, name).sum());
+            assertThat(valid(digest, row(digest, before, name), unrelated)).as("only the actual field and type-header reads are dependencies").isTrue();
+        }
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/K.java",
+                "package q; public class K { public static final int VALUE = 2; public void unrelated() {} }"));
+        var changed = boot(digest);
+        for (var name : List.of("B", "Imported")) {
+            assertThat(row(digest, changed, name).sum()).isNotEqualTo(row(digest, before, name).sum());
+            assertThat(valid(digest, row(digest, before, name), changed)).isFalse();
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void qualifiedLookupAlsoProvesTheIntermediateHierarchy(Digest digest) throws Exception {
+        Stage2Support.write(root, Map.of(
+                "dep/src/main/java/q/Base.java", "package q; public class Base { public static class Inner {} }",
+                "dep/src/main/java/q/Other.java", "package q; public class Other { public static class Inner {} }",
+                "dep/src/main/java/q/Mid.java", "package q; public class Mid extends Base {}",
+                "dep/src/main/java/q/Sub.java", "package q; public class Sub extends Mid {}",
+                "app/src/main/java/p/B.java", "package p; public class B { q.Sub.Inner field; }",
+                "app/src/main/java/p/Imported.java", "package p; import static q.Sub.Inner; public class Imported { Inner field; }"));
+        var before = boot(digest);
+        assertThat(before.result.faults()).isEmpty();
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/Mid.java", "package q; public class Mid extends Other {}"));
+        var after = boot(digest);
+        assertThat(after.result.faults()).isEmpty();
+        for (var name : List.of("B", "Imported")) {
+            assertThat(row(digest, after, name).sum()).isNotEqualTo(row(digest, before, name).sum());
+            assertThat(valid(digest, row(digest, before, name), after))
+                    .as("Base.Inner and the old N zeros still exist, but Mid's type header changed the lookup path").isFalse();
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void anUnresolvedHeaderTypeHasAnExpectedZeroProof(Digest digest) throws Exception {
+        Stage2Support.write(root, Map.of("app/src/main/java/p/B.java", "package p; public class B { Missing field; }"));
+        var before = boot(digest);
+        assertThat(before.result.faults()).isNotEmpty();
+        Stage2Support.write(root, Map.of("dep/src/main/java/p/Missing.java", "package p; public class Missing {}"));
+        var after = boot(digest);
+        assertThat(after.result.faults()).isEmpty();
+        assertThat(valid(digest, row(digest, before, "B"), after)).as("the missing type's arrival changes the header facts/faults").isFalse();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void inheritedConstantsProveNamedFieldZerosAndCompetingStaticImports(Digest digest) throws Exception {
+        Stage2Support.write(root, Map.of(
+                "dep/src/main/java/q/Base.java", "package q; public class Base { public static final int VALUE = 1; }",
+                "dep/src/main/java/q/Sub.java", "package q; public class Sub extends Base {}",
+                "dep/src/main/java/q/Other.java", "package q; public class Other {}",
+                "app/src/main/java/p/B.java", "package p; public class B { public static final int COPY = q.Sub.VALUE; }",
+                "app/src/main/java/p/Imported.java", "package p; import static q.Sub.VALUE; public class Imported { public static final int COPY = VALUE; }",
+                "app/src/main/java/p/OnDemand.java", "package p; import static q.Sub.*; import static q.Other.*; public class OnDemand { public static final int COPY = VALUE; }"));
+        var before = boot(digest);
+        assertThat(before.result.faults()).isEmpty();
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/Sub.java", "package q; public class Sub extends Base { public static final int VALUE = 2; }"));
+        var shadowed = boot(digest);
+        for (var name : List.of("B", "Imported", "OnDemand")) {
+            assertThat(row(digest, shadowed, name).sum()).isNotEqualTo(row(digest, before, name).sum());
+            assertThat(valid(digest, row(digest, before, name), shadowed)).as(name + " consumed Sub's empty field range").isFalse();
+        }
+        Stage2Support.write(root, Map.of(
+                "dep/src/main/java/q/Sub.java", "package q; public class Sub extends Base {}",
+                "dep/src/main/java/q/Other.java", "package q; public class Other { public static final int VALUE = 3; }"));
+        var ambiguous = boot(digest);
+        assertThat(valid(digest, row(digest, before, "OnDemand"), ambiguous)).as("the competing on-demand field becomes ambiguous").isFalse();
+        assertThat(valid(digest, row(digest, before, "Imported"), ambiguous)).as("single static import wins before on-demand lookup").isTrue();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void unresolvedConstantFieldsHaveExpectedZeroRanges(Digest digest) throws Exception {
+        Stage2Support.write(root, Map.of(
+                "dep/src/main/java/q/K.java", "package q; public class K {}",
+                "app/src/main/java/p/B.java", "package p; public class B { public static final int COPY = q.K.VALUE; }",
+                "app/src/main/java/p/OnDemand.java", "package p; import static q.K.*; public class OnDemand { public static final int COPY = VALUE; }"));
+        var before = boot(digest);
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/K.java", "package q; public class K { public static final int VALUE = 1; }"));
+        var after = boot(digest);
+        assertThat(after.result.faults()).isEmpty();
+        for (var name : List.of("B", "OnDemand")) {
+            assertThat(row(digest, after, name).sum()).isNotEqualTo(row(digest, before, name).sum());
+            assertThat(valid(digest, row(digest, before, name), after)).as("missing constant field in " + name).isFalse();
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void annotationsReadTheirDeclarationContractAndNotTheirConstantFields(Digest digest) throws Exception {
+        Stage2Support.write(root, Map.of(
+                "dep/src/main/java/q/Tag.java", "package q; public @interface Tag { int value() default 1; }",
+                "app/src/main/java/p/B.java", "package p; @q.Tag public class B {}"));
+        var before = boot(digest);
+        assertThat(before.result.faults()).isEmpty();
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/Tag.java", "package q; public @interface Tag { int value() default 1; int UNUSED = 2; }"));
+        var unrelated = boot(digest);
+        assertThat(valid(digest, row(digest, before, "B"), unrelated)).isTrue();
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/Tag.java", "package q; public @interface Tag { int value() default 2; int UNUSED = 2; }"));
+        var changed = boot(digest);
+        assertThat(valid(digest, row(digest, before, "B"), changed)).as("annotation defaults are method resolution facts").isFalse();
+        Stage2Support.write(root, Map.of("dep/src/main/java/q/Tag.java", "package q; public @interface Tag { int value() default 1; String required(); }"));
+        var required = boot(digest);
+        assertThat(valid(digest, row(digest, before, "B"), required)).as("a new required element changes annotation checking").isFalse();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void longerPackagePrefixesAreExactAbsencesInHeadersAndImports(Digest digest) throws Exception {
         for (var provider : List.of("dep", "app")) for (var prefix : List.of("q/r", "q/r/s")) {
             Stage2Support.write(root, Map.of(

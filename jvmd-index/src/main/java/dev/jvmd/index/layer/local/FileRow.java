@@ -11,21 +11,23 @@ import java.util.List;
  * key, not part of its value.
  *
  * @param typeKeys    the keys of the types the file declares, as {@code O} keys ({@code zstr internalName})
- * @param headerProof for every type its declaration headers mention (the targets of its {@code E} and {@code EA} edges) that has a definer under the
- *                    binding the file was compiled against, that definer's {@code oSum}. The file's facts are valid while every entry is
- *                    unchanged under the current binding; no {@code k} is in it (3.5)
+ * @param headerProof exact T ranges consumed by declaration attribution, including expected-zero member ranges.
+ *                    The file's facts are valid while those ranges and its absences hold under the current binding.
  */
 public record FileRow(String path, Identity kappa, long size, long mtimeNanos, Identity sum, List<String> typeKeys, List<Fault> faults,
                       List<Proof> headerProof, Identity ownR, List<HeaderProof.Absence> absences) {
     /** One fault: {@code m} is the declaration's key (empty when the whole file is the fault, a parse error) and {@code reason} javac's words. */
     public record Fault(byte[] m, String reason) { }
 
-    /** What a type named in a header resolved to: the key of the type ({@code zstr internalName}, shown here without its NUL) and its resolution sum. */
-    public record Proof(String typeKey, Identity oSum) { }
+    /** A T range and its algebraic sum; TYPE selects the header, FIELD/METHOD select a named group (or the whole kind for empty name). */
+    public record Proof(String typeKey, int kind, String name, Identity sum) {
+        public HeaderProof.Range range() { return new HeaderProof.Range(typeKey, kind, name); }
+    }
 
     /**
      * {@code id κ || u64 size || i64 mtime || id sum || list<zstr> typeKeys || list<(u32 len || m || str reason)> faults ||
-     * list<(zstr typeKey || id oSum)> headerProof || id ownR || list<absence>}. A fault's {@code m} is length-prefixed because a member key contains NUL bytes.
+     * list<(zstr typeKey || u8 kind || zstr name || id sum)> headerProof || id ownR || list<absence>}.
+     * A fault's {@code m} is length-prefixed because a member key contains NUL bytes.
      */
     public byte[] encode() {
         var out = new Codec.Writer(256).id(kappa).u64(size).i64(mtimeNanos).id(sum).u32(typeKeys.size());
@@ -33,7 +35,7 @@ public record FileRow(String path, Identity kappa, long size, long mtimeNanos, I
         out.u32(faults.size());
         for (var f : faults) out.lenBytes(f.m()).str(f.reason());
         out.u32(headerProof.size());
-        for (var p : headerProof) out.zstr(p.typeKey()).id(p.oSum());
+        for (var p : headerProof) out.zstr(p.typeKey()).u8(p.kind()).zstr(p.name()).id(p.sum());
         out.id(ownR).u32(absences.size());
         for (var absence : absences) absence.encode(out);
         return out.toBytes();
@@ -52,7 +54,7 @@ public record FileRow(String path, Identity kappa, long size, long mtimeNanos, I
         for (int i = 0; i < f; i++) faults.add(new Fault(in.lenBytes(), in.str()));
         int p = in.count();
         var proof = new ArrayList<Proof>(p);
-        for (int i = 0; i < p; i++) proof.add(new Proof(in.zstr(), in.id(width)));
+        for (int i = 0; i < p; i++) proof.add(new Proof(in.zstr(), in.u8(), in.zstr(), in.id(width)));
         var ownR = in.id(width);
         int a = in.count();
         var absences = new ArrayList<HeaderProof.Absence>(a);

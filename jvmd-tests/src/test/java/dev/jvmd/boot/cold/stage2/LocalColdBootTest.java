@@ -945,8 +945,8 @@ class LocalColdBootTest {
 
     /**
      * The header proof decides re-compilation. Change a type in {@code lib} that no declaration header in {@code app} mentions: every
-     * file's proof still holds against the new binding and {@code app}'s facts are byte-identical. Change a type that one header
-     * mentions: exactly that file's proof fails.
+     * file's proof still holds against the new binding and {@code app}'s facts are byte-identical. An unrelated member of a named type
+     * is also irrelevant. Change that type's header: exactly the file consuming that header fails.
      */
     @ParameterizedTest @MethodSource("digests")
     void invariant18_theHeaderProofDecidesRecompilation(Digest digest) throws Exception {
@@ -978,11 +978,14 @@ class LocalColdBootTest {
             for (var f : files) assertThat(holds(digest, base, changedT2, f)).as("proof of " + f + " after changing T2").isTrue();
             assertThat(changedT2.result().leaves().get("app/main")).as("app's facts are byte-identical").isEqualTo(base.result().leaves().get("app/main"));
 
-            // lib.T1 is mentioned by one header: exactly that file's proof fails.
+            // lib.T1 is mentioned by one header, but none of its methods were read.
             Files.writeString(t2, "package lib; public class T2 { public int b() { return 1; } }");
             Files.writeString(project.resolve("lib/src/main/java/lib/T1.java"), "package lib; public class T1 { public int a() { return 1; } public int z() { return 2; } }");
             var changedT1 = boot(digest, model, 2);
-            for (var f : files) assertThat(holds(digest, base, changedT1, f)).as("proof of " + f + " after changing T1").isEqualTo(!f.equals("UsesT1"));
+            for (var f : files) assertThat(holds(digest, base, changedT1, f)).as("proof of " + f + " after changing an unread T1 method").isTrue();
+            Files.writeString(project.resolve("lib/src/main/java/lib/T1.java"), "package lib; public final class T1 { public int a() { return 1; } }");
+            var changedHeader = boot(digest, model, 2);
+            for (var f : files) assertThat(holds(digest, base, changedHeader, f)).as("proof of " + f + " after changing T1's header").isEqualTo(!f.equals("UsesT1"));
         } finally { Stage2Support.delete(project); }
     }
 
@@ -1321,7 +1324,7 @@ class LocalColdBootTest {
                 "app/src/main/java/app/UsesLiteral.java", "package app; @lib.Cls(lib.K.class) public class UsesLiteral { }",
                 "app/src/main/java/app/UsesNested.java", "package app; @lib.Wrap(@lib.Foo(lib.K.VALUE)) public class UsesNested { }"));
         var edit = edited(digest, lib, "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; public int extra; }");
-        assertKind8(digest, edit, "UsesLiteral", "lib/K", true);
+        assertKind8(digest, edit, "UsesLiteral", "lib/K", false); // a class literal does not consume K's fields
         assertKind8(digest, edit, "UsesNested", "lib/K", true);
         assertSameEdges(digest, edit);
     }
@@ -1420,28 +1423,9 @@ class LocalColdBootTest {
         return FileRow.decode(path, booted.store().get(LocalStore.fileKey(booted.projectKey(), path)), digest.width());
     }
 
-    /**
-     * Whether every entry of {@code file}'s header proof in {@code old} still holds against the binding of {@code now}: each type is
-     * resolved again, through the leaves of app's route in order, and its {@code oSum} compared. Done here with no help from stage 2.
-     */
+    /** Validate persisted ranges and absences against the new route, including the own-module leaf. */
     private static boolean holds(Digest digest, Booted old, Booted now, String file) {
-        var store = now.store();
-        var built = new HashMap<String, Identity>();
-        for (var m : now.model().modules()) built.put(m.coordinate(), now.result().leaves().get(m.name() + "/main"));
-        var bound = Bind.bind(digest, route(digest, now, "app", 0).entries(), Bind.NONE, coordinate -> built.containsKey(coordinate) ? new Bind.Leaf(built.get(coordinate), Identity.zero(digest.width())) : null, k -> leaf(digest, store, k), DISCARD);
-        var leaves = new ArrayList<Identity>();
-        leaves.add(now.result().leaves().get("app/main")); // the module's own types come first
-        leaves.addAll(bound.sequence());
-        var tree = new ContentTree(digest);
-        for (var proof : row(digest, old, file).headerProof()) {
-            var key = new dev.jvmd.core.tree.Codec.Writer().zstr(proof.typeKey()).toBytes();
-            Identity current = null;
-            for (var k : leaves) {
-                var entry = tree.get(leaf(digest, store, k).oHash(), nodes(store), key);
-                if (entry != null) { current = entry.h(); break; }
-            }
-            if (!proof.oSum().equals(current)) return false;
-        }
-        return true;
+        return dev.jvmd.index.layer.local.HeaderProof.valid(row(digest, old, file), new ContentTree(digest),
+                leaf(digest, now.store(), now.result().leaves().get("app/main")), route(digest, now, "app", 0), now.store()::get);
     }
 }

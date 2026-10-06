@@ -187,3 +187,30 @@ mvn -B -pl jvmd-tests -am test '-Dtest=DefinerStateTest,MachineColdBootTest,Clas
 ```
 
 At 38f890cb, hosted [Tests](https://github.com/maxjay/jvmd/actions/runs/37392009479) and [benchmarks](https://github.com/maxjay/jvmd/actions/runs/37392009061) both passed. Those runs predate the persistent-map change. PR #60 remains open; passing checks are not merge approval. Exact T/N/D header proofs, path-addressed reverse entries, full special annotations in A, and the Stage 2 specification rewrite remain required before PR B. The untouched Stage 2 authority is `C:\Users\Max\Downloads\jvmd stage 2 LOCAL cold boot.md`, SHA-256 `c7b6d3eefeee086e91f90d4da7d96b5b34d301dc62f7f1739051036bfe4bad19` at this checkpoint. Appendix F replay WIP is preserved in the separate Stage 3 tree; all body/result/driver work remains unfinished.
+
+
+### Exact header ranges: Stage 2 reconciliation
+
+`FileRow.Proof` now stores `(typeKey, kind, name, sum)` for an exact T prefix, including expected-zero field ranges. TYPE references consume the single header fact; constant reads consume the named FIELD range; annotation checking consumes the annotation method contract. `HeaderProof.valid` resolves each owner under the own-first binding and compares that range sum. It no longer compares an entire type's oSum as the actual dependency.
+
+`ProofCollector` now collects both positive ranges and absence candidates after SourceFacts has completed declarations. The duplicate SourceFacts name scanner and containing-owner constant target list are removed. The collector retains final primitive/String initializer reads even before a field can fold, including private constants that feed exported declarations. It skips method bodies, initializer blocks and lambdas. Inherited field and member-type lookup record both the named empty ranges before a declaration and the intermediate type headers actually traversed. Static on-demand field lookup records competing imported ranges. Unresolved types and constant fields retain expected-zero observations.
+
+Four regressions initially reproduced eight failures across both digests (`stage2-header-ranges-red.log`): unrelated method additions invalidated type-only/constant consumers; changing Mid's superclass left inherited Inner resolution falsely valid; and adding a missing type left a faulted header falsely valid. Additional red regressions exposed wildcard static-field shadowing (`stage2-header-lookup-red.log`) and a missing constant field becoming available (`stage2-header-missing-field-red.log`). All now pass. Annotation element/default changes invalidate checking, while unused annotation constant fields do not. The old invariant 18 test now requires an unrelated method addition to preserve validity and a real type-header edit to invalidate its consumer. A class-literal regression similarly requires reuse when only K's unread fields change.
+
+Focused validation: **125 tests passed**, no failures/errors/skips, in `stage2-header-ranges-focused.log` (42 HeaderAbsences, 76 LocalColdBoot, 7 LocalCodecs). The subsequent full gate includes the source/class oracle with Java sources frozen throughout.
+
+The new proof codec requires **LOCAL 3**; MACHINE remains `layout=4;parser=3`. Real Rocks tests require cold rebuilding both local=1 and local=2 roots, then permit the current-format skip. Revision 123's dated amendment and its Downloads authority now include A.5a's exact header ranges; both files have SHA-256 `1b390c87ee9fb40548b125b241edae53d29a6ad1af7a8d9ae9ac839acf3a503f`.
+
+The reverse records still use the legacy positive type-to-consumer lists at this checkpoint. Replacing them with one empty dependency/project/path key for every T/N/D read, then proving Diff-to-prefix candidate discovery without scanning F rows, is the next required change. Route ancestry, complete special-annotation metadata in A, and the full Stage 2 specification rewrite also remain before PR B. The processor replay WIP in the separate Stage 3 tree is untouched; Appendix F and body/result/driver work remain unfinished. Max has now authorized merging PR #60 once the final checks pass and merge-blocking review items are resolved. The local and exact-head hosted verification must finish before using that approval.
+
+
+Final frozen gate: **264 tests passed**, no failures/errors/skips, in `stage2-header-ranges-final-gate.log` (3m35s). It uses the same complete test selection shown above for the persistent-map gate, now including the added header regressions and both legacy LOCAL versions. The earlier full run had one stale kind-7-only reverse-key assertion; hierarchy observations can also use the legacy kind-8 category, and the final run includes that corrected assertion.
+
+JVMD's 13 modules / 26 scopes / 494 sources retain exact source/class k equality in all scopes, no annotation differences and zero faults under both digests, with 91 jars indexed on the spot. The facts timing now includes the combined proof collector, so moving its work out of SourceFacts does not remove it from the measurement.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 5,133 | 3,511 | 1,814 | 138 | 22,165 |
+| SHA3-256 | 6,406 | 4,499 | 2,158 | 352 | 22,170 |
+
+Maven time (29.7/30.9s) is excluded. Sampled heap above baseline was 822/758 MB with uncontrolled GC; these sequential measurements do not establish a speedup or regression. Raw reports: [SHA-256](measurements/stage2-header-ranges-SHA-256.txt), [SHA3-256](measurements/stage2-header-ranges-SHA3-256.txt). Hosted Tests and benchmarks passed at 40b432b1, before this exact-range change; the new pushed commit requires its own checks before merge.

@@ -32,7 +32,6 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
-import com.sun.source.util.Trees;
 import com.sun.tools.javac.code.Attribute;
 import com.sun.tools.javac.code.Symbol;
 
@@ -52,13 +51,11 @@ import com.sun.tools.javac.code.Symbol;
 public final class SourceFacts {
     /**
      * What one file declares. {@code typeKeys} are internal names; each becomes an {@code O} key. {@code headerTargets} are the targets of
-     * {@code edges}, sorted and distinct: every type its declaration headers mention. {@code constantTargets} are the types its declarations
-     * resolved a name through outside bodies (internal names, header targets included): not edges, because a class file has none for them,
-     * but part of the file's proof, because what they supply (an inlined constant, an annotation value) is in its facts.
+     * {@code edges}, sorted and distinct: every type its declaration headers mention. Header attribution reads are collected separately
+     * from the completed javac symbols by {@link ProofCollector}.
      */
-    public record Result(List<Fact> facts, List<Entry> edges, List<String> headerTargets, List<String> typeKeys, List<FileRow.Fault> faults,
-                         List<String> constantTargets) {
-        public static final Result NONE = new Result(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+    public record Result(List<Fact> facts, List<Entry> edges, List<String> headerTargets, List<String> typeKeys, List<FileRow.Fault> faults) {
+        public static final Result NONE = new Result(List.of(), List.of(), List.of(), List.of(), List.of());
 
         /** The {@code N} entries of this file: its facts keyed by simple name. */
         public List<Entry> byName() {
@@ -83,14 +80,12 @@ public final class SourceFacts {
     private final Elements elements;
     private final Types types;
     private final boolean parameters;
-    private final Trees trees;
 
     /**
      * @param parameters whether the module compiles with {@code -parameters}: parameter names are then in the tail, as javac writes them
      */
-    public SourceFacts(Digest digest, Elements elements, Types types, Trees trees, boolean parameters) {
+    public SourceFacts(Digest digest, Elements elements, Types types, boolean parameters) {
         this.digest = digest;
-        this.trees = trees;
         this.elements = elements;
         this.types = types;
         this.parameters = parameters;
@@ -100,8 +95,7 @@ public final class SourceFacts {
     public Result of(List<? extends TypeElement> declared) {
         var out = new Out();
         for (var type : declared) type(type, out);
-        return new Result(List.copyOf(out.facts), List.copyOf(out.edges.values()), List.copyOf(out.targets), List.copyOf(out.typeKeys), List.copyOf(out.faults),
-                List.copyOf(out.constants));
+        return new Result(List.copyOf(out.facts), List.copyOf(out.edges.values()), List.copyOf(out.targets), List.copyOf(out.typeKeys), List.copyOf(out.faults));
     }
 
     /**
@@ -147,7 +141,7 @@ public final class SourceFacts {
         var tail = Entry.NONE;
         add(out, Keys.typeKey("module-info"), "module-info", res.encode(), tail);
         out.typeKeys.add("module-info");
-        return new Result(List.copyOf(out.facts), List.of(), List.of(), List.copyOf(out.typeKeys), List.of(), List.of());
+        return new Result(List.copyOf(out.facts), List.of(), List.of(), List.copyOf(out.typeKeys), List.of());
     }
 
     private static Res.Directive packageDirective(String packageName, List<? extends com.sun.source.tree.ExpressionTree> to) {
@@ -162,7 +156,6 @@ public final class SourceFacts {
         final java.util.Set<String> targets = new java.util.TreeSet<>();
         final List<String> typeKeys = new ArrayList<>();
         final List<FileRow.Fault> faults = new ArrayList<>();
-        final java.util.Set<String> constants = new java.util.TreeSet<>();
     }
 
     // ---- types -----------------------------------------------------------------------------------------------------------
@@ -192,8 +185,6 @@ public final class SourceFacts {
                 default -> { }
             }
         }
-        // After every member was completed: the lazily attributed initialisers and annotation values are attributed by now.
-        if (!faulted) declarationTargets(type, out.constants);
     }
 
     private void typeFact(TypeElement type, String owner, byte[] key, List<String> errors, Out out) {
@@ -335,79 +326,6 @@ public final class SourceFacts {
         var annotations = retained(method);
         add(out, key, name, res.encode(), tail(method, annotations, true, inner ? owner : null));
         Edges.method(desc.toString(), signature, thrown, (target, kind) -> edge(out, target, kind, key));
-    }
-
-    /**
-     * Every type a declaration resolved a name through outside bodies (kind 8), whatever the declaration then did with it: one scanner
-     * over the declaration's tree that skips method bodies, initialiser blocks, lambdas, nested type bodies (each nested type is a
-     * declaration of its own, scanned on its own) and the initialisers of every field that is not a constant variable (not final, or not
-     * of primitive or String type, so it can never fold). A private constant's initialiser is scanned, though the field is not a fact:
-     * it feeds public constants and annotation values. Every resolved {@code TypeElement}, and the
-     * owner of every resolved {@code VariableElement}, is a target.
-     *
-     * <p>That covers the initialiser of a final field whether or not it folded today (javac attributes it for
-     * {@code getConstantValue()} either way, so a {@code K.VALUE} that is not a constant now and becomes one changes this file's facts
-     * with no edge naming {@code K}); the values of annotation elements ({@code @Foo(K.VALUE)}, {@code @Foo(E.X)}, {@code @Foo(K.class)},
-     * nested annotations); and the defaults of annotation methods. Their trees were attributed in place by javac when it completed the
-     * declarations, so its symbols are on them and {@code Trees.getElement} reads them; nothing here attributes anything. Private members
-     * are not facts and are not looked at. The caller removes the header targets (the {@code E} edges), which it has.
-     */
-    private void declarationTargets(TypeElement type, java.util.Set<String> into) {
-        try {
-            var root = trees.getPath(type);
-            if (root == null || !(root.getLeaf() instanceof com.sun.source.tree.ClassTree klass)) return;
-            new com.sun.source.util.TreePathScanner<Void, Void>() {
-                @Override public Void visitClass(com.sun.source.tree.ClassTree node, Void p) { return node == klass ? super.visitClass(node, p) : null; }
-
-                @Override public Void visitMethod(com.sun.source.tree.MethodTree node, Void p) {
-                    if (isPrivate(getCurrentPath())) return null;
-                    scan(node.getModifiers(), p);
-                    scan(node.getTypeParameters(), p);
-                    scan(node.getReturnType(), p);
-                    scan(node.getParameters(), p);
-                    scan(node.getReceiverParameter(), p);
-                    scan(node.getThrows(), p);
-                    scan(node.getDefaultValue(), p);
-                    return null; // never the body
-                }
-
-                @Override public Void visitVariable(com.sun.source.tree.VariableTree node, Void p) {
-                    var element = trees.getElement(getCurrentPath());
-                    // A private field is not a fact, so neither its modifiers nor its type are looked at; but its initialiser can fold into
-                    // the value of a public constant or an annotation value (B = A + 1, A private), so it is scanned like any other.
-                    if (element == null || !element.getModifiers().contains(Modifier.PRIVATE)) { scan(node.getModifiers(), p); scan(node.getType(), p); }
-                    // Only a constant variable can fold (JLS 4.12.4): final, of primitive or String type, with an initialiser.
-                    if (element != null && element.getModifiers().contains(Modifier.FINAL) && isConstantType(element.asType())) scan(node.getInitializer(), p);
-                    return null;
-                }
-
-                @Override public Void visitBlock(com.sun.source.tree.BlockTree node, Void p) { return null; }
-
-                @Override public Void visitLambdaExpression(com.sun.source.tree.LambdaExpressionTree node, Void p) { return null; }
-
-                @Override public Void visitIdentifier(com.sun.source.tree.IdentifierTree node, Void p) { note(getCurrentPath()); return null; }
-
-                @Override public Void visitMemberSelect(com.sun.source.tree.MemberSelectTree node, Void p) { note(getCurrentPath()); return super.visitMemberSelect(node, p); }
-
-                private boolean isConstantType(TypeMirror type) {
-                    return type.getKind().isPrimitive()
-                            || (type instanceof DeclaredType d && d.asElement() instanceof TypeElement t && t.getQualifiedName().contentEquals("java.lang.String"));
-                }
-
-                private boolean isPrivate(com.sun.source.util.TreePath at) {
-                    var element = trees.getElement(at);
-                    return element != null && element.getModifiers().contains(Modifier.PRIVATE);
-                }
-
-                private void note(com.sun.source.util.TreePath at) {
-                    Element element = trees.getElement(at);
-                    if (element instanceof VariableElement variable && variable.getEnclosingElement() instanceof TypeElement owner) element = owner;
-                    if (element instanceof TypeElement resolved && resolved.asType().getKind() != TypeKind.ERROR) into.add(binaryName(resolved));
-                }
-            }.scan(root, null);
-        } catch (RuntimeException unreadable) {
-            // A tree javac did not attribute names nothing; the declaration's own facts are unaffected.
-        }
     }
 
     // ---- descriptors and signatures --------------------------------------------------------------------------------------

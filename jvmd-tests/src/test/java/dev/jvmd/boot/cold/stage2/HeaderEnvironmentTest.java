@@ -61,7 +61,7 @@ class HeaderEnvironmentTest {
     private Identity projection(Digest digest, Path file, List<String> options) {
         try (var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source(file.getFileName().toString(), file)), List.of(),
                 Stage2Support.JDK, Stage2Support.FEATURE, options, digest)) {
-            var facts = new SourceFacts(digest, compiled.elements, compiled.types, compiled.trees, false).of(compiled.units.getFirst().declared);
+            var facts = new SourceFacts(digest, compiled.elements, compiled.types, false).of(compiled.units.getFirst().declared);
             assertThat(facts.faults()).isEmpty();
             var builder = new LeafBuilder(new ContentTree(digest), new InMemoryLocalStore());
             facts.facts().stream().sorted((a, b) -> Arrays.compareUnsigned(a.m(), b.m())).forEach(builder::add);

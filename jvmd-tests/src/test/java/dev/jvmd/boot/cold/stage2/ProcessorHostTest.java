@@ -126,7 +126,7 @@ class ProcessorHostTest {
         assertThat(direct.a()).isEqualTo(expected.a());
         try (var host = new ProcessorHost(List.of(lombok), List.of(), digest, dir.resolve("generated"));
              var compiled = HeaderCompiler.compile(source, List.of(lombok), Stage2Support.JDK, Stage2Support.FEATURE, List.of(), digest, host)) {
-            var extracted = new SourceFacts(digest, compiled.elements, compiled.types, compiled.trees, false).of(compiled.units.getFirst().declared);
+            var extracted = new SourceFacts(digest, compiled.elements, compiled.types, false).of(compiled.units.getFirst().declared);
             assertThat(extracted.faults()).isEmpty();
             var actual = new LeafBuilder(new ContentTree(digest), new InMemoryLocalStore());
             extracted.facts().stream().sorted((a, b) -> Arrays.compareUnsigned(a.m(), b.m())).forEach(actual::add);
@@ -157,7 +157,7 @@ class ProcessorHostTest {
                 var entered = (Iterable<?>) task.getClass().getMethod("enter").invoke(task);
                 var types = new ArrayList<javax.lang.model.element.TypeElement>();
                 for (var element : entered) if (element instanceof javax.lang.model.element.TypeElement type) types.add(type);
-                var result = new SourceFacts(digest, task.getElements(), task.getTypes(), com.sun.source.util.Trees.instance(task), false).of(types);
+                var result = new SourceFacts(digest, task.getElements(), task.getTypes(), false).of(types);
                 assertThat(diagnostics.getDiagnostics().stream().filter(d -> d.getKind() == javax.tools.Diagnostic.Kind.ERROR)).isEmpty();
                 assertThat(result.faults()).isEmpty();
                 var builder = new LeafBuilder(new ContentTree(digest), new InMemoryLocalStore());

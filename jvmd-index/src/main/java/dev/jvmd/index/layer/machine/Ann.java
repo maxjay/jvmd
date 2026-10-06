@@ -59,7 +59,7 @@ public record Ann(String descriptor, List<Element> elements) {
         encode(out);
     }
 
-    /** EA is a function of the encoded tail, including the identical retention and warning filtering. */
+    /** EA is a function of the encoded tail, including all retained warning annotations. */
     public static java.util.Set<String> tailAnnotationTypes(byte[] tail) {
         if (tail.length == 0) return java.util.Set.of();
         var in = new Codec.Reader(tail);

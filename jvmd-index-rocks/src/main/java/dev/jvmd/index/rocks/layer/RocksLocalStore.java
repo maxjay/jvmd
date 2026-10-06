@@ -30,6 +30,8 @@ public final class RocksLocalStore implements LocalStore, AutoCloseable {
     @Override public void put(byte[] key, byte[] value) { machine.put(key, value); }
     @Override public byte[] get(byte[] key) { return machine.get(key); }
 
+    @Override public void forEachKey(byte[] prefix, java.util.function.Consumer<byte[]> action) { machine.forEachKey(prefix, action); }
+
     /** The root commits at once. A previous root of the project moves to {@code LROOT|projectKey|n} in the same atomic write (9.1). */
     @Override public void putLocalRoot(Identity projectKey, byte[] value) {
         var records = new ArrayList<byte[][]>(2);

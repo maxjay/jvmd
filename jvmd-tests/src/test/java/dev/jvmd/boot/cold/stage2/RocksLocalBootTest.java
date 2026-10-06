@@ -72,7 +72,7 @@ class RocksLocalBootTest {
                 for (var key : store.keys()) kinds.merge(kind(key), 1, Integer::sum);
                 assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT");
                 assertThat(kinds).as("C| and RS| are empty after a cold boot").doesNotContainKeys("C", "RS");
-                for (var key : store.keys()) if (kind(key).equals("X")) assertThat(key[2]).as("the only X| entries are the header proofs: kind 7").isEqualTo((byte) 7);
+                for (var key : store.keys()) if (kind(key).equals("X")) assertThat(key[2]).as("header range reverse keys have their own namespace").isEqualTo((byte) 'H');
                 assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "LROOT");
                 assertThat(kinds.get("MOD")).isEqualTo(4);
                 assertThat(kinds.get("RT")).isEqualTo(8);
@@ -92,6 +92,33 @@ class RocksLocalBootTest {
                     new ContentTree(digest).verify(annotations.edges(), h -> store.get(MachineStore.nodeKey(h)));
                 }
                 assertThat(root.local().count()).as("every record is in the LOCAL tree").isGreaterThan(kinds.get("MOD") + kinds.get("RT") + kinds.get("F"));
+            }
+            // The production reader uses RocksDB seek(prefix), and every returned path has a committed reverse record.
+            try (var store = Generation.of(indexDir, format).openLocal()) {
+                var dependency = new dev.jvmd.index.layer.local.ReverseIndex.Dependency(
+                        dev.jvmd.index.layer.local.ReverseIndex.T, "common/Base", dev.jvmd.index.layer.machine.Keys.TYPE, "");
+                var consumers = dev.jvmd.index.layer.local.ReverseIndex.consumers(digest, store, dependency);
+                assertThat(consumers).extracting(dev.jvmd.index.layer.local.ReverseIndex.Consumer::path)
+                        .contains("server-a/src/main/java/a/Server.java");
+                for (var consumer : consumers) {
+                    assertThat(consumer.project()).isEqualTo(projectKey);
+                    assertThat(store.get(dependency.key(consumer.project(), consumer.path()))).isEmpty();
+                }
+            }
+            // Neither old header-proof layout may take the current-format skip branch.
+            for (int legacy : List.of(1, 2, 3, 4)) {
+                try (var store = Generation.of(indexDir, format).openLocal()) {
+                    var root = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(projectKey)));
+                    store.putLocalRoot(projectKey, LocalRoot.encode(digest,
+                            format + ";local=" + legacy + ";javac=" + Runtime.version().feature(), root.local(), root.machineRoot(), root.modelHash()));
+                }
+                var rebuilt = BootDecision.local(indexDir, model, repository);
+                assertThat(rebuilt).as("local=" + legacy + " must not skip the current LOCAL cold boot").isPresent();
+                assertThat(rebuilt.orElseThrow().faults()).isEmpty();
+                try (var store = Generation.of(indexDir, format).open()) {
+                    assertThat(LocalRoot.formatOf(store.get(LocalStore.localRootKey(projectKey)))).isEqualTo(LocalFormat.of(format));
+                }
+                assertThat(BootDecision.local(indexDir, model, repository)).isEmpty();
             }
         } finally { Stage2Support.delete(repository); Stage2Support.delete(project); Stage2Support.delete(indexDir); }
     }

@@ -7,9 +7,22 @@ import dev.jvmd.index.layer.machine.Keys;
 import dev.jvmd.index.layer.machine.MachineLeaf;
 import java.util.function.Function;
 
-/** LAYOUT 4 header absences; positive entries retain the Stage 2 oSum encoding. */
+/** Header attribution uses the same exact T/N ranges and type absences as body attribution. */
 public final class HeaderProof {
     private HeaderProof() { }
+
+    public record Range(String type, int kind, String name) implements Comparable<Range> {
+        public Range {
+            if (kind < Keys.TYPE || kind > Keys.METHOD || (kind == Keys.TYPE && !name.isEmpty()))
+                throw new IllegalArgumentException("Invalid header range");
+        }
+        public byte[] key() { return Keys.groupKey(type, kind, name); }
+        @Override public int compareTo(Range other) {
+            int order = type.compareTo(other.type);
+            if (order == 0) order = Integer.compare(kind, other.kind);
+            return order == 0 ? name.compareTo(other.name) : order;
+        }
+    }
 
     /** form 0: absent type; form 1: absent inherited member-type range. */
     public record Absence(int form, String type, String name) {
@@ -33,8 +46,8 @@ public final class HeaderProof {
         for (var entry : row.headerProof()) {
             var leaf = read.definer(entry.typeKey());
             if (leaf == null) return false;
-            var current = tree.get(leaf.oHash(), read.nodes(), Keys.ownerKey(entry.typeKey()));
-            if (current == null || !current.h().equals(entry.oSum())) return false;
+            var current = tree.rangeSum(leaf.k(), read.nodes(), entry.range().key());
+            if (!current.equals(entry.sum())) return false;
         }
         for (var entry : row.absences()) {
             if (entry.form() == 0) {

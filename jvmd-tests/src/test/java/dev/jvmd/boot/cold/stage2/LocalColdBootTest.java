@@ -22,6 +22,7 @@ import dev.jvmd.index.layer.local.LocalRoot;
 import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.index.layer.local.ReverseIndex;
+import dev.jvmd.index.layer.machine.Keys;
 import dev.jvmd.index.layer.local.Route;
 import dev.jvmd.index.layer.local.RouteEntry;
 import dev.jvmd.index.layer.machine.ClassFacts;
@@ -832,8 +833,7 @@ class LocalColdBootTest {
     }
 
     /**
-     * The header proof is reverse-indexed: {@code X|7|typeKey} names the files whose proof contains the type, under the external part of
-     * their route, so that after an edit the files to re-check are one read away and not a scan of every file row.
+     * Every exact header range and expected-zero observation has one reverse key naming the project-relative path.
      */
     @ParameterizedTest @MethodSource("digests")
     void theHeaderProofIsReverseIndexed(Digest digest) throws Exception {
@@ -846,23 +846,18 @@ class LocalColdBootTest {
             var model = Stage2Support.model(project, new Stage2Support.Mod("lib", "corp:lib:1", List.of()),
                     new Stage2Support.Mod("app", "corp:app:1", List.of(Stage2Support.Dep.module("corp:lib:1", "lib"))));
             var booted = boot(digest, model, 2);
-            var ext = route(digest, booted, "app", 0).leafSetExt();
             var rows = new HashMap<String, FileRow>();
             for (var name : List.of("UsesT1", "UsesNothing")) rows.put(name, row(digest, booted, name));
 
-            for (var row : rows.values()) {
-                for (var proof : row.headerProof()) {
-                    var key = new dev.jvmd.core.tree.Codec.Writer().zstr(proof.typeKey()).toBytes();
-                    var stored = booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, key, booted.projectKey()));
-                    assertThat(stored).as("X|7|" + proof.typeKey()).isNotNull();
-                    assertThat(ReverseIndex.decode(stored, digest.width()).consumers()).contains(new ReverseIndex.Consumer(row.kappa(), ext));
-                }
+            for (var row : rows.values()) for (var dependency : ReverseIndex.dependencies(row)) {
+                assertThat(booted.store().get(dependency.key(booted.projectKey(), row.path()))).isEmpty();
+                assertThat(ReverseIndex.consumers(digest, booted.store(), dependency)).contains(new ReverseIndex.Consumer(booted.projectKey(), row.path()));
             }
-            var t1 = ReverseIndex.decode(booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, new dev.jvmd.core.tree.Codec.Writer().zstr("lib/T1").toBytes(), booted.projectKey())), digest.width());
-            assertThat(t1.consumers()).extracting(ReverseIndex.Consumer::kappa).containsExactly(rows.get("UsesT1").kappa());
-            var string = ReverseIndex.decode(booted.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, new dev.jvmd.core.tree.Codec.Writer().zstr("java/lang/String").toBytes(), booted.projectKey())), digest.width());
-            assertThat(string.consumers()).extracting(ReverseIndex.Consumer::kappa).contains(rows.get("UsesNothing").kappa()).doesNotContain(rows.get("UsesT1").kappa());
-            assertThat(booted.store().withPrefix("X").keySet()).as("only header entries: kind 7").allMatch(k -> k[2] == 7);
+            var t1 = ReverseIndex.consumers(digest, booted.store(), new ReverseIndex.Dependency(ReverseIndex.T, "lib/T1", Keys.TYPE, ""));
+            assertThat(t1).containsExactly(new ReverseIndex.Consumer(booted.projectKey(), rows.get("UsesT1").path()));
+            var string = ReverseIndex.consumers(digest, booted.store(), new ReverseIndex.Dependency(ReverseIndex.T, "java/lang/String", Keys.TYPE, ""));
+            assertThat(string).extracting(ReverseIndex.Consumer::path).contains(rows.get("UsesNothing").path()).doesNotContain(rows.get("UsesT1").path());
+            assertThat(booted.store().withPrefix("X").values()).allMatch(value -> value.length == 0);
         } finally { Stage2Support.delete(project); }
     }
 
@@ -945,8 +940,8 @@ class LocalColdBootTest {
 
     /**
      * The header proof decides re-compilation. Change a type in {@code lib} that no declaration header in {@code app} mentions: every
-     * file's proof still holds against the new binding and {@code app}'s facts are byte-identical. Change a type that one header
-     * mentions: exactly that file's proof fails.
+     * file's proof still holds against the new binding and {@code app}'s facts are byte-identical. An unrelated member of a named type
+     * is also irrelevant. Change that type's header: exactly the file consuming that header fails.
      */
     @ParameterizedTest @MethodSource("digests")
     void invariant18_theHeaderProofDecidesRecompilation(Digest digest) throws Exception {
@@ -978,11 +973,14 @@ class LocalColdBootTest {
             for (var f : files) assertThat(holds(digest, base, changedT2, f)).as("proof of " + f + " after changing T2").isTrue();
             assertThat(changedT2.result().leaves().get("app/main")).as("app's facts are byte-identical").isEqualTo(base.result().leaves().get("app/main"));
 
-            // lib.T1 is mentioned by one header: exactly that file's proof fails.
+            // lib.T1 is mentioned by one header, but none of its methods were read.
             Files.writeString(t2, "package lib; public class T2 { public int b() { return 1; } }");
             Files.writeString(project.resolve("lib/src/main/java/lib/T1.java"), "package lib; public class T1 { public int a() { return 1; } public int z() { return 2; } }");
             var changedT1 = boot(digest, model, 2);
-            for (var f : files) assertThat(holds(digest, base, changedT1, f)).as("proof of " + f + " after changing T1").isEqualTo(!f.equals("UsesT1"));
+            for (var f : files) assertThat(holds(digest, base, changedT1, f)).as("proof of " + f + " after changing an unread T1 method").isTrue();
+            Files.writeString(project.resolve("lib/src/main/java/lib/T1.java"), "package lib; public final class T1 { public int a() { return 1; } }");
+            var changedHeader = boot(digest, model, 2);
+            for (var f : files) assertThat(holds(digest, base, changedHeader, f)).as("proof of " + f + " after changing T1's header").isEqualTo(!f.equals("UsesT1"));
         } finally { Stage2Support.delete(project); }
     }
 
@@ -1097,8 +1095,7 @@ class LocalColdBootTest {
     }
 
     /**
-     * {@code X|kind|key|projectKey}: two projects that name one type write disjoint keys, both lists are intact, and the prefix
-     * {@code X|kind|key} is the cross-project read.
+     * Two projects naming one type write disjoint empty keys; a single prefix finds both actual source paths.
      */
     @ParameterizedTest @MethodSource("digests")
     void twoProjectsNamingOneTypeWriteDisjointReverseKeys(Digest digest) throws Exception {
@@ -1114,27 +1111,22 @@ class LocalColdBootTest {
             new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 1, repository, ClassFacts::of).run(store, parsed);
             var otherKey = Stage2.projectKey(digest, parsed);
 
-            var type = new dev.jvmd.core.tree.Codec.Writer().zstr("java/lang/String").toBytes();
-            var prefix = LocalStore.reversePrefix(ConsumerRecord.HEADER, type);
-            var found = new java.util.TreeMap<byte[], byte[]>(Arrays::compareUnsigned);
-            for (var e : store.snapshot().entrySet()) if (e.getKey().length > prefix.length && Arrays.equals(Arrays.copyOf(e.getKey(), prefix.length), prefix)) found.put(e.getKey(), e.getValue());
-            assertThat(found).as("one X|7|java/lang/String entry per project, under one prefix").hasSize(2);
-            assertThat(found).containsKeys(LocalStore.reverseKey(ConsumerRecord.HEADER, type, one.projectKey()), LocalStore.reverseKey(ConsumerRecord.HEADER, type, otherKey));
-            for (var key : found.keySet()) assertThat(key.length).as("the project key trails, fixed width").isEqualTo(prefix.length + digest.width());
-
-            var rowA = FileRow.decode("a/src/main/java/a/A.java", store.get(LocalStore.fileKey(one.projectKey(), "a/src/main/java/a/A.java")), digest.width());
-            var rowB = FileRow.decode("b/src/main/java/b/B.java", store.get(LocalStore.fileKey(otherKey, "b/src/main/java/b/B.java")), digest.width());
-            var listA = ReverseIndex.decode(found.get(LocalStore.reverseKey(ConsumerRecord.HEADER, type, one.projectKey())), digest.width());
-            var listB = ReverseIndex.decode(found.get(LocalStore.reverseKey(ConsumerRecord.HEADER, type, otherKey)), digest.width());
-            assertThat(listA.consumers()).extracting(ReverseIndex.Consumer::kappa).containsExactly(rowA.kappa());
-            assertThat(listB.consumers()).extracting(ReverseIndex.Consumer::kappa).containsExactly(rowB.kappa());
+            var dependency = new ReverseIndex.Dependency(ReverseIndex.T, "java/lang/String", Keys.TYPE, "");
+            var found = new ArrayList<byte[]>();
+            store.forEachKey(dependency.prefix(), found::add);
+            assertThat(found).hasSize(2);
+            assertThat(store.get(dependency.key(one.projectKey(), "a/src/main/java/a/A.java"))).isEmpty();
+            assertThat(store.get(dependency.key(otherKey, "b/src/main/java/b/B.java"))).isEmpty();
+            assertThat(ReverseIndex.consumers(digest, store, dependency)).containsExactlyInAnyOrder(
+                    new ReverseIndex.Consumer(one.projectKey(), "a/src/main/java/a/A.java"),
+                    new ReverseIndex.Consumer(otherKey, "b/src/main/java/b/B.java"));
         } finally { Stage2Support.delete(first); Stage2Support.delete(second); }
     }
 
     /**
      * A constant initialiser is part of the proof. {@code static final int N = lib.K.VALUE} inlines {@code K}'s value into the file's
      * facts, but no {@code E} edge names {@code K}: stage 2 resolves it from the attributed initialiser (qualifier types, the owner of a
-     * constant field, a static-imported constant) and the file's proof names {@code K}, indexed as kind 8. Change only {@code K.VALUE}:
+     * constant field, a static-imported constant) and the file's proof names {@code K}, indexed by the actual field range. Change only {@code K.VALUE}:
      * the files that read it fail their proof and nothing else does.
      */
     @ParameterizedTest @MethodSource("digests")
@@ -1155,10 +1147,9 @@ class LocalColdBootTest {
             assertThat(proofs.get("UsesImport")).as("so is the owner of a static-imported constant").contains("lib/K");
             assertThat(proofs.get("UsesNothing")).doesNotContain("lib/K");
 
-            var key = new dev.jvmd.core.tree.Codec.Writer().zstr("lib/K").toBytes();
-            assertThat(base.store().get(LocalStore.reverseKey(ConsumerRecord.HEADER, key, base.projectKey()))).as("no header mentions K").isNull();
-            var kind8 = ReverseIndex.decode(base.store().get(LocalStore.reverseKey(ConsumerRecord.CONSTANT, key, base.projectKey())), digest.width());
-            assertThat(kind8.consumers()).extracting(ReverseIndex.Consumer::kappa).containsExactlyInAnyOrder(row(digest, base, "UsesConst").kappa(), row(digest, base, "UsesImport").kappa());
+            var dependency = new ReverseIndex.Dependency(ReverseIndex.T, "lib/K", Keys.FIELD, "VALUE");
+            assertThat(ReverseIndex.consumers(digest, base.store(), dependency)).extracting(ReverseIndex.Consumer::path)
+                    .containsExactlyInAnyOrder(row(digest, base, "UsesConst").path(), row(digest, base, "UsesImport").path());
 
             Files.writeString(project.resolve("lib/src/main/java/lib/K.java"), "package lib; public class K { public static final int VALUE = 2; }");
             var changed = boot(digest, model, 2);
@@ -1235,7 +1226,7 @@ class LocalColdBootTest {
         assertThat(Stubs.stKey(digest, "p/O", oSum, List.of())).as("no members: exactly Digest(typeKey || oSum)").isEqualTo(digest.hash(typeKey, oSum.view()));
     }
 
-    // ---- kind 8: everything a declaration resolved a name through outside bodies ------------------------------------------------
+    // ---- declaration reads: everything a declaration resolved a name through outside bodies ------------------------------------------------
 
     /** Boots a project of modules {@code lib} and {@code app} (app depends on lib), applies one edit, boots again. */
     private record Edited(Booted before, Booted after) { }
@@ -1252,16 +1243,18 @@ class LocalColdBootTest {
         } finally { Stage2Support.delete(project); }
     }
 
-    private static void assertKind8(Digest digest, Edited e, String file, String type, boolean failsAfter) {
+    private static void assertDeclarationRead(Digest digest, Edited e, String file, String type, boolean failsAfter) {
         assertThat(row(digest, e.before(), file).headerProof()).as("the proof of " + file + " names " + type).extracting(FileRow.Proof::typeKey).contains(type);
-        var stored = e.before().store().get(LocalStore.reverseKey(ConsumerRecord.CONSTANT, new dev.jvmd.core.tree.Codec.Writer().zstr(type).toBytes(), e.before().projectKey()));
-        assertThat(stored).as("X|8|" + type).isNotNull();
-        assertThat(ReverseIndex.decode(stored, digest.width()).consumers()).extracting(ReverseIndex.Consumer::kappa).contains(row(digest, e.before(), file).kappa());
+        var row = row(digest, e.before(), file);
+        for (var dependency : ReverseIndex.dependencies(row)) if (dependency.type().equals(type)) {
+            assertThat(e.before().store().get(dependency.key(e.before().projectKey(), row.path()))).isEmpty();
+            assertThat(ReverseIndex.consumers(digest, e.before().store(), dependency)).contains(new ReverseIndex.Consumer(e.before().projectKey(), row.path()));
+        }
         assertThat(holds(digest, e.before(), e.after(), file)).as("proof of " + file + " after the change").isEqualTo(!failsAfter);
         assertThat(holds(digest, e.before(), e.after(), "UsesNothing")).as("nothing else fails").isTrue();
     }
 
-    /** The edges of the consumer leaf: the same set of E edges before and after, because kind 8 never adds an edge. */
+    /** The edges of the consumer leaf: the same set of E edges before and after, because a folded value does not add a type edge. */
     private static void assertSameEdges(Digest digest, Edited e) {
         assertThat(leaf(digest, e.after().store(), e.after().result().leaves().get("app/main")).eHash()).as("the E root of app").isEqualTo(leaf(digest, e.before().store(), e.before().result().leaves().get("app/main")).eHash());
     }
@@ -1282,7 +1275,7 @@ class LocalColdBootTest {
                 "app/src/main/java/app/UsesConst.java", "package app; public class UsesConst { public static final int N = lib.K.VALUE; }")),
                 "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; static int compute() { return 1; } }");
         assertThat(leaf(digest, edit.before().store(), edit.before().result().leaves().get("app/main")).factCount()).isEqualTo(6); // 2 types, 2 constructors, N, s
-        assertKind8(digest, edit, "UsesConst", "lib/K", true);
+        assertDeclarationRead(digest, edit, "UsesConst", "lib/K", true);
         assertSameEdges(digest, edit);
     }
 
@@ -1294,7 +1287,7 @@ class LocalColdBootTest {
                 "lib/src/main/java/lib/Foo.java", "package lib; public @interface Foo { int value(); }",
                 "app/src/main/java/app/Annotated.java", "package app; @lib.Foo(lib.K.VALUE) public class Annotated { }")),
                 "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; }");
-        assertKind8(digest, edit, "Annotated", "lib/K", true);
+        assertDeclarationRead(digest, edit, "Annotated", "lib/K", true);
         assertSameEdges(digest, edit);
     }
 
@@ -1306,7 +1299,7 @@ class LocalColdBootTest {
                 "lib/src/main/java/lib/Foo.java", "package lib; public @interface Foo { E value(); }",
                 "app/src/main/java/app/AnnotatedE.java", "package app; @lib.Foo(lib.E.X) public class AnnotatedE { }")),
                 "lib/src/main/java/lib/E.java", "package lib; public enum E { Y }");
-        assertKind8(digest, edit, "AnnotatedE", "lib/E", true);
+        assertDeclarationRead(digest, edit, "AnnotatedE", "lib/E", true);
         assertSameEdges(digest, edit);
     }
 
@@ -1321,8 +1314,8 @@ class LocalColdBootTest {
                 "app/src/main/java/app/UsesLiteral.java", "package app; @lib.Cls(lib.K.class) public class UsesLiteral { }",
                 "app/src/main/java/app/UsesNested.java", "package app; @lib.Wrap(@lib.Foo(lib.K.VALUE)) public class UsesNested { }"));
         var edit = edited(digest, lib, "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; public int extra; }");
-        assertKind8(digest, edit, "UsesLiteral", "lib/K", true);
-        assertKind8(digest, edit, "UsesNested", "lib/K", true);
+        assertDeclarationRead(digest, edit, "UsesLiteral", "lib/K", false); // a class literal does not consume K's fields
+        assertDeclarationRead(digest, edit, "UsesNested", "lib/K", true);
         assertSameEdges(digest, edit);
     }
 
@@ -1333,7 +1326,7 @@ class LocalColdBootTest {
                 "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; }",
                 "app/src/main/java/app/Cfg.java", "package app; public @interface Cfg { int n() default lib.K.VALUE; }")),
                 "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; }");
-        assertKind8(digest, edit, "Cfg", "lib/K", true);
+        assertDeclarationRead(digest, edit, "Cfg", "lib/K", true);
         assertSameEdges(digest, edit);
     }
 
@@ -1344,7 +1337,7 @@ class LocalColdBootTest {
                 "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 1; }",
                 "app/src/main/java/app/Chain.java", "package app; public class Chain { private static final int A = lib.K.VALUE; public static final int B = A + 1; }")),
                 "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; }");
-        assertKind8(digest, edit, "Chain", "lib/K", true);
+        assertDeclarationRead(digest, edit, "Chain", "lib/K", true);
         assertSameEdges(digest, edit);
     }
 
@@ -1356,7 +1349,7 @@ class LocalColdBootTest {
                 "lib/src/main/java/lib/Foo.java", "package lib; public @interface Foo { int value(); }",
                 "app/src/main/java/app/Tagged.java", "package app; @lib.Foo(Tagged.A) public class Tagged { private static final int A = lib.K.VALUE; }")),
                 "lib/src/main/java/lib/K.java", "package lib; public class K { public static final int VALUE = 2; }");
-        assertKind8(digest, edit, "Tagged", "lib/K", true);
+        assertDeclarationRead(digest, edit, "Tagged", "lib/K", true);
         assertSameEdges(digest, edit);
     }
 
@@ -1408,6 +1401,32 @@ class LocalColdBootTest {
         } finally { Stage2Support.delete(project); }
     }
 
+    @ParameterizedTest @MethodSource("digests")
+    void plannedRouteAncestryOpensOnlyAddedOwnersAndSharesTheJdkAcrossRootJobs(Digest digest) throws Exception {
+        var project = multiProject();
+        try {
+            Root serial = null;
+            for (int workers : new int[] {1, 8}) {
+                var store = Stage2Support.machine(digest, repository).copy();
+                var jdkLocation = "jrt:/java.base@" + Stage2Support.JDK;
+                var watched = new java.util.LinkedHashMap<String, AtomicInteger>();
+                for (var location : List.of(jdkLocation, Fixtures.LIB_AB_14, Fixtures.LIB_X, Fixtures.LIB_T)) {
+                    var k = jarLeaf(digest, store, location);
+                    watched.put(location, store.watchReads(MachineStore.nodeKey(leaf(digest, store, k).oHash())));
+                }
+                var model = ProjectModel.parse(multiModel(project, workers == 8));
+                var result = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, workers, repository, ClassFacts::of)
+                        .run(store, model);
+                assertThat(result.faults()).isEmpty();
+                // JDK is common to both root modules; AB is inherited from common, X is shared by two children, T added by test.
+                watched.forEach((location, count) -> assertThat(count.get()).as("owner tree opens for %s with %s workers", location, workers).isEqualTo(1));
+                assertThat(result.timings().externalFolds()).isEqualTo(4);
+                if (serial == null) serial = result.root();
+                else assertThat(result.root()).as("ancestry and exact-set reuse preserve deterministic roots under parallel execution").isEqualTo(serial);
+            }
+        } finally { Stage2Support.delete(project); }
+    }
+
     /** The type keys in each file of {@code app}'s header proof. */
     private static Map<String, List<String>> proofsOf(Digest digest, Booted booted, List<String> files) {
         var out = new HashMap<String, List<String>>();
@@ -1420,28 +1439,9 @@ class LocalColdBootTest {
         return FileRow.decode(path, booted.store().get(LocalStore.fileKey(booted.projectKey(), path)), digest.width());
     }
 
-    /**
-     * Whether every entry of {@code file}'s header proof in {@code old} still holds against the binding of {@code now}: each type is
-     * resolved again, through the leaves of app's route in order, and its {@code oSum} compared. Done here with no help from stage 2.
-     */
+    /** Validate persisted ranges and absences against the new route, including the own-module leaf. */
     private static boolean holds(Digest digest, Booted old, Booted now, String file) {
-        var store = now.store();
-        var built = new HashMap<String, Identity>();
-        for (var m : now.model().modules()) built.put(m.coordinate(), now.result().leaves().get(m.name() + "/main"));
-        var bound = Bind.bind(digest, route(digest, now, "app", 0).entries(), Bind.NONE, coordinate -> built.containsKey(coordinate) ? new Bind.Leaf(built.get(coordinate), Identity.zero(digest.width())) : null, k -> leaf(digest, store, k), DISCARD);
-        var leaves = new ArrayList<Identity>();
-        leaves.add(now.result().leaves().get("app/main")); // the module's own types come first
-        leaves.addAll(bound.sequence());
-        var tree = new ContentTree(digest);
-        for (var proof : row(digest, old, file).headerProof()) {
-            var key = new dev.jvmd.core.tree.Codec.Writer().zstr(proof.typeKey()).toBytes();
-            Identity current = null;
-            for (var k : leaves) {
-                var entry = tree.get(leaf(digest, store, k).oHash(), nodes(store), key);
-                if (entry != null) { current = entry.h(); break; }
-            }
-            if (!proof.oSum().equals(current)) return false;
-        }
-        return true;
+        return dev.jvmd.index.layer.local.HeaderProof.valid(row(digest, old, file), new ContentTree(digest),
+                leaf(digest, now.store(), now.result().leaves().get("app/main")), route(digest, now, "app", 0), now.store()::get);
     }
 }

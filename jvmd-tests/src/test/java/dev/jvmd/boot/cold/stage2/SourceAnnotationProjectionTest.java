@@ -97,7 +97,7 @@ class SourceAnnotationProjectionTest {
         var expected = project(digest, binaryFacts, binaryEdges);
         try (var compiled = HeaderCompiler.compile(List.of(new HeaderCompiler.Source("p/K.java", dir.resolve("src/p/K.java"))),
                 List.of(), Stage2Support.JDK, Stage2Support.FEATURE, options, digest)) {
-            var facts = new SourceFacts(digest, compiled.elements, compiled.types, compiled.trees, parameters).of(compiled.units.getFirst().declared);
+            var facts = new SourceFacts(digest, compiled.elements, compiled.types, parameters).of(compiled.units.getFirst().declared);
             assertThat(facts.faults()).isEmpty();
             if (brokenBody) {
                 var owner = compiled.units.getFirst().declared.stream().filter(t -> t.getSimpleName().contentEquals("K")).findFirst().orElseThrow();

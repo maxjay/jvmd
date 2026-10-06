@@ -83,6 +83,18 @@ public final class RocksMachineStore implements MachineStore, AutoCloseable {
     public byte[] get(byte[] key) {
         try { return db.get(key); } catch (RocksDBException e) { throw failure(e); }
     }
+    /** Seek directly to one key range; only matching keys cross the storage boundary. */
+    void forEachKey(byte[] prefix, java.util.function.Consumer<byte[]> action) {
+        try (var it = db.newIterator()) {
+            for (it.seek(prefix); it.isValid(); it.next()) {
+                var key = it.key();
+                if (key.length < prefix.length || !java.util.Arrays.equals(key, 0, prefix.length, prefix, 0, prefix.length)) break;
+                action.accept(key);
+            }
+            it.status();
+        } catch (RocksDBException e) { throw failure(e); }
+    }
+
     /** Every key in the store, in order: lets tests assert that exactly the expected record kinds are on disk. */
     public java.util.List<byte[]> keys() {
         var out = new java.util.ArrayList<byte[]>();

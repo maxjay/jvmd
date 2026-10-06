@@ -238,3 +238,137 @@ The first regressions failed in four cases under the two digests: native compile
 A fresh-class-loader fixture then failed twice because replayed runtime annotation interfaces came from the original processor loader (`stage3-model-replay-loader-red.log`). Replayed annotation objects, annotationType() results and annotation arrays now use the requesting processor's annotation class. MirroredTypeException and MirroredTypesException still carry wrapped type mirrors. The complete **92-test** processor/configuration/output/environment/architecture gate passed with no failures/errors/skips in 56.6s (`stage3-model-replay-final.log`) after this repair.
 
 This is an in-memory replay primitive, not a completed per-output proof. It is not yet wired into a per-origin processor executor or GEN manifest comparison, and it is not a persistent verifier across independent compiler invocations. The existing multi-origin modelProof rule therefore remains unresolved. The next integration must capture round inputs, run fresh processor instances per origin, compare each replay's exact output set with the native batch's outputs for that origin, and report an unprovable replay without substituting a wider identity. A replay may legitimately ask a query absent from the batch trace; this cannot be answered against the later completed model. Initialization, generated rounds, empty origins and cached answers need explicit treatment before claiming that integration complete. Appendix F's final input audit and measurements, and all Stage 3 body/result/driver invariants, remain pending.
+
+### Third mathematical audit, 2026-10-06
+
+The audit of PR #60 at 22067f1c found two immediate correctness defects and required a deeper Stage 2 reconciliation before PR B. Both immediate defects reproduced in `review-third-red.log`: six expected failures (two generation decisions and two member-lookup cases under both digests), no errors. The initial repair passed 31 focused tests; the expanded branch/import and architecture checks passed 32 tests in `review-third-branches.log`.
+
+- MACHINE is now `layout=4;parser=3`, and LOCAL is `local=2`. A committed old parser-2 generation remains untouched while BootDecision cold-boots the distinct parser-3 directory; a local=1 root cannot take the current-format skip branch. No migration or legacy fact decoding was introduced.
+- Qualified inherited member-type references, single static imports and static on-demand imports record exact N absences along every lookup branch before a declaration. Sub/Mid insertion tests cover own and route providers and assert unchanged containing-owner oSums. Hidden ancestors are excluded unless another branch reaches them; that second path can introduce ambiguity. A unit-local cache avoids repeated closure and named-member traversal. No new persisted fingerprint was added.
+- The authoritative Stage 3 document and repository snapshot were amended together, still revision 123 plus the dated review amendment. Their SHA-256 is `27857293052495a85426595bc38aff56f58523f6cfcfb82029fc784722438f6b`. Explicit UTF-8 read/write preserves the original mathematical symbols.
+
+The 244-test full gate (`review-third-final-gate.log`, 3m42s) passed 243 tests and failed only the existing MachineColdBootTest assertion hard-coding parser=2. That assertion now expects parser=3; its entire 27-test suite passed with no failures/errors/skips in `review-third-format-assertion.log` (38.4s). No production code changed after the full gate.
+
+The own-project oracle covers 13 modules / 26 scopes / 492 sources, with 91 jars indexed on the spot. Both digests have exact source/class k equality in 26/26 scopes, no annotation identity differences and zero faults:
+
+| Digest | Wall ms | Header ms | Facts ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 5,271 | 3,519 | 1,330 | 157 | 22,141 |
+| SHA3-256 | 3,946 | 2,318 | 800 | 159 | 22,142 |
+
+Maven model/build time (30.7/30.0s) is excluded. Sampled used heap above baseline was 843/1,341 MB, without controlling intervening GC. These sequential measurements are not a performance comparison. Raw reports: [SHA-256](measurements/layout4-review3-stage2-SHA-256.txt), [SHA3-256](measurements/layout4-review3-stage2-SHA3-256.txt).
+
+Before PR B, the required Stage 2 work is:
+
+1. Replace positive header oSum dependencies with actual T ranges, including exact constant fields, annotation declaration reads and headers along lookup paths. A Mid superclass edit must invalidate a Sub.Inner lookup even when the selected Base.Inner and every old N absence remain unchanged. Keep ownR and definer sums as shortcuts only.
+2. Replace consumer lists with one empty reverse record per dependency/project/path, including expected-zero T/N/D reads. Prove delta-to-prefix-to-candidate fan-out without scanning F rows, and preserve distinct paths for identical source bytes.
+3. Replace the full counts-map copy in DefinerIndex.fold with persistent state. Make distance non-allocating; eliminate exhaustive nearest-state search through route ancestry before claiming project-size-independent routing cost.
+4. Retain full special annotations in A while keeping only the minimal warning bits in res; prove Deprecated.since changes A/a alone. Fact.byName precomputation remains an optional measured optimization, with N still a deterministic projection of m/res.
+5. Rewrite the Stage 2 authority (`C:\Users\Max\Downloads\jvmd stage 2 LOCAL cold boot.md`) and reconcile Appendix A with those implemented proof/reverse/state rules. No RA, nSum, broad processor dependencies or storage-existence dedup reads.
+
+The in-progress processor replay work remains preserved in the separate feat/jvmd-stage-3 tree. Appendix F, body attribution and the Stage 3 invariants are unfinished. PR #60 stays open pending explicit merge approval; warm remains untouched.
+
+
+### Stage 2 persistent definer state, 2026-10-06
+
+The counts-map copy reported in the third audit is removed. `DefinerCounts` is an immutable balanced map, built once for a cold fold and updated by copied search paths for changed type keys. A derived fold accumulates only the changed leaves' types and shares the remaining map entries and branches. Conflict enumeration skips singleton subtrees using their multiple-definer counts. Missing-key getOrDefault/containsKey are explicit point lookups too, avoiding AbstractMap's default full iteration. DD/DS/DC retain their existing ContentTree representations and sums; the map is boot-local working state, with no new stored identity or codec. Leaf-set distance now counts with two indices without allocating removed/added lists. Nearest-state selection itself still scans previous states and remains a separate cost issue.
+
+The structural-sharing regression first failed under both digests: replacing a small leaf in a 32,768-type state shared zero old map entries (`stage2-definer-state-red.log`). The repair reads only the changed leaves, preserves old snapshots, shares all but bounded search paths, and gives the same disjoint/conflict roots as fresh folds. The additional 3,000-update history covers ordered growth/deletion, random conflict membership, branching from old snapshots, point misses and structural sharing. The initial focused gate passed 84 tests and the expanded history suite passed 6.
+
+The final frozen gate passed **250 tests**, no failures/errors/skips, in 3m35s (`stage2-definer-state-frozen-gate.log`). An earlier run crossed the addition of the two point-lookup overrides during its first own-project measurement; its only failure was the resulting source-only pair of methods. That invalid sample is superseded by the complete frozen rerun. No Java sources changed during or after the final gate.
+
+The project oracle covers 13 modules / 26 scopes / 494 sources, with 91 jars indexed on the spot. Both digests have exact source/class k equality in 26/26 scopes, no annotation differences and zero faults:
+
+| Digest | Wall ms | Header ms | Facts ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 5,624 | 3,797 | 1,554 | 233 | 22,138 |
+| SHA3-256 | 3,911 | 2,331 | 771 | 174 | 22,144 |
+
+Maven model/build time (31.5/30.7s) is excluded. Sampled used heap above baseline was 488/881 MB, without controlling intervening GC. These sequential timings do not prove a speedup; the sharing/changed-leaf assertions and implementation's point-update paths establish the derivation cost change. Raw reports: [SHA-256](measurements/stage2-definer-state-SHA-256.txt), [SHA3-256](measurements/stage2-definer-state-SHA3-256.txt).
+
+```powershell
+mvn -B -pl jvmd-tests -am test '-Dtest=DefinerStateTest,MachineColdBootTest,ClassMemoTest,ContentTreeTest,ContentTreeEditTest,ZipReaderTest,RocksMachineBootTest,LocalColdBootTest,LocalCodecsTest,FactCodecsTest,RocksLocalBootTest,Layout4Test,HeaderAbsencesTest,SourceAnnotationProjectionTest,TailStrippingTest,StubProjectionTest,PersistedLeavesTest,MavenProjectTest,Stage2Measurement,ModuleArchitectureTest,ForbiddenIdentifiersTest' '-DexcludedGroups=none' '-Djvmd.stage2.workers=4' '-Dsurefire.failIfNoSpecifiedTests=false'
+```
+
+At 38f890cb, hosted [Tests](https://github.com/maxjay/jvmd/actions/runs/37392009479) and [benchmarks](https://github.com/maxjay/jvmd/actions/runs/37392009061) both passed. Those runs predate the persistent-map change. PR #60 remains open; passing checks are not merge approval. Exact T/N/D header proofs, path-addressed reverse entries, full special annotations in A, and the Stage 2 specification rewrite remain required before PR B. The untouched Stage 2 authority is `C:\Users\Max\Downloads\jvmd stage 2 LOCAL cold boot.md`, SHA-256 `c7b6d3eefeee086e91f90d4da7d96b5b34d301dc62f7f1739051036bfe4bad19` at this checkpoint. Appendix F replay WIP is preserved in the separate Stage 3 tree; all body/result/driver work remains unfinished.
+
+
+### Exact header ranges: Stage 2 reconciliation
+
+`FileRow.Proof` now stores `(typeKey, kind, name, sum)` for an exact T prefix, including expected-zero field ranges. TYPE references consume the single header fact; constant reads consume the named FIELD range; annotation checking consumes the annotation method contract. `HeaderProof.valid` resolves each owner under the own-first binding and compares that range sum. It no longer compares an entire type's oSum as the actual dependency.
+
+`ProofCollector` now collects both positive ranges and absence candidates after SourceFacts has completed declarations. The duplicate SourceFacts name scanner and containing-owner constant target list are removed. The collector retains final primitive/String initializer reads even before a field can fold, including private constants that feed exported declarations. It skips method bodies, initializer blocks and lambdas. Inherited field and member-type lookup record both the named empty ranges before a declaration and the intermediate type headers actually traversed. Static on-demand field lookup records competing imported ranges. Unresolved types and constant fields retain expected-zero observations.
+
+Four regressions initially reproduced eight failures across both digests (`stage2-header-ranges-red.log`): unrelated method additions invalidated type-only/constant consumers; changing Mid's superclass left inherited Inner resolution falsely valid; and adding a missing type left a faulted header falsely valid. Additional red regressions exposed wildcard static-field shadowing (`stage2-header-lookup-red.log`) and a missing constant field becoming available (`stage2-header-missing-field-red.log`). All now pass. Annotation element/default changes invalidate checking, while unused annotation constant fields do not. The old invariant 18 test now requires an unrelated method addition to preserve validity and a real type-header edit to invalidate its consumer. A class-literal regression similarly requires reuse when only K's unread fields change.
+
+Focused validation: **125 tests passed**, no failures/errors/skips, in `stage2-header-ranges-focused.log` (42 HeaderAbsences, 76 LocalColdBoot, 7 LocalCodecs). The subsequent full gate includes the source/class oracle with Java sources frozen throughout.
+
+The new proof codec requires **LOCAL 3**; MACHINE remains `layout=4;parser=3`. Real Rocks tests require cold rebuilding both local=1 and local=2 roots, then permit the current-format skip. Revision 123's dated amendment and its Downloads authority now include A.5a's exact header ranges; both files have SHA-256 `1b390c87ee9fb40548b125b241edae53d29a6ad1af7a8d9ae9ac839acf3a503f`.
+
+The reverse records still use the legacy positive type-to-consumer lists at this checkpoint. Replacing them with one empty dependency/project/path key for every T/N/D read, then proving Diff-to-prefix candidate discovery without scanning F rows, is the next required change. Route ancestry, complete special-annotation metadata in A, and the full Stage 2 specification rewrite also remain before PR B. The processor replay WIP in the separate Stage 3 tree is untouched; Appendix F and body/result/driver work remain unfinished. Max has now authorized merging PR #60 once the final checks pass and merge-blocking review items are resolved. The local and exact-head hosted verification must finish before using that approval.
+
+
+Final frozen gate: **264 tests passed**, no failures/errors/skips, in `stage2-header-ranges-final-gate.log` (3m35s). It uses the same complete test selection shown above for the persistent-map gate, now including the added header regressions and both legacy LOCAL versions. The earlier full run had one stale kind-7-only reverse-key assertion; hierarchy observations can also use the legacy kind-8 category, and the final run includes that corrected assertion.
+
+JVMD's 13 modules / 26 scopes / 494 sources retain exact source/class k equality in all scopes, no annotation differences and zero faults under both digests, with 91 jars indexed on the spot. The facts timing now includes the combined proof collector, so moving its work out of SourceFacts does not remove it from the measurement.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 5,133 | 3,511 | 1,814 | 138 | 22,165 |
+| SHA3-256 | 6,406 | 4,499 | 2,158 | 352 | 22,170 |
+
+Maven time (29.7/30.9s) is excluded. Sampled heap above baseline was 822/758 MB with uncontrolled GC; these sequential measurements do not establish a speedup or regression. Raw reports: [SHA-256](measurements/stage2-header-ranges-SHA-256.txt), [SHA3-256](measurements/stage2-header-ranges-SHA3-256.txt). Hosted Tests and benchmarks passed at 40b432b1, before this exact-range change; the new pushed commit requires its own checks before merge.
+
+
+### PR #60 merged; reverse-index follow-up in progress
+
+Max authorized the merge after verification. PR #60 merged on 2026-10-06 at 00:56:49 UTC as `16f690706e66b0b98d8e7140dfbd7a95929d91c9`, with exact PR head `f6472306876a832004056907073a811c0d2f0801`. All required contexts were successful and the PR was CLEAN/MERGEABLE. Hosted [Tests](https://github.com/maxjay/jvmd/actions/runs/37395865290) and [benchmarks](https://github.com/maxjay/jvmd/actions/runs/37395864592) passed on that head, after the frozen 264-test local gate. No GitHub comments or review replies were posted.
+
+The follow-up branch `codex/stage2-reconciliation` is separate from the merged PR. Its current uncommitted implementation replaces reverse consumer lists with empty keys:
+
+`X|H|u8 form || zstr type || u8 kind || zstr name || id project || zstr path`
+
+Form 0 is T, form 1 is N, form 2 is D. FileRow's exact positive and expected-zero dependencies all produce keys. `ReverseIndex.candidates` maps changed T/N/definer entries from Diff into dependency prefixes, seeks those prefixes and returns actual project/path consumers. It reads no F row. A reached consumer's key must belong to its committed LOCAL tree, so unreachable raw keys from an old cold generation do not become live consumers. Roots are cached per reached project during one lookup. Storage adds a prefix-seek operation implemented by RocksDB seek and a bounded in-memory tailMap walk; no record-universe scan is added. The LOCAL version advances to 4 for this new representation; the Stage 3 authority/snapshot still describe merged LOCAL 3 and must be amended when the follow-up is finalized.
+
+Focused follow-up verification: `stage2-header-reverse-first.log` passed **134 tests** (HeaderAbsences, the initial 8 HeaderReverse cases, LocalCodecs, LocalColdBoot and RocksLocalBoot). Then `stage2-header-reverse-storage.log` passed **11 tests** after adding an expected-zero T-field delta and real RocksDB prefix reads (10 HeaderReverse and 1 RocksLocalBoot). The path test asserts identical source bytes and identical external leaf sets in two modules still produce two distinct consumers. Other cases cover N changes with owner oSum unchanged, missing D types, stale raw keys, exact candidate paths, and validation only after candidate discovery. LOCAL 1/2/3 all force cold rebuilding before the current-format skip. No full measurement gate has yet run on this follow-up.
+
+Next: inspect and finish the reverse-index change, run its full frozen gate, preserve full Deprecated/SafeVarargs metadata in A with a since-only regression, replace exhaustive nearest-state selection, and reconcile the complete Stage 2 document before PR B. Appendix F replay WIP remains untouched in the separate feat/jvmd-stage-3 tree; Stage 3 bodies/results/driver and its full oracle remain unfinished. The active Stage 3 goal is not complete. The approval above was for PR #60; it does not authorize merging later PRs.
+
+
+### Stage 2 reconciliation verified, 2026-10-06
+
+The path-addressed header reverse keys are now covered by the full frozen gate. They preserve distinct consumers with identical bytes, index T/N/D zeros as well as positive reads, seek only changed prefixes, and use current LOCAL-tree membership to exclude raw keys left by earlier cold generations. Their reader is implemented for both memory and RocksDB; candidate discovery reads no F row.
+
+Full retained Deprecated/SafeVarargs annotations now remain in A/EA in both ClassFacts and SourceFacts. Minimal warning state stays in res. Four red assertions across the two digests reproduced missing since/full-annotation metadata (`stage2-warning-metadata-red.log`); the focused repair gate passed 75 tests. The since-only regression asserts unchanged L/stub bytes and EA, changed a, exactly the three edited A entries, and recovered since values. Source/class A parity also covers full warning annotations. Parser advances to **4**; real Rocks tests leave committed parser-2 and parser-3 generations opaque and cold boot parser 4. LOCAL remains the follow-up's **4**, with legacy LOCAL 1/2/3 rebuilding.
+
+IndexMemo no longer scans prior states for the nearest leaf set. The route plan supplies ancestry: own main for test, first declared sibling main for dependent main, and shared JDK external base for root modules. Exact leaf sets still fold once under concurrency. Persistent counts and incremental disjoint-tree apply consume the changed leaves/types. A read-count regression confirms java.base and inherited/shared fixture jar O roots open once under both one and eight workers; roots remain equal under shuffled modules. The focused route/persistent/reverse gate passed 94 tests. The chosen ancestor is not claimed globally nearest; unrelated roots can revisit overlapping jars, leaf-list comparison remains, and conflict construction still inspects overlaps.
+
+Final frozen gate: **276 tests passed, zero failures/errors/skips**, 3m45s, `stage2-reconciliation-frozen-gate.log`. No Java source changed during the gate or after it before this checkpoint. The real Maven oracle covered **13 modules, 26 scopes, 495 sources**, with **26/26 exact source/class k matches, no annotation differences and zero faults** under each digest. It indexed 91 jars on the spot and used 22 distinct states including the common JDK base.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 5,316 | 3,484 | 1,822 | 168 | 23,282 |
+| SHA3-256 | 4,178 | 2,382 | 1,072 | 218 | 23,265 |
+
+Maven model/build time (30.9/31.6s) is excluded. Sampled heap above baseline was 818/1,302 MB with uncontrolled GC; these sequential timings do not prove a speedup. Raw reports: [SHA-256](measurements/stage2-reconciliation-SHA-256.txt), [SHA3-256](measurements/stage2-reconciliation-SHA3-256.txt).
+
+```powershell
+mvn -B -pl jvmd-tests -am test '-Dtest=DefinerStateTest,MachineColdBootTest,ClassMemoTest,ContentTreeTest,ContentTreeEditTest,ZipReaderTest,RocksMachineBootTest,LocalColdBootTest,LocalCodecsTest,FactCodecsTest,RocksLocalBootTest,Layout4Test,HeaderAbsencesTest,HeaderReverseTest,SourceAnnotationProjectionTest,TailStrippingTest,StubProjectionTest,PersistedLeavesTest,MavenProjectTest,Stage2Measurement,ModuleArchitectureTest,ForbiddenIdentifiersTest' '-DexcludedGroups=none' '-Djvmd.stage2.workers=4' '-Dsurefire.failIfNoSpecifiedTests=false'
+```
+
+The full Stage 2 authority was reconciled, with a tracked snapshot at [jvmd-stage2-local-cold-boot.md](jvmd-stage2-local-cold-boot.md). It replaces stale FileMemo/whole-oSum/reverse-list/layout-3 prose, documents current codecs and 25 invariants, separates legacy C/RS placeholders from Stage 3, and states actual memory/route/history limits. Diff compares keys/h, so the document distinguishes semantic Diff from exact value deltas when an entry's h projects away storage values. No Diff implementation change is claimed. Stage 3 Appendix A agrees on full warning metadata, parser/LOCAL 4, exact header/reverse observations and route ancestry. The Downloads authorities and repo snapshots are byte-identical:
+
+- Stage 2 SHA-256 `f60bccee3c347fb2dc2b1c8147e6c1e6d4740fefd7cab2c88e508449e0c4fab6`.
+- Stage 3 SHA-256 `9c0a1ebedefcbd6575af5240e83e42ddc52fca94526ee6e46ec0ae0a0deb1f3b`.
+
+The previous Downloads authorities are retained beside them with `.before-stage2-reconciliation.md` suffixes. The Stage 3 revision number remains 123 with a dated amendment; this is not a new upstream revision.
+
+Post-merge PR #60 distribution run [37396638545](https://github.com/maxjay/jvmd/actions/runs/37396638545) failed on both Linux jobs during TemporaryDirectory cleanup (`OSError: Directory not empty`) after each job emitted passing smoke-check evidence. macOS and Windows jobs passed; publishing was skipped. The pre-merge Tests/benchmarks remain green. This later distribution cleanup failure is identified but not repaired by the Stage 2 changes.
+
+This follow-up needs its own hosted checks and review. PR #60's merge approval does not authorize merging it. The separate feat/jvmd-stage-3 tree still preserves uncompiled ProcessorReplay/HeaderCompiler/ProcessorHost/ProcessorReadTest changes. Next integrate the reconciled foundation without losing that WIP, finish Appendix F's isolated replay proofs and reconcile F with the user's processorElementProjection/ContentTree overrides, then implement body attribution/results/driver and all thirty Stage 3 invariants. No Stage 3 completion or warm implementation is claimed.
+
+### Stage 2 foundation integrated into the Stage 3 branch
+
+The Stage 3 branch now combines Stage 2 reconciliation at `66d27412` with Appendix F's generated-file provenance, processor configuration and output manifests. FileRow retains its generated/origin/genId/processorContext fields and adopts exact T ranges plus N/D absences. The combined format is **LOCAL 5**; the standalone Stage 2 specification still documents its LOCAL 4 baseline. Isolating derivation header observations encode separate T/N/D namespaces and exact ranges rather than the removed whole-type proof representation.
+
+`stage3-reconciliation-integration.log` passed **159 tests, zero failures/errors/skips**, including header ranges/reverse lookup, source/class annotation parity, processor model/projection/reads/diagnostics/configuration/empty-output cases, generated manifests, Rocks format migration and architecture checks. This gate predates restoration of the isolated ProcessorReplay work. ProcessorStage2Test was not included and still needs to run with that restoration. The four replay WIP files are retained in stash `ac0069884ded850b4a1d1f1dfe1400600dfcdd8b` until recovery and verification. Appendix F and the complete Stage 3 goal remain unfinished.

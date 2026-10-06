@@ -22,6 +22,9 @@ public interface LocalStore extends MachineStore {
     /** The record under {@code key}, or null. */
     byte[] get(byte[] key);
 
+    /** Visit keys beginning with this exact prefix, in store order; seek directly to the prefix, never scan the record universe. */
+    void forEachKey(byte[] prefix, java.util.function.Consumer<byte[]> action);
+
     /** Commits at once. The previous root of this project, if any, is kept under {@code LROOT|projectKey|n} (9.1). */
     void putLocalRoot(Identity projectKey, byte[] value);
 
@@ -42,13 +45,6 @@ public interface LocalStore extends MachineStore {
     static byte[] siblingKey(Identity leafSetSib) { return join("DS|", leafSetSib.view()); }
     static byte[] conflictsKey(Identity routeHash) { return join("DC|", routeHash.view()); }
     static byte[] consumerKey(Identity kappa, Identity leafSetExt) { return join("C|", kappa.view(), "|", leafSetExt.view()); }
-    /**
-     * {@code X|kind|key|projectKey}, the project key trailing as a fixed-width id: every project's entry for one dependency is under
-     * the prefix {@code X|kind|key}, which is the cross-project read, and no two projects share a key.
-     */
-    static byte[] reverseKey(int kind, byte[] key, Identity projectKey) { return join("X|", new byte[] {(byte) kind}, "|", key, projectKey.view()); }
-    /** The prefix of every project's entry for one dependency: a range read. */
-    static byte[] reversePrefix(int kind, byte[] key) { return join("X|", new byte[] {(byte) kind}, "|", key); }
     static byte[] resultKey(Identity kappa, Identity leafSetExt) { return join("RS|", kappa.view(), "|", leafSetExt.view()); }
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }
     static byte[] stubTypeKey(Identity stKey) { return join("ST|", stKey.view()); }

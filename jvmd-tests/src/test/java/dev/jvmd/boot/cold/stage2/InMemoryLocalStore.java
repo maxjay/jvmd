@@ -26,6 +26,14 @@ final class InMemoryLocalStore implements LocalStore {
     long recordWriteCount() { return recordWrites.size(); }
     long nodeWriteCount() { return nodeWrites.get(); }
 
+    private final Map<java.nio.ByteBuffer, java.util.concurrent.atomic.AtomicInteger> watchedReads = new java.util.concurrent.ConcurrentHashMap<>();
+
+    java.util.concurrent.atomic.AtomicInteger watchReads(byte[] key) {
+        var count = new java.util.concurrent.atomic.AtomicInteger();
+        watchedReads.put(java.nio.ByteBuffer.wrap(key), count);
+        return count;
+    }
+
     InMemoryLocalStore copy() {
         var out = new InMemoryLocalStore();
         synchronized (records) { out.records.putAll(records); }
@@ -44,10 +52,27 @@ final class InMemoryLocalStore implements LocalStore {
     /** The record under a key, recorded by kind: the tag before the first {@code |} of a LOCAL key, or the one-byte tag of a MACHINE key. */
     @Override public byte[] get(byte[] key) {
         events.add("read:" + kindOf(key));
+        if (!watchedReads.isEmpty()) {
+            var count = watchedReads.get(java.nio.ByteBuffer.wrap(key));
+            if (count != null) count.incrementAndGet();
+        }
         synchronized (records) { return records.get(key); }
     }
 
     private static final List<String> LOCAL_TAGS = List.of("LROOT", "SL", "AL", "MOD", "RT", "F", "DD", "DS", "DC", "C", "X", "RS", "ST", "S", "PROC", "PD", "PDIAG", "RES", "GEN", "GS");
+
+    @Override public void forEachKey(byte[] prefix, java.util.function.Consumer<byte[]> action) {
+        events.add("prefix:" + kindOf(prefix));
+        var keys = new ArrayList<byte[]>();
+        synchronized (records) {
+            for (var key : records.tailMap(prefix).keySet()) {
+                if (key.length < prefix.length || !Arrays.equals(key, 0, prefix.length, prefix, 0, prefix.length)) break;
+                keys.add(key);
+            }
+        }
+        keys.forEach(action);
+    }
+
 
     private static String kindOf(byte[] key) {
         if (Arrays.equals(key, MachineStore.ROOT_KEY)) return "ROOT";

@@ -114,7 +114,38 @@ class RocksMachineBootTest {
             assertThat(lines).hasSize(1);
             assertThat(lines.get(0)).contains(generation.directory().toString()).contains("warm boot not implemented, skipping").doesNotContain("\n");
             try (var store = generation.open()) { assertThat(store.get(MachineStore.ROOT_KEY)).as("nothing was deleted or rewritten").isEqualTo(root); }
-            assertThat(Files.list(index).map(p -> p.getFileName().toString()).toList()).containsExactly("layout=4_digest=SHA-256_jdk=" + Runtime.version().feature() + "_parser=2");
+            try (var directories = Files.list(index)) {
+                assertThat(directories.map(p -> p.getFileName().toString()).toList()).containsExactly(generation.directory().getFileName().toString());
+            }
         } finally { logger.removeHandler(handler); }
+    }
+
+    @Test void mergedLayout4GenerationsAreUntouchedAndCannotSkipTheNewColdBoot() throws Exception {
+        var digest = Sha256.INSTANCE;
+        var index = temp.resolve("machine");
+        var previous = List.of("2", "3").stream()
+                .map(parser -> Generation.of(index, new Format(4, digest.name(), Runtime.version().feature(), parser))).toList();
+        // Old codecs must remain opaque: only the old generation's commitment marker matters to the decision.
+        byte[] oldRoot = {59, 2}, oldPath = {59, 3};
+        for (var generation : previous) try (var store = generation.create()) {
+            store.putPath("old-layout", oldPath);
+            store.flush();
+            store.sync();
+            store.putRoot(oldRoot);
+        }
+        var config = new Config(Path.of(System.getProperty("java.home")), null, repository(), 3,
+                Duration.ofHours(1), 512, false, temp.resolve("state"), temp.resolve("daemon.sock"));
+        var boot = BootDecision.machine(index, config);
+        assertThat(boot).as("committed parser-2/3 generations must not skip the parser-4 cold boot").isPresent();
+        assertThat(boot.orElseThrow().faults()).isEmpty();
+        var current = Generation.of(index, Format.of(digest, Runtime.version().feature()));
+        assertThat(previous).noneMatch(g -> g.directory().equals(current.directory()));
+        assertThat(current.hasRoot()).isTrue();
+        assertThat(BootDecision.machine(index, config)).isEmpty();
+        for (var generation : previous) try (var store = generation.open()) {
+            assertThat(store.get(MachineStore.ROOT_KEY)).isEqualTo(oldRoot);
+            assertThat(store.get(MachineStore.pathKey("old-layout"))).isEqualTo(oldPath);
+            assertThat(store.keys()).hasSize(2);
+        }
     }
 }

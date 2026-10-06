@@ -1,0 +1,125 @@
+package dev.jvmd.boot.cold.stage3;
+
+import dev.jvmd.core.hash.Identity;
+import dev.jvmd.core.tree.Codec;
+import dev.jvmd.core.tree.ContentTree;
+import dev.jvmd.core.tree.Diff;
+import dev.jvmd.core.tree.Entry;
+import dev.jvmd.core.tree.NodeSink;
+import dev.jvmd.core.tree.Root;
+import dev.jvmd.index.layer.local.DefinerIndex;
+import dev.jvmd.index.layer.local.LocalStore;
+import dev.jvmd.index.layer.local.ResultRecord;
+import dev.jvmd.index.layer.machine.Keys;
+import dev.jvmd.index.layer.machine.MachineStore;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.TreeMap;
+
+/** The exact class output map and Diff-driven materialisation (stage 3 B.5). */
+public final class Output {
+    private Output() { }
+    public record Changes(int written, int deleted) { }
+
+    /** Failed units contribute no entries, even if javac emitted a partial class before reporting an error. */
+    public static Root build(ContentTree tree, NodeSink sink, Collection<ResultRecord> results) {
+        var entries = new TreeMap<byte[], Entry>(Arrays::compareUnsigned);
+        for (var result : results) if (result.attributed()) for (var file : result.classFiles()) {
+            validateName(file.internalName());
+            var key = Keys.ownerKey(file.internalName());
+            if (entries.putIfAbsent(key, new Entry(key, file.contentHash().bytes(), file.contentHash())) != null)
+                throw new IllegalArgumentException("Two clean units emitted " + file.internalName());
+        }
+        return tree.build(entries.values(), sink);
+    }
+
+    /**
+     * Materialises the caller's selected committed OUT root. Only Diff's class paths are touched; MAT is published last.
+     * If writing fails, the old MAT remains, so replaying the same delta repairs any partial work.
+     */
+    public static Changes materialise(ContentTree tree, LocalStore store, Identity project, String module, int scope,
+                                      Root output, Path directory) throws IOException {
+        Files.createDirectories(directory);
+        var root = directory.toRealPath();
+        var directoryId = tree.digest().hash(root.toString().getBytes(StandardCharsets.UTF_8));
+        var marker = LocalStore.materialisedKey(project, module, scope, directoryId);
+        var recorded = store.get(marker);
+        Root previous;
+        if (recorded == null) { previous = tree.build(List.of(), store); store.flush(); }
+        else previous = DefinerIndex.decodeRoot(recorded, tree.digest().width());
+        if (recorded != null && previous.hash().equals(output.hash())) return new Changes(0, 0);
+        var diff = Diff.trees(tree.digest(), previous, output, hash -> store.get(MachineStore.nodeKey(hash)));
+        var removed = new ArrayList<Path>();
+        var added = new LinkedHashMap<Path, byte[]>();
+        // Validate the entire delta before touching the output directory. No unchanged CF is read.
+        for (var entry : diff.removed()) removed.add(target(root, name(entry)));
+        for (var entry : diff.added()) {
+            var path = target(root, name(entry));
+            var content = Identity.of(entry.value());
+            var bytes = store.get(LocalStore.classFileKey(content));
+            if (bytes == null || !tree.digest().hash(bytes).equals(content))
+                throw new IOException("Missing or corrupt class bytes for " + path);
+            if (added.putIfAbsent(path, bytes) != null) throw new IOException("Class output paths collide: " + path);
+        }
+        int deleted = 0;
+        for (var path : removed) if (!added.containsKey(path)) { Files.deleteIfExists(path); deleted++; }
+        for (var entry : added.entrySet()) write(entry.getKey(), entry.getValue());
+        store.put(marker, DefinerIndex.encodeRoot(output)); store.flush();
+        return new Changes(added.size(), deleted);
+    }
+
+    private static String name(Entry entry) {
+        var in = new Codec.Reader(entry.key());
+        String name = in.zstr();
+        if (in.remaining() != 0) throw new IllegalArgumentException("Trailing output key bytes");
+        return name;
+    }
+
+    private static void validateName(String name) {
+        if (name.isEmpty() || name.indexOf('\\') >= 0 || name.indexOf(':') >= 0 || name.indexOf('\0') >= 0)
+            throw new IllegalArgumentException("Invalid internal class name: " + name);
+        for (var segment : name.split("/", -1)) if (segment.isEmpty() || segment.equals(".") || segment.equals(".."))
+            throw new IllegalArgumentException("Invalid internal class name: " + name);
+    }
+
+    private static Path target(Path root, String name) throws IOException {
+        validateName(name);
+        var target = root.resolve(name + ".class").normalize();
+        if (!target.startsWith(root)) throw new IOException("Class output escapes its directory: " + name);
+        var current = root;
+        for (var component : root.relativize(target)) {
+            current = current.resolve(component);
+            if (Files.exists(current, LinkOption.NOFOLLOW_LINKS)
+                    && (Files.isSymbolicLink(current) || !current.toRealPath().equals(current)))
+                throw new IOException("Class output traverses a filesystem link: " + current);
+        }
+        return target;
+    }
+
+    private static void write(Path target, byte[] bytes) throws IOException {
+        Files.createDirectories(target.getParent());
+        var temporary = Files.createTempFile(target.getParent(), ".jvmd-", ".class.tmp");
+        try {
+            try (var channel = FileChannel.open(temporary, StandardOpenOption.WRITE)) {
+                var buffer = ByteBuffer.wrap(bytes);
+                while (buffer.hasRemaining()) channel.write(buffer);
+                channel.force(true);
+            }
+            try { Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
+            catch (AtomicMoveNotSupportedException ex) { Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING); }
+        } finally { Files.deleteIfExists(temporary); }
+    }
+}

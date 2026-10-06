@@ -12,7 +12,7 @@
   <properties><maven.compiler.release></maven.compiler.release><maven.compiler.source>25</maven.compiler.source><maven.compiler.target>25</maven.compiler.target></properties>
   <build><plugins><plugin>
     <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
-    <!-- JavacTask has no public enter(); HeaderCompiler needs it to stop short of attribution (stage 2, C.1). The daemon image exports the same package. -->
-    <configuration><compilerArgs><arg>--add-exports=jdk.compiler/com.sun.tools.javac.api=dev.jvmd.boot</arg><arg>--add-exports=jdk.compiler/com.sun.tools.javac.main=dev.jvmd.boot</arg><arg>--add-exports=jdk.compiler/com.sun.tools.javac.util=dev.jvmd.boot</arg><arg>--add-exports=jdk.compiler/com.sun.tools.javac.tree=dev.jvmd.boot</arg></compilerArgs></configuration>
+    <!-- JavacTask has no public enter(); HeaderCompiler needs it to stop short of attribution (stage 2, C.1). Stage 3 Pool additionally needs code for exact own-symbol eviction. The daemon image exports these packages. -->
+    <configuration><compilerArgs><arg>--add-exports=jdk.compiler/com.sun.tools.javac.api=dev.jvmd.boot</arg><arg>--add-exports=jdk.compiler/com.sun.tools.javac.main=dev.jvmd.boot</arg><arg>--add-exports=jdk.compiler/com.sun.tools.javac.util=dev.jvmd.boot</arg><arg>--add-exports=jdk.compiler/com.sun.tools.javac.tree=dev.jvmd.boot</arg><arg>--add-exports=jdk.compiler/com.sun.tools.javac.code=dev.jvmd.boot</arg></compilerArgs></configuration>
   </plugin></plugins></build>
 </project>

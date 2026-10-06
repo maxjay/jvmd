@@ -70,8 +70,10 @@ class BodyProcessorTest {
 
     private Run run(Digest digest, Fixture fixture, List<Path> processors, Pool pool, Path source) throws Exception {
         var diagnostics = new ArrayList<String>();
-        try (var host = ProcessorHost.bodies(processors, List.of(), digest, dir.resolve("body-capture"), StandardCharsets.UTF_8,
-                (hash, name) -> { assertThat(hash).isEqualTo(fixture.processorPath()); return fixture.capabilities().get(name); })) {
+        var optionsHash = digest.hash(new byte[]{11});
+        var scope = new ProcessorRecords.Scope(fixture.processorPath(), optionsHash, fixture.capabilities().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey()).map(e -> new ProcessorRecords.Invocation(e.getKey(), e.getValue())).toList());
+        try (var host = ProcessorHost.bodies(processors, digest, dir.resolve("body-capture"), StandardCharsets.UTF_8, scope, optionsHash)) {
             var result = pool.withTask(source.toUri(), Files.readAllBytes(source), d -> diagnostics.add(d.getKind() + ":" + d.getMessage(java.util.Locale.ROOT)), task -> {
                 host.attach(task);
                 try {
@@ -249,7 +251,7 @@ class BodyProcessorTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
-    void aggregatesAreExcludedBeforeStaticInitializationAndUnknownCapabilitiesCannotRun(Digest digest) throws Exception {
+    void aggregatesAreExcludedBeforeStaticInitializationAndMismatchedInputsCannotRun(Digest digest) throws Exception {
         var classes = new TreeMap<>(Stage2Support.compile(dir.resolve("processor"), Map.of("fixture/Aggregate.java", """
                 package fixture;
                 @javax.annotation.processing.SupportedAnnotationTypes("*")
@@ -264,12 +266,18 @@ class BodyProcessorTest {
         // Dynamic processors must be selected using the result observed by Stage 2, before init can execute again.
         classes.put("META-INF/gradle/incremental.annotation.processors", Stage2Support.text("fixture.Aggregate,dynamic\n"));
         var path = List.of(Stage2Support.pack(dir.resolve("aggregate.jar"), classes));
-        try (var host = ProcessorHost.bodies(path, List.of(), digest, dir.resolve("capture"), StandardCharsets.UTF_8,
-                (hash, name) -> new ProcessorRecords.Capability(ProcessorRecords.AGGREGATING, ProcessorRecords.GENERATOR))) {
+        var pathHash = digest.hash(digest.hash(Files.readAllBytes(path.getFirst())).view());
+        var optionsHash = digest.hash(new byte[]{12});
+        var scope = new ProcessorRecords.Scope(pathHash, optionsHash, List.of(new ProcessorRecords.Invocation("fixture.Aggregate",
+                new ProcessorRecords.Capability(ProcessorRecords.AGGREGATING, ProcessorRecords.GENERATOR))));
+        try (var host = ProcessorHost.bodies(path, digest, dir.resolve("capture"), StandardCharsets.UTF_8, scope, optionsHash)) {
             assertThat(host.processors()).isEmpty();
         }
-        assertThatThrownBy(() -> ProcessorHost.bodies(path, List.of(), digest, dir.resolve("capture"), StandardCharsets.UTF_8,
-                (hash, name) -> null)).hasRootCauseMessage("Missing Stage 2 processor capability for fixture.Aggregate");
+        assertThatThrownBy(() -> ProcessorHost.bodies(path, digest, dir.resolve("capture"), StandardCharsets.UTF_8, scope, pathHash))
+                .hasMessage("Processor options differ from Stage 2");
+        var wrongBytes = new ProcessorRecords.Scope(optionsHash, optionsHash, scope.processors());
+        assertThatThrownBy(() -> ProcessorHost.bodies(path, digest, dir.resolve("capture"), StandardCharsets.UTF_8, wrongBytes, optionsHash))
+                .hasRootCauseMessage("Processor bytes differ from Stage 2");
         assertThat(dir.resolve("capture")).doesNotExist();
     }
 }

@@ -90,13 +90,20 @@ public final class ProcessorHost implements AutoCloseable {
         this(path, names, digest, generatedDirectory, null, null);
     }
 
-    /** One-unit body invocation: skip aggregates before loading them and capture Filer writes outside javac rounds.
-     * The lookup must read Stage 2 PROC records for the supplied full processor-path hash. This does not admit reuse. */
-    public static ProcessorHost bodies(List<Path> path, List<String> names, Digest digest, Path generatedDirectory,
-                                       java.nio.charset.Charset charset,
-                                       java.util.function.BiFunction<Identity, String, ProcessorRecords.Capability> capabilities) throws IOException {
-        return new ProcessorHost(path, names, digest, generatedDirectory, java.util.Objects.requireNonNull(charset),
-                java.util.Objects.requireNonNull(capabilities));
+    /** One-unit body invocation using the scope/options-specific Stage 2 plan, never the global capability consensus. */
+    public static ProcessorHost bodies(List<Path> path, Digest digest, Path generatedDirectory, java.nio.charset.Charset charset,
+                                       ProcessorRecords.Scope scope, Identity optionsHash) throws IOException {
+        if (!scope.optionsHash().equals(optionsHash)) throw new IllegalArgumentException("Processor options differ from Stage 2");
+        var host = new ProcessorHost(path, scope.names(), digest, generatedDirectory, java.util.Objects.requireNonNull(charset), (hash, name) -> {
+            if (!scope.processorPathHash().equals(hash)) throw new IllegalArgumentException("Processor bytes differ from Stage 2");
+            return scope.capability(name);
+        });
+        // No callback occurs when this path discovers no processors, but its bytes are still a prepared input.
+        if (!scope.processorPathHash().equals(host.pathHash())) {
+            host.close();
+            throw new IllegalArgumentException("Processor bytes differ from Stage 2");
+        }
+        return host;
     }
 
     private ProcessorHost(List<Path> path, List<String> names, Digest digest, Path generatedDirectory,

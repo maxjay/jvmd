@@ -58,7 +58,47 @@ public final class ProcessorRecords {
         }
     }
 
+    /** The ordered processor set and classifications actually observed in one scope under these options. */
+    public record Invocation(String processorClass, Capability capability) { }
+
+    public record Scope(Identity processorPathHash, Identity optionsHash, List<Invocation> processors) {
+        public Scope {
+            java.util.Objects.requireNonNull(processorPathHash); java.util.Objects.requireNonNull(optionsHash);
+            processors = List.copyOf(processors);
+            var names = new java.util.HashSet<String>();
+            for (var processor : processors) {
+                if (processor.processorClass().isEmpty() || !names.add(processor.processorClass()))
+                    throw new IllegalArgumentException("Empty or duplicate processor class");
+                java.util.Objects.requireNonNull(processor.capability());
+            }
+        }
+        public List<String> names() { return processors.stream().map(Invocation::processorClass).toList(); }
+        public Capability capability(String name) {
+            return processors.stream().filter(p -> p.processorClass().equals(name)).map(Invocation::capability).findFirst().orElse(null);
+        }
+        public byte[] encode() {
+            var out = new Codec.Writer().id(processorPathHash).id(optionsHash).u32(processors.size());
+            for (var processor : processors) out.str(processor.processorClass()).raw(processor.capability().encode());
+            return out.toBytes();
+        }
+        public static Scope decode(byte[] bytes, int width) {
+            var in = new Codec.Reader(bytes);
+            var path = in.id(width); var options = in.id(width); var processors = new ArrayList<Invocation>();
+            for (int i = 0, n = in.count(); i < n; i++) processors.add(new Invocation(in.str(), new Capability(in.u8(), in.u8())));
+            if (in.remaining() != 0) throw new IllegalArgumentException("Trailing processor scope bytes");
+            return new Scope(path, options, processors);
+        }
+    }
+
     public record Capability(int declared, int observed) {
+        public Capability {
+            if (declared < NONE || declared > AGGREGATING || observed < OVERLAY || observed > VIOLATED)
+                throw new IllegalArgumentException("Invalid processor capability");
+        }
+        /** Global history is classification consensus plus monotone violation history, never a scope's execution plan. */
+        public Capability merge(Capability other) {
+            return new Capability(declared == other.declared ? declared : NONE, Math.max(observed, other.observed));
+        }
         public boolean reusable() { return declared != NONE && observed != VIOLATED; }
         public byte[] encode() { return new Codec.Writer().u8(declared).u8(observed).toBytes(); }
         public static Capability decode(byte[] bytes) { var in = new Codec.Reader(bytes); return new Capability(in.u8(), in.u8()); }

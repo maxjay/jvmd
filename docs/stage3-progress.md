@@ -564,3 +564,31 @@ The clean combined gate passed **498 tests, zero failures/errors/skips**, in 4m0
 The measurement used the host default of **16 workers**: the invocation's `-Dworkers=4` was not the measurement's `jvmd.stage2.workers` property. Maven model/build time (25.9/25.6s) is excluded. Sampled heap above baseline was 1,322/1,271 MB with uncontrolled GC; neither the sequential digests nor earlier checkpoints are a controlled performance comparison. Raw reports: [SHA-256](measurements/stage3-body-processors-SHA-256.txt), [SHA3-256](measurements/stage3-body-processors-SHA3-256.txt).
 
 Integration must also bind dynamic processor classification to the actual Stage 2 scope/options: the current global PROC key is only processor-path hash plus class, and a dynamic processor can resolve differently under different options. The capture fixtures pass the current invocation's capabilities; consulting a globally merged capability alone is not yet a proof that one scope may skip that processor. Processor-generated diagnostics and unsupported native-output handling also need the complete module oracle. These remain required work, not exceptions to the specification.
+
+
+### Scope-specific processing plans and rooted generation references
+
+LOCAL 6 adds PS records containing the full processor-path hash, effective options hash and ordered per-scope processor classifications. Dynamic declarations are now selected using the invocation that Stage 2 actually ran. The global PROC record remains observation/violation history with a commutative classification consensus: disagreement yields NONE, rather than whichever scope finishes last. ProcessorHost's body factory accepts the scoped plan and verifies its options and processor bytes before executing the selected set. Existing LOCAL 5 roots require a cold rebuild; the F row encoding is unchanged.
+
+Stage 2 now also publishes PG references from each admitted processor/origin (or the empty aggregate origin) to its GEN id. References include empty output sets and generated origins. They are fresh members of the LOCAL tree and are not read before its commit. ProcessorPlan looks up PS, PG and GEN through that committed root, verifies each record value against its tree entry and rejects missing/tampered records. An absent PG remains distinct from an admitted empty manifest. Stale raw references left behind by prior generations cannot become current derivations.
+
+GeneratedOutputs.matches compares the complete output map using the distinct kind/path set and exact byte digests. It rejects additions, removals, duplicates, renames, kind changes and byte changes without reading GS blobs or scanning records. These records and comparisons do not introduce a scope identity into ACI or substitute output equality for a model-read proof.
+
+The first gate `stage3-processor-plan-initial.log` passed 24 tests. The expanded `stage3-processor-plan-focused.log` passed **153 tests, zero failures/errors/skips**. Eight new cases under both digests verify opposite dynamic classifications under different module options, equal publication with reversed module order and 1/4 workers, exact empty/nonempty references, body-only edits confined to their own isolating derivation, stale-reference exclusion after annotation removal, corruption rejection, and no GS reads or record scans during matching. An end-to-end component fixture starts from a fresh Stage 2 commit, loads its scoped plan, captures each body task's processor outputs, checks the rooted GEN manifest and matches fresh native javac class bytes across repeated borrows.
+
+The Stage 3 authority and Downloads copy are synchronized at SHA-256 `dc24fd22d051b26ea6764892e4367793537405e43562e4b1bdc07543f5b15651`, after preserving `jvmd-stage3-bodies.before-scoped-processor-plan.md`. The Stage 2-only authority is unchanged. The clean combined gate runs with 541 Java sources frozen and the measurement property explicitly set to four workers; results follow.
+
+The processor-aware Attribute persistence/admission path remains unfinished. Actual body processor model reads must still be part of the result identity and be verified before resolution shortcuts can serve a result; exact generated-output conservation alone is insufficient. Unsupported native processing and full diagnostic parity, current inputs from LROOT, Stage3/BROOT publication, invariant 20's storage boundary, the full two-sided body-read oracle and the remaining specification invariants stay required. Warm is untouched and the full goal remains active.
+
+
+The initial clean gate passed 506 tests with all 541 Java sources unchanged during its run. Final review found a missing input guard when a processor path discovers zero processors: the per-processor capability callback never runs in that case. A new regression failed under both digests (`stage3-processor-plan-empty-red.log`), then passed after an unconditional path-hash check with host cleanup was added. `stage3-processor-plan-empty-green.log` passes all 20 plan/body-processor cases. The final clean gate `stage3-processor-plan-final-gate.log` repeats the combined verification with the updated 541-file freeze; its results and raw reports follow.
+
+
+The final clean gate passed **508 tests, zero failures/errors/skips**, in 4m05s. All 541 Java files match the final pre-run digest snapshot. With four workers, the repository oracle covered **13 modules, 26 scopes and 536 sources**, 93 on-the-spot jars and 22 distinct leaf sets. Both digests produced **26/26 exact source/class k matches, no annotation differences and zero boot faults**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,095 | 2,692 | 1,300 | 146 | 25,055 |
+| SHA3-256 | 3,353 | 1,914 | 800 | 133 | 25,065 |
+
+Maven model/build time (25.9/25.6s) is excluded. Sampled heap above baseline was 821/921 MB with uncontrolled GC. The sequential digest runs and prior checkpoints are not controlled performance comparisons. Raw reports: [SHA-256](measurements/stage3-processor-plan-SHA-256.txt), [SHA3-256](measurements/stage3-processor-plan-SHA3-256.txt). These gates validate the scoped plans and generated-output conservation component; the processor-read/admission, Attribute, driver and oracle obligations above remain open. No PR was merged.

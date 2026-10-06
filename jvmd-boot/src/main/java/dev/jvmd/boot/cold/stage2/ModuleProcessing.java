@@ -25,6 +25,7 @@ final class ModuleProcessing {
     final ProcessorHost host;
     final ProcessorConfiguration configuration;
     final Identity optionsHash;
+    final List<String> processorNames;
 
     ModuleProcessing(Boot boot, ProjectModel.Module module, int scope, List<String> options, int release, List<String> paths) throws IOException {
         this.boot = boot; this.module = module; this.scope = scope;
@@ -32,6 +33,7 @@ final class ModuleProcessing {
         var processorPath = module.processing().path().stream().map(j -> boot.repository.resolve(j.location())).toList();
         host = new ProcessorHost(processorPath, module.processing().processors(), boot.digest, boot.generatedDirectory(module.name(), scope));
         host.sourcePaths(boot::sourcePath);
+        processorNames = host.names();
         for (var name : host.names()) {
             var previous = boot.store.get(LocalStore.processorKey(host.pathHash(), name));
             if (previous != null) host.previousCapability(name, ProcessorRecords.Capability.decode(previous));
@@ -64,6 +66,7 @@ final class ModuleProcessing {
         for (var output : host.outputs()) if (output.kind() == JavaFileObject.Kind.SOURCE) generated.put(boot.sourcePath(output.uri()), output);
         var byDerivation = new TreeMap<Identity, List<GeneratedOutputs.Output>>();
         var processorByDerivation = new TreeMap<Identity, String>();
+        var generationReferences = new TreeMap<byte[], byte[]>(java.util.Arrays::compareUnsigned);
         var ids = new TreeMap<String, Identity>();
         var origins = new TreeMap<String, String>();
         if (reusable) for (var e : capabilities.entrySet()) {
@@ -72,10 +75,12 @@ final class ModuleProcessing {
                 var id = aggregateId(e.getKey(), domains.get(e.getKey()));
                 byDerivation.put(id, new ArrayList<>()); // the empty output set is an exact manifest too
                 processorByDerivation.put(id, e.getKey());
+                generationReferences.put(generationKey(e.getKey(), ""), id.bytes());
             } else for (var uri : host.inputs().getOrDefault(e.getKey(), List.of())) {
                 var id = isolatingId(e.getKey(), boot.sourcePath(uri), rows);
                 byDerivation.put(id, new ArrayList<>());
                 processorByDerivation.put(id, e.getKey());
+                generationReferences.put(generationKey(e.getKey(), boot.sourcePath(uri)), id.bytes());
             }
         }
         for (var e : generated.entrySet()) {
@@ -89,6 +94,7 @@ final class ModuleProcessing {
                 id = aggregateId(output.processorClass(), domains.get(output.processorClass()));
             } else id = isolatingId(output.processorClass(), origin, rows);
             ids.put(e.getKey(), id);
+            generationReferences.put(generationKey(output.processorClass(), capability.declared() == ProcessorRecords.AGGREGATING ? "" : origin), id.bytes());
             processorByDerivation.put(id, output.processorClass());
             byDerivation.computeIfAbsent(id, ignored -> new ArrayList<>()).add(new GeneratedOutputs.Output(0, output.name(), output.bytes()));
         }
@@ -104,15 +110,20 @@ final class ModuleProcessing {
                 ids.clear();
             }
         }
-        if (reusable) for (var e : roots.entrySet())
-            boot.processingRecords.put(LocalStore.generatedKey(e.getKey()), DefinerIndex.encodeRoot(e.getValue()));
+        if (reusable) {
+            for (var e : roots.entrySet()) boot.processingRecords.put(LocalStore.generatedKey(e.getKey()), DefinerIndex.encodeRoot(e.getValue()));
+            boot.processingRecords.putAll(generationReferences);
+        }
+        var scopeRecord = new ProcessorRecords.Scope(host.pathHash(), optionsHash, processorNames.stream()
+                .map(name -> new ProcessorRecords.Invocation(name, capabilities.get(name))).toList());
+        boot.processingRecords.put(LocalStore.processorScopeKey(boot.projectKey, module.name(), scope), scopeRecord.encode());
         for (var e : capabilities.entrySet()) {
             var key = LocalStore.processorKey(host.pathHash(), e.getKey());
             // A violation in either scope remains a violation for this processor code during this boot.
             boot.processingRecords.merge(key, e.getValue().encode(), (a, b) -> {
                 var previous = ProcessorRecords.Capability.decode(a);
                 var next = ProcessorRecords.Capability.decode(b);
-                return new ProcessorRecords.Capability(next.declared(), Math.max(previous.observed(), next.observed())).encode();
+                return previous.merge(next).encode();
             });
         }
         for (var row : rows.values()) {
@@ -121,6 +132,10 @@ final class ModuleProcessing {
                     row.ownR(), row.absences(), isGenerated, origins.get(row.path()), ids.get(row.path()), context(row.path()));
             boot.files.put(updated.path(), updated);
         }
+    }
+
+    private byte[] generationKey(String processor, String origin) {
+        return LocalStore.processorGenerationKey(boot.projectKey, module.name(), scope, processor, origin);
     }
 
     private Identity aggregateId(String processor, Root domain) {

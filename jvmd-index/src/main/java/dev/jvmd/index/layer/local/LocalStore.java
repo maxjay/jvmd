@@ -69,6 +69,14 @@ public interface LocalStore extends MachineStore {
     static byte[] processorDiagnosticsKey(Identity projectKey, String module, int scope) {
         return join("PDIAG|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
     }
+    static byte[] processorScopeKey(Identity projectKey, String module, int scope) {
+        return join("PS|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
+    }
+    /** Empty origin names the aggregate derivation; a source path names its isolating derivation, including empty output sets. */
+    static byte[] processorGenerationKey(Identity projectKey, String module, int scope, String processorClass, String origin) {
+        return join("PG|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope},
+                "|", processorClass.getBytes(StandardCharsets.UTF_8), "|", origin.getBytes(StandardCharsets.UTF_8));
+    }
     static byte[] processorKey(Identity processorPathHash, String processorClass) {
         return join("PROC|", processorPathHash.view(), "|", processorClass.getBytes(StandardCharsets.UTF_8));
     }

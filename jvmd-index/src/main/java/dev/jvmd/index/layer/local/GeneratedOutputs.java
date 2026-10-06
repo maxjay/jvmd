@@ -27,6 +27,19 @@ public final class GeneratedOutputs {
         public Inconsistent() { super("Identical processor derivation inputs produced different output sets"); }
     }
 
+    /** Equal entry count plus distinct exact keys and content ids proves equality of the complete output map. No blobs are read. */
+    public static boolean matches(ContentTree tree, Root expected, java.util.function.Function<Identity, byte[]> nodes, List<Output> outputs) {
+        if (expected.count() != outputs.size()) return false;
+        var seen = new HashSet<java.nio.ByteBuffer>();
+        for (var output : outputs) {
+            var key = Keys.generatedOutputKey(output.kind(), output.path());
+            if (!seen.add(java.nio.ByteBuffer.wrap(key))) return false;
+            var entry = tree.get(expected.hash(), nodes, key);
+            if (entry == null || !Arrays.equals(entry.value(), tree.digest().hash(output.bytes()).view())) return false;
+        }
+        return true;
+    }
+
     public static Root persist(Digest digest, ContentTree tree, LocalStore store, NodeSink sink, Identity derivation, List<Output> outputs) {
         // Store puts are thread-local batches. Serialize publication and flush before unlocking so another module cannot
         // miss an in-flight GEN value (or write the same GS/blob twice). This lock spans only generated-manifest storage.

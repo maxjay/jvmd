@@ -59,7 +59,7 @@ final class InMemoryLocalStore implements LocalStore {
         synchronized (records) { return records.get(key); }
     }
 
-    private static final List<String> LOCAL_TAGS = List.of("LROOT", "SL", "AL", "MOD", "RT", "F", "DD", "DS", "DC", "C", "X", "RS", "CF", "U", "OUT", "MAT", "BROOT", "ST", "S", "PROC", "PD", "PDIAG", "RES", "GEN", "GS");
+    private static final List<String> LOCAL_TAGS = List.of("LROOT", "SL", "AL", "MOD", "RT", "F", "DD", "DS", "DC", "C", "X", "RS", "CF", "U", "OUT", "MAT", "BROOT", "ST", "S", "PROC", "PD", "PDIAG", "PS", "PG", "RES", "GEN", "GS");
 
     @Override public void forEachKey(byte[] prefix, java.util.function.Consumer<byte[]> action) {
         events.add("prefix:" + kindOf(prefix));

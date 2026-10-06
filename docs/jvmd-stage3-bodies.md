@@ -2,7 +2,7 @@
 
 Oct 5, 2026 · @Max
 
-Revision 123, amended 2026-10-06 for the PR #60 reviews: exact stub member identities, qualified package and member-type absences, T/N proof descent, generation isolation, exact Stage 2 header ranges and reverse keys, persistent route ancestry, full warning metadata in A, the processorElementProjection/generated-output ContentTree amendment, and body collector, ordered pool binding and source-byte decoding corrections backed by mutation tests. The companion Stage 2 specification is reconciled in `jvmd-stage2-local-cold-boot.md`.
+Revision 123, amended 2026-10-06 for the PR #60 reviews: exact stub member identities, qualified package and member-type absences, T/N proof descent, generation isolation, exact Stage 2 header ranges and reverse keys, persistent route ancestry, full warning metadata in A, the processorElementProjection/generated-output ContentTree amendment, body collector, ordered pool binding and source-byte decoding corrections backed by mutation tests, and LOCAL 6 scope-specific processor plans and origin-to-GEN references. The companion Stage 2 specification is reconciled in `jvmd-stage2-local-cold-boot.md`.
 
 Stage 3 attributes one source file at a time against stubs, writes its class files as content-addressed results, and writes a proof of exactly which identities the result depends on, verified by the same descent of sums that stages 1 and 2 built. Greenfield: nothing under `jvmd-lsp`, `jvmd-analyzer` or the old `jvmd-index` is reference or guidance.
 
@@ -804,7 +804,7 @@ Nothing here re-implements resolution. An erroneous node can still consume nativ
 
 ### C.5 Processors
 
-Every processor runs through jvmd's wrapper, in the stage 2 header compile and in `Attribute(f)`: a delegating `Processor` whose `init` hands the real processor a `ProcessingEnvironment` whose `Filer` records each created file with the processor class and the originating elements the processor passed, and whose model-query methods record actual arguments and answers. A Gradle declaration alone does not establish compatibility or prove all inputs; supported behavior is checked as specified in 3.5 and F. Lombok reaches javac's internals by reflecting over the wrapper's fields for the `JavacProcessingEnvironment` delegate, so the delegate is a field. In the header compile the recorded outputs become generated rows with origin and `GEN|` id, the recorded originating-element counts are checked against the declaration (`PROC|`), and `PD|` is built from the elements the aggregating processors were handed. In `Attribute(f)` only the module's declared isolating processors run, named through `-processor`; an overlay processor rewrites `f`'s AST, which javac then attributes and the collector walks, so its semantic reads are ordinary entries and `f`'s result holds the bytes javac produces for `f`'s types after processing; a generator's `Filer` output is captured and not compiled in the task, because the generated type is a module source with a stub already; its complete output manifest must match the corresponding `GEN|` root and `GS|` blobs. Aggregating processors never run in `Attribute(f)`: in a one-unit task they would see one element of their domain and produce a different output. The processor context `(processorPathHash, optionsHash, configProof(f))` is in the header and, as the proc field, in `ACI`; the configuration chain for Lombok is `f`'s directory and its parents to the root or a `config.stopBubbling`, each directory one `RES|` lookup.
+Every processor runs through jvmd's wrapper, in the stage 2 header compile and in `Attribute(f)`: a delegating `Processor` whose `init` hands the real processor a `ProcessingEnvironment` whose `Filer` records each created file with the processor class and the originating elements the processor passed, and whose model-query methods record actual arguments and answers. A Gradle declaration alone does not establish compatibility or prove all inputs; supported behavior is checked as specified in 3.5 and F. Lombok reaches javac's internals by reflecting over the wrapper's fields for the `JavacProcessingEnvironment` delegate, so the delegate is a field. In the header compile the recorded outputs become generated rows with origin and `GEN|` id, the recorded originating-element counts are checked against the declaration (`PROC|`), and `PD|` is built from the elements the aggregating processors were handed. In `Attribute(f)` only the scope's declared isolating processors run, selected in PS order after matching processor bytes and effective options; an overlay processor rewrites `f`'s AST, which javac then attributes and the collector walks, so its semantic reads are ordinary entries and `f`'s result holds the bytes javac produces for `f`'s types after processing; a generator's `Filer` output is captured and not compiled in the task, because the generated type is a module source with a stub already; its complete output manifest must match the corresponding `GEN|` root reached through `PG|`, comparing captured byte digests with content ids without rereading `GS|` blobs. Aggregating processors never run in `Attribute(f)`: in a one-unit task they would see one element of their domain and produce a different output. The processor context `(processorPathHash, optionsHash, configProof(f))` is in the header and, as the proc field, in `ACI`; the configuration chain for Lombok is `f`'s directory and its parents to the root or a `config.stopBubbling`, each directory one `RES|` lookup.
 
 ### C.6 What a body resolves through, by construct
 
@@ -930,7 +930,7 @@ Form-1 entries read N in Arrange and Valid. Once the global definer/own shortcut
 
 ## Appendix F. Stage 2 processors (the second amendment, PR B)
 
-The stage 2 side of 3.5 and C.5, as its own PR after appendix A. The processor implementation adds records and extends the header compile; it does not change T/A/N resolution identities. The combined file-row codec uses **LOCAL 5**, after the Stage 2-only LOCAL 4 baseline. Legacy LOCAL roots require cold rebuilding. The format binds the full javac runtime version and Locale.ROOT.
+The stage 2 side of 3.5 and C.5, as its own PR after appendix A. The processor implementation adds records and extends the header compile; it does not change T/A/N resolution identities. The combined format uses **LOCAL 6**, after the Stage 2-only LOCAL 4 baseline and the generated-file row codec introduced in LOCAL 5. LOCAL 6 adds required scope-specific processor execution plans and origin-to-GEN references; the file-row byte codec itself is unchanged. Legacy LOCAL roots require cold rebuilding. The format binds the full javac runtime version and Locale.ROOT.
 
 | Before | After |
 | --- | --- |
@@ -968,14 +968,31 @@ F| row += u8 generated || opt<zstr originPath> || opt<id genId>
     processorContext = processorPathHash || optionsHash || configProof(path)
     no κ_decl field
 
+PS|projectKey|module|scope
+    = processorPathHash || optionsHash
+      || u32 processorCount
+      || ordered (str processorClass || u8 declared || u8 observed)
+    actual classification under this scope's options
+
+PG|projectKey|module|scope|processorClass|originPath
+    = id derivationId
+    originPath = source path for isolating, empty for aggregating
+    present even when the admitted output manifest is empty
+
 PROC|processorPathHash|processorClass
-    = u8 declared (0 none, 1 isolating, 2 aggregating)
+    = u8 declared (0 none or mixed across scopes, 1 isolating, 2 aggregating)
       || u8 observed (0 tested overlay, 1 generator, 2 violated)
+    global classification consensus and monotone observation/violation history;
+    not a scope execution plan
 
 PDIAG|projectKey|module|scope
     = ordered diagnostics: processor, path, kind, position/start/end,
       line/column, code, text
 ```
+
+PS and PG are fresh records in the committed LOCAL tree. Dynamic declarations may differ between scopes/options using identical processor jars, so per-file processor selection uses PS, with exact processor-path/options equality and preserved processor order. The global PROC merge is commutative: disagreeing declarations give 0, and observed state takes the maximum. PROC cannot choose the per-file processor set.
+
+PG provides a direct, rooted lookup from each admitted origin/domain to GEN, including an empty output set and generated sources that become origins in later rounds. A missing PG is not an empty derivation. Consumers first check LOCAL membership and the stored value's digest for PS, PG and GEN; raw stale records are not current derivations. Capture comparison checks the complete distinct kind/path set and every source-byte digest against the manifest, so additions, removals, duplicate paths, renames, kind changes and byte changes fail. It reads tree entries, not GS blobs or the store's record universe. This output-conservation check does not prove the processor's actual model reads, and neither PS/PG nor a whole scope identity is added as a substitute semantic proof.
 
 The processorElementProjection comes from the completed source Element model, with the fields and exclusions specified in 3.5. Annotation values retain explicit presence and effective defaults; declaration order, parameter names and doc-comment absence are observable. SOURCE retention and source-only declaration information make this distinct from A, while its body exclusions make it distinct from κ_file. A body-only edit preserves the PD entry, root hash and root sum. Changing a supported annotation, annotation value or processor-visible declaration changes membership or the projection. A processor that reads bodies needs a proved body read or is unsupported; it never widens PD to κ_file.
 
@@ -1015,4 +1032,4 @@ Lombok's tested overlay path keeps the native ProcessingEnvironment delegate in 
 10. Cross-origin mutable state that changes isolated output, unobserved queries and native-model access after capture cannot silently validate. The processor is named unsupported.
 11. Processor diagnostics preserve order, duplicate messages, source positions and filtering under Locale.ROOT; replay does not publish them twice.
 
-**Implementation boundary.** The current cold-boot path runs native processors freshly, captures the queries, checks isolated replay and deduplicates exact manifests. It does not skip a processor invocation using a persisted model-query verifier; such a skip would additionally require that verifier and is not proved by the current replay. Auditing all admitted processor inputs and implementing Attribute's processor/output checks remain required; these records and passing fixtures do not claim the entire stage is finished.
+**Implementation boundary.** The current cold-boot path runs native processors freshly, captures the queries, checks isolated replay and deduplicates exact manifests. It does not skip a processor invocation using a persisted model-query verifier; such a skip would additionally require that verifier and is not proved by the current replay. The body-task component now captures outputs outside javac rounds; scope-specific selection and rooted manifest comparison are implemented and tested from a fresh Stage 2 commit through body capture. Auditing all admitted processor inputs, binding actual body processor reads into result identities and completing the processor-aware Attribute publication/admission path remain required; these records and passing fixtures do not claim the entire stage is finished.

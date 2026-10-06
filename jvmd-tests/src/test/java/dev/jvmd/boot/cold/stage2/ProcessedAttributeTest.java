@@ -177,7 +177,11 @@ class ProcessedAttributeTest {
     }
 
     private Path processor(String body, String declaration) throws Exception {
-        var entries = new TreeMap<>(Stage2Support.compile(dir.resolve("processor-" + sequence++), Map.of("fixture/Generate.java", """
+        return processor(body, declaration, Map.of());
+    }
+    private Path processor(String body, String declaration, Map<String,String> extra) throws Exception {
+        var sources = new TreeMap<>(extra);
+        sources.put("fixture/Generate.java", """
                 package fixture;
                 import javax.annotation.processing.*;
                 import javax.lang.model.*;
@@ -187,7 +191,8 @@ class ProcessedAttributeTest {
                     public boolean process(java.util.Set<? extends TypeElement> annotations, RoundEnvironment round) {
                         if(round.processingOver()) return false;
                         for(var root:round.getRootElements()) if(root.getSimpleName().contentEquals("Input")) {
-                """ + body + "\n} return true; } }"), List.of(), List.of()));
+                """ + body + "\n} return true; } }");
+        var entries = new TreeMap<>(Stage2Support.compile(dir.resolve("processor-" + sequence++), sources, List.of(), List.of()));
         entries.put("META-INF/services/javax.annotation.processing.Processor", Stage2Support.text("fixture.Generate\n"));
         if (declaration != null) entries.put("META-INF/gradle/incremental.annotation.processors", Stage2Support.text("fixture.Generate," + declaration + "\n"));
         return Stage2Support.pack(dir.resolve("processor-" + sequence++ + ".jar"), entries);
@@ -254,7 +259,7 @@ class ProcessedAttributeTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
-    void outputMismatchRejectsReuseAndPreservesTheCommittedManifest(Digest digest) throws Exception {
+    void sourceAnnotationsReachProcessorsWithoutReadingGeneratedBytesOrChangingTheManifest(Digest digest) throws Exception {
         var processor = processor("""
                 boolean seen = !processingEnv.getElementUtils().getTypeElement("p.Metadata").getAnnotationMirrors().isEmpty();
                 try(var out=processingEnv.getFiler().createSourceFile("p.Made",root).openWriter()) {
@@ -271,14 +276,140 @@ class ProcessedAttributeTest {
         var blobReads = state.rows().values().stream().filter(FileRow::generated).map(r -> state.store().watchReads(LocalStore.generatedSourceKey(r.kappa()))).toList();
         try (var pool = new Pool(state.pool(), 1)) {
             var computed = run(state, attribute(state, pool), "app/src/main/java/p/Input.java");
-            assertThat(computed.result().attributed()).isTrue(); assertThat(computed.reusable()).isFalse();
-            assertThat(computed.faults()).anyMatch(f -> f.contains("fixture.Generate") && f.contains("generated output differs"));
+            assertThat(computed.result().attributed()).isTrue(); assertThat(computed.reusable()).as(computed.faults().toString()).isTrue();
+            assertThat(computed.faults()).isEmpty();
             assertThat(state.classes(computed).get("p/Input")).isEqualTo(expected.classes().get("p/Input"));
-            assertThat(computed.proof().processorBody().rejected()).isTrue();
+            assertThat(computed.proof().processorBody().rejected()).isFalse();
         }
         assertThat(state.store().get(key)).isEqualTo(before); assertThat(blobReads).allSatisfy(n -> assertThat(n.get()).isZero());
+        assertThat(state.store().withPrefix("RS")).hasSize(1); assertThat(state.store().withPrefix("U")).hasSize(1);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void sourceTypeAnnotationValuesVisitorsAndDocCommentsMatchNativeDiagnostics(Digest digest) throws Exception {
+        var processor = processor("""
+                var elements = processingEnv.getElementUtils();
+                var type = elements.getTypeElement("p.Metadata");
+                var text = new StringBuilder(elements.getDocComment(type));
+                for (var annotation : type.getAnnotationMirrors()) {
+                    text.append("|").append(annotation).append("|").append(annotation.getAnnotationType());
+                    text.append("|").append(annotation.getElementValues()).append("|").append(elements.getElementValuesWithDefaults(annotation));
+                    for(var value : elements.getElementValuesWithDefaults(annotation).values()) {
+                        text.append("|").append(value.accept(new javax.lang.model.util.SimpleAnnotationValueVisitor14<String,Void>() {
+                            protected String defaultAction(Object value, Void ignored) {return value.getClass().getSimpleName()+":"+value;}
+                            public String visitType(javax.lang.model.type.TypeMirror value, Void ignored) {return "type:"+value.getKind()+":"+value;}
+                            public String visitEnumConstant(VariableElement value, Void ignored) {return "enum:"+value.getKind()+":"+value;}
+                            public String visitArray(java.util.List<? extends AnnotationValue> value, Void ignored) {return "array:"+value;}
+                            public String visitAnnotation(AnnotationMirror value, Void ignored) {return "nested:"+elements.getElementValuesWithDefaults(value);}
+                        }, null));
+                    }
+                }
+                var deprecated = type.getAnnotation(Deprecated.class);
+                text.append("|").append(deprecated).append("|").append(deprecated.since()).append("|").append(deprecated.forRemoval());
+                text.append("|").append(type.getAnnotationsByType(Deprecated.class).length);
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,text,root);
+                """, "isolating");
+        var state = boot(digest, Map.of("p/Input.java", "package p; public class Input {}", "p/Metadata.java", """
+                package p;
+                import java.lang.annotation.*;
+                @Retention(RetentionPolicy.SOURCE) @interface Label {
+                    String value() default "default"; int number() default 9; Class<?> type() default void.class;
+                    RetentionPolicy retention() default RetentionPolicy.SOURCE;
+                    Holder.Nested nested() default @Holder.Nested; int[] array() default {1,2};
+                    Holder.Nested nestedDefault() default @Holder.Nested;
+                    Holder.Nested[] nestedArray() default {@Holder.Nested, @Holder.Nested("explicit")};
+                }
+                class Holder { @interface Nested {String value() default "nested default";} }
+                /** Source documentation. */ @Label(number=7,value="source",type=int[].class,nested=@Holder.Nested)
+                @Deprecated(since="version",forRemoval=true) public class Metadata {}
+                """), List.of(processor), List.of());
+        assertThat(state.faults()).isEmpty();
+        allFiles(state, true);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void inheritedAndRepeatedSourceAnnotationsKeepNativeProxyAndMirrorBehavior(Digest digest) throws Exception {
+        var processor = processor("""
+                var elements=processingEnv.getElementUtils(); var text=new StringBuilder();
+                for(var name:java.util.List.of("p.Metadata", "p.Middle", "p.Input")) {
+                    var type=elements.getTypeElement(name);
+                    text.append("|").append(elements.getAllAnnotationMirrors(type));
+                    text.append("|").append(type.getAnnotation(fixture.Tag.class));
+                    for(var tag:type.getAnnotationsByType(fixture.Tag.class)) {
+                        text.append("|").append(tag).append("|").append(tag.value());
+                        try {tag.type(); throw new AssertionError("expected mirror");}
+                        catch(javax.lang.model.type.MirroredTypeException e){text.append("|").append(e.getTypeMirror());}
+                    }
+                }
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,text,root);
+                """, "isolating", Map.of("fixture/Tag.java", """
+                        package fixture; import java.lang.annotation.*;
+                        @Inherited @Repeatable(Tags.class) @Retention(RetentionPolicy.SOURCE)
+                        public @interface Tag {String value(); Class<?> type() default String.class;}
+                        """, "fixture/Tags.java", """
+                        package fixture; import java.lang.annotation.*;
+                        @Inherited @Retention(RetentionPolicy.SOURCE) public @interface Tags {Tag[] value();}
+                        """));
+        var state = boot(digest, Map.of("p/Input.java", "package p; public class Input extends Middle {}",
+                "p/Middle.java", "package p; @fixture.Tag(\"override\") public class Middle extends Metadata {}",
+                "p/Metadata.java", "package p; @fixture.Tag(\"first\") @fixture.Tag(value=\"second\",type=int[].class) public class Metadata {}"),
+                List.of(processor), List.of(processor));
+        assertThat(state.faults()).isEmpty(); allFiles(state, true);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void onlyConsumedSourceMetadataChangesTheProcessorProof(Digest digest) throws Exception {
+        var processor = processor("""
+                String comment=processingEnv.getElementUtils().getDocComment(processingEnv.getElementUtils().getTypeElement("p.Metadata"));
+                processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.NOTE,comment,root);
+                """, "isolating");
+        var results = new ArrayList<Attribute.Computed>(); var states = new ArrayList<State>();
+        for (var change : List.of(new String[]{"read", "unread", "1"}, new String[]{"read", "changed", "2"}, new String[]{"changed", "changed", "2"})) {
+            var state = boot(digest, Map.of("p/Input.java", "package p; public class Input {}", "p/Metadata.java", """
+                    package p;
+                    @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE) @interface Label {String value();}
+                    /** %s */ @Label("%s") public class Metadata {int body(){return %s;}}
+                    """.formatted(change[0],change[1],change[2])), List.of(processor), List.of());
+            assertThat(state.faults()).isEmpty(); states.add(state);
+        }
+        Files.delete(dir.resolve("app/src/main/java/p/Metadata.java"));
+        try (var pool = new Pool(states.getFirst().pool(), 1)) {
+            for (var state : states) results.add(run(state, attribute(state, pool), "app/src/main/java/p/Input.java"));
+            assertThat(pool.statistics().contexts()).isEqualTo(1); assertThat(pool.statistics().tasks()).isEqualTo(3);
+        }
+        assertThat(states).extracting(s -> s.own().k()).containsOnly(states.getFirst().own().k());
+        assertThat(results).allSatisfy(r -> assertThat(r.reusable()).as(r.faults().toString()).isTrue());
+        assertThat(results.get(1)).isEqualTo(results.get(0));
+        assertThat(results.get(2).aci()).isNotEqualTo(results.get(0).aci());
+        assertThat(results.get(2).proof().processorBody()).isNotEqualTo(results.get(0).proof().processorBody());
+        assertThat(results.get(0).result().diagnostics().getFirst().message()).isEqualTo("read ");
+        assertThat(results.get(2).result().diagnostics().getFirst().message()).isEqualTo("changed ");
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void outputMismatchStillRejectsReuseAndPreservesCommittedManifest(Digest digest) throws Exception {
+        String property = "jvmd.test.output-drift";
+        var processor = processor("""
+                String value=System.getProperty("jvmd.test.output-drift", "before");
+                try(var out=processingEnv.getFiler().createSourceFile("p.Made",root).openWriter()) {
+                    out.write("package p; public class Made { public static final String VALUE=\\\""+value+"\\\"; }");
+                } catch(java.io.IOException e){throw new RuntimeException(e);}
+                """, "isolating");
+        var state = boot(digest, Map.of("p/Input.java", "package p; public class Input { public String value(){return Made.VALUE;} }"), List.of(processor), List.of());
+        var generation = state.plan().generation("fixture.Generate", "app/src/main/java/p/Input.java");
+        var key = LocalStore.generatedKey(generation.derivation()); var before = state.store().get(key); var expected = oracle(state);
+        // Deliberate out-of-model fault injection checks conservation; this is not admission evidence for property-reading processors.
+        String previous = System.getProperty(property);
+        try (var pool = new Pool(state.pool(), 1)) {
+            System.setProperty(property, "after");
+            var computed = run(state, attribute(state, pool), "app/src/main/java/p/Input.java");
+            assertThat(computed.reusable()).isFalse();
+            assertThat(computed.faults()).anyMatch(f -> f.contains("generated output differs"));
+            assertThat(computed.proof().processorBody().rejected()).isTrue();
+            sameBytes(state.classes(computed), Map.of("p/Input", expected.classes().get("p/Input")));
+        } finally { if (previous == null) System.clearProperty(property); else System.setProperty(property, previous); }
+        assertThat(state.store().get(key)).isEqualTo(before);
         assertThat(state.store().withPrefix("RS")).isEmpty(); assertThat(state.store().withPrefix("U")).isEmpty();
-        // This exposes the remaining source-model enrichment obligation: declaration-only own stubs omit SOURCE annotations.
     }
 
     @ParameterizedTest @MethodSource("digests")

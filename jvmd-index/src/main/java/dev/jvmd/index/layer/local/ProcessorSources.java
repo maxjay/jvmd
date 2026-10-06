@@ -30,6 +30,42 @@ public final class ProcessorSources {
         return new ProcessorSources(tree, DefinerIndex.decodeRoot(value, tree.digest().width()), records);
     }
 
+    /** Bind source metadata by the first defining origin, not by a T identity shared by distinct source scopes. */
+    public static Function<String, ProcessorDeclaration.Source> bind(ContentTree tree, LocalRoot committed, Identity project,
+                                                                    String module, int scope, Function<byte[], byte[]> records) {
+        Function<byte[], byte[]> required = key -> {
+            var entry = tree.get(committed.local().hash(), id -> records.apply(MachineStore.nodeKey(id)), key);
+            if (entry == null) throw new IllegalStateException("Source binding record is not in the committed LOCAL tree");
+            var value = records.apply(key);
+            if (value == null || !tree.digest().hash(value).equals(entry.h()))
+                throw new IllegalStateException("Source binding record differs from the committed LOCAL tree");
+            return value;
+        };
+        record Origin(Identity types, ProcessorSources sources) { }
+        var origins = new java.util.ArrayList<Origin>();
+        var own = SourceLeaf.decode(required.apply(LocalStore.sourceLeafKey(project, module, scope)), tree.digest().width());
+        origins.add(new Origin(own.k(), ProcessorSources.load(tree, committed, project, module, scope, records)));
+        var route = Route.decode(required.apply(LocalStore.routeKey(project, module, scope)), tree.digest().width());
+        for (var entry : route.entries()) switch (entry) {
+            case RouteEntry.Sibling sibling -> {
+                var leaf = SourceLeaf.decode(required.apply(LocalStore.sourceLeafKey(project, sibling.module(), LocalStore.MAIN)), tree.digest().width());
+                origins.add(new Origin(leaf.k(), ProcessorSources.load(tree, committed, project, sibling.module(), LocalStore.MAIN, records)));
+            }
+            case RouteEntry.Jar jar -> { if (jar.defaultK() != null) origins.add(new Origin(jar.defaultK(), null)); }
+            case RouteEntry.Jrt jrt -> origins.add(new Origin(jrt.k(), null));
+        }
+        return name -> {
+            var key = dev.jvmd.index.layer.machine.Keys.typeKey(name);
+            for (var origin : origins) if (tree.get(origin.types(), id -> records.apply(MachineStore.nodeKey(id)), key) != null) {
+                if (origin.sources() == null) return null;
+                var source = origin.sources().type(name);
+                if (source == null) throw new IllegalStateException("Source type has no committed processor declaration: " + name);
+                return source;
+            }
+            return null;
+        };
+    }
+
     public Root root() { return root; }
 
     /** Exact binary name lookup, including nested names with literal '$'; null is a proved absence from this scope. */

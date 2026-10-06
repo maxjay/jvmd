@@ -684,3 +684,31 @@ The clean combined gate `stage3-java-strings-frozen-gate.log` passed **568 tests
 Maven model/build time (25.5/25.2s) is excluded. Sampled heap above baseline was 972/1,727 MB with uncontrolled GC; sequential digest runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-java-strings-SHA-256.txt), [SHA3-256](measurements/stage3-java-strings-SHA3-256.txt).
 
 Stage 2 authority SHA-256 is `0eee5d39b6cbca93c21175adf8debac903644873f948f61b8ce499f0fc62fbaa`; Stage 3 is `296629a9e65ba2ea939a80c5b838743a878f4e225ed1c3668b7b797185f0287c`. Each repository file exactly matches its Downloads copy, with distinct `.before-java-strings.md` backups. The reproduced constant/annotation/diagnostic text loss is now closed. The source-model query adapter, full processor admission/verification and driver/oracle obligations remain open; the full goal stays active and no PR was merged.
+
+
+### Source-backed type annotation and doc-comment queries
+
+Body processor queries now reach type declaration annotations and doc comments through the current committed source view. ProcessorSources.bind reads rooted SL/RT/PM records and selects the first defining origin in own-first route order. Source scopes are not collapsed by equal T hashes, and a preceding jar prevents source metadata from a later sibling from leaking into the binary view. ProcessorPlan exposes this binding to each fresh body host; it is not an ACI input.
+
+ProcessorSourceQueries is a narrowly admitted compiler adapter. It constructs detached native annotation compounds and values, retaining explicit/effective value maps, nested annotation defaults, native formatting, visitors and annotation proxies. It supports type getAnnotationMirrors/getAnnotation/getAnnotationsByType, Elements.getAllAnnotationMirrors and type getDocComment. Explicit source types keep their live annotations and comments; inherited queries can still traverse source-backed parents. Exact binary annotation names, including nested classes and literal dollar signs, resolve in the native package's module. No declaration metadata is installed in shared symbols. ProcessorReads records answers from this view using the existing actual-query protocol and retains captured-only replay.
+
+The previous SOURCE-annotation output-mismatch fixture now succeeds with matching generated output and no GS reads or GEN rewrites. A separate deliberate output-drift fixture preserves the rejection guard; its injected property read is not admission evidence for external-input processors. Additional fixtures compare all original/generated class bytes and ordered diagnostics with fresh whole-module javac for type annotations/defaults/nested values, inherited/repeatable SOURCE annotations and mirrored class values. The first annotation visitor fixture accidentally asked for implementation class names; it was corrected to use the public visitor contracts. Allocation/class-identity-sensitive processor admission remains an explicit obligation.
+
+The focused gate passed 75 tests with zero failures/errors/skips. A stronger mutation fixture now reuses one compiler context across committed metadata changes and deletes the metadata source before body attribution: unread annotation/body edits must preserve ACI, whereas a consumed doc-comment edit changes ACI. The full clean gate will hold Java sources fixed and run both repository projections; terminal evidence follows.
+
+This checkpoint adapts type declaration metadata. Member annotations and doc comments, type-use/generic/receiver/parameter views, declaration ordering and parameter names, package/module/origin views, persisted query verification, complete processor admission, cold storage boundaries, the Stage3/BROOT driver and the remaining invariants are still required. The full goal stays active. Warm is untouched; no PR is merged. The Stage 3 authority and Downloads copy are synchronized, with the distinct before-type-source-queries backup; Stage 2 authority is unchanged.
+
+
+The first frozen gate passed 578 tests and both 26-scope repository projections, with all 548 Java files unchanged. Review then identified a nested-default edge: using only an effective annotation value expands `@Nested` into `@Nested(value="default")`, changing its explicit map and native rendering. `stage3-source-queries-defaults-red.log` reproduced two diagnostic failures. The adapter now gets the exact explicit default from the annotation member's saved declaration, or the native default for a binary annotation type. Nested default arrays are covered as well. `stage3-source-queries-defaults-green.log` passes 62 tests. The hot-context mutation test also passes under both digests after the metadata source is deleted. Java sources are frozen again for the final clean gate.
+
+
+The final clean gate `stage3-source-queries-frozen-gate.log` passed **578 tests, zero failures/errors/skips**, in 4m21s. The complete set of **548 Java files** and every source digest match the pre-run freeze. With four workers, the repository oracle covered **13 modules, 26 scopes and 543 sources**, 93 on-the-spot jars and 22 distinct leaf sets. Both digests produced **26/26 exact source/class k matches, no annotation differences and zero boot faults**.
+
+| Digest | Wall ms | Header ms | Facts + proofs ms | Definer ms | Nodes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| SHA-256 | 4,205 | 2,688 | 1,609 | 127 | 25,205 |
+| SHA3-256 | 3,503 | 1,811 | 1,127 | 123 | 25,203 |
+
+Maven model/build time (26.2/25.3s) is excluded. Sampled heap above baseline was 904/1,561 MB with uncontrolled GC; these sequential runs are not a performance comparison. Raw reports: [SHA-256](measurements/stage3-source-queries-SHA-256.txt), [SHA3-256](measurements/stage3-source-queries-SHA3-256.txt).
+
+Stage 3 authority SHA-256 is `d1bfa956f020830e983cb34d2b00f2ca5812076da40c69de78bba187052d4c2b`; unchanged Stage 2 authority is `0eee5d39b6cbca93c21175adf8debac903644873f948f61b8ce499f0fc62fbaa`. Repository authorities exactly match their Downloads copies. The type declaration annotation/doc-comment regression is closed; the broader member/type-use, full admission/verification, driver and oracle obligations listed above remain open. The goal stays active and no PR was merged.

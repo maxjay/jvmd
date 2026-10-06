@@ -61,6 +61,7 @@ public final class ProcessorHost implements AutoCloseable {
     private final Set<String> faults = new LinkedHashSet<>();
     private final Identity pathHash;
     private java.util.function.Function<URI, String> sourcePaths = URI::toString;
+    private java.util.function.Function<String, dev.jvmd.index.layer.local.ProcessorDeclaration.Source> sourceDeclarations;
     private Map<String, ProcessorRecords.Capability> closedCapabilities;
     private Map<String, List<Entry>> closedDomains;
     private Map<String, List<URI>> closedInputs;
@@ -170,6 +171,10 @@ public final class ProcessorHost implements AutoCloseable {
     public Identity pathHash() { return pathHash; }
     public void sourcePaths(java.util.function.Function<URI, String> sourcePaths) { this.sourcePaths = sourcePaths; }
     public String sourcePath(URI uri) { return sourcePaths.apply(uri); }
+    public void sourceDeclarations(java.util.function.Function<String, dev.jvmd.index.layer.local.ProcessorDeclaration.Source> sources) {
+        if (capture == null) throw new IllegalStateException("Source query views are for body tasks");
+        this.sourceDeclarations = java.util.Objects.requireNonNull(sources);
+    }
     public List<String> names() { return processors.stream().map(p -> p.name).toList(); }
     public void rejectReuse(String reason) { for (var processor : processors) processor.unsupported(reason); }
     public void rejectReuse(String name, String reason) {
@@ -311,8 +316,12 @@ public final class ProcessorHost implements AutoCloseable {
             trees = Trees.instance(environment);
             nativeElements = environment.getElementUtils();
             projection = new ProcessorElementProjection(environment.getElementUtils(), environment.getTypeUtils());
-            if (!TESTED_OVERLAYS.contains(name)) reads = new ProcessorReads(environment.getElementUtils(), environment.getTypeUtils(),
-                    read -> modelReads.computeIfAbsent(name, ignored -> new ArrayList<>()).add(read), this::unsupported);
+            if (!TESTED_OVERLAYS.contains(name)) {
+                ProcessorReads.Model model = sourceDeclarations == null ? (receiver, method, args) -> method.invoke(receiver, args)
+                        : new ProcessorSourceQueries(environment, sourceDeclarations, element -> origin(element) != null);
+                reads = new ProcessorReads(environment.getElementUtils(), environment.getTypeUtils(),
+                        read -> modelReads.computeIfAbsent(name, ignored -> new ArrayList<>()).add(read), this::unsupported, model);
+            }
             observe(() -> { delegate.init(new Environment(environment, new RecordingFiler(environment.getFiler(), this), reads)); return null; });
             if (dynamic) {
                 var options = getSupportedOptions();

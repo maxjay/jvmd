@@ -227,6 +227,30 @@ class ProcessorSourcesTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void queryBindingRetainsSourceOriginsWhenScopesHaveTheSameTypeIdentity(Digest digest) throws Exception {
+        Stage2Support.write(dir, Map.of("a/src/main/java/p/Metadata.java", "package p; /** first */ public class Metadata {}",
+                "b/src/main/java/p/Metadata.java", "package p; /** second */ public class Metadata {}",
+                "app/src/main/java/p/Input.java", "package p; public class Input {}"));
+        var a = new Stage2Support.Mod("a", "g:a:1", List.of()); var b = new Stage2Support.Mod("b", "g:b:1", List.of());
+        var first = new Stage2Support.Mod("app", "g:app:1", List.of(Stage2Support.Dep.module("g:a:1", "a"), Stage2Support.Dep.module("g:b:1", "b")));
+        var state = boot(digest, ProjectModel.parse(Stage2Support.model(dir, a, b, first)), Stage2Support.jdkOnly(digest).copy(), 2);
+        assertThat(state.result().leaves().get("a/main")).isEqualTo(state.result().leaves().get("b/main"));
+        var sources = ProcessorSources.bind(state.tree(), state.local(), state.project(), "app", 0, state.store()::get);
+        assertThat(sources.apply("p/Metadata").declaration().docComment()).isEqualTo("first ");
+        var reversed = new Stage2Support.Mod("app", "g:app:1", List.of(Stage2Support.Dep.module("g:b:1", "b"), Stage2Support.Dep.module("g:a:1", "a")));
+        var changed = boot(digest, ProjectModel.parse(Stage2Support.model(dir, a, b, reversed)), state.store().copy(), 2);
+        var current = ProcessorSources.bind(changed.tree(), changed.local(), changed.project(), "app", 0, changed.store()::get);
+        assertThat(current.apply("p/Metadata").declaration().docComment()).isEqualTo("second ");
+        // An earlier binary definer shadows both source declarations, even with the same T identity.
+        var jar = Stage2Support.pack(dir.resolve("binary.jar"), Stage2Support.compile(dir.resolve("binary"),
+                Map.of("p/Metadata.java", "package p; public class Metadata {}"), List.of(), List.of()));
+        var external = new Stage2Support.Mod("app", "g:app:1", List.of(Stage2Support.Dep.jar("g:binary:1", jar.toString()), Stage2Support.Dep.module("g:a:1", "a")));
+        var shadow = boot(digest, ProjectModel.parse(Stage2Support.model(dir, a, external)), state.store().copy(), 2);
+        var binding = ProcessorSources.bind(shadow.tree(), shadow.local(), shadow.project(), "app", 0, shadow.store()::get);
+        assertThat(binding.apply("p/Metadata")).isNull(); assertThat(binding.apply("p/Input").path()).isEqualTo(PATH);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void malformedDeclarationLengthsAreRejectedBeforeAllocation(Digest digest) throws Exception {
         var state = initial(digest);
         var bytes = new dev.jvmd.core.tree.Codec.Writer().zstr(PATH).u32(Integer.MAX_VALUE).toBytes();

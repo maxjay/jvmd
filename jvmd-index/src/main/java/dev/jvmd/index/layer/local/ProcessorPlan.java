@@ -16,10 +16,12 @@ public final class ProcessorPlan {
     private final int scope;
     private final Function<byte[], byte[]> records;
     private final ProcessorRecords.Scope invocation;
+    private final LocalRoot committed;
 
     private ProcessorPlan(ContentTree tree, LocalRoot local, Identity project, String module, int scope,
                           Function<byte[], byte[]> records) {
         this.tree = tree; this.local = local.local().hash(); this.project = project; this.module = module; this.scope = scope; this.records = records;
+        this.committed = local;
         invocation = ProcessorRecords.Scope.decode(required(LocalStore.processorScopeKey(project, module, scope)), tree.digest().width());
     }
 
@@ -30,6 +32,11 @@ public final class ProcessorPlan {
     }
 
     public ProcessorRecords.Scope invocation() { return invocation; }
+
+    /** Bind source metadata by its committed module/scope origins, independently of the invocation plan. */
+    public Function<String, ProcessorDeclaration.Source> sources() {
+        return ProcessorSources.bind(tree, committed, project, module, scope, records);
+    }
 
     /** Null means this origin had no admitted derivation in that generation; it does not mean an empty output set. */
     public Generation generation(String processor, String origin) {

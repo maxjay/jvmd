@@ -40,13 +40,14 @@ class ModuleArchitectureTest {
         }
     }
 
-    /** C.1 enters without attribution; A.4 reads TypeCompound positions; F observes Trees escapes; stage 3 Pool evicts own symbols. No package-wide grant. */
+    /** C.1 enters; A.4 reads annotation positions; F observes Trees and adapts source annotation values; Pool evicts own symbols. No package-wide grant. */
     static boolean compilerInternalsAllowed(String module, String type) {
         int nested=type.indexOf('$');
         String owner=nested<0?type:type.substring(0,nested);
         return module.equals("analyzer")
                 || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage2/HeaderCompiler")
                 || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage2/ProcessorTrees")
+                || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage2/ProcessorSourceQueries")
                 || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage3/Pool")
                 || module.equals("index")&&owner.equals("dev/jvmd/index/layer/local/SourceFacts");
     }
@@ -55,6 +56,7 @@ class ModuleArchitectureTest {
         assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage2/HeaderCompiler$SourceObject")).isTrue();
         assertThat(compilerInternalsAllowed("index","dev/jvmd/index/layer/local/SourceFacts")).isTrue();
         assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage2/ProcessorTrees")).isTrue();
+        assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage2/ProcessorSourceQueries")).isTrue();
         assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage2/ModuleJob")).isFalse();
         assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage3/Pool$Worker")).isTrue();
         assertThat(compilerInternalsAllowed("boot","dev/jvmd/boot/cold/stage3/Attribute")).isFalse();

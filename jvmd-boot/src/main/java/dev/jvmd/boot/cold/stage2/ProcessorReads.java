@@ -51,25 +51,32 @@ final class ProcessorReads {
     private final Map<Query, Observed> queries = new LinkedHashMap<>();
     private final Set<Query> ambiguous = new java.util.HashSet<>();
     private final ProcessorReads captured;
+    private final Model model;
     private int phase = -1;
 
     private record Query(int phase, String operation, java.nio.ByteBuffer arguments) { }
     private record Observed(Object value, Throwable failure, Read read, byte[] identity) { }
     private record Dispatch(Method method, Object value) { }
+    @FunctionalInterface interface Model { Object invoke(Object receiver, Method method, Object[] arguments) throws Throwable; }
     static final class ReplayUnavailable extends RuntimeException {
         ReplayUnavailable(String reason) { super(reason); }
     }
 
     ProcessorReads(Elements elements, Types types, Consumer<Read> observations, Consumer<String> unsupported) {
-        this(elements, types, observations, unsupported, null);
+        this(elements, types, observations, unsupported, (receiver, method, arguments) -> method.invoke(receiver, arguments));
     }
 
-    private ProcessorReads(Elements elements, Types types, Consumer<Read> observations, Consumer<String> unsupported, ProcessorReads captured) {
+    ProcessorReads(Elements elements, Types types, Consumer<Read> observations, Consumer<String> unsupported, Model model) {
+        this(elements, types, observations, unsupported, null, model);
+    }
+
+    private ProcessorReads(Elements elements, Types types, Consumer<Read> observations, Consumer<String> unsupported, ProcessorReads captured, Model model) {
         nativeElements = elements;
         nativeTypes = types;
         this.observations = observations;
         this.unsupported = unsupported;
         this.captured = captured;
+        this.model = model;
         this.elements = proxy(Elements.class, elements);
         this.types = proxy(Types.class, types);
     }
@@ -77,7 +84,7 @@ final class ProcessorReads {
     /** In-memory replay of observations from this invocation, before the host releases its model objects. No native query fallback. */
     ProcessorReads replay(Consumer<Read> observations, Consumer<String> unsupported) {
         if (captured != null) throw new IllegalStateException("Cannot capture a replay");
-        return new ProcessorReads(nativeElements, nativeTypes, observations, unsupported, this);
+        return new ProcessorReads(nativeElements, nativeTypes, observations, unsupported, this, model);
     }
 
     void phase(int phase) { this.phase = phase; }
@@ -214,7 +221,7 @@ final class ProcessorReads {
                 var observed = lookup(key);
                 result = observed.value(); cause = observed.failure(); read = observed.read();
             } else {
-                try { result = method.invoke(delegate, nativeArgs); }
+                try { result = model.invoke(delegate, method, nativeArgs); }
                 catch (InvocationTargetException failure) { cause = failure.getCause(); }
                 if (cause == null && method.getDeclaringClass() != Object.class) read = observation(api, method, nativeArgs, result);
                 retain(key, result, cause, read);

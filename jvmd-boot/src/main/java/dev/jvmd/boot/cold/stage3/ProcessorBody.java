@@ -38,7 +38,10 @@ final class ProcessorBody {
     }
 
     ProcessorHost open(Digest digest, Attribute.Options options) throws IOException {
-        return ProcessorHost.bodies(path, digest, project.resolve(".jvmd/body-capture"), options.charset(), plan.invocation(), options.hash());
+        var sources = plan.sources();
+        var host = ProcessorHost.bodies(path, digest, project.resolve(".jvmd/body-capture"), options.charset(), plan.invocation(), options.hash());
+        host.sourceDeclarations(sources);
+        return host;
     }
 
     /** Check every configured generator, including a native derivation whose processor did not run in this unit. */

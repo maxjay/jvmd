@@ -12,7 +12,8 @@ import dev.jvmd.index.layer.machine.MachineStore;
  * <p>One put and one get, over keys from the layout below: a record kind is a key function, not a method. {@link #put} buffers in the
  * calling thread's batch and is committed by {@link #flush()}, as stage 1's. {@link #putLocalRoot} commits at once and is called only
  * after {@link #sync()}. Stage 2 itself reads only MACHINE's records ({@code L|}, {@code N|}, {@code P|}, {@code ROOT}) and the shared,
- * derivable ones ({@code DD|}, {@code DS|}, {@code S|}, {@code ST|}) before its root; the others are for warm boot and attribution.
+ * derivable ones ({@code DF|}, {@code DD|}, {@code DS|}, {@code DC|}, {@code S|}, {@code ST|}) before its root.
+ * Root publication alone reads the previous root to reconcile the current reverse secondary index.
  */
 public interface LocalStore extends MachineStore {
     /** Buffers one record under {@code key}. */
@@ -24,8 +25,8 @@ public interface LocalStore extends MachineStore {
     /** Visit keys beginning with this exact prefix, in store order; seek directly to the prefix, never scan the record universe. */
     void forEachKey(byte[] prefix, java.util.function.Consumer<byte[]> action);
 
-    /** Commits at once. The previous root of this project, if any, is kept under {@code LROOT|projectKey|n} (9.1). */
-    void putLocalRoot(Identity projectKey, byte[] value);
+    /** Atomically commits the current reverse delta and root, retaining the previous root under {@code LROOT|projectKey|n}. */
+    void putLocalRoot(dev.jvmd.core.hash.Digest digest, Identity projectKey, byte[] value);
 
     default boolean hasLocalRoot(Identity projectKey) { return get(localRootKey(projectKey)) != null; }
 
@@ -43,6 +44,7 @@ public interface LocalStore extends MachineStore {
     static byte[] disjointKey(Identity leafSetExt) { return join("DD|", leafSetExt.view()); }
     static byte[] siblingKey(Identity leafSetSib) { return join("DS|", leafSetSib.view()); }
     static byte[] conflictsKey(Identity routeHash) { return join("DC|", routeHash.view()); }
+    static byte[] definerStateKey(Identity leafSet) { return join("DF|", leafSet.view()); }
     static byte[] consumerKey(Identity kappa, Identity leafSetExt) { return join("C|", kappa.view(), "|", leafSetExt.view()); }
     static byte[] resultKey(Identity kappa, Identity leafSetExt) { return join("RS|", kappa.view(), "|", leafSetExt.view()); }
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }

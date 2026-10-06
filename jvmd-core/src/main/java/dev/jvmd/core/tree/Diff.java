@@ -41,6 +41,18 @@ public final class Diff {
         return new Result(removed, added);
     }
 
+    /** Exact key/value/h delta, including a routing value change whose projected semantic sum stayed equal. */
+    public static Result content(Digest digest, Root a, Root b, Function<Identity, byte[]> reader) {
+        var removed = new ArrayList<Entry>();
+        var added = new ArrayList<Entry>();
+        if (!a.hash().equals(b.hash())) {
+            var walk = new Walk(digest.width(), reader, false);
+            walk.exact = true;
+            walk.run(List.of(root(a)), List.of(root(b)), removed, added, null, null);
+        }
+        return new Result(removed, added);
+    }
+
     public static ListResult lists(Digest digest, Root a, Root b, Function<Identity, byte[]> reader) {
         var removed = new ArrayList<Positioned>();
         var added = new ArrayList<Positioned>();
@@ -55,6 +67,7 @@ public final class Diff {
         final int width;
         final Function<Identity, byte[]> reader;
         final boolean ordered;
+        boolean exact;
 
         Walk(int width, Function<Identity, byte[]> reader, boolean ordered) {
             this.width = width;
@@ -140,7 +153,9 @@ public final class Diff {
                 if (c < 0) removed.add(x.get(i++));
                 else if (c > 0) added.add(y.get(j++));
                 else {
-                    if (!x.get(i).h().equals(y.get(j).h())) { removed.add(x.get(i)); added.add(y.get(j)); }
+                    if (!x.get(i).h().equals(y.get(j).h()) || exact && !Arrays.equals(x.get(i).value(), y.get(j).value())) {
+                        removed.add(x.get(i)); added.add(y.get(j));
+                    }
                     i++; j++;
                 }
             }

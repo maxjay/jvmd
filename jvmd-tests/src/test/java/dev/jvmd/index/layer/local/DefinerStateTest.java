@@ -61,7 +61,7 @@ class DefinerStateTest {
             return k;
         }
         DefinerIndex.State fold(List<Identity> keys, DefinerIndex.State base) {
-            var state = DefinerIndex.fold(tree, keys.stream().distinct().sorted().toList(), base, k -> { opened.add(k); return leaves.get(k); }, nodes::get);
+            var state = DefinerIndex.fold(tree, keys.stream().distinct().sorted().toList(), Bind.leafSetRoot(digest, keys, this), base, k -> { opened.add(k); return leaves.get(k); }, nodes::get);
             state.disjoint(DefinerIndex.disjoint(digest, tree, state, nodes::get, this));
             return state;
         }
@@ -97,6 +97,30 @@ class DefinerStateTest {
         assertThat(base.counts).isEqualTo(before);
         var noChange = f.fold(List.of(large, replacement), derived);
         assertThat(noChange.counts).as("an empty semantic delta shares the entire count map").isSameAs(derived.counts);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void persistedStateReopensLazilyAndContinuesFromOnlyChangedOwners(Digest digest) {
+        var f = new Fixture(digest);
+        var names = java.util.stream.IntStream.range(0, 32768).mapToObj(i -> "p/T"+i).toList();
+        var large = f.leaf("large", names);
+        var old = f.leaf("old", List.of("p/T100", "p/Removed"));
+        var replacement = f.leaf("new", List.of("p/T100", "p/Added"));
+        var base = f.fold(List.of(large, old), null);
+        var bytes = DefinerIndex.persist(f.tree, base, f.nodes::get, f);
+        f.opened.clear();
+        var reads = new java.util.concurrent.atomic.AtomicInteger();
+        var restored = DefinerIndex.restore(f.tree, base.leafSet(), bytes, id -> { reads.incrementAndGet(); return f.nodes.get(id); }, f);
+        assertThat(reads.get()).as("opening exact roots must not reconstruct any counts").isZero();
+        assertThat(f.opened).isEmpty();
+        var derived = f.fold(List.of(large, replacement), restored);
+        assertThat(f.opened).containsExactlyInAnyOrder(old, replacement);
+        assertThat(reads.get()).as("touched DF paths, not the 32768-type universe").isLessThan(100);
+        var saved = DefinerIndex.persist(f.tree, derived, f.nodes::get, f);
+        var scratch = f.fold(List.of(large, replacement), null);
+        assertThat(saved).as("canonical multimap and projection roots do not depend on derivation history")
+                .isEqualTo(DefinerIndex.persist(f.tree, scratch, f.nodes::get, f));
+        assertThat(DefinerIndex.persist(f.tree, restored, f.nodes::get, f)).isEqualTo(bytes);
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -143,19 +167,64 @@ class DefinerStateTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
-    void distanceCountsTheSymmetricDifferenceWithoutConstructingIt(Digest digest) {
+    void persistentLeafSetsSkipUnchangedChunksAcrossLargeUniverses(Digest digest) {
         var f = new Fixture(digest);
-        var all = java.util.stream.IntStream.range(0, 25).mapToObj(i -> f.id("leaf" + i)).sorted().toList();
-        for (int step = 1; step < 8; step++) {
-            int divisor = step;
-            var a = java.util.stream.IntStream.range(0, all.size()).filter(i -> i % divisor == 0).mapToObj(all::get).toList();
-            var b = java.util.stream.IntStream.range(0, all.size()).filter(i -> i % (divisor + 1) == 0).mapToObj(all::get).toList();
-            var difference = new java.util.HashSet<>(a);
-            for (var id : b) if (!difference.add(id)) difference.remove(id);
-            assertThat(DefinerIndex.distance(a, b)).isEqualTo(difference.size());
-            assertThat(DefinerIndex.distance(b, a)).isEqualTo(difference.size());
-            assertThat(DefinerIndex.distance(a, a)).isZero();
-            assertThat(DefinerIndex.distance(List.of(), a)).isEqualTo(a.size());
+        var all = java.util.stream.IntStream.range(0, 16384).mapToObj(i -> f.leaf("leaf" + i, List.of())).toList();
+        var base = f.fold(all, null);
+        var edited = new ArrayList<>(all);
+        var removed = edited.remove(8000);
+        var added = f.leaf("replacement", List.of("p/New"));
+        edited.add(added);
+        f.opened.clear();
+        var next = f.fold(edited, base);
+        assertThat(f.opened).containsExactlyInAnyOrder(removed, added);
+        assertThat(next.leafSetEntriesCompared()).as("only differing leaf-set chunks are compared").isBetween(1L, 512L);
+        Collections.reverse(edited);
+        edited.add(added); // neither order nor repeated membership changes a set
+        f.opened.clear();
+        var same = f.fold(edited, next);
+        assertThat(same.leafSet()).isEqualTo(next.leafSet());
+        assertThat(same.leafSetEntriesCompared()).isZero();
+        assertThat(f.opened).isEmpty();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void conflictApplyMatchesFreshConstructionForMovesInsertionsRemovalsAndRepeatedLeaves(Digest digest) {
+        var f = new Fixture(digest);
+        var large = f.leaf("large", java.util.stream.IntStream.range(0, 32768).mapToObj(i -> "large/T"+i).toList());
+        var a = f.leaf("a", List.of("p/K", "p/A"));
+        var b = f.leaf("b", List.of("p/K", "p/B"));
+        var c = f.leaf("c", List.of("p/K", "p/C"));
+        var d = f.leaf("d", List.of("p/A"));
+        var empty = f.fold(List.of(), null);
+        var order = List.of(large, a, b, c);
+        var state = f.fold(order, null);
+        DefinerIndex.persist(f.tree, state, f.nodes::get, f);
+        var route = route(f, order);
+        var conflicts = DefinerIndex.conflicts(digest, f.tree, state, empty, order, f);
+        for (var nextOrder : List.of(List.of(large, b, a, c), List.of(large, b, c, a),
+                List.of(large, b, c, a, a), List.of(large, b, c, a, d), List.of(large, c, a, d),
+                List.of(large, a, d), List.of(large, a), List.of(large, a))) {
+            var next = f.fold(nextOrder, state);
+            var nextRoute = route(f, nextOrder);
+            f.opened.clear();
+            var result = DefinerIndex.conflicts(f.tree, next, empty, nextOrder, route, nextRoute, conflicts,
+                    k -> { f.opened.add(k); return f.leaves.get(k); }, f.nodes::get, f);
+            assertThat(f.opened).as("the unchanged 32768-type leaf must never be opened").doesNotContain(large);
+            assertThat(result.ownerOpens()).isEqualTo(f.opened.size()).isLessThanOrEqualTo(2);
+            assertThat(result.touched()).isLessThanOrEqualTo(4);
+            assertThat(result.root()).isEqualTo(DefinerIndex.conflicts(digest, f.tree, next, empty, nextOrder, f));
+            if (route.hash().equals(nextRoute.hash())) {
+                assertThat(result.touched()).isZero();
+                assertThat(result.ownerOpens()).isZero();
+            }
+            state = next; route = nextRoute; conflicts = result.root();
         }
+    }
+
+    private static dev.jvmd.core.tree.Root route(Fixture f, List<Identity> order) {
+        var list = new dev.jvmd.core.tree.ContentList(f.digest).builder(f);
+        for (var k : order) list.add(k.bytes(), f.leaves.get(k).r());
+        return list.finish();
     }
 }

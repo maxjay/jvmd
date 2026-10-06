@@ -75,7 +75,7 @@ public final class RocksMachineStore implements MachineStore, AutoCloseable {
     /** Commits records at once, atomically and durably. */
     void commit(java.util.List<byte[][]> records) {
         try (var batch = new WriteBatch()) {
-            for (var kv : records) batch.put(kv[0], kv[1]);
+            for (var kv : records) { if (kv[1] == null) batch.delete(kv[0]); else batch.put(kv[0], kv[1]); }
             db.write(durable, batch);
         } catch (RocksDBException e) { throw failure(e); }
     }

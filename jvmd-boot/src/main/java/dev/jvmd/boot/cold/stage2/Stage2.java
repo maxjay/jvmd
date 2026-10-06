@@ -48,7 +48,8 @@ public final class Stage2 {
                          Map<String, Identity> annotations, Timings timings) { }
 
     /** Where the time went, summed over jobs (so more than the wall time when jobs ran in parallel): the numbers of the cost model in 7.2. */
-    public record Timings(long headerCompileMillis, long factsMillis, long definerIndexMillis, int externalFolds, int siblingFolds) { }
+    public record Timings(long headerCompileMillis, long factsMillis, long definerIndexMillis, int externalFolds, int siblingFolds,
+                          int conflictCacheHits, int conflictBuilds, long conflictNodeWrites, int definerCacheHits, int definerOwnerOpens, long leafSetEntriesCompared, int conflictApplies, int conflictOwnerOpens, int conflictTouched) { }
 
     private final Digest digest;
     private final ContentTree tree;
@@ -87,7 +88,9 @@ public final class Stage2 {
             try (var defaults = new Defaults(digest, tree, jdkFeature, workers, repository, Path.of(model.jdkHome()), store, boot.written, parser)) {
                 var jdk = defaults.jdk();
                 boot.jdkLeaves = jdk.stream().map(RouteEntry.Jrt::k).distinct().sorted().toList();
-                boot.jdkLeafSet = dev.jvmd.index.layer.local.Bind.leafSet(digest, boot.jdkLeaves);
+                boot.jdkSetRoot = dev.jvmd.index.layer.local.Bind.leafSetRoot(digest, boot.jdkLeaves, boot.sink);
+                boot.jdkLeafSet = boot.jdkSetRoot.hash();
+                boot.sink.flush(); // publish main-thread leaf-set nodes before worker folds
                 var jars = new ArrayList<ProjectModel.Dependency>();
                 for (var module : model.modules())
                     for (var scope : List.of(module.main(), module.test())) for (var d : scope.dependencies()) if (d.module() == null) jars.add(d);
@@ -129,7 +132,7 @@ public final class Stage2 {
                 for (var row : new java.util.TreeMap<>(boot.files).values()) {
                     put(store, records, LocalStore.fileKey(projectKey, row.path()), row.encode());
                     for (var dependency : dev.jvmd.index.layer.local.ReverseIndex.dependencies(row))
-                        put(store, records, dependency.key(projectKey, row.path()), Entry.NONE);
+                        records.put(dependency.key(projectKey, row.path()), Entry.NONE);
                 }
                 store.flush();
                 var entries = new ArrayList<Entry>(records.size());
@@ -140,7 +143,7 @@ public final class Stage2 {
                 // Step 4: sync once, then the root, last.
                 store.sync();
                 var format = LocalFormat.of(Format.of(digest, jdkFeature));
-                store.putLocalRoot(projectKey, LocalRoot.encode(digest, format, local, machineRoot, digest.hash(model.bytes())));
+                store.putLocalRoot(digest, projectKey, LocalRoot.encode(digest, format, local, machineRoot, digest.hash(model.bytes())));
 
                 var leaves = new java.util.TreeMap<String, Identity>();
                 var annotations = new java.util.TreeMap<String, Identity>();
@@ -156,7 +159,10 @@ public final class Stage2 {
                         boot.indexMemo.distinctLeafSets(), defaults.indexedOnTheSpot(), boot.written.count(), List.copyOf(faults),
                         (System.nanoTime() - started) / 1_000_000, local, Map.copyOf(leaves), Map.copyOf(annotations),
                         new Timings(boot.headerNanos.get() / 1_000_000, boot.factsNanos.get() / 1_000_000, boot.definerNanos.get() / 1_000_000,
-                        boot.indexMemo.externalFolds(), boot.indexMemo.siblingFolds()));
+                        boot.indexMemo.externalFolds(), boot.indexMemo.siblingFolds(),
+                        boot.conflictCacheHits.get(), boot.conflictBuilds.get(), boot.conflictNodeWrites.get(),
+                        boot.definerCacheHits.get(), boot.definerOwnerOpens.get(), boot.leafSetEntriesCompared.get(),
+                        boot.conflictApplies.get(), boot.conflictOwnerOpens.get(), boot.conflictTouched.get()));
             }
         }
     }

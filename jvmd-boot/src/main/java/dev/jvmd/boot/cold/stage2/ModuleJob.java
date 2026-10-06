@@ -215,15 +215,39 @@ final class ModuleJob {
         var parentKey = boot.parents.get(routeKey);
         var parent = parentKey == null ? null : boot.indexMemo.route(parentKey);
         var externalBase = parent == null
-                ? state(IndexMemo.Kind.EXTERNAL, boot.jdkLeafSet, boot.jdkLeaves, null) : parent.external();
-        var external = state(IndexMemo.Kind.EXTERNAL, bound.leafSetExt(), bound.external(), externalBase);
-        var sibling = state(IndexMemo.Kind.SIBLING, bound.leafSetSib(), bound.sibling(), parent == null ? null : parent.sibling());
-        boot.indexMemo.route(routeKey, new IndexMemo.States(external, sibling));
-        if (boot.indexMemo.claimConflicts(bound.routeHash())) {
-            var root = DefinerIndex.encodeRoot(DefinerIndex.conflicts(boot.digest, boot.tree, external, sibling, bound.sequence(), boot.sink));
-            boot.store.put(LocalStore.conflictsKey(bound.routeHash()), root);
-            boot.definers.put(LocalStore.conflictsKey(bound.routeHash()), root);
-        }
+                ? state(IndexMemo.Kind.EXTERNAL, boot.jdkSetRoot, boot.jdkLeaves, null) : parent.external();
+        var external = state(IndexMemo.Kind.EXTERNAL, bound.externalRoot(), bound.external(), externalBase);
+        var sibling = state(IndexMemo.Kind.SIBLING, bound.siblingRoot(), bound.sibling(), parent == null ? null : parent.sibling());
+        var conflicts = boot.indexMemo.conflicts(bound.routeHash(), () -> {
+            var bytes = boot.store.get(LocalStore.conflictsKey(bound.routeHash()));
+            dev.jvmd.core.tree.Root root;
+            if (bytes != null) {
+                root = DefinerIndex.decodeRoot(bytes, boot.digest.width());
+                boot.conflictCacheHits.incrementAndGet();
+            } else {
+                var measured = new dev.jvmd.core.tree.NodeSink() {
+                    public void write(dev.jvmd.core.tree.Node node) { boot.conflictNodeWrites.incrementAndGet(); boot.sink.write(node); }
+                    public void flush() { boot.sink.flush(); }
+                };
+                if (parent == null) {
+                    boot.conflictBuilds.incrementAndGet();
+                    root = DefinerIndex.conflicts(boot.digest, boot.tree, external, sibling, bound.sequence(), measured);
+                } else {
+                    boot.conflictApplies.incrementAndGet();
+                    var update = DefinerIndex.conflicts(boot.tree, external, sibling, bound.sequence(),
+                            parent.route(), bound.routeRoot(), parent.conflicts(), boot::leaf, boot::node, measured);
+                    boot.conflictOwnerOpens.addAndGet(update.ownerOpens());
+                    boot.conflictTouched.addAndGet(update.touched());
+                    root = update.root();
+                }
+                boot.sink.flush(); // dependent routes may immediately apply this root
+                bytes = DefinerIndex.encodeRoot(root);
+                boot.store.put(LocalStore.conflictsKey(bound.routeHash()), bytes);
+            }
+            boot.definers.put(LocalStore.conflictsKey(bound.routeHash()), bytes);
+            return root;
+        });
+        boot.indexMemo.route(routeKey, new IndexMemo.States(external, sibling, bound.routeRoot(), conflicts));
         return new DefinerIndex.Resolver(external, sibling, bound.sequence());
     }
 
@@ -231,10 +255,24 @@ final class ModuleJob {
      * The state of one leaf set, and its disjoint record. Folded once per {@code (kind, key)} in the boot: the first job to ask claims it
      * and the others wait for that fold ({@link IndexMemo#once}), so jobs whose routes share an external leaf set do not each fold it.
      */
-    private DefinerIndex.State state(IndexMemo.Kind kind, Identity key, List<Identity> leaves, DefinerIndex.State base) {
+    private DefinerIndex.State state(IndexMemo.Kind kind, dev.jvmd.core.tree.Root leafSet, List<Identity> leaves, DefinerIndex.State base) {
+        var key = leafSet.hash();
         return boot.indexMemo.once(kind, key, () -> {
-            var state = DefinerIndex.fold(boot.tree, leaves, base, boot::leaf, boot::node);
             var recordKey = kind == IndexMemo.Kind.EXTERNAL ? LocalStore.disjointKey(key) : LocalStore.siblingKey(key);
+            var storedState = boot.store.get(LocalStore.definerStateKey(key));
+            if (storedState != null) {
+                var state = DefinerIndex.restore(boot.tree, leafSet, storedState, boot::node, boot.sink);
+                boot.definerCacheHits.incrementAndGet();
+                var value = DefinerIndex.encodeRoot(state.disjoint());
+                if (boot.store.get(recordKey) == null) boot.store.put(recordKey, value);
+                boot.definers.put(recordKey, value);
+                boot.definers.put(LocalStore.definerStateKey(key), storedState);
+                return state;
+            }
+            var state = DefinerIndex.fold(boot.tree, leaves, leafSet, base, k -> {
+                boot.definerOwnerOpens.incrementAndGet(); return boot.leaf(k);
+            }, boot::node);
+            boot.leafSetEntriesCompared.addAndGet(state.leafSetEntriesCompared());
             var value = boot.store.get(recordKey);
             if (value != null) state.disjoint(DefinerIndex.decodeRoot(value, boot.digest.width()));
             else {
@@ -245,6 +283,9 @@ final class ModuleJob {
                 boot.store.put(recordKey, value);
                 boot.sink.flush(); // another job may take this state as its base and read its tree
             }
+            var saved = DefinerIndex.persist(boot.tree, state, boot::node, boot.sink);
+            boot.store.put(LocalStore.definerStateKey(key), saved);
+            boot.definers.put(LocalStore.definerStateKey(key), saved);
             boot.definers.put(recordKey, value);
             return state;
         });

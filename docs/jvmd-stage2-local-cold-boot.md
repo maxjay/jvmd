@@ -1,6 +1,6 @@
 # jvmd stage 2: LOCAL cold boot
 
-Oct 4, 2026 · @Max. Reconciled 2026-10-06 with LAYOUT 4, the PR #60 audit, exact header proofs, path-addressed reverse records and persistent definer state.
+Oct 4, 2026 · @Max. Reconciled 2026-10-06 with LAYOUT 4, the PR #60 audit, exact header proofs, current path-addressed reverse records and persistent definer state.
 
 This revision replaces the earlier Stage 2 specification. Stage 3 Appendix A and this document describe the same foundation. Stage 3 Appendix F extends header compilation with processors; its processor proofs, generated outputs and resource records are additional work, not implied by completion of this document.
 
@@ -29,8 +29,8 @@ Each module has `main` and `test`. A main route starts with JDK modules, then it
 | Binding | Entry, `k`, `a`, and origin. Cold boot has no session provider |
 | `routeHash` | Merkle root hash of the `ContentList` of bound `k` in classpath order |
 | `R` | Sum of `r` over that sequence, including repeated bindings; compared, never a storage key |
-| `leafSetExt` | Digest of sorted distinct external `k` |
-| `leafSetSib` | Digest of sorted distinct sibling `k` |
+| `leafSetExt` | Merkle root of the external leaf-set ContentTree |
+| `leafSetSib` | Merkle root of the sibling leaf-set ContentTree |
 | `aSequence` | Annotation identities parallel to bindings; absent from resolution identities |
 
 `ContentList` preserves order. The two leaf sets do not. A duplicate leaf is one definer and cannot conflict with itself. `R` alone is not a proof that the effective classpath is unchanged: a permutation preserves `R` but may change the winner of a conflict.
@@ -89,7 +89,7 @@ Each distinct dependency contributes one empty reverse key containing the depend
 | `Written` | Boot-local node deduplication and one leaf builder per exact k |
 | `IndexMemo` | One future per `(external/sibling, leafSet)`; completed route states by route key |
 | Route parents | Test → own main; main → first declared sibling's main; roots → shared JDK external base |
-| `DefinerCounts` | Immutable balanced map, structurally shared between derived states |
+| `DefinerCounts` | Lazy persistent all-definer and multiple-definer trees; a balanced map assembles an uncached initial state |
 
 There is no file-fact memo in the current cold path: each source is read and projected in its own compilation context. Content alone never authorizes reusing facts from a different binding. IndexMemo deduplicates exact leaf sets even when different route parents lead to them.
 
@@ -109,7 +109,7 @@ A route stores the build's coordinate and order. Substituting a source provider 
 
 ### 3.4 Ordered and semantic identities
 
-Route hashes answer exact order/content questions. Leaf-set digests key commutative definer parts. T/N range sums prove precisely the declarations observed. A/EA hashes and Diff answer metadata questions. A sum is never a content address.
+Route hashes answer exact order/content questions. Leaf-set Merkle hashes key commutative definer parts. T/N range sums prove precisely the declarations observed. A/EA hashes and Diff answer metadata questions. A sum is never a content address.
 
 ### 3.5 Proof grain
 
@@ -119,11 +119,17 @@ For `K field`, adding an unrelated method to K does not change the type-header r
 
 DD contains types with one external definer; DS those with one sibling definer. DC contains conflicts within or across those parts and selects the first provider in the bound sequence. Values retain provider k; entry identities are `Digest(zstr typeKey || oSum)` and exclude provider storage identity.
 
-A lookup consults DS and DD, then DC when both or neither disjoint part has an answer. Header validation adds the scope's own leaf first. The common case ends at a single disjoint entry. Resolution equality of DD/DS/DC sums can support cutoff; route R alone cannot establish equal conflict winners.
+A lookup consults DC first, then DS and DD. A cross-part conflict can also appear in both disjoint trees, so DC must take precedence. Header validation adds the scope's own leaf first. The common case ends at a single disjoint entry. Resolution equality of DD/DS/DC sums can support cutoff; route R alone cannot establish equal conflict winners.
 
 ### 3.7 Delta → candidates → validation
 
-Diff on T identifies changed declaration keys; these map to named and whole-kind T prefixes. Diff on N identifies changed direct-member-type prefixes. Diff on O or effective DD/DS/DC identifies D keys. Prefix-seeking X returns project/path candidates. Only then are candidate F rows opened and validated against their current route.
+Candidate discovery has four separate inputs:
+- T key/h deltas query exact named and whole-kind T prefixes.
+- N key insertion/removal queries the direct outer/name N prefix; a same-key h replacement does not change its zero predicate.
+- Effective type-presence toggles query D(type); an O value replacement does not change presence. Do not substitute raw DD/DS/DC membership changes for effective presence.
+- Exact provider deltas query all T and N prefixes for the type. Read DC with `Diff.content`, since a different first k can select different N ranges even when the owner's oSum and DC h are equal. A same-key DC replacement changing only loser order has no reverse work.
+
+The contract is: if an indexed observation changes, its consumer is among the candidates. Prefix-seeking current X returns project/path candidates; only then are F rows opened and exact proofs validated. A pure route permutation with conflicting constants and member-type visibility must reach T/N consumers with all leaf deltas empty.
 
 N must be considered independently of the enclosing owner's oSum: adding `Base.Inner` changes N(Base,Inner) while leaving oSum(Base) unchanged. Similarly, an absent T field may become present. Reverse publication includes both positive and expected-zero observations.
 
@@ -161,9 +167,13 @@ Session providers precede built siblings and defaults, but are absent in cold bo
 
 The route plan selects a parent before workers run. Tests use own main; a main with siblings uses its first declared sibling's main; root modules use the common JDK external state and empty sibling state. The dependency DAG guarantees completion before the child needs the parent. Selecting a parent is a point lookup, not a scan of all completed states.
 
-Each distinct `(kind, leafSet)` is folded once, with concurrent requesters joining its future. Compare the parent's and target's sorted leaf lists; open O only for removed/added leaves. Accumulate changed type keys, update their paths in DefinerCounts, and share all other map branches. No full counts-map copy is performed.
+Each leaf set is a persistent ContentTree: key = k, value = empty, h = Digest(k). Its exact root hash is the set identity; the sum is not a proof input. Binding still visits model entries and builds canonical sets. Derivation compares parent and target roots with Diff, skipping equal chunks rather than merging flat lists.
 
-For a new disjoint tree, `ContentTree.apply` changes the touched type keys in the parent's committed root. A cold base builds once. An existing shared DD/DS record supplies the stored root, but boot-local counts still need to be derived for later folds and conflict construction. Publish a state only after its root's nodes are flushed.
+Each distinct (kind, leafSet) is claimed once per boot. Read DF|leafSet before folding. A hit restores its all-definer, multiple-definer and disjoint roots lazily, with zero O opens and no counts reconstruction. A miss diffs leaf sets, opens only removed/added O leaves, and applies changed type entries to the parent's persisted multimap and its multiple-definer projection. A first uncached base assembles and persists these trees once.
+
+The same touched keys update DD/DS with ContentTree.apply. DF retains enough mathematics to continue the fold on another project or cold boot; DD/DS alone are not the fold state.
+
+DC|routeHash is checked before construction. Exact hits emit zero conflict nodes. For an uncached route with a parent, Diff of their ordered ContentLists identifies added/removed/moved leaves; only those leaves' O keys can change conflict membership or winner. Recompute those entries and apply them to the parent DC. An initial route without a parent builds its conflicts once, using external multiples and sibling types. A future per exact route returns a readable root to every waiter. Publish route ancestry only after all roots are flushed; shared pending node writes must also be visible if another worker claimed them.
 
 The selected parent need not be the globally nearest leaf set. Costs below are measured relative to that explicit parent. Unrelated root routes with partially overlapping non-JDK jars may revisit those jar O trees; exact identical sets still share one fold. This implementation removes quadratic nearest-state search without claiming a globally optimal derivation tree.
 
@@ -179,8 +189,8 @@ E/EA targets seed implicit declaration dependencies but are not a complete looku
 
 1. Validate model and dependency order; read the committed MACHINE root; resolve JDK/jar defaults; construct ordered routes and their parent plan.
 2. For each ready module, main then test: bind route, obtain sibling stubs, enumerate/hash sources while reading, parse/enter/complete declarations, extract facts and proof observations, sort facts, build T/N/E/O and A/EA, publish L and AL, register Built, derive definer states and seal F proofs.
-3. After all jobs finish, write MOD, RT, SL, F, used DD/DS/DC, and one empty X key per header dependency/path. Build the sorted LOCAL ContentTree over those records.
-4. Flush records and nodes, sync, then publish LROOT. A failed job leaves no new commitment.
+3. After all jobs finish, write MOD, RT, SL, F and used DF/DD/DS/DC records. Add one empty logical X key per header dependency/path to the sorted LOCAL ContentTree.
+4. Flush records and nodes, sync, then atomically publish LROOT with inserts/deletes for the current raw X secondary index. A failed job leaves no new commitment or published reverse change.
 
 | Record | Meaning |
 | --- | --- |
@@ -192,7 +202,8 @@ E/EA targets seed implicit declaration dependencies but are not a complete looku
 | `SL\|project\|module\|scope` | Own source `(k,a)` binding |
 | `F\|project\|path` | Source row with header proof and absences |
 | `DD\|leafSetExt`, `DS\|leafSetSib`, `DC\|routeHash` | Definer roots used by this project, including the shared JDK base when derived |
-| `X\|H\|...` | Empty dependency/project/path reverse records |
+| `DF\|leafSet` | Persisted all-definer, multiple-definer and disjoint roots |
+| `X\|H5\|...` | Current empty dependency/project/path reverse records |
 | `LROOT\|project` | Current commitment; prior commitments retained under numbered keys |
 | `C\|...`, `RS\|...` | Legacy reserved codecs; no records written by Stage 2 |
 
@@ -200,7 +211,7 @@ E/EA targets seed implicit declaration dependencies but are not a complete looku
 
 ### 5.1–5.2 Trees, lists and Diff
 
-ContentTree sorts keys; ContentList retains input order. Both use content-defined chunks, Merkle hashes, algebraic sums and the configured B/CAP. Equal hashes skip subtrees. Tree Diff compares keys and entry h. It is a semantic delta: when h projects away part of the value, a value-only change at equal h is omitted. Changed provider k can therefore change a definer tree's exact hash without appearing in its semantic Diff. For manifests whose h binds the entire key/value pair, Diff is also the exact content delta. List Diff preserves positions. Apply consumes removed keys and added entries, sharing unaffected nodes. Local edits resynchronize content boundaries; they need not change exactly one chunk.
+ContentTree sorts keys; ContentList retains input order. Both use content-defined chunks, Merkle hashes, algebraic sums and the configured B/CAP. Equal hashes skip subtrees. Tree Diff compares keys and entry h. It is a semantic delta: when h projects away part of the value, a value-only change at equal h is omitted. Changed provider k can therefore change a definer tree's exact hash without appearing in its semantic Diff. For manifests whose h binds the entire key/value pair, Diff is also the exact content delta. Use Diff.content for exact key/value/h deltas, including definer routing values omitted by semantic Diff. List Diff preserves positions. Apply consumes removed keys and added entries, sharing unaffected nodes. Local edits resynchronize content boundaries; they need not change exactly one chunk.
 
 ### 5.2a Stubs
 
@@ -222,7 +233,8 @@ for entry in route order:
     append k to ContentList with h = L(k).r
     append a to the parallel annotation sequence
     collect k in external or sibling set according to binding origin
-return routeHash, R, Digest(sorted distinct ext), Digest(sorted distinct sib), bindings
+build canonical ContentTrees for ext and sib: k -> empty, h = Digest(k)
+return routeHash, R, extRoot.hash, sibRoot.hash, bindings
 ```
 
 ### 5.4 ModuleJob
@@ -247,14 +259,23 @@ for each pending file:
 parent = planned route parent's completed states
          or (shared JDK external state, empty sibling base)
 for kind in [EXTERNAL, SIBLING]:
-    state = IndexMemo.once(kind, leafSet, () ->
-        deltaLeaves = sortedDifference(parent[kind].leaves, targetLeaves)
+    state = IndexMemo.once(kind, leafSet.hash, () ->
+        if DF|leafSet.hash exists: restore roots lazily and return
+        deltaLeaves = Diff(parent.leafSet, leafSet), or all leaves for an initial base
         changed = collect types from O of removed/added leaves
-        counts = persistentPointUpdates(parent.counts, changed)
-        root = existing DD/DS root, else apply(parent.root, touchedTypes), else cold build
-        flush nodes; return immutable state with root)
-publish route's two states
-build DC once per routeHash from conflicts and first provider in bound sequence
+        counts = apply(parent.allDefiners, changed)
+        multiples = apply(parent.multipleDefiners, changed)
+        disjoint = apply(parent.disjoint, touchedTypes), or cold build
+        flush nodes; persist DF and DD/DS; return state)
+dc = IndexMemo.conflicts(routeHash, () ->
+    if DC|routeHash exists: return stored root
+    if parent exists:
+        changedLeaves = Diff.lists(parent.route, route)
+        touched = O keys of added/removed/moved leaves
+        root = apply(parent.DC, recomputed conflicts at touched)
+    else: root = initial conflict build
+    flush nodes; persist DC; return root)
+publish route states, ordered route root and dc
 ```
 
 ### 5.6 Reverse publication and lookup
@@ -263,19 +284,21 @@ build DC once per routeHash from conflicts and first provider in bound sequence
 for row in files:
     write F|project|path
     for dependency in distinct(row.T reads + row.D/N absences):
-        write X|H|dependency|project|path = empty
-build LOCAL over all used records; flush; sync; write LROOT
+        add logical X|H5|dependency|project|path = empty to LOCAL entries
+build LOCAL over all used records; flush; sync
+atomically: keep previous LROOT in history
+            delete removed X keys and insert added X keys from Diff(oldLOCAL,newLOCAL)
+            replace LROOT
 
-candidates(deltaT, deltaN, deltaD):
-    dependencies = changed named/whole-kind T ranges + direct-member N ranges + D keys
-    for dependency: seek exact X prefix
-        decode project/path
-        require key membership in that project's current LOCAL root
-        add project/path
-    return distinct candidate paths
+candidates(deltaT, deltaN, effectivePresence, exactDefiners):
+    prefixes = T named/whole-kind + N key-presence + D presence-toggle
+               + type-wide T/N for changed effective providers
+    discard duplicate/covered prefixes; seek current X keys
+    decode project/path; return distinct candidates
+    // no LROOT, LOCAL membership or F reads
 ```
 
-Raw keys from a prior cold generation can remain in the shared store. A reached key counts only if the current LOCAL tree contains it. Candidate lookup caches reached project roots and opens no F row. This membership test costs a tree path per raw candidate; retained stale prefix entries can add work until garbage collection. No scan of unrelated files or reverse prefixes is permitted.
+Current raw X keys are a secondary index maintained only by LROOT publication; ordinary put rejects them. Historical LOCAL nodes already preserve their empty values, so historical raw keys are unnecessary. X|H5| isolates earlier raw history. Lookup work is current prefix fan-out, independent of the number of obsolete consumer paths. The publication diff may read the previous root; candidate queries never do. No scan of unrelated files or reverse prefixes is permitted.
 
 ### 5.7 Boot decision
 
@@ -299,16 +322,16 @@ Equal source/class APIs give equal k and all resolution roots. Equal retained an
 
 Header work includes parsing source text, resolving declarations/constants, extracting metadata and collecting lookup proofs; it is not just a count of declarations, since executable text must still be parsed. Facts must be sorted for each scope. Default preparation is proportional to model route entries plus any newly indexed artifacts.
 
-Parent selection costs route construction plus a point lookup per route. There is no U-by-U nearest-state search. Each new state compares its two sorted leaf lists, reads O for changed leaves only, updates a balanced counts-map path per changed type, and applies touched disjoint entries to the parent's tree. The initial JDK counts/tree are shared. Reusing a stored DD/DS root avoids rebuilding that tree, not the boot-local count derivation. Conflict construction also visits overlaps between external and sibling state; do not claim every cold-boot operation is independent of route size.
+Parent selection costs route construction plus one point lookup per route. Canonical binding still visits model entries. Leaf-set Diff, DF and DD/DS apply depend on changed chunks/paths and changed leaves' O entries. Exact DF hits reopen no O universe. Exact DC hits perform no build/apply/node emission. A new DC with ancestry opens O only for changed/moved leaves and applies touched entries; an initial conflict build still visits external multiples and sibling types. Costs are relative to the explicitly selected parent, not a globally optimal route graph.
 
-Diff/apply work depends on changed chunks and their paths. Reverse lookup costs changed prefixes plus raw candidate entries and current-root membership checks; F reads occur only for returned candidates. Retained stale keys and history have a cost, explicitly accounted for rather than hidden behind an exact-fan-out claim.
+Reverse lookup costs prefix seeks plus current matching keys; LOCAL membership reads are zero. Historical LOCAL trees consume storage without adding prefix hits. Count actual raw prefix hits and returned consumers under churn. Also measure DF cache hits/O opens, DC cache hits/full builds/applies/touched types/node emissions, and leaf-set entries decoded during Diff. A fresh repeated cold boot and another checkout with identical routes must report zero O opens for folding, zero leaf-set comparisons and zero DC reconstruction.
 
 Memory includes active javac tasks/scope facts, persistent state versions, completed leaves and file rows, route maps and dedup sets. It is not independent of project size. No full type-universe copy occurs for each derived state. Measurements report wall time, accumulated header/fact/definer work, fold counts, node writes, faults, source/class parity and sampled heap with GC limitations disclosed.
 
 ### 7.3 Required invariants
 
 1. Source/class T/k/r, O, N and E agree; A/EA/a also agree with matching metadata options. Cover generics, records, type annotations, receivers, arrays, parameters, nesting and dollar names.
-2. Route R is the sum over the bound sequence; set identities hash sorted distinct leaves; routeHash matches a fresh ContentList.
+2. Route R is the sum over the bound sequence; set identities are canonical ContentTree roots over distinct k; routeHash matches a fresh ContentList.
 3. Independent module order and worker count preserve LOCAL content; modelHash separately identifies model bytes.
 4. Route permutations preserve R/leaf sets and update order-sensitive conflicts when winners change. Annotation-only edits preserve resolution identities.
 5. Local route changes retain unaffected chunks; verify sharing without assuming exactly one rewritten chunk.
@@ -317,7 +340,7 @@ Memory includes active javac tasks/scope facts, persistent state versions, compl
 8. File fact sums partition the scope r.
 9. Parse/declaration faults preserve other facts and permit commitment; model/cycle faults do not.
 10. API-identical source/binary provider swaps preserve k and semantic proofs; metadata may differ independently.
-11. Before LROOT publication, reads are MACHINE/shared derivable records, not prior project F/RT/MOD/X/C/RS state. DD/DS and S/ST cache reads are allowed.
+11. Before LROOT publication, reads are MACHINE/shared derivable records, not prior project F/RT/MOD/X/C/RS state. DF/DD/DS/DC and S/ST cache reads are allowed. LROOT publication alone reads the prior commitment to reconcile the current secondary index.
 12. Semantic leaf/definer/stub data share across checkout paths; project-index nodes may differ.
 13. All algebraic tests run with SHA-256 and a second Digest implementation.
 14. Stubs reproduce the resolution facts and compiler warnings needed by dependents; no A reads. Changing only a nested member API does not change the outer stub unless its emitted member-type entry changes.
@@ -327,11 +350,13 @@ Memory includes active javac tasks/scope facts, persistent state versions, compl
 18. Exact header proof minimality: unrelated methods preserve type-only and constant-field reads; actual header/constant/default/hierarchy changes invalidate.
 19. Lookup completeness: package-prefix reclassification, inherited qualified types, intermediate supertypes, branch-specific misses, static on-demand competitors and unresolved constants are covered.
 20. Reverse conservation: every F dependency has one X key per project/path, including zeros; duplicate bytes retain both paths.
-21. Diff-to-prefix discovery returns candidate paths without F scans. Validate only those candidates; exclude stale raw keys outside current LOCAL roots. Exercise RocksDB as well as memory.
-22. Persistent counts share unchanged search branches, preserve historical snapshots and open only changed leaves; large/random add-remove histories equal fresh folds.
-23. Planned ancestry shares JDK and inherited jar O reads, deduplicates exact sets under concurrency and preserves roots across worker counts.
+21. Pure route permutations reach T and N consumers through exact DC deltas even with empty T/N/O leaf deltas. N/O same-key h replacements do not fan out zero/absence proofs. Loser-only DC order changes do not fan out T/N. Validate candidates exactly.
+22. Persisted DF reopens lazily across boots/checkouts, preserves historical snapshots and opens only changed O leaves for a derived state; large/random histories equal fresh folds.
+23. Planned ancestry, persistent leaf-set Diff and conflict apply preserve fresh-build roots across workers and add/remove/move/repeat histories. A small route edit never reopens an unrelated large O universe. Shared nodes are readable after any root-publishing flush.
 24. `Deprecated.since` changes A/a only; full Deprecated/SafeVarargs values remain recoverable; source and binary A match.
 25. Incompatible MACHINE parser/LOCAL versions cold boot; old generations remain opaque/untouched. A second start of the current format takes the skip branch.
+26. Repeated reverse churn leaves prefix work proportional to current consumers in memory and Rocks, including reopen. Old LOCAL roots still verify after current X deletion. Failed publication leaves root and reverse keys unchanged.
+27. Fresh repeated cold boots and another checkout reuse exact DF/DC: zero O-universe traversal and zero conflict build/apply/node emission. Count work, not just equal output bytes.
 
 ## 8. Boundaries
 
@@ -343,9 +368,9 @@ Kotlin/Scala/Groovy contribute through compiled class files, not SourceFacts. Bu
 
 ## 9. Persistence
 
-One RocksDB per MACHINE generation contains shared nodes/leaves and project-prefixed LOCAL records. LROOT replacement retains the prior root under a numbered history key. Raw unreachable records are not live just because a key exists; current-root membership controls header reverse reads. Garbage collection of unreachable records and history retention policy are deferred.
+One RocksDB per MACHINE generation contains shared nodes/leaves and project-prefixed LOCAL records. One atomic write retains the previous LROOT, updates current X inserts/deletes, and swaps LROOT. Historical empty X values live in immutable LOCAL nodes. Garbage collection of other unreachable records and the history retention policy are deferred.
 
-Current representation is `layout=4;parser=4;local=4`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
+Current representation is `layout=4;parser=4;local=5`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
 
 ## 10. Implementation and completion rules
 
@@ -420,13 +445,17 @@ Scope is u8 0 main or 1 test. F's path is in its key only, relative to project r
 DD|leafSetExt = Root(disjoint external tree)
 DS|leafSetSib = Root(disjoint sibling tree)
 DC|routeHash  = Root(conflict tree)
+DF|leafSet    = Root(all definers) || Root(multiple definers) || Root(disjoint)
+leaf-set entry: key = k, value = empty, h = Digest(k)
+definer-state entry: key = zstr typeKey, value = sorted list<(id k || id oSum)>, h = Digest(key || value)
+multiple-definer tree: the same entries, restricted to lists of size > 1
 root         = id hash || id sum || u32 count || u8 level
 disjoint entry: key = zstr typeKey, value = id k, h = Digest(key || oSum)
 conflict entry: key = zstr typeKey, value = id firstK || list<id> allK,
                 h = Digest(key || first.oSum)
 ```
 
-Provider k is storage; oSum is the semantic projection. Exact tree hashes may differ while sums agree. Boot-local DefinerCounts is not another persisted index.
+Provider k is storage; oSum is the DD/DS/DC semantic projection. Exact hashes may differ while sums agree. DF roots preserve exact multimap content for later point updates; their sums are not new proof inputs. Use exact Diff.content for DC routing changes.
 
 ### B.5–B.6 Reserved legacy consumer/result codecs
 
@@ -445,7 +474,7 @@ history key = LROOT|project|u32 n, counting from 1
 
 ```text
 machine = layout=4;digest=<name>;jdk=<feature>;parser=4
-local   = <machine>;local=4;javac=<runtime feature>
+local   = <machine>;local=5;javac=<runtime feature>
 ```
 
 Parser changes when identical class bytes would yield different retained facts/projections. LOCAL changes when its record layout or persisted proof meaning changes. Incompatible commitments cannot take a current-format skip.
@@ -453,14 +482,14 @@ Parser changes when identical class bytes would yield different retained facts/p
 ### B.9 Header reverse keys
 
 ```text
-key = ASCII "X|H|" || u8 form || zstr type || u8 kind || zstr name || id project || zstr path
+key = ASCII "X|H5|" || u8 form || zstr type || u8 kind || zstr name || id project || zstr path
 value = empty
 form 0: T(type, kind, name)
 form 1: N(owner, TYPE, name)
 form 2: D(type, TYPE, "")
 ```
 
-TYPE is 0, FIELD 1, METHOD 2. Reverse form numbers differ from F's absence numbers; use the explicit mapping. The prefix through name identifies a dependency; suffix identifies a consumer. One reverse key is added to LOCAL for each distinct F dependency. Prefix readers use seek, not enumeration of all keys. Current-root membership excludes obsolete raw entries. There are no κ/leaf-set consumer lists to collapse paths or rewrite wholesale.
+TYPE is 0, FIELD 1, METHOD 2. Reverse form numbers differ from F's absence numbers; use the explicit mapping. The prefix through name identifies a dependency; suffix identifies a consumer. One reverse key is added to LOCAL for each distinct F dependency. Prefix readers use seek, not enumeration of all keys. The current raw index contains only published consumers; historical raw entries are neither retained nor scanned. There are no κ/leaf-set consumer lists to collapse paths or rewrite wholesale.
 
 ### B.10 Stub records
 

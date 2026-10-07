@@ -88,7 +88,10 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
     @Override public Void scan(Tree node, Void p) {
         if (node != null && getCurrentPath() != null && !(node instanceof ImportTree) && !(node instanceof PackageTree)) {
             var path = paths.get(node);
-            noteType(trees.getTypeMirror(path), node, Collections.newSetFromMap(new IdentityHashMap<>()));
+            // Source type syntax is an observation. An expression's inferred type is not by itself
+            // a header read; conversions/inference supply their actual native dependencies.
+            if(typePosition(path) || trees.getElement(path) instanceof TypeElement)
+                noteType(trees.getTypeMirror(path), node, Collections.newSetFromMap(new IdentityHashMap<>()));
         }
         return super.scan(node, p);
     }
@@ -356,13 +359,11 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
             case WILDCARD -> { var wildcard = (WildcardType)mirror;noteType(wildcard.getExtendsBound(),node,seen);noteType(wildcard.getSuperBound(),node,seen); }
             case INTERSECTION -> { for (var bound : ((IntersectionType)mirror).getBounds()) noteType(bound,node,seen); }
             case UNION -> { for (var alternative : ((UnionType)mirror).getAlternatives()) noteType(alternative,node,seen); }
-            case EXECUTABLE -> {
-                var method = (ExecutableType)mirror;
-                noteType(method.getReturnType(),node,seen);
-                for (var type : method.getParameterTypes()) noteType(type,node,seen);
-                for (var type : method.getThrownTypes()) noteType(type,node,seen);
-                for (var type : method.getTypeVariables()) noteType(type,node,seen);
-            }
+            // A selected method descriptor already belongs to the method range. Merely naming a
+            // class in that descriptor does not consume its header (including recovered ambiguity
+            // symbols). Declared source types are visited in syntax; native conversion/inference
+            // queries independently contribute the headers actually consulted.
+            case EXECUTABLE -> { }
             default -> { }
         }
     }

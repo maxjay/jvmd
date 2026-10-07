@@ -82,7 +82,7 @@ public final class Pool implements AutoCloseable {
     }
 
     /** No compiler tree or symbol may escape the callback; the caller returns its detached observations. */
-    public record Completed<T>(T value, Map<String, byte[]> classes, List<Proof.Range> reads, boolean metadataSupported, List<Proof.ReaderRead> readerReads, List<String> readerFaults) { }
+    public record Completed<T>(T value, Map<String, byte[]> classes, List<Proof.Range> reads, boolean metadataSupported, List<Proof.ReaderRead> readerReads, List<String> readerFaults,List<String> typeLookups) { }
     private record Observed<T>(T value, List<Proof.Range> reads) { }
     public record Statistics(int workers, long contexts, long tasks) { }
     public record OwnStatistics(long evictionProbes, long stubLookups) { }
@@ -224,6 +224,14 @@ public final class Pool implements AutoCloseable {
     /** Native hierarchy queries, including rejected overloads which leave no attributed syntax node. */
     public static List<Proof.Range> reads(JavacTask task) {
         return List.copyOf(((HierarchyReads) Types.instance(((JavacTaskImpl) task).getContext())).reads);
+    }
+
+    /** Collector inspection must not masquerade as an additional native hierarchy query. */
+    public static dev.jvmd.index.layer.local.ProofCollector.Body collect(com.sun.source.tree.CompilationUnitTree unit,JavacTask task) {
+        var observations=(HierarchyReads)Types.instance(((JavacTaskImpl)task).getContext());
+        boolean recording=observations.recording;observations.recording=false;
+        try {return dev.jvmd.index.layer.local.ProofCollector.bodies(unit,com.sun.source.util.Trees.instance(task),task.getElements(),task.getTypes());}
+        finally {observations.recording=recording;}
     }
 
     private static final class HierarchyReads extends Types {
@@ -505,7 +513,7 @@ public final class Pool implements AutoCloseable {
                 var bytes = new TreeMap<String, byte[]>();
                 files.outputs.forEach((name, output) -> bytes.put(name, output.toByteArray()));
                 var allReads=new ArrayList<>(result.reads());allReads.addAll(reader.resolutionReads());
-                return new Completed<>(result.value(), Map.copyOf(bytes),List.copyOf(allReads), metadataSupported && (configuration.readers()==null || reader.supported()),readerProof.get(),reader.faults());
+                return new Completed<>(result.value(), Map.copyOf(bytes),List.copyOf(allReads), metadataSupported && reader.supported(),readerProof.get(),reader.faults(),reader.typeLookups());
             } finally {
                 files.outputs.clear();
                 // Annotation deproxy diagnostics are emitted on completion. An unsupported binary must be decoded

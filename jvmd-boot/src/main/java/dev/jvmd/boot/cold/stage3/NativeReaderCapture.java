@@ -18,6 +18,7 @@ final class NativeReaderCapture {
     private final Map<Symbol.ClassSymbol,Set<Symbol.ClassSymbol>> dependencies=new IdentityHashMap<>();
     private final Map<Symbol.ClassSymbol,Set<Proof.Range>> retainedResolution=new IdentityHashMap<>();
     private final Set<Proof.Range> resolution=new LinkedHashSet<>();
+    private final Set<String> typeLookups=new TreeSet<>();
     private final Set<Symbol.ClassSymbol> imported=Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<ReverseIndex.Dependency,byte[]> answers=new HashMap<>();
     long events,physicalReads,queries,nodeReads,nodeBytes;
@@ -32,7 +33,8 @@ final class NativeReaderCapture {
             var tap=Class.forName("dev.jvmd.boot.cold.stage3.NativeReaderTap",false,null);
             begin=tap.getMethod("begin",java.util.function.Consumer.class);finish=tap.getMethod("finish");status=tap.getMethod("status");
             // Delay loading until task/validation startup, after every independent test agent's premain.
-            for(var name:List.of("com.sun.tools.javac.jvm.ClassReader","com.sun.tools.javac.jvm.ClassReader$AnnotationDeproxy","com.sun.tools.javac.code.Symbol$ClassSymbol"))
+            for(var name:List.of("com.sun.tools.javac.jvm.ClassReader","com.sun.tools.javac.jvm.ClassReader$AnnotationDeproxy","com.sun.tools.javac.code.Symbol$ClassSymbol",
+                    "com.sun.tools.javac.comp.Resolve","com.sun.tools.javac.comp.Check","com.sun.tools.javac.code.Scope$ScopeImpl"))
                 Class.forName(name,false,ModuleLayer.boot().findLoader("jdk.compiler"));
         } catch(ReflectiveOperationException absent) { /* Startup agent is an admission requirement, not a compiler replacement. */ }
         BEGIN=begin;FINISH=finish;STATUS=status;
@@ -45,8 +47,8 @@ final class NativeReaderCapture {
     }
     void clear() {retained.clear();retainedResolution.clear();dependencies.clear();decoded.clear();}
     void begin() {
-        current.clear();resolution.clear();faults.clear();imported.clear();effects=false;
-        if(inputs==null || BEGIN==null)return;
+        current.clear();resolution.clear();typeLookups.clear();faults.clear();imported.clear();effects=false;
+        if(BEGIN==null)return;
         try {active=true;if(!(boolean)BEGIN.invoke(null,(java.util.function.Consumer<Object[]>)this::event))faults.add("Compiler bridge drift");}
         catch(ReflectiveOperationException ex) {active=false;faults.add("Cannot enter compiler reader bridge: "+ex);}
     }
@@ -56,17 +58,39 @@ final class NativeReaderCapture {
         finally {active=false;}
         return current.entrySet().stream().map(e->new Proof.ReaderRead(e.getKey(),e.getValue())).toList();
     }
-    boolean supported() {return inputs!=null && BEGIN!=null && faults.isEmpty();}
+    boolean supported() {return BEGIN!=null && faults.isEmpty();}
     boolean admitted(Symbol.ClassSymbol symbol) {return active && decoded.contains(symbol) && faults.isEmpty();}
     boolean effects() {return effects;}
     List<String> faults() {return List.copyOf(faults);}
     List<Proof.Range> resolutionReads() {return List.copyOf(resolution);}
+    List<String> typeLookups() {return BEGIN==null?null:List.copyOf(typeLookups);}
     private static String name(Symbol.ClassSymbol symbol) {return symbol.flatname.toString().replace('.','/');}
     private static boolean platform(Symbol.ClassSymbol symbol) {
         return symbol.classfile!=null && "jrt".equals(symbol.classfile.toUri().getScheme());
     }
     private void event(Object[] event) {
         events++;String operation=(String)event[0];var requesting=event[2] instanceof Symbol.ClassSymbol s?s:null;
+        if(operation.equals("package-absence")) {
+            if(event[2] instanceof com.sun.tools.javac.code.Scope scope && scope.owner instanceof Symbol.PackageSymbol pkg && pkg.members_field==scope) {
+                String prefix=pkg.fullname.toString().replace('.','/');
+                typeLookups.add(prefix.isEmpty()?event[3].toString():prefix+"/"+event[3]);
+            }
+            return;
+        }
+        if(operation.equals("type-lookup")) {
+            if(event[1] instanceof Symbol symbol && symbol.kind!=com.sun.tools.javac.code.Kinds.Kind.TYP)
+                typeLookups.add(event[3].toString().replace('.','/'));
+            return;
+        }
+        if(operation.equals("resolution-methods") || operation.equals("member-type") || operation.equals("import-member-type")) {
+            boolean member=!operation.equals("resolution-methods");
+            var owner=event[2] instanceof com.sun.tools.javac.code.Scope scope
+                    && scope.owner instanceof Symbol.ClassSymbol s?s:requesting;
+            if(owner!=null && (owner.flags_field & com.sun.tools.javac.code.Flags.COMPOUND)==0
+                    && owner.classfile!=null && owner.classfile.getKind()==javax.tools.JavaFileObject.Kind.CLASS)
+                resolution.add(new Proof.Range(member?Proof.N:Proof.T,name(owner),member?Keys.TYPE:Keys.METHOD,member?event[3].toString():""));
+            return;
+        }
         if(operation.equals("touch")) {if(requesting!=null && retained.containsKey(requesting))reuse(requesting);return;}
         if(operation.equals("failure") || event[4]!=null) {
             // The native Throwable is captured independently of its bottom-type recovery value.
@@ -127,7 +151,7 @@ final class NativeReaderCapture {
         reuse(owner);
     }
     private byte[] query(Symbol.ClassSymbol owner,int operation,String member,Symbol.ClassSymbol requester) {
-        if(inputs==null)return null;
+        if(inputs==null){faults.add("Unbound native compiler reader question");return null;}
         var q=new ReverseIndex.Dependency(ReverseIndex.M,name(owner),operation,member);
         queries++;
         var local=answers.computeIfAbsent(q,key->ReaderBinding.local(inputs.tree(),inputs.binding(),q.type(),q.kind(),q.name(),id->{

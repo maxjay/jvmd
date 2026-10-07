@@ -19,7 +19,10 @@ public final class NativeReaderAgent {
     private static final Map<String,String> HASHES=Map.of(
         "com/sun/tools/javac/jvm/ClassReader","1a609e6ae45b997a6cbbf44380adcd04deae78a2f53a61925817dbac5623bdef",
         "com/sun/tools/javac/jvm/ClassReader$AnnotationDeproxy","517dea796c4259395354bae40c519baa67a310456256838e3311aead1ab54ba7",
-        "com/sun/tools/javac/code/Symbol$ClassSymbol","dfff4b4753e61c2a7e128e24b2b772732fbff79dc9024c9e13ff051e69e0c63f");
+        "com/sun/tools/javac/code/Symbol$ClassSymbol","dfff4b4753e61c2a7e128e24b2b772732fbff79dc9024c9e13ff051e69e0c63f",
+        "com/sun/tools/javac/comp/Resolve","5fb0e53ad79209580a91154232bea92813a7c28d49bfed87094a7054b0bccd5f",
+        "com/sun/tools/javac/code/Scope$ScopeImpl","26bdeafabb8cedfa10f072084dedc8e88ed20aef366e0556fa18687ce27d6f93",
+        "com/sun/tools/javac/comp/Check","6e43d6fac202848de715e8d98620e23a0222d6c7ab9dd29618f9f315d51684bc");
     private static Class<?> bootstrapTap;
     private NativeReaderAgent() { }
     public static void premain(String arguments,Instrumentation instrumentation) throws Exception {
@@ -51,6 +54,9 @@ public final class NativeReaderAgent {
                 if(!module.getName().equals("jdk.compiler"))throw new IllegalStateException("Unexpected compiler module");
                 String hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
                 if(!HASHES.get(name).equals(hash))throw new IllegalStateException("Unsupported native reader bytes: "+name+" "+hash);
+                if(name.endsWith("/Resolve") || name.endsWith("/Check") || name.endsWith("$ScopeImpl")) {
+                    var result=resolution(name,bytes);signal("installed",name);return result;
+                }
                 var hooks=new TreeMap<String,Integer>();var cf=ClassFile.of();
                 var result=cf.transformClass(cf.parse(bytes),ClassTransform.transformingMethods((builder,element)->{
                     if(!(element instanceof CodeModel code)){builder.with(element);return;}
@@ -118,6 +124,53 @@ public final class NativeReaderAgent {
             } catch(Throwable failure) {
                 signal("drift",failure.toString());return null;
             }
+        }
+        private static byte[] resolution(String name,byte[] bytes) {
+            var cf=ClassFile.of();var hooks=new TreeMap<String,Integer>();
+            var result=cf.transformClass(cf.parse(bytes),ClassTransform.transformingMethods((builder,element)->{
+                if(!(element instanceof CodeModel code)){builder.with(element);return;}
+                var method=code.parent().orElseThrow();String key=method.methodName().stringValue();
+                boolean global=name.endsWith("/Resolve") && key.equals("findGlobalType");
+                boolean load=name.endsWith("/Resolve") && key.equals("loadClass");
+                boolean member=name.endsWith("/Resolve") && key.equals("findImmediateMemberType");
+                boolean check=name.endsWith("/Check") && Set.of("checkImplementations","checkDefaultMethodClashes").contains(key);
+                boolean names=name.endsWith("$ScopeImpl") && key.equals("getSymbolsByName");
+                boolean methods=name.endsWith("$ScopeImpl") && key.equals("getSymbols");
+                if(!(global || load || member || check || names || methods)){builder.with(code);return;}
+                hooks.merge(key,1,Integer::sum);
+                builder.transformCode(code,new CodeTransform() {
+                    Label start;final String phase=global?"global":"methods";
+                    @Override public void atStart(CodeBuilder out) {
+                        if(global || check) {out.ldc(phase).invokestatic(TAP,"enter",MethodTypeDesc.ofDescriptor("(Ljava/lang/String;)V"));start=out.newLabel();out.labelBinding(start);}
+                    }
+                    @Override public void accept(CodeBuilder out,CodeElement instruction) {
+                        if(instruction instanceof ReturnInstruction) {
+                            if(global || check)out.ldc(phase).invokestatic(TAP,"leave",MethodTypeDesc.ofDescriptor("(Ljava/lang/String;)V"));
+                            if(names || methods) {
+                                out.ldc(names?"names":"methods").aload(0);load(out,names?1:-1);
+                                out.invokestatic(TAP,"scope",MethodTypeDesc.ofDescriptor("(Ljava/lang/Iterable;Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Iterable;"));
+                            }
+                            if(load || member) {
+                                out.dup();int value=out.allocateLocal(TypeKind.REFERENCE);out.astore(value);
+                                out.ldc(load?"type-lookup":"member-type").aload(value);load(out,member?4:-1);
+                                out.aload(member?3:2).aconst_null().invokestatic(TAP,"event",EVENT);
+                            }
+                        }
+                        out.with(instruction);
+                    }
+                    @Override public void atEnd(CodeBuilder out) {
+                        if(start==null)return;
+                        var end=out.newLabel();var handler=out.newLabel();
+                        out.labelBinding(end).exceptionCatchAll(start,end,handler).labelBinding(handler)
+                                .ldc(phase).invokestatic(TAP,"leave",MethodTypeDesc.ofDescriptor("(Ljava/lang/String;)V")).athrow();
+                    }
+                });
+            }));
+            var expected=name.endsWith("/Resolve")?Map.of("findGlobalType",1,"loadClass",1,"findImmediateMemberType",1)
+                    :name.endsWith("/Check")?Map.of("checkImplementations",2,"checkDefaultMethodClashes",1)
+                    :Map.of("getSymbols",1,"getSymbolsByName",1);
+            if(!hooks.equals(expected))throw new IllegalStateException("Resolution bridge hook drift: "+hooks);
+            return result;
         }
         private static void load(CodeBuilder out,int slot) {if(slot<0)out.aconst_null();else out.aload(slot);}
     }

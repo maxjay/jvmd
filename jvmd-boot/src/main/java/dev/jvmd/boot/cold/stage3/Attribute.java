@@ -153,7 +153,7 @@ public final class Attribute {
             body=host.bodyObservations().withConfiguredProcessors(options.processing.names());
             if (!faults.isEmpty()) body=body.rejectReuse();
         } catch (IOException failure) { throw new UncheckedIOException(failure); }
-        var bound=Arrange.body(tree,own,route,row.processor(),completed.value().supplement(completed.reads()),completed.readerReads(),store::get);
+        var bound=Arrange.body(tree,own,route,row.processor(),completed.value().nativeLookups(completed.reads(),completed.typeLookups()),completed.readerReads(),store::get);
         var proof=body==null ? bound.proof() : bound.proof().withProcessorBody(body);
         faults.addAll(completed.readerFaults());
         if (!completed.metadataSupported()) {
@@ -187,7 +187,7 @@ public final class Attribute {
                 var unit=parsed.next();
                 if (parsed.hasNext()) throw new IllegalStateException("Attribution parsed more than one explicit unit");
                 task.analyze();
-                var reads=ProofCollector.bodies(unit,Trees.instance(task),task.getElements(),task.getTypes());
+                var reads=Pool.collect(unit,task);
                 task.generate();return reads;
             } catch(IOException failure) { throw new UncheckedIOException(failure); }
         }, processing==null ? null : processing.compilerInputs());

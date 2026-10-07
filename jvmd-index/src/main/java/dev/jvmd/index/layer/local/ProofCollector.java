@@ -43,7 +43,33 @@ public final class ProofCollector {
             var spans = new ArrayList<>(uses.uses());
             for (var range : observations) if (!ownTypes.contains(range.type()) && all.add(range))
                 spans.add(new UsesRecord.Use(range.form(),range.type(),range.kind(),range.name(),List.of()));
-            return new Body(new ArrayList<>(all),typeLookups,new UsesRecord(spans),ownTypes);
+            return new Body(new ArrayList<>(all),typeLookups,mergeUses(spans),ownTypes);
+        }
+
+        /** Native lookup execution replaces inferred absence/member-type questions, retaining known source spans. */
+        public Body nativeLookups(List<Proof.Range> observations,List<String> lookups) {
+            if(lookups==null)return supplement(observations);
+            var observed=new java.util.HashSet<>(observations);
+            var actualTypes=new java.util.TreeSet<>(lookups);actualTypes.removeAll(ownTypes);
+            var kept=ranges.stream().filter(r->r.form()!=Proof.N || observed.contains(r)).toList();
+            var positions=new ArrayList<UsesRecord.Use>();
+            for(var use:uses.uses()) {
+                if(use.tree()==UsesRecord.D && !actualTypes.contains(use.type())) {
+                    // An inaccessible candidate can be completed/read while an import filter skips it.
+                    // Keep its known syntax span only when native execution observed that exact header.
+                    if(observed.contains(new Proof.Range(Proof.T,use.type(),Keys.TYPE,"")))
+                        positions.add(new UsesRecord.Use(Proof.T,use.type(),Keys.TYPE,"",use.spans()));
+                } else if(use.tree()!=Proof.N || observed.contains(new Proof.Range(Proof.N,use.type(),use.kind(),use.name())))positions.add(use);
+            }
+            for(var type:actualTypes)positions.add(new UsesRecord.Use(UsesRecord.D,type,Keys.TYPE,"",List.of()));
+            return new Body(kept,new ArrayList<>(actualTypes),mergeUses(positions),ownTypes).supplement(observations);
+        }
+
+        private static UsesRecord mergeUses(List<UsesRecord.Use> uses) {
+            var merged=new java.util.TreeMap<UsesRecord.Use,List<UsesRecord.Span>>();
+            for(var use:uses)merged.computeIfAbsent(use,k->new ArrayList<>()).addAll(use.spans());
+            return new UsesRecord(merged.entrySet().stream().map(e->new UsesRecord.Use(
+                    e.getKey().tree(),e.getKey().type(),e.getKey().kind(),e.getKey().name(),e.getValue())).toList());
         }
     }
 

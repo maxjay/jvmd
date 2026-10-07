@@ -286,3 +286,17 @@ review62-reader-lazy-members-strict.log sha256=6aaef137dcbf492e6e0250e71c9ba10a3
 review62-reader-native-origin-strict.log sha256=ceebf60220670a25e41d44bfdc890a6345611c504a63b82e1b53dc23922006d1
 review62-reader-native-origin-strict-v2.log sha256=88607e5ff0fb2bde774e8a5f6a14af4166aa534a033858d93f5989dca0899b23
 review62-reader-discovery-preservation.log sha256=c80b1688400ee28e9a39768b746a2991bfa6be984e15edfc9092d0412ff15496
+
+Native resolution / strict collector checkpoint, 7 October 2026
+Parent c9c480b6; decision baseline remains 1c8800ad. Approved fences unchanged.
+Added exact native Resolve/Check/ScopeImpl pins; capture actual resolution outcomes and consumed iterators. No oracle changes, repeated native lookups or synthetic iterator advancement.
+Strict command: mvn -B -pl jvmd-tests -am test -Pread-oracle -Dtest=BodyCollectorTest,NativeReaderSliceTest,SourceReaderViewTest,ReadOracleInstrumentationTest,ReadOracleCoverageTest,NativeBridgeContractTest -Djvmd.readOracle.sites=true -Djvmd.readOracle.report=target/reader-native-resolution-strict-v3.txt -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,benchmark
+95 PASS, zero failures/errors/skips; 74 collector, six production source/binary slices, one bridge contract, 14 independent controls.
+Intermediate v2: 95 tests, two failures/four errors. Causes: annotation deproxy scopes misclassified inside a global lookup and duplicate Uses keys on an absence-to-positive span conversion. Both repaired before v3. Earlier native query/collector isolation failure logs remain in the workspace.
+Preservation command: mvn -B -pl jvmd-tests -am test -Dtest=BodyCollectorTest,NamedMembersWorkTest,NativeReaderSliceTest,SourceReaderViewTest,NativeBridgeContractTest,BodyPoolTest,BodyGenerationTest,BodyValidationNativeTest,ModuleArchitectureTest,OutputRecoveryTest,LocalColdBootTest -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+207 PASS, zero failures/errors/skips. F07/F14 work bounds and existing materialisation/storage regressions preserved. No full repository native oracle rerun is claimed for this checkpoint.
+Remaining: operation/failure admission, complete strict repository coverage, processor verification/selectors, descriptor header closure, full work costs. F09 stays separate/open; PR62 draft/unmerged.
+review62-reader-native-resolution-strict-v2.log sha256=adaeab7f75d445f147d13bfbbea9ca6f0bffa0bb36896765463a91998d7d9130
+review62-reader-native-resolution-strict-v3.log sha256=d5a4ad2880f15b29cd04b0c25ab9d1111b7c5066f2ff11a689c3dbbc2ae837f9
+jvmd-tests/target/reader-native-resolution-strict-v3.txt sha256=cfb766f0c95012bc99e9dc9f2af56bb35d4e0fae0495914f8a5dcb9e56fec852
+review62-native-resolution-preservation.log sha256=8e88420380486eb965a7d0723b614bf33f9b75be2202de96f7ef6a99b7bc49c6

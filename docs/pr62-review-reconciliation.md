@@ -30,6 +30,14 @@ The broader phase-2/phase-3 run has 926 tests: 900 pass, ten fail and sixteen er
 
 ## Findings
 
+### Native resolution capture and strict collector gate, 2026-10-07
+
+The remaining strict failures were independently traced to real native execution: ambiguity stops subsequent lexical/package searches; imports can read an inaccessible candidate without an ordinary loadClass result; synthetic intersection validation scans method contracts; and a failed overloaded call can retain an inferred return type that javac did not inspect. The adapter now captures actual Resolve outcomes/consumed Scope iterators and Check method scans with three additional exact native-class pins. It never repeats a lookup or advances an iterator for evidence. Source collection retains type syntax and selected type symbols, excludes its own hierarchy reads, merges native questions with source spans, and removes inferred questions not executed by javac. Annotation decoding nested within a global lookup is classified by the actual native caller, preventing false N dependencies.
+
+The independent strict gate passes **95/95** tests, zero failures/errors/skips: 74 collector cases, six production source/binary slices, one bridge contract test and 14 independent controls. The oracle has not been changed in this checkpoint. Intermediate runs with duplicate use keys and misclassified annotation scopes remain recorded as failing evidence. This closes those collector scenarios while retaining unsupported operation guards. It does not establish full repository strict coverage or finish processor verification, descriptor header closure, failure/operation coverage, complete costs or F09. Approved format fences are unchanged; PR62 remains draft/unmerged.
+
+The ordinary preservation gate passes **207/207**, zero failures/errors/skips. It includes native pool/generation/validation, source-reader mutation/publication, output recovery/materialisation, cold header behavior and architecture checks. F07 own-symbol cleanup remains 18 probes/three stub lookups through 1,029 own types; F14 remains three name queries/two visited symbols through 4,096 unrelated declarations. No full repository byte-oracle result is claimed for this newer checkpoint yet.
+
 ### Rejected questions and strict collector isolation, 2026-10-07
 
 Native completion failures previously returned before recording their named question, and unsupported recipes returned before recording any M question. Both cases now publish the exact question through rejected C/current X; their guards remain, and neither creates CI/ACI. The failing-before two-digest regression now passes and compares native bytes plus complete ordered diagnostics, including the missing-owner reason. The focused publication/materialisation/bridge gate passes 40 tests.

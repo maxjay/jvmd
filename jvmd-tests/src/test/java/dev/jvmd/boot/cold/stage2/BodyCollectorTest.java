@@ -97,11 +97,11 @@ class BodyCollectorTest {
         var result=pool.withTask(source,d -> { if(d.getKind()==Diagnostic.Kind.ERROR) errors.add(d.getCode()); },task -> {
             try {
                 var unit=task.parse().iterator().next();task.analyze();
-                var reads=ProofCollector.bodies(unit,Trees.instance(task),task.getElements(),task.getTypes());
+                var reads=Pool.collect(unit,task);
                 task.generate();return reads;
             } catch(IOException ex) { throw new UncheckedIOException(ex); }
         });
-        var reads=result.value().supplement(result.reads());
+        var reads=result.value().nativeLookups(result.reads(),result.typeLookups());
         var arranged=Arrange.body(state.tree(),state.own(),state.route(),null,reads,result.readerReads(),state.store()::get);
         return new Compiled(result.metadataSupported()?arranged.proof():arranged.proof().rejectReuse(),reads,arranged.uses(),List.copyOf(errors),result.classes());
     }

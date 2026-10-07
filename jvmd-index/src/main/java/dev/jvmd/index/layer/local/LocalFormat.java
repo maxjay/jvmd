@@ -8,7 +8,7 @@ import dev.jvmd.index.layer.machine.Format;
  */
 public final class LocalFormat {
     /** Bumped when a LOCAL layout or persisted header-result meaning changes. */
-    public static final int LAYOUT = 22;
+    public static final int LAYOUT = 23;
 
     private LocalFormat() { }
 

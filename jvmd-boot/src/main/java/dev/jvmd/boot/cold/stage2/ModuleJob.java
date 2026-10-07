@@ -177,6 +177,8 @@ final class ModuleJob {
 
         // 6. Register the leaf for the modules that depend on this one.
         boot.built.register(module.name(), module.coordinate(), scope, leaf, builder.a());
+        var readerBinding=dev.jvmd.index.layer.local.ReaderBinding.build(boot.tree,leaf,bound,store::get,sink);
+        boot.routes.compute(Boot.routeKey(module.name(),scope),(key,value)->value.withReaderBinding(readerBinding));
 
         // 7. The definer indexes of this route, then the header proof of every file from what they resolve.
         long definerStarted = System.nanoTime();

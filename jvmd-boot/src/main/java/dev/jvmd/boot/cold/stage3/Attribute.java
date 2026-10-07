@@ -105,6 +105,8 @@ public final class Attribute {
             throw new IllegalArgumentException("Compiler pool does not match the current route and own leaf");
         if (!pool.configuration().options().equals(options.javac()) || !pool.configuration().charset().equals(options.charset()))
             throw new IllegalArgumentException("Compiler pool does not match the hashed attribution options");
+        if(pool.configuration().readers()!=null && !java.util.Objects.equals(pool.configuration().readers().binding(),route.readerBinding()))
+            throw new IllegalArgumentException("Compiler reader binding differs from the current snapshot");
         this.tree=tree;this.store=store;this.own=own;this.route=route;this.pool=pool;this.options=options;this.processing=processing;
         this.proofNodes=store instanceof BodyGeneration?store:new dev.jvmd.boot.cold.stage1.Written().throughShared(store);
     }
@@ -153,6 +155,8 @@ public final class Attribute {
         } catch (IOException failure) { throw new UncheckedIOException(failure); }
         var bound=Arrange.body(tree,own,route,row.processor(),completed.value().supplement(completed.reads()),store::get);
         var proof=body==null ? bound.proof() : bound.proof().withProcessorBody(body);
+        proof=proof.withReaderReads(completed.readerReads());
+        faults.addAll(completed.readerFaults());
         if (!completed.metadataSupported()) {
             faults.add("unsupported for reuse: retained binary metadata reads have no exact proof projection");
             proof=proof.rejectReuse();

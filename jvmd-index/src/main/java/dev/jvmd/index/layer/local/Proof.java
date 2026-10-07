@@ -15,7 +15,7 @@ import java.util.TreeMap;
 import java.util.function.Function;
 
 /** Stage 3 B.1: a resolution proof grouped by type, with independent T/N ranges and exact type absences. */
-public record Proof(Header header, List<Type> types, List<String> absent, ProcessorRecords.Body processorBody, boolean reusable) {
+public record Proof(Header header, List<Type> types, List<String> absent, ProcessorRecords.Body processorBody, boolean reusable,List<ReaderRead> readerReads) {
     public static final int T = 0, N = 1;
 
     public record Header(Identity routeHash, Identity ddSum, Identity dsSum, Identity dcSum, Identity ownR,
@@ -42,6 +42,9 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
     }
 
     public record Entry(Range range, Identity sum) { }
+    public record ReaderRead(ReverseIndex.Dependency query,Identity answer) {
+        public ReaderRead {if(query.form()!=ReverseIndex.M)throw new IllegalArgumentException("Expected reader query");Objects.requireNonNull(answer);}
+    }
 
     public record Type(String key, Identity oSum, List<Entry> entries) {
         public Type {
@@ -60,12 +63,19 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
     public Proof(Header header, List<Type> types, List<String> absent, ProcessorRecords.Body processorBody) {
         this(header, types, absent, processorBody, true);
     }
+    public Proof(Header header,List<Type> types,List<String> absent,ProcessorRecords.Body processorBody,boolean reusable) {
+        this(header,types,absent,processorBody,reusable,List.of());
+    }
 
-    public Proof withProcessorBody(ProcessorRecords.Body body) { return new Proof(header, types, absent, body, reusable); }
-    public Proof rejectReuse() { return new Proof(header, types, absent, processorBody, false); }
+    public Proof withProcessorBody(ProcessorRecords.Body body) { return new Proof(header, types, absent, body, reusable,readerReads); }
+    public Proof rejectReuse() { return new Proof(header, types, absent, processorBody, false,readerReads); }
+    public Proof withReaderReads(List<ReaderRead> reads) {return new Proof(header,types,absent,processorBody,reusable,reads);}
 
     public Proof {
         Objects.requireNonNull(header);
+        readerReads=readerReads.stream().sorted(Comparator.comparing(ReaderRead::query)).toList();
+        for(int i=1;i<readerReads.size();i++)if(readerReads.get(i-1).query().equals(readerReads.get(i).query()))
+            throw new IllegalArgumentException("Duplicate reader query");
         if (processorBody != null && header.processor() == null)
             throw new IllegalArgumentException("Processor observations require a processor context");
         types = types.stream().sorted((a, b) -> compareNames(a.key(), b.key())).toList();
@@ -96,6 +106,7 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
         }
         out.u32(absent.size());
         for (var type : absent) out.zstr(type);
+        out.u32(readerReads.size());for(var read:readerReads)out.raw(read.query().encode()).id(read.answer());
         return out.toBytes();
     }
 
@@ -120,8 +131,9 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
         }
         var absent = new ArrayList<String>();
         for (int i = 0, n = in.count(); i < n; i++) absent.add(in.zstr());
+        var readers=new ArrayList<ReaderRead>();for(int i=0,n=in.count();i<n;i++)readers.add(new ReaderRead(ReverseIndex.Dependency.decode(in),in.id(width)));
         if (in.remaining() != 0) throw new IllegalArgumentException("Trailing proof bytes");
-        return new Proof(new Header(route, dd, ds, dc, own, context), types, absent, body, reusable == 1);
+        return new Proof(new Header(route, dd, ds, dc, own, context), types, absent, body, reusable == 1,readers);
     }
 
     /**
@@ -138,6 +150,8 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
                          ProcessorRecords.Body currentBody, Function<byte[], byte[]> records) {
         if (!reusable) return false;
         if (!processorValid(header.processor(), processorBody, processor, currentBody, records)) return false;
+        for(var read:readerReads)if(!read.answer().equals(ReaderBinding.answer(tree,route.readerBinding(),read.query(),
+                id->records.apply(dev.jvmd.index.layer.machine.MachineStore.nodeKey(id)))))return false;
         boolean sameOwn = own.r().equals(header.ownR());
         if (sameOwn && route.routeHash().equals(header.routeHash())) return true;
         return resolutionValid(tree, own, route, records, sameOwn);
@@ -187,13 +201,14 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
         if (!reusable) throw new IllegalStateException("Body result has unsupported metadata observations");
         if (header.processor() != null && (processorBody == null || !processorBody.reusable()))
             throw new IllegalStateException("Processor result has no reusable model observations");
-        var out = new Codec.Writer().str("jvmd:body-result:1").str(javacVersion).str("locale=root").str(basename).id(kappa).id(options);
+        var out = new Codec.Writer().str("jvmd:body-result:2;readerProjection=1").str(javacVersion).str("locale=root").str(basename).id(kappa).id(options);
         processor(out, header.processor());
         out.u8(processorBody == null ? 0 : 1);
         if (processorBody != null) processorBody.inputs(out);
         var ordered = new TreeMap<byte[], Identity>(Arrays::compareUnsigned);
         for (var type : types) for (var entry : type.entries()) ordered.put(entry.range().key(), entry.sum());
         for (var type : absent) ordered.put(new Codec.Writer().u8(2).zstr(type).toBytes(), Identity.zero(digest.width()));
+        for(var read:readerReads)ordered.put(read.query().encode(),read.answer());
         for (var entry : ordered.entrySet()) out.raw(entry.getKey()).id(entry.getValue());
         return digest.hash(out.toBytes());
     }

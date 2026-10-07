@@ -12,7 +12,8 @@
     </plugin>
   </plugins></build>
 
-  <profiles><profile>
+  <properties><compilerBridgeAgent>"-javaagent:${maven.multiModuleProjectDirectory}/jvmd-boot/target/jvmd-boot-${project.version}-compiler-bridge.jar=${maven.multiModuleProjectDirectory}/jvmd-boot/target/jvmd-boot-${project.version}-compiler-bridge.jar"</compilerBridgeAgent></properties>
+  <profiles><profile><id>compiler-bridge</id><properties><jvmd.compilerBridge.tests>true</jvmd.compilerBridge.tests></properties></profile><profile>
     <id>read-oracle</id>
     <properties><readOracleAgent>"-javaagent:${project.build.directory}/${project.build.finalName}-read-oracle.jar=${project.build.directory}/${project.build.finalName}-read-oracle.jar"</readOracleAgent><excludedGroups>corpus,benchmark</excludedGroups></properties>
     <build><plugins><plugin>

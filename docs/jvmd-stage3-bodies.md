@@ -525,7 +525,7 @@ jvmd-index/
     BodiesRoot.java          BROOT| (B.7): codec; staleness = localRoot != LROOT.root
     LocalStore.java          + key functions: proofKey, resultKey (as stage 2), classFileKey, usesKey, outputKey, materialisedKey, bodiesRootKey, configTreeKey, domainKey, generatedKey, processorKey
   rocks/layer/
-    Generation.java          MACHINE layout=4/parser=6; LOCAL and bodies format fences are separate
+    Generation.java          MACHINE layout=5/parser=6/readerProjection=1; LOCAL and bodies format fences are separate
 
 jvmd-boot/
   cold/
@@ -644,7 +644,7 @@ The rule for an unlisted concern: if it needs a body attributed, it is stage 3's
 - `RS|` contains class references and diagnostics. Its bytes are stored as an immutable BV value selected by the rooted entry; class payloads remain separately content-addressed.
 - In the LOCAL tree: `C|`, `CI|`, `RS|`, `CF|`, `X|`, `OUT|`. Outside it: `U|` (derivable from re-attribution; content-addressed, so it is written to the store and never to the tree) and `MAT|`/`MATP|`/`MATOWNER|` (per machine). Nothing per machine or per path under `RS|`, `CF|`, `U|`; `C|`, `X|` and `OUT|` carry the project because they are the project's index of its own files.
 - Immutable data is flushed/synced before atomic compare-and-publish of BROOT, current bindings, current X and the history counter. The bodies tree is edited with apply; old roots retain their immutable values.
-- FORMAT: stage 2's FORMAT with the full javac runtime version (`Runtime.version().toString()`, not the feature number: two builds of one feature release can differ in bytes, diagnostics and inference), `layout=4` (the `A` layer) and `bodies=14` and locale=root (B.6: javac's diagnostic locale is an input of the bytes and messages, so it is fixed; the source charset is an input too and is in optionsHash). A different FORMAT is a cold boot, never a migration.
+- FORMAT: stage 2's FORMAT with the full javac runtime version (`Runtime.version().toString()`, not the feature number: two builds of one feature release can differ in bytes, diagnostics and inference), `layout=5;readerProjection=1` (the independent reader image) and `bodies=15` and locale=root (B.6: javac's diagnostic locale is an input of the bytes and messages, so it is fixed; the source charset is an input too and is in optionsHash). A different FORMAT is a cold boot, never a migration.
 - Two roots per project. LROOT|projectKey is stage 2's and stage 3 never writes it. BROOT|projectKey (B.7) holds the bodies tree root and the LROOT.root it extended; bodies exist exactly when the two agree, and Diff(BROOT.localRoot, LROOT.root) is the stage 2 change set when they do not. Stage 3 edits the bodies tree with apply over the previous BROOT.root carrying that Diff, never over LROOT alone on a rerun.
 
 ### 9.2 Deferred
@@ -692,7 +692,7 @@ LAYOUT 4 is on `main` with stage 1 and 2 green and invariant 1 of stage 2 at equ
 
 ## Appendix A. LAYOUT 4: the A layer
 
-An amendment to stage 1 (sections 2, 5.4, B.1, B.3, A.4) and stage 2 (3.14, 5.2a, 5.3, 5.4, B.1, B.3, B.5, invariant 1). It lands as its own PR (PR A) before any stage 3 record exists. FORMAT changes; MACHINE and LOCAL cold boot. The Stage 2-only Appendix A baseline is `layout=4;parser=5` and `local=5`; the current combined representation uses parser 6, LOCAL 22 and bodies 11. Parser 3 isolated the exact innerName/N/warning representation; parser 4 retains full warning annotations in A/EA; parser 5 preserves exact Java String code units in constants and annotation values/defaults. LOCAL 3 replaced whole-type header proofs with exact T ranges; LOCAL 4 replaces consumer lists with path-addressed reverse keys. Committed parser-2, parser-3, parser-4 and parser-5 MACHINE generations remain untouched in separate directories. LOCAL 1–21 roots cannot take the current-format skip branch. No migration or per-record legacy decoding. Stage 2's processor work (the wrapper, the declaration, `RES|`, `PD|`, `GEN|`, generated rows, `processorPathHash` and `-encoding` in the header compile) is appendix F and a second PR (PR B); nothing in this appendix depends on it.
+An amendment to stage 1 (sections 2, 5.4, B.1, B.3, A.4) and stage 2 (3.14, 5.2a, 5.3, 5.4, B.1, B.3, B.5, invariant 1). It lands as its own PR (PR A) before any stage 3 record exists. FORMAT changes; MACHINE and LOCAL cold boot. The Stage 2-only Appendix A baseline is `layout=4;parser=5` and `local=5`; the current combined representation uses layout 5, parser 6, readerProjection 1, LOCAL 23, bodies 15 and CI 2. Parser 3 isolated the exact innerName/N/warning representation; parser 4 retains full warning annotations in A/EA; parser 5 preserves exact Java String code units in constants and annotation values/defaults. LOCAL 3 replaced whole-type header proofs with exact T ranges; LOCAL 4 replaces consumer lists with path-addressed reverse keys. Committed parser-2, parser-3, parser-4 and parser-5 MACHINE generations remain untouched in separate directories. LOCAL 1–22 roots cannot take the current-format skip branch. No migration or per-record legacy decoding. Stage 2's processor work (the wrapper, the declaration, `RES|`, `PD|`, `GEN|`, generated rows, `processorPathHash` and `-encoding` in the header compile) is appendix F and a second PR (PR B); nothing in this appendix depends on it.
 
 ### A.1 What moves
 
@@ -777,6 +777,29 @@ Leaf sets are canonical ContentTrees (k → empty, h=Digest(k)); their Merkle ha
 7. Full warning metadata: change only Deprecated.since on a type, field and method; A/a and exactly those A entries change, EA and all resolution/stub identities stay equal. Recover full Deprecated/SafeVarargs annotations from A; compare source and binary trees.
 8. Header reverse discovery: identical bytes at two paths retain two consumers; T/N/D zero-to-present deltas reach their paths without F scans; 6,000 historical consumers leave one prefix hit and zero LOCAL reads for one current consumer; historical LOCAL roots still verify; real Rocks seeks/reopen follow the same rules.
 
+### A.7 MACHINE layout 5: independent reader images
+
+Approved from decision baseline `1c8800ad` for Stage 3 only. T/N/O/A/EA remain parser 6, with their existing meanings and S/ST identities. `readerProjection=1` is independent of those projections. Cold reconstruction is mandatory; no legacy migration/decoding path is introduced.
+
+`ClassFacts` extracts a local symbolic reader image while the original ClassModel is live, before private/local/anonymous filtering. Class, field and method metadata retains native visitation order in an existing ContentList; annotation element order is retained, never summed as an unordered bag. Names and annotation/default values use the established codecs. Executable instructions and exception tables are excluded. SourceFile is included because javac uses it for auxiliary-class diagnostics. The empty recipe argument selects ordinary metadata; `parameters` additionally includes MethodParameters names/flags and parameter-slot LocalVariableTable entries starting at PC zero, in native table order. Capture selects this mode from the actual ClassReader.saveParameterNames field. No other local variables or body bytes enter either recipe. Named method/VAR entries preserve the native first eligible same-name declaration, including private declarations and legacy synthetic/bridge attributes; the current adapter admits these only after comparing the actual native returned descriptor and excludes generic completion/failure cases it cannot yet justify.
+
+```
+classImage: ContentTree
+  u8 operation || utf16 argument -> value
+  operation 0 (recipe): u8 supported || id orderedRecipeRoot
+  operation 1 (zero-parameter method), 2 (VAR): utf16 descriptor || opt<str> signature
+  operation 3: empty owner-presence marker (not a consumer observation)
+originImage: ContentTree
+  utf16 internalName -> id classImage
+readerCatalog: ContentTree
+  id originByteHash -> id originImage
+all map entry h = Digest(key || value)
+```
+
+MACHINE ROOT appends `opt<id> readerCatalog` before its trailing digest. P appends `opt<id> originImage` after a and before size/mtime/faults. Reader images are sealed independently of claim(k), so equal APIs cannot discard distinct private metadata. Stage 2 on-the-spot images are rooted through RT. Resolution leaf and annotation leaf identities remain functions solely of their established inputs.
+
+The first production slice marks record/parameter-annotation recipes unsupported. It is not the complete supported metadata contract. Unsupported/faulted recipes may not be interpreted as empty. A local image is a symbolic input, not an environment-dependent decoded answer; native cross-input operations are separately observed below.
+
 ## Appendix B. Record codecs
 
 Primitives as stage 2 appendix B: `u8`, `u16`, `u32`, `u64`, `i64`, `str`, `zstr`, `id`, `list<X>`, `opt<X>`. Big-endian. `|` in a key is the byte `0x7C`.
@@ -855,10 +878,24 @@ MATOWNER|dirHash = random store-owned directory lineage token; bookkeeping, neve
 ### B.6 FORMAT
 
 ```
-FORMAT = <current LOCAL FORMAT, including full javac runtime version and locale=root>;bodies=14
+FORMAT = <current LOCAL FORMAT, including full javac runtime version and locale=root>;bodies=15
 ```
 
-`bodies=14` adds rooted CI query indexes and validated binding/ACI receipts. Body layout 13 narrowed the frozen processor-metadata exception because exact bytes do not prove cross-input declaration queries. Body layout 12 added explicit reuse admission and rejected ordinary binary metadata reads until their exact projection is implemented. Body layout 11 fenced native internal-method/resource-close observations and compiler-bound result identities. Body layout 9 introduced immutable rooted values, current-only body reverse publication and persistent unit selection. Body layout 7 fenced proofs that omitted inherited-field absences for captured parameters and locals. Earlier changes preserve exact diagnostic message code units (4), basename display for native diagnostic source arguments (5), and processor capability-history admission (6). A different FORMAT is a cold body boot; it does not require rebuilding unchanged Stage 2 headers.
+`bodies=15` adds typed native-reader observations and the independent reader binding in CI 2. Body layout 14 added rooted CI query indexes and validated binding/ACI receipts. Body layout 13 narrowed the frozen processor-metadata exception because exact bytes do not prove cross-input declaration queries. Body layout 12 added explicit reuse admission and rejected ordinary binary metadata reads until their exact projection is implemented. Body layout 11 fenced native internal-method/resource-close observations and compiler-bound result identities. Body layout 9 introduced immutable rooted values, current-only body reverse publication and persistent unit selection. Body layout 7 fenced proofs that omitted inherited-field absences for captured parameters and locals. Earlier changes preserve exact diagnostic message code units (4), basename display for native diagnostic source arguments (5), and processor capability-history admission (6). A different FORMAT is a cold body boot; it does not require rebuilding unchanged Stage 2 headers.
+
+### B.6a Reader observations and CI 2
+
+```
+M query = u8 3 || u8 universe || utf16 module || utf16 owner || u8 operation || utf16 argument
+answer = Digest(tagged operation value)
+C appends u32 readerReadCount || (query || id answer)[readerReadCount]
+CI version = 2; its exact Binding appends opt<id> readerBinding
+X uses this same query grammar in the existing body dependency/project/source-unit index
+```
+
+The initial classpath slice uses universe=0/module=empty, recipe=0, method=1 and VAR=2. Supported answer tags are present=0 (with local value), missing-member=1 and missing-owner=2; unsupported=4 cannot authorize reuse. Native completion failures are captured separately from recovery symbols and still reject reuse. Recovered missing-member answers are admitted only when the indexed absence agrees with native execution; native warnings remain authoritative. No binary name resolves by a second lookup in the observer.
+
+ACI namespace `jvmd:body-result:2;readerProjection=1` adds the exact keyed M answers to its existing sorted query entries. The ordered recipe root is inside the recipe answer; its ordering is not replaced with a sum. Whole reader/origin/route roots do not enter ACI. CI transition equality compares reader binding before any route shortcut, diffs changed per-class views, removes equal answers, and seeks current X. Missing/unsupported provider changes use the shorter M owner prefix to reach prior negative observations. CI intersection uses keyed reads, never a flat proof scan; the flat reference validator checks M before its resolution shortcuts.
 
 ### B.7 Bodies root
 
@@ -889,7 +926,13 @@ The in-memory file manager forwards every read to the standard one and captures 
 
 ### C.2 The pool
 
-`com.sun.tools.javac.api.JavacTaskPool` with a share of the run-wide `W` manager budget per `(routeHash, k_own)`, one context per worker, because a javac `Context` serves one task at a time: javac's own reuse mechanism, built for exactly this (jshell and the JDK's own tools use it). The existing routeHash names the ordered sequence of every route leaf, and k_own names the module's own leaf. Unordered external/sibling leaf sets cannot key the pool: swapping two jars that define the same binary name leaves both sets unchanged but changes the winner javac must load. No new identity is needed, and this pool binding does not enter ACI or widen semantic proofs. Each context's symbol table of classpath types persists across the tasks it runs; a task's own compilation unit is discarded at the end, and the own module's types are evicted by name after each task (C.3). Each context's file manager is opened once on the classpath of 3.1, own stub directory first, then the route in route order, so the open cost is `scopeShare · C` per key. Concurrent module scopes share W globally: moduleConcurrency=min(W, maximum dependency-level width), scopeShare=floor(W/moduleConcurrency), capped by the scope's row count. Fixed shares may leave capacity unused on a skewed DAG. When either identity changes (a route reorder, sibling edit, dependency bump, or own-module API edit that moved `k_own`), the loaded symbols or their precedence can be stale and that scope's contexts are dropped; the next files pay the opens again. In a cold stage 3 `k_own` is constant per module and scope, so the key never changes within a scope. `--add-exports jdk.compiler/com.sun.tools.javac.api` is already in `jvmd-boot`'s pom from stage 2.
+`com.sun.tools.javac.api.JavacTaskPool` with a share of the run-wide `W` manager budget per `(routeHash, k_own)`, one context per worker, because a javac `Context` serves one task at a time: javac's own reuse mechanism, built for exactly this (jshell and the JDK's own tools use it). The existing routeHash names the ordered sequence of every route leaf, and k_own names the module's own leaf. Unordered external/sibling leaf sets cannot key the pool: swapping two jars that define the same binary name leaves both sets unchanged but changes the winner javac must load. The adapter also binds the exact reader-binding root for this immutable snapshot. Attribute verifies it independently of routeHash/own k. These pool coordinates do not enter ACI or widen semantic proofs. Each context's symbol table of classpath types persists across the tasks it runs; a task's own compilation unit is discarded at the end, and the own module's types are evicted by name after each task (C.3). Each context's file manager is opened once on the classpath of 3.1, own stub directory first, then the route in route order, so the open cost is `scopeShare · C` per key. Concurrent module scopes share W globally: moduleConcurrency=min(W, maximum dependency-level width), scopeShare=floor(W/moduleConcurrency), capped by the scope's row count. Fixed shares may leave capacity unused on a skewed DAG. When either identity changes (a route reorder, sibling edit, dependency bump, or own-module API edit that moved `k_own`), the loaded symbols or their precedence can be stale and that scope's contexts are dropped; the next files pay the opens again. In a cold stage 3 `k_own` is constant per module and scope, so the key never changes within a scope. `--add-exports jdk.compiler/com.sun.tools.javac.api` is already in `jvmd-boot`'s pom from stage 2.
+
+### C.2a Pinned native-reader bridge
+
+The Stage 3 launcher installs a small startup javaagent before javac is loaded. Exact native class hashes pin its hooks and local-slot assumptions. The production transformer is confined to ClassReader/AnnotationDeproxy and ClassSymbol access in the compiler adapter. A bootstrap callback records only inside an active task; hook drift, missing installation and callback failure reject reuse without replacing native exceptions or diagnostic execution. The independent test oracle uses separate hooks and expected traces.
+
+Actual read returns record recipe observations, including absence of metadata. Native named answers and their caught failure slots are captured after execution. Pool contexts retain operation dependencies associated with requesting classes; actual native accesses import their retained closure on subsequent tasks. The initial slice resets an effectful context after native recovered warnings, preserving warning execution on the next task. Generic, class-literal (including defaults and nested values), record, parameter-annotation and unproved completion-failure paths retain admission guards. These guards are open completion work, not the final Stage 3 solution.
 
 ### C.3 Own-minus-f
 

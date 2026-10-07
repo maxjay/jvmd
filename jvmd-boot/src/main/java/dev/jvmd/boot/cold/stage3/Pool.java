@@ -57,7 +57,11 @@ public final class Pool implements AutoCloseable {
 
     /** Options already fixed by the module's attribution policy, including source/system/encoding/processing. */
     public record Configuration(Key key, Path ownStubs, List<Path> route, Charset charset,
-                                List<String> options, List<String> ownTypes, List<Path> siblingStubs) {
+                                List<String> options, List<String> ownTypes, List<Path> siblingStubs, ReaderInputs readers) {
+        public Configuration(Key key, Path ownStubs, List<Path> route, Charset charset,
+                             List<String> options, List<String> ownTypes, List<Path> siblingStubs) {
+            this(key,ownStubs,route,charset,options,ownTypes,siblingStubs,null);
+        }
         public Configuration(Key key, Path ownStubs, List<Path> route, Charset charset,
                              List<String> options, List<String> ownTypes) {
             this(key, ownStubs, route, charset, options, ownTypes, List.of());
@@ -70,8 +74,11 @@ public final class Pool implements AutoCloseable {
         }
     }
 
+    public record ReaderInputs(dev.jvmd.core.tree.ContentTree tree, Identity binding,
+                               java.util.function.Function<byte[],byte[]> records) { }
+
     /** No compiler tree or symbol may escape the callback; the caller returns its detached observations. */
-    public record Completed<T>(T value, Map<String, byte[]> classes, List<Proof.Range> reads, boolean metadataSupported) { }
+    public record Completed<T>(T value, Map<String, byte[]> classes, List<Proof.Range> reads, boolean metadataSupported, List<Proof.ReaderRead> readerReads, List<String> readerFaults) { }
     private record Observed<T>(T value, List<Proof.Range> reads) { }
     public record Statistics(int workers, long contexts, long tasks) { }
     public record OwnStatistics(long evictionProbes, long stubLookups) { }
@@ -106,6 +113,12 @@ public final class Pool implements AutoCloseable {
     private final java.util.concurrent.atomic.LongAdder metadataFiles = new java.util.concurrent.atomic.LongAdder();
     private final java.util.concurrent.atomic.LongAdder metadataBytes = new java.util.concurrent.atomic.LongAdder();
 
+    public record ReaderStatistics(long events,long physicalReads,long queries,long nodeReads,long nodeBytes) { }
+    public ReaderStatistics readerStatistics() {
+        long events=0,physical=0,queries=0,reads=0,bytes=0;
+        for(var worker:workers) {var r=worker.reader;events+=r.events;physical+=r.physicalReads;queries+=r.queries;reads+=r.nodeReads;bytes+=r.nodeBytes;}
+        return new ReaderStatistics(events,physical,queries,reads,bytes);
+    }
     public record MetadataStatistics(long files, long bytes) { }
     public MetadataStatistics metadataStatistics() { return new MetadataStatistics(metadataFiles.sum(), metadataBytes.sum()); }
 
@@ -405,6 +418,7 @@ public final class Pool implements AutoCloseable {
         private volatile long contexts, tasks;
         private volatile long evictionProbes, stubLookups;
         private boolean metadataSupported = true;
+        private final NativeReaderCapture reader = new NativeReaderCapture(configuration.readers(), this::fixedReaderInput);
         private Map<Path,Path> fixedInputs = Map.of();
 
         void bind(Map<Path,Path> inputs) {
@@ -444,6 +458,7 @@ public final class Pool implements AutoCloseable {
                 if (nativeDiagnostic == null || current == null) diagnostics.report(diagnostic);
                 else diagnostics.report(new MessageDiagnostic(diagnostic, current.formatMessage(nativeDiagnostic, Locale.ROOT)));
             };
+            var readerProof = new java.util.concurrent.atomic.AtomicReference<List<Proof.ReaderRead>>(List.of());
             try {
                 var result = tasksPool.getTask(new StringWriter(), files, report, configuration.options(), null, List.of(source), task -> {
                     task.setLocale(Locale.ROOT);
@@ -460,7 +475,7 @@ public final class Pool implements AutoCloseable {
                     });
                     if (context != previous) {
                         contexts++; previous = context; evicted.clear(); HierarchyReads.install(context);
-                        metadataSupported = true;
+                        metadataSupported = true; reader.clear();
                         InternalReads.install(context); EmissionReads.install(context); OwnReads.install(context, this::touch, this::decoded);
                     }
                     task.addTaskListener(new com.sun.source.util.TaskListener() {
@@ -479,52 +494,56 @@ public final class Pool implements AutoCloseable {
                     restore(context);
                     var observations = (HierarchyReads) Types.instance(context);
                     observations.reads.clear(); observations.recording = true;
-                    tasks++;
+                    tasks++; reader.begin();
                     try { return new Observed<>(action.apply(task),List.copyOf(observations.reads)); }
-                    finally { observations.recording = false; observations.reads.clear(); clearProcessors(context); evict(context); } // generate may have already cleared task.getContext().
+                    finally { readerProof.set(reader.finish()); observations.recording = false; observations.reads.clear(); clearProcessors(context); evict(context); } // generate may have already cleared task.getContext().
                 });
                 var bytes = new TreeMap<String, byte[]>();
                 files.outputs.forEach((name, output) -> bytes.put(name, output.toByteArray()));
-                return new Completed<>(result.value(), Map.copyOf(bytes),result.reads(), metadataSupported);
+                return new Completed<>(result.value(), Map.copyOf(bytes),result.reads(), metadataSupported && (configuration.readers()==null || reader.supported()),readerProof.get(),reader.faults());
             } finally {
                 files.outputs.clear();
                 // Annotation deproxy diagnostics are emitted on completion. An unsupported binary must be decoded
                 // again in the next task, rather than silently suppressing its diagnostics through cached symbols.
-                if (!metadataSupported) { tasksPool = new JavacTaskPool(1); previous = null; }
+                if (!metadataSupported || reader.effects() || (configuration.readers()!=null && !reader.supported())) { tasksPool = new JavacTaskPool(1); previous = null; }
             }
         }
 
         private void decoded(Symbol.ClassSymbol symbol) {
+            if (reader.admitted(symbol) || fixedReaderInput(symbol)) return;
+            metadataSupported = false;
+        }
+
+        private boolean fixedReaderInput(Symbol.ClassSymbol symbol) {
             var file = symbol.classfile;
-            if (file == null || file.getKind() != JavaFileObject.Kind.CLASS) return;
+            if (file == null || file.getKind() != JavaFileObject.Kind.CLASS) return true;
             var uri = file.toUri();
             // The compiler's fixed platform and resolution-only generated stubs are the existing supported inputs.
             // Every other binary can gain retained annotations (including on private members) without changing T.
             // Even annotation-free reads must therefore reject reuse until an exact metadata/absence proof exists.
-            if ("jrt".equals(uri.getScheme())) return;
+            if ("jrt".equals(uri.getScheme())) return true;
             if ("jar".equals(uri.getScheme())) {
                 String archive = uri.getRawSchemeSpecificPart(); int end = archive.indexOf("!/");
                 if (end >= 0) {
                     var location = URI.create(archive.substring(0, end));
                     if ("file".equals(location.getScheme())) {
                         var path = Path.of(location).toAbsolutePath().normalize();
-                        if (path.equals(configuration.ownStubs().toAbsolutePath().normalize())) return;
+                        if (path.equals(configuration.ownStubs().toAbsolutePath().normalize())) return true;
                         if (fixedInputs.containsValue(path)) {
                             // Exact bytes bind the payload, but not custom annotation/enum/class-literal
                             // declarations outside that input. Reject those pending exact query proofs.
-                            if (!fixedMetadataSupported(file)) metadataSupported = false;
-                            return;
+                            return fixedMetadataSupported(file);
                         }
-                        for (var stub : configuration.siblingStubs()) if (path.equals(stub.toAbsolutePath().normalize())) return;
+                        for (var stub : configuration.siblingStubs()) if (path.equals(stub.toAbsolutePath().normalize())) return true;
                     }
                 }
             }
             if ("file".equals(uri.getScheme())) {
                 var path = Path.of(uri).toAbsolutePath().normalize();
-                if (path.startsWith(configuration.ownStubs().toAbsolutePath().normalize())) return;
-                for (var stub : configuration.siblingStubs()) if (path.startsWith(stub.toAbsolutePath().normalize())) return;
+                if (path.startsWith(configuration.ownStubs().toAbsolutePath().normalize())) return true;
+                for (var stub : configuration.siblingStubs()) if (path.startsWith(stub.toAbsolutePath().normalize())) return true;
             }
-            metadataSupported = false;
+            return false;
         }
 
         private void clearProcessors(Context context) {

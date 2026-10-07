@@ -17,7 +17,7 @@ import java.util.TreeSet;
 /** Header reverse lookup: one empty record per exact dependency, project and source path. */
 public final class ReverseIndex {
     private ReverseIndex() { }
-    public static final int T = 0, N = 1, D = 2;
+    public static final int T = 0, N = 1, D = 2, M = 3;
     private static final byte[] HEADER = ("X|H" + LocalFormat.LAYOUT + "|").getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     private static final byte[] BODY = ("X|B" + BodiesRoot.VERSION + "L" + LocalFormat.LAYOUT + "|").getBytes(java.nio.charset.StandardCharsets.US_ASCII);
 
@@ -31,16 +31,29 @@ public final class ReverseIndex {
     }
 
     /** Form selects T, N or the definer universe. Empty member name selects a complete kind. */
-    public record Dependency(int form, String type, int kind, String name) implements Comparable<Dependency> {
+    public record Dependency(int form, String type, int kind, String name,int universe,String module) implements Comparable<Dependency> {
+        public Dependency(int form,String type,int kind,String name) {this(form,type,kind,name,0,"");}
         public Dependency {
-            if (form < T || form > D || kind < Keys.TYPE || kind > Keys.METHOD
-                    || form != T && kind != Keys.TYPE || form == D && !name.isEmpty())
+            if (form < T || form > M || kind < 0 || kind > 2 || universe<0 || universe>2 || module==null
+                    || (form==N || form==D) && kind != Keys.TYPE || form == D && !name.isEmpty()
+                    || form!=M && (universe!=0 || !module.isEmpty()))
                 throw new IllegalArgumentException("Invalid header reverse dependency");
         }
-        public byte[] prefix() { return new Codec.Writer().raw(HEADER).u8(form).zstr(type).u8(kind).zstr(name).toBytes(); }
+        public byte[] encode() {
+            return form==M?new Codec.Writer().u8(M).u8(universe).utf16(module).utf16(type).u8(kind).utf16(name).toBytes()
+                    :new Codec.Writer().u8(form).zstr(type).u8(kind).zstr(name).toBytes();
+        }
+        public byte[] ownerPrefix() {return form==M?new Codec.Writer().u8(M).u8(universe).utf16(module).utf16(type).toBytes()
+                :new Codec.Writer().u8(form).zstr(type).toBytes();}
+        public static Dependency decode(Codec.Reader in) {
+            int form=in.u8();if(form!=M)return new Dependency(form,in.zstr(),in.u8(),in.zstr());
+            int universe=in.u8();String module=in.utf16(),type=in.utf16();return new Dependency(form,type,in.u8(),in.utf16(),universe,module);
+        }
+        public byte[] prefix() { return new Codec.Writer().raw(HEADER).raw(encode()).toBytes(); }
         public byte[] key(Identity project, SourceUnit unit) { var out = new Codec.Writer().raw(prefix()).id(project); unit.encode(out); return out.toBytes(); }
         public byte[] key(Identity project, String module, int scope, String path) { return key(project, new SourceUnit(module, scope, path)); }
         @Override public int compareTo(Dependency other) {
+            if(form==M || other.form()==M)return Arrays.compareUnsigned(encode(),other.encode());
             int c = Integer.compare(form, other.form);
             if (c == 0) c = type.compareTo(other.type);
             if (c == 0) c = Integer.compare(kind, other.kind);
@@ -170,7 +183,7 @@ public final class ReverseIndex {
                 previous = prefix;
                 store.forEachKey(prefix, key -> {
                     var in = new Codec.Reader(key);
-                    in.raw(namespace); in.u8(); in.zstr(); in.u8(); in.zstr();
+                    in.raw(namespace); Dependency.decode(in);
                     var project = in.id(digest.width());
                     var unit = SourceUnit.decode(in);
                     if (in.remaining() != 0) throw new IllegalStateException("Trailing reverse consumer bytes");
@@ -181,7 +194,7 @@ public final class ReverseIndex {
         }
     }
     public static byte[] bodyPrefix(Dependency dependency) {
-        return new Codec.Writer().raw(BODY).u8(dependency.form()).zstr(dependency.type()).u8(dependency.kind()).zstr(dependency.name()).toBytes();
+        return new Codec.Writer().raw(BODY).raw(dependency.encode()).toBytes();
     }
 
     public static byte[] bodyKey(Dependency dependency, Identity project, SourceUnit unit) {
@@ -198,6 +211,7 @@ public final class ReverseIndex {
             out.add(new Dependency(range.form(), range.type(), range.kind(), range.name()));
         }
         for (var type : proof.absent()) out.add(new Dependency(D, type, Keys.TYPE, ""));
+        for(var read:proof.readerReads())out.add(read.query());
         return out;
     }
 
@@ -220,13 +234,15 @@ public final class ReverseIndex {
                 .id(project).zstr(module).u8(scope).toBytes());
         for(var owner:transition.removedTypes())for(int form:new int[]{T,N})
             prefixes.add(new Codec.Writer().raw(BODY).u8(form).zstr(owner).toBytes());
+        for(var owner:transition.readerOwners())prefixes.add(new Codec.Writer().raw(BODY)
+                .raw(new Dependency(M,owner,0,"").ownerPrefix()).toBytes());
         var result=new TreeSet<SourceUnit>();byte[] previous=null;
         for(var prefix:prefixes) {
             if(previous!=null && prefix.length>=previous.length && Arrays.equals(prefix,0,previous.length,previous,0,previous.length))continue;
             previous=prefix;work.prefixes++;
             store.forEachKey(prefix,key->{
                 work.hits++;work.keyBytes+=key.length;
-                var in=new Codec.Reader(key);in.raw(BODY.length);in.u8();in.zstr();in.u8();in.zstr();
+                var in=new Codec.Reader(key);in.raw(BODY.length);Dependency.decode(in);
                 var consumer=in.id(project.width());var unit=SourceUnit.decode(in);
                 if(in.remaining()!=0)throw new IllegalStateException("Trailing reverse consumer bytes");
                 if(consumer.equals(project) && unit.module().equals(module) && unit.scope()==scope)result.add(unit);

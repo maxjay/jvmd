@@ -16,7 +16,7 @@ class ModuleArchitectureTest {
                 "core",Set.of("java.base","java.management","jdk.jfr","jdk.management","com.fasterxml.jackson.databind"),
                 "index",Set.of("java.base","dev.jvmd.core","java.compiler","jdk.compiler"),
                 "index-rocks",Set.of("java.base","dev.jvmd.index","rocksdbjni"),
-                "boot",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","dev.jvmd.index.rocks","java.compiler","jdk.compiler","java.logging"),
+                "boot",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","dev.jvmd.index.rocks","java.compiler","jdk.compiler","java.logging","java.instrument"),
                 "analyzer",Set.of("java.base","dev.jvmd.core","dev.jvmd.index","java.compiler","jdk.compiler","java.management"),
                 "resolver",Set.of("java.base","dev.jvmd.core"),
                 "runtime",Set.of("java.base","dev.jvmd.core","jdk.jdi","java.compiler","jdk.compiler"),
@@ -52,6 +52,9 @@ class ModuleArchitectureTest {
                 || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage2/ProcessorSourceTypes")
                 || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage2/ProcessorSourcePackages")
                 || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage3/Pool")
+                || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage3/NativeReaderAgent")
+                || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage3/NativeReaderCapture")
+                || module.equals("boot")&&owner.equals("dev/jvmd/boot/cold/stage3/NativeReaderTap")
                 || module.equals("index")&&owner.equals("dev/jvmd/index/layer/local/SourceFacts")
                 || module.equals("index")&&owner.equals("dev/jvmd/index/layer/local/NamedMembers");
     }

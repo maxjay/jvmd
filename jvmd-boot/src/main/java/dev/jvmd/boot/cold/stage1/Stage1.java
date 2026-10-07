@@ -92,6 +92,9 @@ public final class Stage1 {
         var all = leaves.all();
         var sink = written.through(store);
         var machine = MachineTree.build(tree, all, sink.named("MACHINE"));
+        var readerEntries=new java.util.TreeMap<Identity,Identity>(leaves.readers());
+        var readerCatalog=tree.build(readerEntries.entrySet().stream().map(e->new dev.jvmd.core.tree.Entry(e.getKey().bytes(),e.getValue().bytes(),
+                digest.hash(e.getKey().view(),e.getValue().view()))).toList(),sink.named("READER-ORIGINS"));
         sink.flush();
 
         // Step 4: paths (with their faults), one sync, and the root, last.
@@ -106,12 +109,12 @@ public final class Stage1 {
                 continue;
             }
             var skipped = seen.skipped(observation.bh());
-            store.putPath(location.name(), MachineTree.encodePath(observation.bh(), leaves.kFor(observation.bh()), leaves.aFor(observation.bh()), location.size(), location.mtimeNanos(), skipped));
+            store.putPath(location.name(), MachineTree.encodePath(observation.bh(), leaves.kFor(observation.bh()), leaves.aFor(observation.bh()),leaves.readerFor(observation.bh()), location.size(), location.mtimeNanos(), skipped));
             for (var entry : skipped) faults.add(location.name() + ": " + entry);
         }
         store.flush();
         store.sync();
-        store.putRoot(MachineTree.encodeRoot(digest, Format.of(digest, jdkFeature), machine));
+        store.putRoot(MachineTree.encodeRoot(digest, Format.of(digest, jdkFeature), machine,readerCatalog.hash()));
 
         return new Result(locations.size(), seen.distinct(), all.size(), written.count(), written.produced(), List.copyOf(faults),
                 (System.nanoTime() - started) / 1_000_000, machine);

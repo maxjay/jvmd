@@ -94,7 +94,7 @@ final class Defaults implements AutoCloseable {
             }
         }
         var out = new ArrayList<RouteEntry.Jrt>();
-        for (var e : found.entrySet()) out.add(new RouteEntry.Jrt("jrt:/" + e.getKey(), e.getKey(), e.getValue().k(), e.getValue().a()));
+        for (var e : found.entrySet()) out.add(new RouteEntry.Jrt("jrt:/" + e.getKey(), e.getKey(), e.getValue().k(), e.getValue().a(),e.getValue().reader()));
         return jdk = List.copyOf(out);
     }
 
@@ -146,7 +146,7 @@ final class Defaults implements AutoCloseable {
         var location = dependency.location();
         if (!jars.containsKey(location)) prepare(List.of(dependency));
         var leaf = jars.get(location);
-        return new RouteEntry.Jar(dependency.coordinate(), location, leaf == null ? null : leaf.k(), leaf == null ? null : leaf.a());
+        return new RouteEntry.Jar(dependency.coordinate(), location, leaf == null ? null : leaf.k(), leaf == null ? null : leaf.a(),leaf==null?null:leaf.reader());
     }
 
     /** {@code P|location -> k}: null if MACHINE has no record, or its record has no leaf (an unreadable archive). */
@@ -154,7 +154,7 @@ final class Defaults implements AutoCloseable {
         var value = store.get(MachineStore.pathKey(location));
         if (value == null) return null;
         var path = MachineTree.decodePath(value, digest.width());
-        return path.k() == null ? null : new Bind.Leaf(path.k(), path.a());
+        return path.k() == null ? null : new Bind.Leaf(path.k(), path.a(),path.reader());
     }
 
     /** The leaf of each location, in order, indexed on the pool; null for one that is not a readable archive. */
@@ -185,7 +185,7 @@ final class Defaults implements AutoCloseable {
 
     private Bind.Leaf index(Enumerate.Location location) {
         var indexed = ArtifactJob.index(digest, tree, jdkFeature, written, store, parser, location);
-        return indexed.k() == null ? null : new Bind.Leaf(indexed.k(), indexed.a());
+        return indexed.k() == null ? null : new Bind.Leaf(indexed.k(), indexed.a(),indexed.reader());
     }
 
     @Override public void close() {

@@ -23,14 +23,15 @@ public final class ProofIndex {
     }
 
     /** Exact acceleration coordinates, never included in ACI. */
-    public record Binding(Identity own, Identity route, Identity dd, Identity ds, Identity dc) {
+    public record Binding(Identity own, Identity route, Identity dd, Identity ds, Identity dc,Identity reader) {
+        public Binding(Identity own,Identity route,Identity dd,Identity ds,Identity dc) {this(own,route,dd,ds,dc,null);}
         public static Binding capture(ContentTree tree, MachineLeaf own, Route route, Function<byte[],byte[]> records) {
             var read = new DefinerIndex.Reader(tree, own, route, records);
-            return new Binding(own.k(), route.routeHash(), read.external().hash(), read.sibling().hash(), read.conflicts().hash());
+            return new Binding(own.k(), route.routeHash(), read.external().hash(), read.sibling().hash(), read.conflicts().hash(),route.readerBinding());
         }
-        void encode(Codec.Writer out) { out.id(own).id(route).id(dd).id(ds).id(dc); }
+        void encode(Codec.Writer out) { out.id(own).id(route).id(dd).id(ds).id(dc).optId(reader); }
         static Binding decode(Codec.Reader in, int width) {
-            return new Binding(in.id(width), in.id(width), in.id(width), in.id(width), in.id(width));
+            return new Binding(in.id(width), in.id(width), in.id(width), in.id(width), in.id(width),in.u8()==1?in.id(width):null);
         }
     }
 
@@ -71,27 +72,28 @@ public final class ProofIndex {
             add(tree,entries,new ReverseIndex.Dependency(range.form(),range.type(),range.kind(),range.name()),entry.sum());
         }
         for (var type:proof.absent()) add(tree,entries,new ReverseIndex.Dependency(ReverseIndex.D,type,Keys.TYPE,""),tree.sums().zero());
+        for(var read0:proof.readerReads())add(tree,entries,read0.query(),read0.answer());
         var root=tree.build(entries.values(),sink); sink.flush();
-        var binding=new Binding(own.k(),route.routeHash(),read.external().hash(),read.sibling().hash(),read.conflicts().hash());
+        var binding=new Binding(own.k(),route.routeHash(),read.external().hash(),read.sibling().hash(),read.conflicts().hash(),route.readerBinding());
         return new ProofIndex(binding,inputs,root.hash(),proof.aci(tree.digest(),inputs.basename(),inputs.source(),inputs.options(),inputs.compiler()),
                 h.processor(),proof.processorBody());
     }
     private static byte[] key(ReverseIndex.Dependency q) {
-        return new Codec.Writer().u8(q.form()).zstr(q.type()).u8(q.kind()).zstr(q.name()).toBytes();
+        return q.encode();
     }
     private static void add(ContentTree tree, Map<byte[],Entry> entries, ReverseIndex.Dependency query, Identity sum) {
         var key=key(query); entries.put(key,new Entry(key,sum.bytes(),tree.digest().hash(key,sum.view())));
     }
 
     public byte[] encode() {
-        var out=new Codec.Writer().u8(1); binding.encode(out); inputs.encode(out);
+        var out=new Codec.Writer().u8(2); binding.encode(out); inputs.encode(out);
         out.id(queries).id(aci).u8(processor==null?0:1);
         if(processor!=null) { processor.encode(out); body.encode(out); }
         return out.toBytes();
     }
     public static ProofIndex decode(byte[] bytes,int width) {
         var in=new Codec.Reader(bytes);
-        if(in.u8()!=1)throw new IllegalArgumentException("Unknown indexed proof format");
+        if(in.u8()!=2)throw new IllegalArgumentException("Unknown indexed proof format");
         var binding=Binding.decode(in,width);var inputs=Inputs.decode(in,width);var queries=in.id(width);var aci=in.id(width);
         int present=in.u8(); if(present>1)throw new IllegalArgumentException("Invalid processor presence");
         var processor=present==0?null:ProcessorRecords.Context.decode(in,width);
@@ -116,6 +118,14 @@ public final class ProofIndex {
             boolean[] found={false};transition.work.proofQueries++;
             transition.tree.forEach(queries,id->{
                 var bytes=transition.records.apply(MachineStore.nodeKey(id));
+                transition.work.proofNodeReads++;transition.work.proofNodeBytes+=bytes.length;return bytes;
+            },prefix,e->{found[0]=true;transition.work.proofEntries++;});
+            if(found[0])return null;
+        }
+        for(var owner:transition.readerOwners) {
+            var prefix=new ReverseIndex.Dependency(ReverseIndex.M,owner,0,"").ownerPrefix();
+            boolean[] found={false};transition.work.proofQueries++;
+            transition.tree.forEach(queries,id->{var bytes=transition.records.apply(MachineStore.nodeKey(id));
                 transition.work.proofNodeReads++;transition.work.proofNodeBytes+=bytes.length;return bytes;
             },prefix,e->{found[0]=true;transition.work.proofEntries++;});
             if(found[0])return null;
@@ -155,6 +165,7 @@ public final class ProofIndex {
         private final Map<Identity,Root> roots=new HashMap<>();
         private final Set<ReverseIndex.Dependency> changed=new TreeSet<>();
         private final Set<String> removedTypes=new TreeSet<>();
+        private final Set<String> readerOwners=new TreeSet<>();
         private final Map<ReverseIndex.Dependency,Identity> answers=new HashMap<>();
         private final View oldView,newView;
         private record Pair(Identity oldLeaf,Identity newLeaf) { }
@@ -167,8 +178,9 @@ public final class ProofIndex {
                 var bytes=record(MachineStore.nodeKey(id));work.nodeReads++;work.nodeBytes+=bytes.length;return bytes;
             };
             oldView=new View(before);newView=new View(after);
-            if(before.own().equals(after.own()) && before.route().equals(after.route()))return;
+            if(before.equals(after))return;
             var candidates=new TreeSet<ReverseIndex.Dependency>();
+            readerDifference(candidates);
             candidates.addAll(difference(before.own(),after.own()));
             var owners=new TreeSet<String>();
             if(!before.route().equals(after.route())) {
@@ -188,7 +200,7 @@ public final class ProofIndex {
                 }
             }
             // Changed owner/presence can expose another provider; N's owner may be unchanged in T.
-            for(var q:candidates)owners.add(q.type());
+            for(var q:candidates)if(q.form()!=ReverseIndex.M)owners.add(q.type());
             for(var owner:owners) {
                 var a=oldView.definer(owner);var b=newView.definer(owner);
                 if(a!=null && b==null)removedTypes.add(owner);
@@ -209,6 +221,25 @@ public final class ProofIndex {
         public Binding after() {return after;}
         public Set<ReverseIndex.Dependency> changed() {return Collections.unmodifiableSet(changed);}
         public Set<String> removedTypes() {return Collections.unmodifiableSet(removedTypes);}
+        public Set<String> readerOwners() {return Collections.unmodifiableSet(readerOwners);}
+        private void readerDifference(Set<ReverseIndex.Dependency> out) {
+            var changed=diff(before.reader(),after.reader());
+            var old=new TreeMap<String,byte[]>();var next=new TreeMap<String,byte[]>();
+            for(var entry:changed.removed())old.put(new Codec.Reader(entry.key()).utf16(),entry.value());
+            for(var entry:changed.added())next.put(new Codec.Reader(entry.key()).utf16(),entry.value());
+            var owners=new TreeSet<>(old.keySet());owners.addAll(next.keySet());
+            for(var owner:owners) {
+                var a=old.get(owner);var b=next.get(owner);
+                if(a==null || b==null || a[0]!=b[0])readerOwners.add(owner);
+                var ar=a==null || a[0]==0?null:Identity.of(Arrays.copyOfRange(a,1,a.length));
+                var br=b==null || b[0]==0?null:Identity.of(Arrays.copyOfRange(b,1,b.length));
+                var delta=diff(ar,br);
+                for(var entries:List.of(delta.removed(),delta.added()))for(var entry:entries) {
+                    var in=new Codec.Reader(entry.key());int operation=in.u8();String name=in.utf16();
+                    if(operation!=dev.jvmd.index.layer.machine.ReaderImage.PRESENT)out.add(new ReverseIndex.Dependency(ReverseIndex.M,owner,operation,name));
+                }
+            }
+        }
         private byte[] record(byte[] key) {
             var bytes=records.apply(key);
             if(bytes==null)throw new IllegalStateException("Missing immutable binding record");
@@ -273,6 +304,9 @@ public final class ProofIndex {
             }
             Identity answer(ReverseIndex.Dependency q) {
                 if(values.containsKey(q))return values.get(q);
+                if(q.form()==ReverseIndex.M) {
+                    var value=ReaderBinding.answer(tree,binding.reader(),q,nodes);values.put(q,value);return value;
+                }
                 var k=definer(q.type());Identity result;
                 // Null is presence for D, and a missing provider for T/N. A persisted D expects zero.
                 if(q.form()==ReverseIndex.D)result=k==null?tree.sums().zero():null;

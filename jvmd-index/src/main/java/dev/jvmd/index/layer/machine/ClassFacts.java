@@ -30,7 +30,8 @@ import static dev.jvmd.index.layer.machine.Edges.typeNames;
  * Φ (stage 1, 2.2 and appendix A): the facts and edges of one class file, a pure function of the class bytes. Every key inside
  * is content, never a position or a constant-pool index: annotations and constants are serialized structurally.
  */
-public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
+public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges, ReaderImage.Parsed reader) {
+    public ClassFacts(String ownerKey,List<Fact> facts,List<Entry> edges) {this(ownerKey,facts,edges,null);}
     /** A class entry that cannot be used: recorded in the leaf's faults and skipped (A.7). Never aborts the boot. */
     public static final class Fault extends Exception {
         public Fault(String message, Throwable cause) { super(message, cause); }
@@ -100,7 +101,14 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
             String owner = cm.thisClass().asInternalName();
             if (!owner.equals(expected)) throw new Fault("Entry name does not match this_class: " + owner);
 
-            if (isLocalOrAnonymous(cm, owner)) return new ClassFacts(owner, List.of(), List.of());
+            ReaderImage.Parsed reader;
+            try { reader=ReaderImage.extract(cm); }
+            catch(RuntimeException | StackOverflowError unsupportedReader) {
+                // Reader discovery cannot change parser-6 T/A filtering (notably private metadata).
+                // This is an explicit unavailable view; it can never authorize body reuse.
+                reader=new ReaderImage.Parsed(owner,List.of(),List.of(),false);
+            }
+            if (isLocalOrAnonymous(cm, owner)) return new ClassFacts(owner, List.of(), List.of(),reader);
 
             typeFact(cm, owner);
             for (var field : cm.fields()) {
@@ -140,7 +148,7 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                 Edges.method(desc, signature, thrownNames, (target, kind) -> edge(target, kind, key));
             }
             facts.sort((a, b) -> Arrays.compareUnsigned(a.m(), b.m()));
-            return new ClassFacts(owner, List.copyOf(facts), List.copyOf(edges.values()));
+            return new ClassFacts(owner, List.copyOf(facts), List.copyOf(edges.values()),reader);
         }
 
         void typeFact(ClassModel cm, String owner) {
@@ -292,14 +300,14 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
         Ann.encodeList(out, list);
     }
 
-    private static Ann annotation(Annotation a) {
+    static Ann annotation(Annotation a) {
         var elements = new ArrayList<Ann.Element>(a.elements().size());
         for (var element : a.elements()) elements.add(new Ann.Element(element.name().stringValue(), value(element.value())));
         return new Ann(a.className().stringValue(), elements);
     }
 
     /** Every name and constant is resolved: no constant-pool index is ever stored. */
-    private static Ann.Val value(AnnotationValue value) {
+    static Ann.Val value(AnnotationValue value) {
         int tag = value.tag();
         return switch (value) {
             case AnnotationValue.OfString s -> new Ann.Val.Str(s.stringValue());
@@ -323,7 +331,7 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
     }
 
     /** {@code typeAnnotation = u8 targetType || targetInfo || u8 pathLength || (u8 kind || u8 argumentIndex)[] || annotation} (A.4a). */
-    private static void writeTypeAnnotation(Codec.Writer out, TypeAnnotation t) {
+    static void writeTypeAnnotation(Codec.Writer out, TypeAnnotation t) {
         var info = t.targetInfo();
         int index = switch (info) {
             case TypeAnnotation.TypeParameterTarget p -> p.typeParameterIndex();

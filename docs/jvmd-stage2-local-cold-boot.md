@@ -370,7 +370,7 @@ Kotlin/Scala/Groovy contribute through compiled class files, not SourceFacts. Bu
 
 One RocksDB per MACHINE generation contains shared nodes/leaves and project-prefixed LOCAL records. One atomic write retains the previous LROOT, advances its LSEQ counter, updates current bindings/X inserts/deletes, and swaps LROOT. Rooted values are prepared as immutable BV|Digest(value) records before this publication; retained roots resolve by entry hash. CF already has its own content address and X has an empty value. Historical empty X values live in immutable LOCAL nodes. Garbage collection of other unreachable records and the history retention policy are deferred.
 
-Current combined representation is `layout=4;parser=6;local=22`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA; parser 5 preserves exact Java String code units in constants and annotation values/defaults. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
+Current combined representation is `layout=5;parser=6;readerProjection=1;local=23`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA; parser 5 preserves exact Java String code units in constants and annotation values/defaults. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
 
 ## 10. Implementation and completion rules
 
@@ -476,8 +476,8 @@ sequence key = LSEQ|22|project, updated atomically with root/index publication
 ### B.8 FORMAT
 
 ```text
-machine = layout=4;digest=<name>;jdk=<feature>;parser=6
-local   = <machine>;local=22;javac=<full runtime version>;locale=root
+machine = layout=5;digest=<name>;jdk=<feature>;parser=6;readerProjection=1
+local   = <machine>;local=23;javac=<full runtime version>;locale=root
 ```
 
 Parser changes when identical class bytes would yield different retained facts/projections. LOCAL changes when its record layout or persisted proof meaning changes. Incompatible commitments cannot take a current-format skip.
@@ -504,6 +504,12 @@ member encoding = zstr memberInternalName || opt<str> exactInnerName || u16 emit
 ```
 
 Sorting is unsigned byte order. A type without member types has the original Digest(typeKey || oSum) key. A child method change cannot affect an outer stub that only emits the child's name/nesting/flags. S/ST are shared derivable caches and need not be retained by project roots.
+
+### B.11 Reader origins (Stage 3 amendment)
+
+LOCAL 23 extends Jar/Jrt route entries with `opt<id> readerImage` after their annotation identity. Their exact binding retains origin separately from k/a. `RT` appends `opt<id> readerBinding` after its existing fields. The binding is a ContentTree of `utf16 internalName -> u8 known || [id localClassImage]`, with keyed h; known=0 is explicitly unsupported, not absence. First-provider selection follows the actual classpath. The platform is discharged only through the fixed system/compiler input. Own/sibling S/ST inputs keep their established meaning; a richer source compiler view requires its own derivation and proof before claiming native metadata parity.
+
+This root is an acceleration/storage coordinate, never an ACI dependency. It is built once per immutable scope; later explicit snapshot comparisons use Diff on the roots and direct per-class/per-operation keys. A metadata-only change can move RT while k, a and routeHash stay equal. Source-side reader extraction is still a Stage 3 completion obligation, not claimed by the binary vertical slice.
 
 ## Appendix C. Header compilation and SourceFacts
 

@@ -172,7 +172,7 @@ public final class Stage3 {
         var options=processed?Attribute.Options.processed(digest,descriptor,Path.of(model.jdkHome()),plan.invocation())
                 :Attribute.Options.unprocessed(digest,descriptor,Path.of(model.jdkHome()));
         var ownStubs=stubs.get(own.k());var configuration=new Pool.Configuration(new Pool.Key(route.routeHash(),own.k()),ownStubs.path(),classpath,
-                options.charset(),options.javac(),ownStubs.types(),siblingStubs);
+                options.charset(),options.javac(),ownStubs.types(),siblingStubs,new Pool.ReaderInputs(tree,route.readerBinding(),generation::get));
         var descriptorOptions=new ArrayList<>(descriptor.javacOptions());descriptorOptions.addAll(descriptor.processing().options());
         var headerOptions=dev.jvmd.boot.cold.stage2.JavacOptions.optionsHash(digest,descriptorOptions,
                 dev.jvmd.boot.cold.stage2.JavacOptions.effectiveRelease(descriptor.release(),descriptorOptions.contains("--enable-preview"),Runtime.version().feature()),null,List.of());

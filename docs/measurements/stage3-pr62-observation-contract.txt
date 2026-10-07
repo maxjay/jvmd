@@ -74,3 +74,60 @@ review62-observation-preservation.log sha256=0b38541ee53f770b093a4ea558d203e3791
 review62-native-reader-final.log sha256=09450755fb055b725a45184b5562bb2f7a78b47b7c9cc064bcbab69230bcc9bb
 
 New Q16: resolutionStubDropsPrivateReaderEffectsEvenWithIdenticalT passes both digests. Real Lib -> resolution stub removes private-annotation warning; restore real Lib restores warning; T and App.class stay equal. A compiler-view issue is reproduced, not repaired.
+
+
+Approved implementation checkpoint: production reader slice, 7 October 2026
+Decision baseline: 1c8800ada204480ec0bf99bbb0350dc98b610312
+Fetched main: 33a9032d0a22f87f2ee306f5e2d935190db6b691; PR62 remains draft/unmerged.
+This supersedes only the earlier statement that no production reader implementation is installed.
+Formats: MACHINE layout 5, parser 6 unchanged, readerProjection=1; LOCAL 23; bodies 15; CI 2.
+
+Gate 1: 94 tests, zero failures/errors/skips.
+mvn -B -pl jvmd-tests -am test -Dtest=ReaderImageTest,NativeReaderSliceTest,NativeBridgeContractTest,BodyValidationTest,BodyValidationNativeTest,ProofIndexTest,RetainedAnnotationDiagnosticTest,BodyGenerationTest,OutputRecoveryTest,BinaryMetadataAdmissionTest,FixedMetadataTest,ModuleArchitectureTest,ForbiddenIdentifiersTest,BodyPoolTest,Stage3Test -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+Gate 2: 17 tests, zero failures/errors/skips.
+mvn -B -pl jvmd-tests -am test -Pread-oracle -Dtest=NativeReaderOperationTest,ReadOracleInstrumentationTest,ReadOracleCoverageTest -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,benchmark
+
+Production slice: private annotation change -> M delta -> current X -> one consumer -> CI rejects -> native bytes/ordered diagnostics -> published output.
+Private non-enum VAR addition is separately selected without any T change.
+Unread metadata and a different physical equivalent provider preserve ACI/result.
+Warning-free second pooled task imports actual-access closure with no extra reader-index reads; recovered warnings force native fresh-context execution.
+Agent absence/drift rejects reuse and preserves ordinary native compilation.
+SourceFile and native optional parameter-name recipes have separate image tests.
+These tests do not close the supported-operation matrix or prove minimality of every recipe.
+
+Strict gate remains OPEN: review62-reader-oracle.log has 22 tests, 2 reader-slice failures (both digests), 20 passes.
+The independent checker still treats native metadata operations as T and has no M/fixed-platform witness classification.
+No strict assertion was disabled or weakened. These failures must be resolved independently.
+The original 2,000-file Lombok admission/selective-reuse gate remains OPEN and was not run in this checkpoint.
+Richer source/sibling compiler inputs, processor-model admission/selectors, complete failure/pool effects and work accounting remain OPEN.
+F09 remains OPEN; no production tree change.
+
+Logical counters below measure current-X/CI and adapter reader-index work, not full Rocks/WAL/extraction/write/allocation cost.
+The recipe now has ordinary and parameter-name keys; a metadata edit changes both, hence two reverse prefixes.
+No whole reader/origin root is an ACI dependency.
+Java source files: 588
+Working SHA256 manifest: 7eb99745349f8a5d19db838ae3af1223ee8492efc6710b95823b1ec4d95b5c85
+Git blob-ID manifest SHA256: e850f196556f802b39ba1b6f2e04eeb5a6e7776d5bc086fdce4387560e2a3dde
+review62-reader-preservation.log sha256=7ff606133960a0ed81a6b5c66aa7155715bcf480edb5780cbe9e230ab69a3786
+review62-reader-independent-hooks.log sha256=de1416d12d866d96f0c5c4d8775df9c772ffd02c4ccf87a951966c2324fbee57
+review62-reader-oracle.log sha256=8a6584458f1d86fa8732ffb16cae42c5ff2cabb7e0248774d2baab607f7a2368
+Q15 SHA-256 basenameChanged=true sourceChanged=false optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=7032 writes=0
+Q15 SHA-256 basenameChanged=false sourceChanged=true optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6360 writes=0
+Q15 SHA-256 basenameChanged=false sourceChanged=false optionsChanged=true compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6360 writes=0
+Q15 SHA-256 basenameChanged=false sourceChanged=false optionsChanged=false compilerChanged=true transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6360 writes=0
+Q15 SHA3-256 basenameChanged=true sourceChanged=false optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=7296 writes=0
+Q15 SHA3-256 basenameChanged=false sourceChanged=true optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6624 writes=0
+Q15 SHA3-256 basenameChanged=false sourceChanged=false optionsChanged=true compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6624 writes=0
+Q15 SHA3-256 basenameChanged=false sourceChanged=false optionsChanged=false compilerChanged=true transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6624 writes=0
+READER-POOL SHA-256 warnings=0 first=ReaderStatistics[events=369, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913] second=ReaderStatistics[events=557, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913]
+READER-POOL SHA-256 warnings=0 first=ReaderStatistics[events=369, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913] second=ReaderStatistics[events=557, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913]
+READER-POOL SHA-256 warnings=1 first=ReaderStatistics[events=369, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913] second=ReaderStatistics[events=738, physicalReads=6, queries=10, nodeReads=13, nodeBytes=3913]
+READER-POOL SHA-256 warnings=0 first=ReaderStatistics[events=369, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3981] second=ReaderStatistics[events=557, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3981]
+READER-SLICE SHA-256 metadataChange prefixes=2 hits=1 receipts=1 proofNodes=1 frontierNodes=22
+READER-POOL SHA3-256 warnings=0 first=ReaderStatistics[events=369, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913] second=ReaderStatistics[events=557, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913]
+READER-POOL SHA3-256 warnings=0 first=ReaderStatistics[events=369, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913] second=ReaderStatistics[events=557, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913]
+READER-POOL SHA3-256 warnings=1 first=ReaderStatistics[events=369, physicalReads=3, queries=5, nodeReads=18, nodeBytes=4368] second=ReaderStatistics[events=738, physicalReads=6, queries=10, nodeReads=18, nodeBytes=4368]
+READER-POOL SHA3-256 warnings=0 first=ReaderStatistics[events=369, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3981] second=ReaderStatistics[events=557, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3981]
+READER-SLICE SHA3-256 metadataChange prefixes=2 hits=1 receipts=1 proofNodes=1 frontierNodes=25
+
+Basic startup option probe only: both javaagent+AOTCacheOutput and javaagent+AOTCache/AOTMode=on exit 0; generated cache 14,745,600 bytes. This is not the packaged distribution acceptance test.

@@ -20,7 +20,9 @@ public record Bound(List<Binding> bindings, List<Identity> sequence, Identity ro
     /** Which provider supplied a leaf (3.16). */
     public enum Origin { SESSION, SIBLING, EXTERNAL }
 
-    public record Binding(RouteEntry entry, Identity k, Identity a, Origin origin) { }
+    public record Binding(RouteEntry entry, Identity k, Identity a, Origin origin,Identity reader) {
+        public Binding(RouteEntry entry,Identity k,Identity a,Origin origin) {this(entry,k,a,origin,null);}
+    }
 
     /** Parallel to sequence; deliberately absent from every resolution identity. */
     public List<Identity> aSequence() { return bindings.stream().map(Binding::a).toList(); }

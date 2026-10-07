@@ -40,6 +40,8 @@ public final class BodyValidation {
      */
     public BodyValidation(ContentTree tree, LocalStore store, Identity project, String module, int scope,
                           Collection<SourceUnit> direct, Work work) {
+        var bridge=NativeReaderCapture.bridgeStatus();
+        if(bridge!=null)throw new IllegalStateException("Unsupported compiler reuse: "+bridge);
         this.tree=tree;this.store=store;this.project=project;this.module=module;this.scope=scope;this.work=Objects.requireNonNull(work);
         new SourceUnit(module,scope,"");
         // Monotone publication sequences also detect a root ABA during current-X lookup.

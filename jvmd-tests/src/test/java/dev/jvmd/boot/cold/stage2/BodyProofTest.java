@@ -75,6 +75,64 @@ class BodyProofTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void providerOnlyChangeInvalidatesBothDirectionsOfNAndReachesBodyConsumers(Digest digest) throws Exception {
+        // F01/F02: real class files, identical Base T, unchanged leaf set, only route order changes.
+        var with = Stage2Support.jar(dir, "with.jar", Map.of("q/Base.java",
+                "package q; public class Base { public static class Foo {} }"), List.of());
+        var without = Stage2Support.jar(dir, "without.jar", Map.of("q/Base.java",
+                "package q; public class Base {}"), List.of());
+        Stage2Support.write(dir, Map.of("app/src/main/java/p/App.java", "package p; public class App {}"));
+        var a = Stage2Support.Dep.jar("g:with:1", with.toString());
+        var b = Stage2Support.Dep.jar("g:without:1", without.toString());
+        var states = new java.util.ArrayList<State>();
+        for (var order : List.of(List.of(a, b), List.of(b, a))) states.add(boot(digest,
+                ProjectModel.parse(Stage2Support.model(dir, new Stage2Support.Mod("app", "g:app:1", order)))));
+        var compiler = javax.tools.ToolProvider.getSystemJavaCompiler();
+        var client = new javax.tools.SimpleJavaFileObject(java.net.URI.create("string:///Use.java"), javax.tools.JavaFileObject.Kind.SOURCE) {
+            @Override public CharSequence getCharContent(boolean ignore) { return "class Use { q.Base.Foo value; }"; }
+        };
+        for (int direction = 0; direction < 2; direction++) {
+            var before = states.get(direction); var after = states.get(1 - direction);
+            assertThat(before.route.leafSetExt()).isEqualTo(after.route.leafSetExt());
+            var proof = before.proof(List.of(HEADER, MEMBER_TYPE), List.of());
+            var current = after.proof(List.of(HEADER, MEMBER_TYPE), List.of());
+            assertThat(proof.types().getFirst().oSum()).isEqualTo(current.types().getFirst().oSum());
+            assertThat(proof.header().ddSum()).isEqualTo(current.header().ddSum());
+            assertThat(proof.header().dsSum()).isEqualTo(current.header().dsSum());
+            assertThat(proof.header().dcSum()).isEqualTo(current.header().dcSum());
+            assertThat(proof.types().getFirst().entries()).isNotEqualTo(current.types().getFirst().entries());
+            assertThat(after.valid(before.proof(List.of(HEADER), List.of()))).isTrue();
+            assertThat(after.valid(proof)).as("N must not be discharged by equal T projections").isFalse();
+
+            var project = digest.hash(new byte[]{42});
+            var dependency = new ReverseIndex.Dependency(ReverseIndex.N, "q/Base", Keys.TYPE, "Foo");
+            BodyReverseTest.publish(digest, before.tree, before.store, project,
+                    List.of(ReverseIndex.bodyKey(dependency, project, Stage2Support.source("Use.java"))));
+            var oldRoot = DefinerIndex.decodeRoot(before.store.get(LocalStore.conflictsKey(before.route.routeHash())), digest.width());
+            var newRoot = DefinerIndex.decodeRoot(after.store.get(LocalStore.conflictsKey(after.route.routeHash())), digest.width());
+            var delta = dev.jvmd.core.tree.Diff.content(digest, oldRoot, newRoot, h -> {
+                var bytes = after.store.get(MachineStore.nodeKey(h));
+                return bytes == null ? before.store.get(MachineStore.nodeKey(h)) : bytes;
+            });
+            assertThat(dev.jvmd.core.tree.Diff.trees(digest, oldRoot, newRoot, h -> {
+                var bytes = after.store.get(MachineStore.nodeKey(h));
+                return bytes == null ? before.store.get(MachineStore.nodeKey(h)) : bytes;
+            }).isEmpty()).isTrue();
+            var none = new dev.jvmd.core.tree.Diff.Result(List.of(), List.of());
+            assertThat(ReverseIndex.bodyCandidates(digest, before.store, new ReverseIndex.Delta(none, none, none, delta)))
+                    .containsExactly(new ReverseIndex.Consumer(project, Stage2Support.source("Use.java")));
+            try (var manager = compiler.getStandardFileManager(null, null, null)) {
+                var diagnostics = new javax.tools.DiagnosticCollector<javax.tools.JavaFileObject>();
+                String cp = String.join(java.io.File.pathSeparator, (direction == 0 ? List.of(with, without) : List.of(without, with))
+                        .stream().map(Path::toString).toList());
+                assertThat(compiler.getTask(null, manager, diagnostics, List.of("-proc:none", "-classpath", cp,
+                        "-d", Files.createDirectories(dir.resolve("oracle-" + direction)).toString()), null, List.of(client)).call())
+                        .isEqualTo(direction == 0);
+            }
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void memberTypeRangeMustBeCheckedWhenItsOwnerSumIsUnchanged(Digest digest) throws Exception {
         var model = fixture();
         var before = boot(digest, model);

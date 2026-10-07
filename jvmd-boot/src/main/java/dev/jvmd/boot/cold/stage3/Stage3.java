@@ -202,12 +202,12 @@ public final class Stage3 {
             roots.put(key,paths);rows.put(key,new ArrayList<>());
         }
         var prefix=LocalStore.filePrefix(project);
-        tree.forEach(local.local().hash(),id->generation.get(MachineStore.nodeKey(id)),entry->{
-            var key=entry.key();if(key.length<prefix.length || !Arrays.equals(key,0,prefix.length,prefix,0,prefix.length))return;
+        tree.forEach(local.local().hash(),id->generation.get(MachineStore.nodeKey(id)),prefix,entry->{
+            var key=entry.key();
             var unit=SourceUnit.fromFileKey(key,digest.width());var path=model.resolve(unit.path()).toAbsolutePath().normalize();
             var owner=new ScopeKey(unit.module(),unit.scope());var declared=roots.get(owner);
             if(declared==null || declared.stream().noneMatch(path::startsWith))throw new ProjectModel.Fault("Source row is outside its module scope: "+unit);
-            rows.get(owner).add(FileRow.decode(unit.path(),required(generation.local(key)),digest.width()));
+            rows.get(owner).add(FileRow.decode(unit.path(),required(generation.local(entry)),digest.width()));
         });
         return rows;
     }

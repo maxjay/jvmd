@@ -85,9 +85,15 @@ public final class Codec {
         public long u64() { return (u32() << 32) | u32(); }
         public long i64() { return u64(); }
         public byte[] raw(int n) {
+            java.util.Objects.checkFromIndexSize(position, n, bytes.length);
             var out = Arrays.copyOfRange(bytes, position, position + n);
             position += n;
             return out;
+        }
+        /** Consume a checked byte range without allocating a copy. */
+        public void skip(int n) {
+            java.util.Objects.checkFromIndexSize(position, n, bytes.length);
+            position += n;
         }
         public String str() { return new String(raw(count()), StandardCharsets.UTF_8); }
         /** Exact Java text; check the declared length before allocating or consuming its code units. */

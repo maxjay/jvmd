@@ -197,12 +197,16 @@ public final class ReverseIndex {
     }
 
     public static Set<Consumer> bodyConsumers(Digest digest, LocalStore store, Dependency dependency) {
-        return new BodyReader(digest, store).read(Set.of(dependency));
+        return new BodyReader(digest, store).read(List.of(bodyPrefix(dependency)));
     }
 
-    /** Uses BROOT membership, including after an LROOT recommit: these are the old proofs the semantic delta must reach. */
-    public static Set<Consumer> bodyCandidates(Digest digest, LocalStore store, Diff.Result t, Diff.Result n, Diff.Result d) {
-        return new BodyReader(digest, store).read(changes(t, n, d));
+    /** Body N stores actual sums, unlike header N's zero predicates: same-key h changes are observable here. */
+    public static Set<Consumer> bodyCandidates(Digest digest, LocalStore store, Delta delta) {
+        var prefixes = new TreeSet<byte[]>(Arrays::compareUnsigned);
+        for (var dependency : changes(delta.types(), delta.memberTypes(), delta.presence())) prefixes.add(bodyPrefix(dependency));
+        for (var entry : definerChanges(digest, delta.definers())) for (int form : new int[]{T, N})
+            prefixes.add(new Codec.Writer().raw(new byte[]{'X', '|', 'G', '|'}).u8(form).zstr(Keys.ownerOf(entry.key())).toBytes());
+        return new BodyReader(digest, store).read(prefixes);
     }
 
     private static Set<Dependency> changes(Diff.Result t, Diff.Result n, Diff.Result d) {
@@ -220,7 +224,7 @@ public final class ReverseIndex {
                 if (!outer.isEmpty()) changed.add(new Dependency(N, outer, Keys.TYPE, name));
             }
         }
-        for (var entries : List.of(d.removed(), d.added())) for (var entry : entries)
+        for (var entry : presenceChanges(d))
             changed.add(new Dependency(D, Keys.ownerOf(entry.key()), Keys.TYPE, ""));
         return changed;
     }
@@ -243,13 +247,18 @@ public final class ReverseIndex {
             return roots.get(project);
         }
 
-        Set<Consumer> read(Set<Dependency> dependencies) {
+        Set<Consumer> read(java.util.Collection<byte[]> prefixes) {
             var consumers = new TreeSet<Consumer>();
-            for (var dependency : dependencies) {
-                byte[] prefix = bodyPrefix(dependency);
+            byte[] previous = null;
+            for (var prefix : prefixes) {
+                if (previous != null && prefix.length >= previous.length
+                        && Arrays.equals(prefix, 0, previous.length, previous, 0, previous.length)) continue;
+                previous = prefix;
                 store.forEachKey(prefix, key -> {
                     var in = new Codec.Reader(key);
-                    in.raw(prefix.length);
+                    in.raw(4);
+                    if (key[2] == 'D') in.zstr();
+                    else { in.u8(); in.zstr(); in.u8(); in.zstr(); }
                     var project = in.id(digest.width());
                     var root = root(project);
                     // Old formats and unreachable raw keys can have a different consumer suffix. Never decode those as current units.

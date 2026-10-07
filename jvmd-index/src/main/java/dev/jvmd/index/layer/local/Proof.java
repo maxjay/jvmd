@@ -140,12 +140,14 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
         boolean sameOwn = own.r().equals(header.ownR());
         if (sameOwn && route.routeHash().equals(header.routeHash())) return true;
         var read = new DefinerIndex.Reader(tree, own, route, records);
-        if (sameOwn && read.external().sum().equals(header.ddSum()) && read.sibling().sum().equals(header.dsSum())
-                && read.conflicts().sum().equals(header.dcSum())) return true;
+        // The definer sums project T and presence, not the selected provider's independent N ranges.
+        boolean sameT = sameOwn && read.external().sum().equals(header.ddSum()) && read.sibling().sum().equals(header.dsSum())
+                && read.conflicts().sum().equals(header.dcSum());
         for (var type : types) {
+            if (sameT && type.entries().stream().noneMatch(e -> e.range().form() == N)) continue;
             var leaf = read.definer(type.key());
             if (leaf == null) return false;
-            boolean moved = !tree.rangeSum(leaf.oHash(), read.nodes(), Keys.ownerKey(type.key())).equals(type.oSum());
+            boolean moved = !sameT && !tree.rangeSum(leaf.oHash(), read.nodes(), Keys.ownerKey(type.key())).equals(type.oSum());
             for (var entry : type.entries()) {
                 var range = entry.range();
                 if (range.form() == T && !moved) continue;
@@ -153,7 +155,7 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
                 if (!tree.rangeSum(root, read.nodes(), range.prefix()).equals(entry.sum())) return false;
             }
         }
-        for (var type : absent) if (!read.absent(type)) return false;
+        if (!sameT) for (var type : absent) if (!read.absent(type)) return false;
         return true;
     }
 

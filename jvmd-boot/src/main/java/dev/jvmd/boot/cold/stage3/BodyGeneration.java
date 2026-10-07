@@ -52,6 +52,13 @@ public final class BodyGeneration implements LocalStore {
     /** Only stage-2 records in the selected LOCAL root can supply current compilation inputs. */
     public byte[] local(byte[] key) { return rooted(local.local().hash(),key); }
 
+    /** The caller obtained this entry from the selected LOCAL tree; no second membership descent is needed. */
+    byte[] local(Entry entry) {
+        var value=store.get(entry.key());
+        if(value==null || !tree.digest().hash(value).equals(entry.h()))throw new IllegalStateException("Rooted record digest mismatch");
+        return value;
+    }
+
     @Override public byte[] get(byte[] key) {
         open();
         var value=pending.get(key);if(value!=null)return value.clone();

@@ -10,7 +10,8 @@ import java.util.function.Function;
 /**
  * The one tree type of every layer (stage 1, 2.3): entries sorted by key, cut into content-defined chunks, with a hash and a sum
  * at every node. The shape is a function of the entry set alone, so equal sets give equal roots in any build order; changing d
- * entries rewrites O(d * depth) nodes; the identity of any key range is a sum of O(depth) node sums.
+ * entries reuses subtrees once chunk boundaries resynchronise. Locality depends on the boundary distribution; cap-only
+ * runs can require a linear rewrite. The identity of any key range is a sum of O(depth) node sums (fixed fan-out cap).
  */
 public final class ContentTree {
     /** Boundary modulus: a chunk ends after a key whose Hash64 is 0 mod B. Chosen in the design (2.3); re-measured per rule 7. */
@@ -50,8 +51,8 @@ public final class ContentTree {
     /**
      * The tree that results from removing the keys {@code removed} from {@code base} and adding {@code added} (an entry whose key is
      * already there replaces it), written to {@code sink}. It is the root a full {@link #build} over the new entries would give, because
-     * the shape is a function of the entry set, but it reads and writes the nodes along the changed paths and reuses every other
-     * subtree: O(d * depth) nodes for d changes, not the size of the tree. See {@link Edit}.
+     * the shape is a function of the entry set. It reuses unchanged subtrees after boundary resynchronisation; a cap-only
+     * run can require linear work even for one insertion or deletion. See {@link Edit}.
      */
     public Root apply(Root base, List<byte[]> removed, List<Entry> added, Function<Identity, byte[]> reader, NodeSink sink) {
         return new Edit(this, removed, added, reader, sink).run(base);
@@ -84,12 +85,9 @@ public final class ContentTree {
         var bytes = reader.apply(hash);
         int width = digest.width();
         if (Node.level(bytes) == 0) {
-            for (var e : Node.entries(bytes, width)) {
-                if (from != null && Arrays.compareUnsigned(e.key(), from) < 0) continue;
-                if (to != null && Arrays.compareUnsigned(e.key(), to) >= 0) continue;
-                acc = sums.add(acc, e.h());
-            }
-            return acc;
+            var result = new Identity[]{acc};
+            Node.entries(bytes, width, from, to, false, e -> result[0] = sums.add(result[0], e.h()));
+            return result[0];
         }
         var children = Node.children(bytes, width);
         for (int i = 0; i < children.size(); i++) {
@@ -112,8 +110,10 @@ public final class ContentTree {
         var bytes = reader.apply(hash);
         int width = digest.width();
         if (Node.level(bytes) == 0) {
-            for (var e : Node.entries(bytes, width)) if (Arrays.equals(e.key(), key)) return e;
-            return null;
+            var result = new Entry[1];
+            // key followed by zero is the immediate lexicographic successor of the exact byte string.
+            Node.entries(bytes, width, key, Arrays.copyOf(key, key.length + 1), true, e -> result[0] = e);
+            return result[0];
         }
         // The child that can hold the key is the last one whose first key is not above it.
         Node.Child holder = null;
@@ -130,6 +130,25 @@ public final class ContentTree {
         int width = digest.width();
         if (Node.level(bytes) == 0) { for (var e : Node.entries(bytes, width)) out.accept(e); return; }
         for (var child : Node.children(bytes, width)) forEach(child.hash(), reader, out);
+    }
+
+    /** Entries under a rooted prefix. Nonoverlapping child intervals are never fetched. */
+    public void forEach(Identity hash, Function<Identity, byte[]> reader, byte[] prefix, java.util.function.Consumer<Entry> out) {
+        entries(hash, reader, prefix, prefixEnd(prefix), null, out);
+    }
+
+    private void entries(Identity hash, Function<Identity, byte[]> reader, byte[] from, byte[] to, byte[] nodeEnd,
+                         java.util.function.Consumer<Entry> out) {
+        var bytes = reader.apply(hash);
+        if (Node.level(bytes) == 0) { Node.entries(bytes, digest.width(), from, to, true, out); return; }
+        var children = Node.children(bytes, digest.width());
+        for (int i = 0; i < children.size(); i++) {
+            var child = children.get(i);
+            var end = i + 1 < children.size() ? children.get(i + 1).first() : nodeEnd;
+            if (from != null && end != null && Arrays.compareUnsigned(end, from) <= 0
+                    || to != null && Arrays.compareUnsigned(child.first(), to) >= 0) continue;
+            entries(child.hash(), reader, from, to, end, out);
+        }
     }
 
     /** Recomputes every hash, sum and count under the root from the stored bytes; throws if any disagrees. */

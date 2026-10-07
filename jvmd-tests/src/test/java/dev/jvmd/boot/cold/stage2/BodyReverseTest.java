@@ -54,7 +54,8 @@ class BodyReverseTest {
         var rootReadsA = store.watchReads(LocalStore.bodiesRootKey(a));
         var rootReadsB = store.watchReads(LocalStore.bodiesRootKey(b));
         int start = store.events().size();
-        assertThat(ReverseIndex.bodyCandidates(digest, store, t, n, d)).containsExactlyInAnyOrder(
+        assertThat(ReverseIndex.bodyCandidates(digest, store, new ReverseIndex.Delta(t, n, d,
+                new Diff.Result(List.of(), List.of())))).containsExactlyInAnyOrder(
                 new ReverseIndex.Consumer(a, Stage2Support.source("src/A.java")), new ReverseIndex.Consumer(a, Stage2Support.source("test/A.java")), new ReverseIndex.Consumer(a, Stage2Support.source("src/Override.java")),
                 new ReverseIndex.Consumer(b, Stage2Support.source("src/N.java")), new ReverseIndex.Consumer(b, Stage2Support.source("src/D.java")));
         assertThat(store.events().subList(start, store.events().size())).doesNotContain("read:F", "read:C", "prefix:F", "prefix:C", "read:LROOT");
@@ -101,7 +102,7 @@ class BodyReverseTest {
         assertThat(ReverseIndex.bodyConsumers(digest,store,dependency)).isEmpty();
     }
 
-    private static void publish(Digest digest, ContentTree tree, InMemoryLocalStore store, Identity project, List<byte[]> keys) {
+    static void publish(Digest digest, ContentTree tree, InMemoryLocalStore store, Identity project, List<byte[]> keys) {
         var entries = keys.stream().sorted(Arrays::compareUnsigned).map(key -> new Entry(key, Entry.NONE, digest.hash(Entry.NONE))).toList();
         for (var key : keys) store.put(key, Entry.NONE);
         var root = tree.build(entries, store);

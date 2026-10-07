@@ -86,9 +86,14 @@ public final class ReaderImage {
                 case RuntimeInvisibleParameterAnnotationsAttribute a -> {out.u8(5).u32(a.parameterAnnotations().size());for(var p:a.parameterAnnotations())annotations(out,p,supported);supported[0]=false;}
                 case AnnotationDefaultAttribute a -> {out.u8(6);var value=ClassFacts.value(a.defaultValue());Ann.encode(out,value);if(unsupported(value))supported[0]=false;}
                 case RecordAttribute a -> {
+                    // Component layout drives native accessor lookup even without component annotations.
+                    out.u8(10).u32(a.components().size());
+                    for(var component:a.components())out.utf16(component.name().stringValue())
+                            .utf16(component.descriptor().stringValue()).optStr(signature(component));
+                    recipe.add(out.toBytes());
                     for(var component:a.components())attributes(component,new Codec.Writer().u8(3).utf16(component.name().stringValue())
                             .utf16(component.descriptor().stringValue()),recipe,supported,parameterNames,slots);
-                    supported[0]=false;continue;
+                    continue;
                 }
                 default -> {continue;}
             }

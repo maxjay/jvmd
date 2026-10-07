@@ -148,11 +148,16 @@ public final class ReadOracleTrace {
                     case "findFun", "findMethodInScope" -> "METHOD";
                     case "findField" -> "FIELD";
                     default -> null;
-                }:f.getClassName().equals("com.sun.tools.javac.jvm.ClassReader$AnnotationDeproxy")
+                }:f.getClassName().equals("com.sun.tools.javac.jvm.ClassReader") && f.getMethodName().equals("lookupMethod")?"READER_METHOD"
+                        :f.getClassName().equals("com.sun.tools.javac.jvm.ClassReader$AnnotationDeproxy")
                         && Set.of("findAccessMethod","visitEnumAttributeProxy").contains(f.getMethodName())?"READER":null).orElse(null));
         return ()->new java.util.Iterator<Object>() {
             final java.util.Iterator<?> iterator=original.iterator();
             private void observed() { if(form!=null && !form.equals("READER") && CURRENT.get()==trace && trace.suspended==0) {
+                if(form.equals("READER_METHOD")) {
+                    if(!platform(owner)) {var query=new Missing("M:0:1:",binary(owner),name.toString());trace.readers.add(query);remember(owner,query);}
+                    return;
+                }
                 var query=new Missing(form,binary(owner),name.toString());
                 if(trace.intrinsic.contains(owner))trace.predefined.add(query);
                 else if(!binary(owner).isEmpty())trace.query(query);

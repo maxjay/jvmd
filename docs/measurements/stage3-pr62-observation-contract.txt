@@ -300,3 +300,15 @@ review62-reader-native-resolution-strict-v2.log sha256=adaeab7f75d445f147d13bfbb
 review62-reader-native-resolution-strict-v3.log sha256=d5a4ad2880f15b29cd04b0c25ab9d1111b7c5066f2ff11a689c3dbbc2ae837f9
 jvmd-tests/target/reader-native-resolution-strict-v3.txt sha256=cfb766f0c95012bc99e9dc9f2af56bb35d4e0fae0495914f8a5dcb9e56fec852
 review62-native-resolution-preservation.log sha256=8e88420380486eb965a7d0723b614bf33f9b75be2202de96f7ef6a99b7bc49c6
+
+Record decoder checkpoint, 7 October 2026
+Parent b4eb2e885211b84cfc6f2d93ba3cb6ae92a8c708. Approved fences unchanged.
+Production captures actual ClassReader.lookupMethod returns using the existing named METHOD reader operation, retains ordered component layout, and admits nongeneric record decoding unless another guard applies. Actual null and private competing accessors are tested, including warm contexts, current X and ACI; the private insertion keeps T equal.
+The independent oracle observes the native consumed scope and classifies that decoder query as M, rather than T. It does not use the production image/capture. Generic returned types, parameter annotations and other unproved operations remain guarded.
+Strict command: mvn -B -pl jvmd-tests -am test -Pread-oracle -Dtest=BodyCollectorTest,NativeReaderSliceTest,SourceReaderViewTest,ReadOracleInstrumentationTest,ReadOracleCoverageTest,NativeBridgeContractTest,ReaderImageTest,RetainedAnnotationDiagnosticTest -Djvmd.readOracle.sites=true -Djvmd.readOracle.report=target/reader-record-strict-v3.txt -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,benchmark
+111 PASS, zero failures/errors/skips; all 14 independent controls pass.
+Native parameter-mapping counterexample: structurally verified private generic Signature arity inconsistency, equal T/client class bytes, different native ordered warning with a consumed concrete class-file path. Both variants remain explicitly unsupported for reuse.
+Full repository strict attempt before record repair: two failing digest cases at record-accessor query coverage. The earlier incorrectly benchmark-excluded command ran zero tests and is not evidence of a pass. Follow-up repository inventory/native gate is separate and keeps strict acceptance open.
+review62-reader-record-strict-v3.log sha256=935148ab0e76c8f928f1f72cc2a33279e01afa6dfdb412edf02c4a7c33b0df90
+jvmd-tests/target/reader-record-strict-v3.txt sha256=0be178840deb4288c92d7fa3e3001b5b37635368fb6beb4d1b35c593353f6bf3
+review62-reader-repository-strict-v2.log sha256=a633116393c475ed0060fa1704c8b659dddca1fae4f6c026224a8df424e06ca2

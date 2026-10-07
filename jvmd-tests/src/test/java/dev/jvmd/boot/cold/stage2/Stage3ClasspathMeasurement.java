@@ -121,6 +121,7 @@ class Stage3ClasspathMeasurement {
         report.append("classpath equality: ").append(equal).append('/').append(nativeScopes.size()).append(" scopes; files=").append(files).append(" classes=").append(classCount).append('\n');
         report.append("module descriptors included in byte oracle: ").append(descriptors).append("; emitted=").append(actual.scopes().values().stream().mapToInt(Stage3.Scope::descriptorEmissions).sum()).append('\n');
         report.append("temporary metadata non-reuse boundary: ").append(rejected).append(" files; fresh native equality is independent of reuse admission\n");
+        Files.write(Path.of("target/stage3-admission-faults-"+digest.name()+".txt"),admissionFaults);
         for(var failure:failures)report.append(failure).append('\n');
         Files.writeString(Path.of("target/stage3-classpath-"+digest.name()+".txt"),report);
         System.out.println(report);

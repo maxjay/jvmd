@@ -25,6 +25,33 @@ class RetainedAnnotationDiagnosticTest {
     static Stream<Digest> digests() { return Stream.of(Sha256.INSTANCE,new Digests.Sha3()); }
 
     @ParameterizedTest @MethodSource("digests")
+    void privateSignatureChangesParameterMappingDiagnosticsAndRemainsGuarded(Digest digest) throws Exception {
+        var dependencies=Files.createDirectories(directory.resolve("parameters"));var output=Files.createDirectories(directory.resolve("parameter-output"));
+        var annotation=directory.resolve("Ann.java");var library=directory.resolve("Lib.java");var app=directory.resolve("App.java");
+        Files.writeString(annotation,"package q; public @interface Ann { int value(); }");
+        Files.writeString(library,"package q; public class Lib { private <T> void hidden(@Ann(1) T x){} public static int call(){return 1;} }");
+        Files.writeString(app,"package p; public class App { int value(){return q.Lib.call();} }");
+        assertThat(compile(dependencies,dependencies,List.of(annotation,library))).isEmpty();
+        var file=dependencies.resolve("q/Lib.class");var original=Files.readAllBytes(file);var cf=java.lang.classfile.ClassFile.of();
+        assertThat(messages(output,dependencies,List.of(app),List.of("-Xlint:classfile"))).isEmpty();
+        var client=Files.readAllBytes(output.resolve("p/App.class"));
+        var changed=cf.transformClass(cf.parse(original),java.lang.classfile.ClassTransform.transformingMethods(
+                m->m.methodName().equalsString("hidden"),(out,element)->{
+                    if(element instanceof java.lang.classfile.attribute.SignatureAttribute)
+                        out.with(java.lang.classfile.attribute.SignatureAttribute.of(java.lang.classfile.MethodSignature.parseFrom("<T:Ljava/lang/Object;>(TT;TT;)V")));
+                    else out.with(element);
+                }));
+        assertThat(cf.verify(changed)).isEmpty();Files.write(file,changed);
+        var before=ClassFacts.of(digest,original,"q/Lib");var after=ClassFacts.of(digest,changed,"q/Lib");
+        assertThat(after.facts().stream().map(Fact::h).toList()).isEqualTo(before.facts().stream().map(Fact::h).toList());
+        assertThat(before.reader().supported()).isFalse();assertThat(after.reader().supported()).isFalse();
+        var diagnostics=messages(output,dependencies,List.of(app),List.of("-Xlint:classfile"));
+        assertThat(diagnostics).extracting(javax.tools.Diagnostic::getCode).containsExactly("compiler.warn.runtime.invisible.parameter.annotations");
+        assertThat(diagnostics.getFirst().getMessage(Locale.ROOT)).contains(file.toString());
+        assertThat(Files.readAllBytes(output.resolve("p/App.class"))).isEqualTo(client);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void changingOnlyRetainedMetadataChangesClientDiagnosticsWithEqualResolutionFacts(Digest digest) throws Exception {
         var dependencies=Files.createDirectories(directory.resolve("dependencies"));
         var output=Files.createDirectories(directory.resolve("output"));

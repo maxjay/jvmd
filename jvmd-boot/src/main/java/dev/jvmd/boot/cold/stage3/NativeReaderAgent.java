@@ -63,11 +63,12 @@ public final class NativeReaderAgent {
                     var method=code.parent().orElseThrow();String methodName=method.methodName().stringValue();
                     boolean read=name.endsWith("/ClassReader") && methodName.equals("readClassFile");
                     boolean methodHeader=name.endsWith("/ClassReader") && methodName.equals("readMethod");
+                    boolean accessor=name.endsWith("/ClassReader") && methodName.equals("lookupMethod");
                     boolean methodQuery=name.endsWith("$AnnotationDeproxy") && methodName.equals("findAccessMethod");
                     boolean enumQuery=name.endsWith("$AnnotationDeproxy") && methodName.equals("visitEnumAttributeProxy");
                     boolean unsupported=name.endsWith("$AnnotationDeproxy") && methodName.equals("visitClassAttributeProxy");
                     boolean touch=name.endsWith("$ClassSymbol") && Set.of("flags","members","getRawAttributes","getRawTypeAttributes").contains(methodName);
-                    if(!(read || methodHeader || methodQuery || enumQuery || unsupported || touch)){builder.with(code);return;}
+                    if(!(read || methodHeader || accessor || methodQuery || enumQuery || unsupported || touch)){builder.with(code);return;}
                     hooks.merge(methodName,1,Integer::sum);
                     builder.transformCode(code,new CodeTransform() {
                         Label start;
@@ -88,6 +89,10 @@ public final class NativeReaderAgent {
                             }
                             if(instruction instanceof ReturnInstruction) {
                                 if(read)event(out,"read",1,1,0,-1);
+                                else if(accessor) {
+                                    out.dup();int value=out.allocateLocal(TypeKind.REFERENCE);out.astore(value);
+                                    event(out,"accessor",value,1,2,-1);
+                                }
                                 else if(methodQuery) {
                                     out.dup();int value=out.allocateLocal(TypeKind.REFERENCE);out.astore(value);
                                     // Native local 3 is the caught CompletionFailure, including recovered returns.
@@ -106,7 +111,7 @@ public final class NativeReaderAgent {
                             var end=out.newLabel();var handler=out.newLabel();
                             out.labelBinding(end).exceptionCatchAll(start,end,handler).labelBinding(handler);
                             out.dup();int failure=out.allocateLocal(TypeKind.REFERENCE);out.astore(failure);
-                            event(out,"failure",-1,read?1:0,read?0:-1,failure);out.athrow();
+                            event(out,"failure",-1,read || accessor?1:0,read || accessor?0:-1,failure);out.athrow();
                         }
                         private void event(CodeBuilder out,String op,int value,int requester,int arg,int failure) {
                             out.ldc(op);load(out,value);
@@ -116,7 +121,7 @@ public final class NativeReaderAgent {
                         }
                     });
                 }));
-                var expected=name.endsWith("/ClassReader")?Map.of("readClassFile",1,"readMethod",1)
+                var expected=name.endsWith("/ClassReader")?Map.of("readClassFile",1,"readMethod",1,"lookupMethod",1)
                     :name.endsWith("$ClassSymbol")?Map.of("flags",1,"members",1,"getRawAttributes",1,"getRawTypeAttributes",1)
                     :Map.of("findAccessMethod",1,"visitEnumAttributeProxy",1,"visitClassAttributeProxy",1);
                 if(!hooks.equals(expected))throw new IllegalStateException("Reader bridge hook drift: "+hooks);

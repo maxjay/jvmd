@@ -24,6 +24,45 @@ class NativeReaderSliceTest {
     @AfterAll static void release(){Stage2Support.release();}
     private static final SourceUnit APP=new SourceUnit("app",0,"app/src/main/java/p/App.java");
     @ParameterizedTest @MethodSource("digests")
+    void nativeRecordAccessorReadsAreProvedEvenWhenTheSourceDoesNotCallThem(Digest digest) throws Exception {
+        var binaries=Stage2Support.compile(directory.resolve("records"),Map.of(
+                "q/Box.java","package q; public record Box(int value, String text) {}"),List.of(),List.of());
+        var jar=Stage2Support.pack(directory.resolve("record.jar"),binaries);
+        Stage2Support.write(directory,Map.of(APP.path(),"package p; public class App { q.Box value(){return new q.Box(1,\"x\");} }"));
+        var model=ProjectModel.parse(Stage2Support.model(directory,new Stage2Support.Mod("app","g:app:1",List.of(Stage2Support.Dep.jar("g:record:1",jar.toString())))));
+        var tree=new ContentTree(digest);var store=Stage2Support.jdkOnly(digest).copy();
+        boot(digest,tree,store,model);var result=body(digest,tree,store,model,jar);
+        assertThat(result.proof().readerReads()).extracting(Proof.ReaderRead::query).contains(
+                new ReverseIndex.Dependency(ReverseIndex.M,"q/Box",ReaderImage.METHOD,"value"),
+                new ReverseIndex.Dependency(ReverseIndex.M,"q/Box",ReaderImage.METHOD,"text"));
+        var cf=java.lang.classfile.ClassFile.of();var original=binaries.get("q/Box.class");
+        var changed=cf.transformClass(cf.parse(original),new java.lang.classfile.ClassTransform() {
+            @Override public void accept(java.lang.classfile.ClassBuilder out,java.lang.classfile.ClassElement element){out.with(element);}
+            @Override public void atEnd(java.lang.classfile.ClassBuilder out) {
+                out.withMethodBody("text",java.lang.constant.MethodTypeDesc.ofDescriptor("()I"),java.lang.classfile.ClassFile.ACC_PRIVATE,c->c.iconst_0().ireturn());
+            }
+        });
+        assertThat(cf.verify(changed)).isEmpty();
+        assertThat(ClassFacts.of(digest,changed,"q/Box").facts().stream().map(Fact::h).toList())
+                .isEqualTo(ClassFacts.of(digest,original,"q/Box").facts().stream().map(Fact::h).toList());
+        var replacement=new TreeMap<>(binaries);replacement.put("q/Box.class",changed);Stage2Support.pack(jar,replacement);
+        var next=boot(digest,tree,store,model);var project=Stage2.projectKey(digest,model);
+        assertThat(new BodyValidation(tree,store,project,"app",0,List.of(),new BodyValidation.Work()).candidates()).containsExactly(APP);
+        assertThat(result.proof().valid(tree,next.own(),next.route(),null,store::get)).isFalse();
+        var updated=body(digest,tree,store,model,jar);
+        assertThat(updated.aci()).isNotEqualTo(result.aci());
+        assertThat(updated.result().encode()).isEqualTo(result.result().encode());
+        var missing=cf.transformClass(cf.parse(original),(out,element)->{
+            if(!(element instanceof java.lang.classfile.MethodModel m) || !m.methodName().equalsString("text"))out.with(element);
+        });
+        assertThat(cf.verify(missing)).isEmpty();replacement.put("q/Box.class",missing);Stage2Support.pack(jar,replacement);
+        boot(digest,tree,store,model);
+        assertThat(new BodyValidation(tree,store,project,"app",0,List.of(),new BodyValidation.Work()).candidates()).containsExactly(APP);
+        var absent=body(digest,tree,store,model,jar);
+        assertThat(absent.aci()).isNotEqualTo(updated.aci());
+        assertThat(absent.result().encode()).isEqualTo(result.result().encode());
+    }
+    @ParameterizedTest @MethodSource("digests")
     void rejectedNativeOperationsStillPublishTheirExactReverseQuestions(Digest digest) throws Exception {
         for(boolean missingOwner:List.of(true,false)) {
             var root=directory.resolve(missingOwner?"failure":"unsupported");

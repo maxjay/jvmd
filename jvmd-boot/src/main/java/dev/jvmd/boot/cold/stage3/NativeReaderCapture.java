@@ -123,12 +123,17 @@ final class NativeReaderCapture {
             if(local!=null && local[0]==ReaderBinding.PRESENT)decoded.add(requesting);
             return;
         }
+        if(operation.equals("accessor") && event[1]==null) {
+            byte[] local=query(requesting,ReaderImage.METHOD,event[3].toString(),requesting);
+            if(local!=null && local[0]!=ReaderBinding.ABSENT_MEMBER)faults.add("Native record accessor differs from indexed absence");
+            return;
+        }
         Symbol value=event[0].equals("enum")?((com.sun.tools.javac.code.Attribute.Enum)event[1]).value:(Symbol)event[1];
         if(!(value.owner instanceof Symbol.ClassSymbol owner)) {faults.add("Reader answer has no class owner");return;}
         if(platform(owner))return;
         // Named-module binary resolution is outside this initial classpath slice.
         if(owner.packge().modle!=null && !owner.packge().modle.isUnnamed()) {faults.add("Named-module reader answer");return;}
-        int op=operation.equals("method")?ReaderImage.METHOD:ReaderImage.VARIABLE;
+        int op=operation.equals("method") || operation.equals("accessor")?ReaderImage.METHOD:ReaderImage.VARIABLE;
         String member=value.name.toString();
         byte[] local=query(owner,op,member,requesting);if(local==null)return;
         Type type=value.type;

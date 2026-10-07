@@ -161,9 +161,14 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
 
     /** B.2: only actual entry identities and processor inputs; no route, definer-sum or own-leaf shortcut identity. */
     public Identity aci(Digest digest, String basename, Identity kappa, Identity options) {
+        return aci(digest, basename, kappa, options, Runtime.version().toString());
+    }
+
+    /** Compiler builds share a MACHINE store, so the result address itself must bind this fixed input. */
+    Identity aci(Digest digest, String basename, Identity kappa, Identity options, String javacVersion) {
         if (header.processor() != null && (processorBody == null || !processorBody.reusable()))
             throw new IllegalStateException("Processor result has no reusable model observations");
-        var out = new Codec.Writer().str(basename).id(kappa).id(options);
+        var out = new Codec.Writer().str("jvmd:body-result:1").str(javacVersion).str("locale=root").str(basename).id(kappa).id(options);
         processor(out, header.processor());
         out.u8(processorBody == null ? 0 : 1);
         if (processorBody != null) processorBody.inputs(out);

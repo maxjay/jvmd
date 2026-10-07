@@ -78,7 +78,7 @@ public final class ReadOracleAgent {
                             && descriptor.parameterType(0).descriptorString().equals("Ljavax/tools/JavaFileObject;");
                     boolean arrange = name.endsWith("/Arrange") && methodName.equals("body");
                     boolean collector = name.endsWith("/ProofCollector") && methodName.equals("bodies")
-                            || name.endsWith("/Pool$HierarchyReads") && Set.of("read","functional").contains(methodName);
+                            || name.endsWith("/Pool$HierarchyReads") && Set.of("read","functional","method").contains(methodName);
                     boolean hierarchy=name.endsWith("/Types") && Set.of("supertype","interfaces").contains(methodName);
                     boolean header=name.endsWith("/Symbol$ClassSymbol") && methodName.equals("flags");
                     boolean read = name.endsWith("/ClassReader") && methodName.equals("readClassFile");
@@ -162,7 +162,7 @@ public final class ReadOracleAgent {
                     case "com/sun/tools/javac/code/Scope$ScopeImpl" -> Map.of("getSymbolsByName", 1, "getSymbols", 1);
                     case "com/sun/tools/javac/code/Types" -> Map.of("supertype",1,"interfaces",1);
                     case "com/sun/tools/javac/code/Symbol$ClassSymbol" -> Map.of("flags",1);
-                    case "dev/jvmd/boot/cold/stage3/Pool$HierarchyReads" -> Map.of("read",2,"functional",1);
+                    case "dev/jvmd/boot/cold/stage3/Pool$HierarchyReads" -> Map.of("read",2,"functional",1,"method",1);
                     default -> Map.of("findField", 1, "findImmediateMemberType", 1, "findMethod", 2, "loadClass", 1,
                             "findMethodInScope", 1, "findMethodInScope#hasNext", 1, "findGlobalType", 1);
                 };

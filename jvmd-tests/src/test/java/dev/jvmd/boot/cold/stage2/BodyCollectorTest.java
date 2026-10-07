@@ -98,6 +98,87 @@ class BodyCollectorTest {
     private static Proof.Range n(String type,String name) { return new Proof.Range(Proof.N,type,Keys.TYPE,name); }
 
     @ParameterizedTest @MethodSource("digests")
+    void failedNativeSupertypeSearchReadsTheTargetHeaderOnWarmContexts(Digest digest) throws Exception {
+        fixture("package p; public class App {}",Map.of("q/Unused","package q; public class Unused {}"));
+        var state=boot(digest);
+        try(var pool=new Pool(state.configuration(),1)) {
+            var first=compile(state,pool);var warm=compile(state,pool);
+            assertThat(first.reads().ranges()).contains(t("java/lang/AutoCloseable",Keys.TYPE,""));
+            assertThat(warm.reads().ranges()).containsExactlyElementsOf(first.reads().ranges());
+            assertThat(first.reads().ranges()).noneMatch(r->r.type().startsWith("q/"));
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void conversionToObjectDoesNotReadAnInferredValuesUnusedAncestry(Digest digest) throws Exception {
+        String source="package p; public class App { Object get(){return q.Lib.get();} }";
+        String base="package q; public class Base {}";
+        var dependencies=Map.of("q/Base",base,"q/Value","package q; public class Value extends Base {}",
+                "q/Lib","package q; public class Lib { public static Value get(){return null;} }");
+        fixture(source,dependencies);var before=compile(boot(digest));assertThat(before.errors()).isEmpty();
+        var nativeSources=new java.util.HashMap<String,String>();dependencies.forEach((name,value)->nativeSources.put(name+".java",value));
+        nativeSources.put("p/App.java",source);
+        var nativeBefore=Stage2Support.compile(dir.resolve("inferred-native-before"),nativeSources,List.of("-g","-parameters"),List.of());
+        String edited=base.replace("class Base", "class Base implements java.io.Serializable");
+        Files.writeString(dir.resolve("dep/src/main/java/q/Base.java"),edited);
+        nativeSources.put("q/Base.java",edited);
+        var nativeAfter=Stage2Support.compile(dir.resolve("inferred-native-after"),nativeSources,List.of("-g","-parameters"),List.of());
+        assertThat(nativeAfter.get("p/App.class")).isEqualTo(nativeBefore.get("p/App.class"));
+        var changed=boot(digest);assertThat(changed.valid(before.proof())).isTrue();
+        assertThat(before.reads().ranges()).doesNotContain(t("q/Base",Keys.TYPE,""));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void loweringBoxAndUnboxQueriesSurviveWarmContexts(Digest digest) throws Exception {
+        String source="package p; public class App { Object box(int value){return value;} int unbox(Integer value){return value;} }";
+        fixture(source,Map.of("q/Unused","package q; public class Unused {}"));
+        var state=boot(digest);
+        try(var pool=new Pool(state.configuration(),1)) {
+            var first=compile(state,pool);var warm=compile(state,pool);
+            assertThat(first.errors()).isEmpty();assertThat(warm.errors()).isEmpty();
+            assertThat(first.reads().ranges()).contains(t("java/lang/Integer",Keys.METHOD,"valueOf"),
+                    t("java/lang/Integer",Keys.METHOD,"intValue"));
+            assertThat(warm.reads().ranges()).containsExactlyElementsOf(first.reads().ranges());
+            assertThat(warm.classes().get("p/App")).isEqualTo(first.classes().get("p/App"));
+            Files.writeString(dir.resolve("app/src/main/java/p/App.java"),"package p; public class App { Object keep(Object value){return value;} }");
+            assertThat(compile(state,pool).reads().ranges()).doesNotContain(t("java/lang/Integer",Keys.METHOD,"valueOf"),
+                    t("java/lang/Integer",Keys.METHOD,"intValue"));
+            assertThat(pool.statistics().contexts()).isEqualTo(1);
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void implicitResourceCloseIsAReadEvenWhenItsThrowsClausePreventsGeneration(Digest digest) throws Exception {
+        String resource="package q; public class Resource implements AutoCloseable { public void close(){} }";
+        fixture("package p; public class App { void run(){try(q.Resource resource=new q.Resource()) {}} }",
+                Map.of("q/Resource",resource));
+        var before=compile(boot(digest));assertThat(before.errors()).isEmpty();
+        assertThat(before.reads().ranges()).contains(t("q/Resource",Keys.METHOD,"close"));
+        Files.writeString(dir.resolve("dep/src/main/java/q/Resource.java"),resource.replace("public void close()","public void unrelated(){} public void close()"));
+        assertThat(boot(digest).valid(before.proof())).isTrue();
+        Files.writeString(dir.resolve("dep/src/main/java/q/Resource.java"),resource.replace("close()","close() throws java.io.IOException"));
+        var changed=boot(digest);var failed=compile(changed);
+        assertThat(changed.valid(before.proof())).isFalse();assertThat(failed.errors()).contains("compiler.err.unreported.exception.implicit.close");
+        assertThat(failed.reads().ranges()).contains(t("q/Resource",Keys.METHOD,"close"));
+        var nativeErrors=new java.io.ByteArrayOutputStream();
+        assertThat(javax.tools.ToolProvider.getSystemJavaCompiler().run(null,null,nativeErrors,"-proc:none","-d",
+                Files.createDirectories(dir.resolve("resource-native")).toString(),dir.resolve("dep/src/main/java/q/Resource.java").toString(),
+                dir.resolve("app/src/main/java/p/App.java").toString())).as(nativeErrors.toString()).isEqualTo(1);
+        Files.writeString(dir.resolve("dep/src/main/java/q/Resource.java"),resource);
+        var restored=boot(digest);assertThat(restored.valid(failed.proof())).isFalse();assertThat(compile(restored).errors()).isEmpty();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void aResourceRejectedByItsTypeDoesNotReadCloseShapedMethods(Digest digest) throws Exception {
+        fixture("package p; public class App { void run(){try(q.Resource resource=new q.Resource()) {}} }",
+                Map.of("q/Resource","package q; public class Resource { public void close(){} }"));
+        var rejected=compile(boot(digest));assertThat(rejected.errors()).isNotEmpty();
+        assertThat(rejected.reads().ranges()).doesNotContain(t("q/Resource",Keys.METHOD,"close"));
+        Files.writeString(dir.resolve("dep/src/main/java/q/Resource.java"),"package q; public class Resource { public int close(){return 1;} }");
+        assertThat(boot(digest).valid(rejected.proof())).isTrue();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void aSkippedDefaultInterfaceStillNeedsOnlyTheQueriedMethodName(Digest digest) throws Exception {
         String source="package p; public class App { public Object value(){return q.Lib.pick(null);} }";
         String lib="package q; public class Lib implements I { public static Object pick(Object value){return value;} }";

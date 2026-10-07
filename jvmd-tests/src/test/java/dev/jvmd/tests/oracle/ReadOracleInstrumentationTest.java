@@ -15,6 +15,59 @@ public class ReadOracleInstrumentationTest {
     @TempDir Path directory;
     public record Row(String path, List<String> typeKeys) { }
 
+    @Test void anOrdinaryClassStillQueriesTheAutoCloseableTargetHeader() throws Exception {
+        var source=directory.resolve("App.java");Files.writeString(source,"package p; class App {}");
+        ReadOracleTrace.begin(new Row("p/App.java",List.of("p/App")));
+        int code=ToolProvider.getSystemJavaCompiler().run(null,null,null,"-proc:none","-d",directory.toString(),source.toString());
+        var trace=ReadOracleTrace.finish();assertThat(code).isZero();
+        assertThat(trace.queries()).contains(new ReadOracleTrace.Missing("TYPE","java/lang/AutoCloseable",""));
+        assertThat(trace.queries()).doesNotContain(new ReadOracleTrace.Missing("METHOD","java/lang/AutoCloseable","close"));
+    }
+
+    @Test void boxingMethodsAreNativeGenerationQueriesWithoutSourceCalls() throws Exception {
+        var source=directory.resolve("App.java");
+        Files.writeString(source,"package p; class App { Object box(int value){return value;} int unbox(Integer value){return value;} }");
+        var compiler=ToolProvider.getSystemJavaCompiler();
+        try(var manager=compiler.getStandardFileManager(null,null,null)) {
+            var task=(com.sun.source.util.JavacTask)compiler.getTask(null,manager,null,
+                    List.of("-proc:none","-d",directory.toString()),null,manager.getJavaFileObjects(source));
+            task.parse();task.analyze();
+            ReadOracleTrace.begin(new Row("p/App.java",List.of("p/App")));
+            task.generate();
+            var trace=ReadOracleTrace.finish();
+            assertThat(trace.queries()).contains(new ReadOracleTrace.Missing("METHOD","java/lang/Integer","valueOf"),
+                    new ReadOracleTrace.Missing("METHOD","java/lang/Integer","intValue"));
+        }
+    }
+
+    @Test void changingOnlyTheImplicitBoxingFactoryChangesNativeBytes() throws Exception {
+        byte[] original;
+        try(var input=Integer.class.getResourceAsStream("Integer.class")) { original=input.readAllBytes(); }
+        var cf=java.lang.classfile.ClassFile.of();
+        var changed=cf.transformClass(cf.parse(original),(builder,element)->{
+            if(element instanceof java.lang.classfile.MethodModel method && method.methodName().equalsString("valueOf")
+                    && method.methodType().equalsString("(I)Ljava/lang/Integer;"))
+                builder.withMethod("valueOf",java.lang.constant.MethodTypeDesc.ofDescriptor("(I)Ljava/lang/Number;"),
+                        method.flags().flagsMask(),out->method.forEach(out::with));
+            else builder.with(element);
+        });
+        var source=directory.resolve("App.java");Files.writeString(source,"package p; class App { Object box(int value){return value;} }");
+        var compiler=ToolProvider.getSystemJavaCompiler();var outputs=new java.util.ArrayList<byte[]>();
+        for(var bytes:List.of(original,changed)) {
+            var patch=Files.createDirectories(directory.resolve("patch-"+outputs.size()));
+            var integer=patch.resolve("java/lang/Integer.class");Files.createDirectories(integer.getParent());Files.write(integer,bytes);
+            var output=Files.createDirectories(directory.resolve("output-"+outputs.size()));
+            ReadOracleTrace.begin(new Row("p/App.java",List.of("p/App")));
+            var errors=new java.io.ByteArrayOutputStream();
+            int code=compiler.run(null,null,errors,"-proc:none","--patch-module","java.base="+patch,"-d",output.toString(),source.toString());
+            var trace=ReadOracleTrace.finish();
+            assertThat(code).as(errors.toString()).isZero();
+            assertThat(trace.queries()).contains(new ReadOracleTrace.Missing("METHOD","java/lang/Integer","valueOf"));
+            outputs.add(Files.readAllBytes(output.resolve("p/App.class")));
+        }
+        assertThat(outputs.get(1)).isNotEqualTo(outputs.get(0));
+    }
+
     @Test void nativeDefaultGuardJustifiesOnlyTheRequestedMethodProjection() throws Exception {
         var compiler=ToolProvider.getSystemJavaCompiler();
         var contract=directory.resolve("I.java");var library=directory.resolve("Lib.java");

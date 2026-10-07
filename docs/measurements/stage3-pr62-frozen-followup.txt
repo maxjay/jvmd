@@ -1,0 +1,157 @@
+PR62 frozen follow-up gate, 2026-10-07 03:19–03:31 Europe/London
+Base HEAD: 318db81b5f64b38fe0b525b78542263972fc2a26 plus this commit
+Java sources: 590 (tracked plus BodyIdentityTest.java)
+Sorted path/NUL/SHA256/LF manifest SHA256: 69a9aee05542bef299c6e83058675fdfa37283830917e869fd91330d2d8716b4
+The Java manifest was unchanged through this gate.
+JDK: 25.0.4.1+1; Maven: 3.9.16; Windows
+
+Command: mvn -B -pl jvmd-tests -am test -Dtest=**/cold/stage2/*Test,**/cold/stage3/*Test,**/index/layer/local/*Test,ContentTreeTest,ContentTreeEditTest,Review62TreeTest,Layout4Test,ModuleArchitectureTest,ForbiddenIdentifiersTest,ReadOracleCoverageTest,Stage3ClasspathMeasurement,ProcessorReuseMeasurement -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+
+758 tests; zero failures, errors or skips; BUILD SUCCESS; 12m10s.
+The independent strict native read agent is deliberately not part of this gate; F04 remains open.
+
+digest: SHA-256
+files: 2000
+initial cold driver ms: 11277
+field addition: attributed=2 retained rooted selections=1998 validation ms=701 attribution ms=714
+body edit: attributed=1 retained rooted selections=1999 validation ms=664 attribution ms=707
+config edit: attributed=1000 retained rooted selections=1000 validation ms=388 attribution ms=14830
+config deletion: attributed=1000 retained rooted selections=1000 validation ms=374 attribution ms=14284
+
+digest: SHA3-256
+files: 2000
+initial cold driver ms: 10362
+field addition: attributed=2 retained rooted selections=1998 validation ms=699 attribution ms=694
+body edit: attributed=1 retained rooted selections=1999 validation ms=686 attribution ms=706
+config edit: attributed=1000 retained rooted selections=1000 validation ms=385 attribution ms=14929
+config deletion: attributed=1000 retained rooted selections=1000 validation ms=415 attribution ms=14285
+
+digest: SHA-256
+project: C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566
+workers: 4
+stage3 wall ms: 38361
+jvmd-analyzer/main files=33 classes=125 equal=true
+jvmd-analyzer/test files=0 classes=0 equal=true
+jvmd-boot/main files=45 classes=162 equal=true
+jvmd-boot/test files=0 classes=0 equal=true
+jvmd-core/main files=49 classes=131 equal=true
+jvmd-core/test files=0 classes=0 equal=true
+jvmd-dist/main files=9 classes=39 equal=true
+jvmd-dist/test files=0 classes=0 equal=true
+jvmd-index-rocks/main files=21 classes=52 equal=true
+jvmd-index-rocks/test files=12 classes=13 equal=true
+jvmd-index/main files=97 classes=344 equal=true
+jvmd-index/test files=0 classes=0 equal=true
+jvmd-lsp/main files=2 classes=3 equal=true
+jvmd-lsp/test files=0 classes=0 equal=true
+jvmd-mcp/main files=2 classes=2 equal=true
+jvmd-mcp/test files=0 classes=0 equal=true
+jvmd-resolver/main files=7 classes=19 equal=true
+jvmd-resolver/maven3/main files=8 classes=20 equal=true
+jvmd-resolver/maven3/test files=0 classes=0 equal=true
+jvmd-resolver/maven4/main files=10 classes=22 equal=true
+jvmd-resolver/maven4/test files=0 classes=0 equal=true
+jvmd-resolver/test files=0 classes=0 equal=true
+jvmd-runtime/main files=17 classes=41 equal=true
+jvmd-runtime/test files=0 classes=0 equal=true
+jvmd-tests/main files=0 classes=0 equal=true
+jvmd-tests/test files=273 classes=409 equal=true
+classpath equality: 26/26 scopes; files=585 classes=1382
+module descriptors included in byte oracle: 10; emitted=10
+
+digest: SHA3-256
+project: C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566
+workers: 4
+stage3 wall ms: 38706
+jvmd-analyzer/main files=33 classes=125 equal=true
+jvmd-analyzer/test files=0 classes=0 equal=true
+jvmd-boot/main files=45 classes=162 equal=true
+jvmd-boot/test files=0 classes=0 equal=true
+jvmd-core/main files=49 classes=131 equal=true
+jvmd-core/test files=0 classes=0 equal=true
+jvmd-dist/main files=9 classes=39 equal=true
+jvmd-dist/test files=0 classes=0 equal=true
+jvmd-index-rocks/main files=21 classes=52 equal=true
+jvmd-index-rocks/test files=12 classes=13 equal=true
+jvmd-index/main files=97 classes=344 equal=true
+jvmd-index/test files=0 classes=0 equal=true
+jvmd-lsp/main files=2 classes=3 equal=true
+jvmd-lsp/test files=0 classes=0 equal=true
+jvmd-mcp/main files=2 classes=2 equal=true
+jvmd-mcp/test files=0 classes=0 equal=true
+jvmd-resolver/main files=7 classes=19 equal=true
+jvmd-resolver/maven3/main files=8 classes=20 equal=true
+jvmd-resolver/maven3/test files=0 classes=0 equal=true
+jvmd-resolver/maven4/main files=10 classes=22 equal=true
+jvmd-resolver/maven4/test files=0 classes=0 equal=true
+jvmd-resolver/test files=0 classes=0 equal=true
+jvmd-runtime/main files=17 classes=41 equal=true
+jvmd-runtime/test files=0 classes=0 equal=true
+jvmd-tests/main files=0 classes=0 equal=true
+jvmd-tests/test files=273 classes=409 equal=true
+classpath equality: 26/26 scopes; files=585 classes=1382
+module descriptors included in byte oracle: 10; emitted=10
+
+Work counters from the same gate:
+F08 Sha256 emitted MiB=16 commit CF reads=0
+F08 Sha256 emitted MiB=64 commit CF reads=0
+F08 Sha3 emitted MiB=16 commit CF reads=0
+F08 Sha3 emitted MiB=64 commit CF reads=0
+F12 Sha256 unrelated=0 node reads=2
+F12 Sha256 unrelated=1000 node reads=4
+F12 Sha256 unrelated=10000 node reads=3
+F12 Sha3 unrelated=0 node reads=1
+F12 Sha3 unrelated=1000 node reads=3
+F12 Sha3 unrelated=10000 node reads=4
+F11 Sha256 units=128 node reads=29
+F11 Sha256 units=1024 node reads=32
+F11 Sha256 units=8192 node reads=49
+F11 Sha3 units=128 node reads=32
+F11 Sha3 units=1024 node reads=42
+F11 Sha3 units=8192 node reads=45
+F10 Sha256 extra route origins=0 node reads=800
+F10 Sha256 extra route origins=128 node reads=800
+F10 Sha256 extra route origins=4096 node reads=800
+F10 Sha3 extra route origins=0 node reads=900
+F10 Sha3 extra route origins=128 node reads=900
+F10 Sha3 extra route origins=4096 node reads=900
+F13 Sha256 nesting=4 declarations=11 bytes=20314
+F13 Sha256 nesting=16 declarations=35 bytes=25492
+F13 Sha256 nesting=64 declarations=131 bytes=60438
+F13 Sha3 nesting=4 declarations=11 bytes=20314
+F13 Sha3 nesting=16 declarations=35 bytes=25492
+F13 Sha3 nesting=64 declarations=131 bytes=60438
+F14 scopes=2 workers=1 managers=ManagerStatistics[limit=1, live=0, peak=1, opened=2]
+F14 scopes=2 workers=4 managers=ManagerStatistics[limit=4, live=0, peak=4, opened=4]
+F14 scopes=8 workers=1 managers=ManagerStatistics[limit=1, live=0, peak=1, opened=8]
+F14 scopes=8 workers=4 managers=ManagerStatistics[limit=4, live=0, peak=4, opened=8]
+F14 scopes=2 workers=1 managers=ManagerStatistics[limit=1, live=0, peak=1, opened=2]
+F14 scopes=2 workers=4 managers=ManagerStatistics[limit=4, live=0, peak=4, opened=4]
+F14 scopes=8 workers=1 managers=ManagerStatistics[limit=1, live=0, peak=1, opened=8]
+F14 scopes=8 workers=4 managers=ManagerStatistics[limit=4, live=0, peak=4, opened=8]
+F07 own types=5 cleanup=OwnStatistics[evictionProbes=18, stubLookups=3]
+F07 own types=133 cleanup=OwnStatistics[evictionProbes=18, stubLookups=3]
+F07 own types=1029 cleanup=OwnStatistics[evictionProbes=18, stubLookups=3]
+F14 unrelated members=0 queries=3 visited=2
+F14 unrelated members=128 queries=3 visited=2
+F14 unrelated members=4096 queries=3 visited=2
+F18 Sha256 mutation=0 comparisons=4096 allocated=1498240
+F18 Sha256 mutation=1 comparisons=2048 allocated=761648
+F18 Sha256 mutation=2 comparisons=127 allocated=56704
+F18 Sha256 mutation=3 comparisons=4097 allocated=1470832
+F18 Sha256 mutation=4 comparisons=2049 allocated=762656
+F18 Sha256 mutation=5 comparisons=0 allocated=11184
+F18 Sha256 mutation=6 comparisons=910 allocated=351512
+F18 Sha3 mutation=0 comparisons=4096 allocated=1469328
+F18 Sha3 mutation=1 comparisons=2048 allocated=760032
+F18 Sha3 mutation=2 comparisons=127 allocated=64496
+F18 Sha3 mutation=3 comparisons=4097 allocated=1470000
+F18 Sha3 mutation=4 comparisons=2049 allocated=761824
+F18 Sha3 mutation=5 comparisons=0 allocated=18976
+F18 Sha3 mutation=6 comparisons=910 allocated=349832
+F09 Sha256 entries=4096 node emissions=33
+F09 Sha256 entries=16384 node emissions=131
+F09 Sha3 entries=4096 node emissions=35
+F09 Sha3 entries=16384 node emissions=132
+F16 Sha256 allocated bytes/query [264, 488, 344, 512, 344, 512]
+F16 Sha3 allocated bytes/query [344, 512, 344, 512, 288, 400]

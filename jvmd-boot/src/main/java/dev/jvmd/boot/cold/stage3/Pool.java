@@ -174,6 +174,7 @@ public final class Pool implements AutoCloseable {
 
     private static final class HierarchyReads extends Types {
         private final java.util.Set<Proof.Range> reads = new java.util.TreeSet<>();
+        private final java.util.Set<Symbol> superSearch = new java.util.HashSet<>();
         private boolean recording;
 
         static void install(Context context) { context.put(typesKey, (Context.Factory<Types>) HierarchyReads::new); }
@@ -207,6 +208,24 @@ public final class Pool implements AutoCloseable {
             }
         }
 
+        /** Named lookup introduced by lowering, with the inherited candidate domain of source calls. */
+        private void method(Type origin, com.sun.tools.javac.util.Name name) {
+            if (!recording || origin == null) return;
+            var pending = new ArrayList<Type>();
+            var seen = new java.util.HashSet<Symbol>();
+            pending.add(origin);
+            for (int i=0;i<pending.size();i++) {
+                var type=pending.get(i);
+                if (type == null || !type.hasTag(TypeTag.CLASS) || !seen.add(type.tsym)) continue;
+                var parent=super.supertype(type);var interfaces=super.interfaces(type);
+                read(type);
+                if (!type.isCompound() && type.tsym instanceof Symbol.ClassSymbol symbol && symbol.classfile != null
+                        && symbol.classfile.getKind() == JavaFileObject.Kind.CLASS)
+                    reads.add(new Proof.Range(Proof.T,symbol.flatName().toString().replace('.', '/'),Keys.METHOD,name.toString()));
+                pending.add(parent);pending.addAll(interfaces);
+            }
+        }
+
         @Override public Symbol findDescriptorSymbol(Symbol.TypeSymbol origin) {
             try { return super.findDescriptorSymbol(origin); } finally { functional(origin.type); }
         }
@@ -215,8 +234,33 @@ public final class Pool implements AutoCloseable {
         }
 
         // Completion can assign classfile during the query; observe after the native operation has completed it.
+        @Override public Type asSuper(Type type, Symbol target) {
+            if (!recording) return super.asSuper(type,target);
+            // Mirror the native class visitor's cycle guard. A fresh class search returning null has
+            // exhausted its superclass and tested target.flags(INTERFACE), even with no source use of target.
+            boolean entered=type != null && type.hasTag(TypeTag.CLASS) && superSearch.add(type.tsym);
+            try {
+                var result=super.asSuper(type,target);
+                if (entered && result==null) read(target.type);
+                return result;
+            } finally { if (entered) superSearch.remove(type.tsym); }
+        }
         @Override public Type supertype(Type type) { var result = super.supertype(type); read(type); return result; }
         @Override public com.sun.tools.javac.util.List<Type> interfaces(Type type) { var result = super.interfaces(type); read(type); return result; }
+    }
+
+    /** Internal calls (boxing, unboxing, generated helpers) do not exist in the attributed source tree. */
+    private static final class InternalReads extends com.sun.tools.javac.comp.Resolve {
+        private final Context context;
+        static void install(Context context) { context.put(resolveKey,(Context.Factory<com.sun.tools.javac.comp.Resolve>)InternalReads::new); }
+        InternalReads(Context context) { super(context);this.context=context; }
+        @Override public Symbol.MethodSymbol resolveInternalMethod(com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition position,
+                com.sun.tools.javac.comp.Env<com.sun.tools.javac.comp.AttrContext> environment,Type site,
+                com.sun.tools.javac.util.Name name,com.sun.tools.javac.util.List<Type> arguments,
+                com.sun.tools.javac.util.List<Type> typeArguments) {
+            try { return super.resolveInternalMethod(position,environment,site,name,arguments,typeArguments); }
+            finally { ((HierarchyReads)Types.instance(context)).method(site,name); }
+        }
     }
 
     /** One explicitly supplied source; callers collect observations after analyze and before generate mutates trees. */
@@ -343,7 +387,7 @@ public final class Pool implements AutoCloseable {
                     });
                     if (context != previous) {
                         contexts++; previous = context; evicted.clear(); HierarchyReads.install(context);
-                        OwnReads.install(context, this::touch);
+                        InternalReads.install(context); OwnReads.install(context, this::touch);
                     }
                     task.addTaskListener(new com.sun.source.util.TaskListener() {
                         @Override public void finished(com.sun.source.util.TaskEvent event) {

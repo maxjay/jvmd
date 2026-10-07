@@ -260,6 +260,18 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
                 fieldReads(type.asType(), name, node, new HashSet<>());
     }
 
+    @Override public Void visitTry(TryTree node, Void p) {
+        for (var resource : node.getResources()) {
+            var type=mirror(resource);
+            // Attr/Flow resolve the implicit close even when a checked exception prevents Lower from running.
+            // A non-closeable type fails on its header; its unrelated close-shaped members are not queried.
+            boolean closeable=roots(type).stream().flatMap(root -> closure(root).stream())
+                    .anyMatch(parent -> binary(parent).equals("java/lang/AutoCloseable"));
+            if (closeable) methodReads(type,"close",resource);
+        }
+        return super.visitTry(node,p);
+    }
+
     private void lexicalFields(String name,Tree node) {
         for (var enclosing : enclosing()) if (fieldReads(enclosing.asType(),name,node,new HashSet<>())) return;
         for (var imported : staticOwners(name)) fieldReads(imported.asType(),name,node,new HashSet<>());
@@ -308,7 +320,10 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
         switch (mirror.getKind()) {
             case DECLARED -> {
                 var declared = (DeclaredType)mirror;
-                for (var type : closure((TypeElement)declared.asElement())) t(type,Keys.TYPE,"",node);
+                // An inferred reference can convert straight to Object without inspecting its ancestry.
+                // Native Types observations supply the ancestors actually tested by conversion/inference;
+                // named lookups and inherited method contracts retain their own explicit closures.
+                t((TypeElement)declared.asElement(),Keys.TYPE,"",node);
                 noteType(declared.getEnclosingType(),node,seen);
                 for (var argument : declared.getTypeArguments()) noteType(argument,node,seen);
             }

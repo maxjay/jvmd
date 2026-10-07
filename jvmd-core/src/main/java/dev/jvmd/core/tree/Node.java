@@ -85,16 +85,29 @@ public record Node(int level, Identity hash, Identity sum, byte[] first, int cou
     }
 
     public static List<Entry> entries(byte[] bytes, int width) {
+        var out = new ArrayList<Entry>();
+        entries(bytes, width, null, null, true, out::add);
+        return out;
+    }
+
+    /** Decode only selected values. Fingerprint callers skip every payload; all lengths are still checked. */
+    public static void entries(byte[] bytes, int width, byte[] from, byte[] to, boolean values,
+                               java.util.function.Consumer<Entry> out) {
         var in = new Codec.Reader(bytes);
         if (in.u8() != 0 || in.u8() != 0) throw new IllegalArgumentException("Not a level-0 tree node");
         int n = in.count();
-        var out = new ArrayList<Entry>(n);
         for (int i = 0; i < n; i++) {
             var key = in.raw(in.count());
-            var h = in.id(width);
-            out.add(new Entry(key, in.raw(in.count()), h));
+            boolean selected = (from == null || java.util.Arrays.compareUnsigned(key, from) >= 0)
+                    && (to == null || java.util.Arrays.compareUnsigned(key, to) < 0);
+            Identity h = null;
+            if (selected) h = in.id(width); else in.skip(width);
+            int length = in.count();
+            byte[] value = Entry.NONE;
+            if (selected && values) value = in.raw(length); else in.skip(length);
+            if (selected) out.accept(new Entry(key, value, h));
         }
-        return out;
+        if (in.remaining() != 0) throw new IllegalArgumentException("Trailing tree leaf bytes");
     }
 
     public static List<Child> children(byte[] bytes, int width) {

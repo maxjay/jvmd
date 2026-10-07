@@ -101,6 +101,16 @@ class Layout4Test {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void differentAnnotationStringsHaveDifferentMetadataEvenWhenTheirApiIsEqual(Digest digest) throws Exception {
+        var leaves = new java.util.ArrayList<Leaf>();
+        for (var text : List.of("\\uD800", "\\uDC00", "?"))
+            leaves.add(leaf(digest, "string-"+leaves.size(), "package p; @Deprecated(since=\""+text+"\") public class K {}"));
+        assertThat(leaves.stream().map(l -> l.value().k()).distinct()).hasSize(1);
+        assertThat(leaves.stream().map(Leaf::a).distinct()).hasSize(3);
+        assertThat(leaves.stream().map(l -> l.annotations().sum()).distinct()).hasSize(3);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void exchangingFieldValuesChangesRangeAndOwnerSums(Digest digest) throws Exception {
         var before = leaf(digest, "before", "package p; public class K { public static final int x=1, y=2; }");
         var after = leaf(digest, "after", "package p; public class K { public static final int x=2, y=1; }");

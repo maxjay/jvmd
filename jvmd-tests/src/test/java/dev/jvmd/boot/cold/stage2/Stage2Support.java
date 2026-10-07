@@ -29,6 +29,18 @@ import javax.tools.ToolProvider;
 final class Stage2Support {
     private Stage2Support() { }
 
+    /** Address for these fixtures' conventional module/src layout; shared-root fixtures supply explicit SourceUnits. */
+    static dev.jvmd.index.layer.local.SourceUnit source(String path) {
+        if (path.startsWith(".jvmd/generated/")) {
+            var parts = path.split("/", 5);
+            return new dev.jvmd.index.layer.local.SourceUnit(new String(java.util.Base64.getUrlDecoder().decode(parts[2]), StandardCharsets.UTF_8), Integer.parseInt(parts[3]), path);
+        }
+        int src = path.indexOf("/src/");
+        String module = src < 0 ? "fixture" : path.substring(0, src);
+        int scope = path.contains("/src/test/") || path.startsWith("test/") ? 1 : 0;
+        return new dev.jvmd.index.layer.local.SourceUnit(module, scope, path);
+    }
+
     static final long T1 = 1_700_000_000_000L;
     static final int FEATURE = Runtime.version().feature();
     static final Path JDK = Path.of(System.getProperty("java.home"));

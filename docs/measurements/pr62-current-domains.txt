@@ -1,0 +1,54 @@
+F09 bounded feasibility: measurements of CURRENT production ContentTree only
+Date: 2026-10-07
+Repository source commit: ff8554ff5c08b046fbdb8853a3c5d169e251b6e1
+Production sources unchanged from 5d12ba952e06587d79c0c1c69d0366a76a2a2a33
+Runtime: Windows, JDK 25.0.4.1+1-LTS, Maven 3.9.16, -Xmx4g
+Both SHA-256 and SHA3-256; B=32, CAP=128; current formats unchanged.
+
+The standalone profiler is outside Maven source sets. It boots the repository's
+actual Maven model with Stage 2 and Stage 3, using test InMemoryLocalStore, then
+copies encoded nodes for read-only analysis. It never implements or benchmarks
+the proposed locally consistent parser. Source and binary T/N/O, A/EA, DD/DS/DC,
+DF, leaf sets, LOCAL, BODIES, CI query trees and OUT are sampled. Largest entry
+count per domain; hash order breaks ties. X is a labelled slice of actual LOCAL
+reverse entries, not a global production reverse tree. No PM/GEN/PD corpus and
+no ContentList replacement. Project/path-addressed roots depend on checkout path.
+
+Counters exclude fixture boot, sorting, caller key/value hashing and edit-list
+construction, store-map copy, and correctness oracles. Reads clone encoded
+buffers. Emissions count every attempted node write. No physical Rocks/JNI/WAL
+or disk claim. Allocations use ThreadMXBean, median of 3 after 2 warm-ups per
+operation; cumulative allocation, not peak live memory. Profiling traversals
+count logical nodes, including repeated references if present.
+
+36 root profiles and 216 operation rows. First/middle/last deletion, middle value
+replacement, exact middle lookup, half-range sum. 2,992 checks: each sampled root
+equals a fresh build; each edit equals a fresh rebuild and has the expected exact
+Diff; point and range answers agree with independent entry-based expectations;
+work counters agree across repetitions. No candidate performance is inferred.
+
+Reproduction from repository root in PowerShell (JAVA_HOME/bin and Maven on PATH):
+mvn -q compile test-compile dependency:build-classpath -Dmdep.includeScope=test -Dmdep.outputFile=target/jvmd-classpath-test.txt
+$domainClasspath = (Get-Content jvmd-tests/target/jvmd-classpath-test.txt -Raw).Trim() + ';' + (Join-Path (Get-Location) 'jvmd-tests/target/test-classes')
+javac -cp $domainClasspath -d jvmd-tests/target/domain-profile docs/experiments/CurrentTreeDomains.java
+$domainClasspath += ';' + (Join-Path (Get-Location) 'jvmd-tests/target/domain-profile')
+$domainExports = @('api','util','code','comp','file','jvm','processing','main','tree','platform') | ForEach-Object { '--add-exports=jdk.compiler/com.sun.tools.javac.'+$_+'=ALL-UNNAMED' }
+java -Xmx4g --enable-native-access=ALL-UNNAMED @domainExports --add-opens=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED -cp $domainClasspath dev.jvmd.boot.cold.stage2.CurrentTreeDomains (Get-Location).Path docs/measurements
+
+Complete final run output:
+BOOT SHA-256
+BOOT complete sourceFiles=593 nonreuse=334
+BOOT SHA3-256
+BOOT complete sourceFiles=593 nonreuse=334
+PASS checks=2992; production tree unchanged; no candidate implementation
+
+Frozen tracked Java inputs outside docs: 598
+Sorted SHA256 source-manifest hash: 4321dec45217210f6219f2679b044cc61f2e9d19f4ace606475ac68a4bdf34cb
+d31fdb9f3110d2dea1f3e28be39122577268fe76ef9c9c1e8a36069af89e80fc  docs/experiments/CurrentTreeDomains.java
+79e99c737ca06e447429a2c77f87ee5eb696e6cf9a8a88f7115a499930889f0c  docs/measurements/pr62-current-domain-profile.csv
+4d9ff582c806bacf1636b0cc4569cd79e5763e0d846a4ca028a471c72a78c806  docs/measurements/pr62-current-domain-costs.csv
+
+The two CSV hashes above cover original Windows CRLF run output. Git normalises
+text to LF. The following hashes cover the committed LF CSV bytes:
+e4cda963bed0ac4d66a7d6b41b31fb56660c0573fe02885cfbe7094ac7f66f50  docs/measurements/pr62-current-domain-profile.csv
+eaee21745532d3cbee160cf85ee2d32143c73473e18414abd0d0b2bcb7c7c67d  docs/measurements/pr62-current-domain-costs.csv

@@ -1,6 +1,6 @@
 # jvmd stage 2: LOCAL cold boot
 
-Oct 4, 2026 · @Max. Reconciled 2026-10-06 with LAYOUT 4, the PR #60 audit, exact header proofs, current path-addressed reverse records and persistent definer state.
+Oct 4, 2026 · @Max. Reconciled 2026-10-06 with LAYOUT 4, the PR #60 audit, exact header proofs, current path-addressed reverse records, persistent definer state and lossless Java String values in parser 5.
 
 This revision replaces the earlier Stage 2 specification. Stage 3 Appendix A and this document describe the same foundation. Stage 3 Appendix F extends header compilation with processors; its processor proofs, generated outputs and resource records are additional work, not implied by completion of this document.
 
@@ -203,7 +203,7 @@ E/EA targets seed implicit declaration dependencies but are not a complete looku
 | `F\|project\|path` | Source row with header proof and absences |
 | `DD\|leafSetExt`, `DS\|leafSetSib`, `DC\|routeHash` | Definer roots used by this project, including the shared JDK base when derived |
 | `DF\|leafSet` | Persisted all-definer, multiple-definer and disjoint roots |
-| `X\|H5\|...` | Current empty dependency/project/path reverse records |
+| `X\|H22\|...` | Current empty dependency/project/path reverse records |
 | `LROOT\|project` | Current commitment; prior commitments retained under numbered keys |
 | `C\|...`, `RS\|...` | Legacy reserved codecs; no records written by Stage 2 |
 
@@ -284,7 +284,7 @@ publish route states, ordered route root and dc
 for row in files:
     write F|project|path
     for dependency in distinct(row.T reads + row.D/N absences):
-        add logical X|H5|dependency|project|path = empty to LOCAL entries
+        add logical X|H22|dependency|project|path = empty to LOCAL entries
 build LOCAL over all used records; flush; sync
 atomically: keep previous LROOT in history
             delete removed X keys and insert added X keys from Diff(oldLOCAL,newLOCAL)
@@ -298,7 +298,7 @@ candidates(deltaT, deltaN, effectivePresence, exactDefiners):
     // no LROOT, LOCAL membership or F reads
 ```
 
-Current raw X keys are a secondary index maintained only by LROOT publication; ordinary put rejects them. Historical LOCAL nodes already preserve their empty values, so historical raw keys are unnecessary. X|H5| isolates earlier raw history. Lookup work is current prefix fan-out, independent of the number of obsolete consumer paths. The publication diff may read the previous root; candidate queries never do. No scan of unrelated files or reverse prefixes is permitted.
+Current raw X keys are a secondary index maintained only by LROOT publication; ordinary put rejects them. Historical LOCAL nodes already preserve their empty values, so historical raw keys are unnecessary. X|H22| isolates earlier raw history. Lookup work is current prefix fan-out, independent of the number of obsolete consumer paths. The publication diff may read the previous root; candidate queries never do. No scan of unrelated files or reverse prefixes is permitted.
 
 ### 5.7 Boot decision
 
@@ -368,9 +368,9 @@ Kotlin/Scala/Groovy contribute through compiled class files, not SourceFacts. Bu
 
 ## 9. Persistence
 
-One RocksDB per MACHINE generation contains shared nodes/leaves and project-prefixed LOCAL records. One atomic write retains the previous LROOT, updates current X inserts/deletes, and swaps LROOT. Historical empty X values live in immutable LOCAL nodes. Garbage collection of other unreachable records and the history retention policy are deferred.
+One RocksDB per MACHINE generation contains shared nodes/leaves and project-prefixed LOCAL records. One atomic write retains the previous LROOT, advances its LSEQ counter, updates current bindings/X inserts/deletes, and swaps LROOT. Rooted values are prepared as immutable BV|Digest(value) records before this publication; retained roots resolve by entry hash. CF already has its own content address and X has an empty value. Historical empty X values live in immutable LOCAL nodes. Garbage collection of other unreachable records and the history retention policy are deferred.
 
-Current representation is `layout=4;parser=4;local=5`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
+Current combined representation is `layout=5;parser=6;readerProjection=1;local=23`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA; parser 5 preserves exact Java String code units in constants and annotation values/defaults. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
 
 ## 10. Implementation and completion rules
 
@@ -406,6 +406,8 @@ Dependencies are already mediated, ordered and transitive. Each has exactly one 
 ## Appendix B. Codecs
 
 Primitives use the existing Codec: big-endian integers, fixed-width `id`, length-prefixed `str`/`lenBytes`, NUL-terminated `zstr`, u32-counted lists and explicit optional markers. Literal ASCII tags include their displayed `|`; variable fields below use explicit encodings. Human-readable key separators in MOD/RT/F/SL follow LocalStore's key functions; X's suffix uses the self-delimiting encoding in B.9.
+
+Java String values use `utf16 = u32 codeUnitCount || u16 codeUnit[codeUnitCount]`, without a byte-order mark or normalization. This applies to ConstantValue tag 8 and annotation value tag `s`, recursively through nested annotations, arrays and annotation defaults. It preserves NUL, supplementary pairs and unpaired surrogates. `str` remains standard UTF-8 for identifiers/descriptors and the other existing structural fields. Check lengths before allocating. A source/binary equality check alone is insufficient: test decoded values and native client class bytes against real dependencies and their stubs, since both fact producers could otherwise agree on the same lossy encoding.
 
 ### B.1 MachineLeaf and annotation roots
 
@@ -467,14 +469,15 @@ Existing `C|κ|leafSetExt` and `RS|κ|leafSetExt` APIs are unused placeholders. 
 LROOT|project = str FORMAT || id local.hash || id local.sum || u32 count || u8 level
               || id machineRoot || id modelHash || id commitment
 commitment = Digest(all preceding value bytes)
-history key = LROOT|project|u32 n, counting from 1
+history key = LROOT|project|22|u32 n, counting from 1
+sequence key = LSEQ|22|project, updated atomically with root/index publication
 ```
 
 ### B.8 FORMAT
 
 ```text
-machine = layout=4;digest=<name>;jdk=<feature>;parser=4
-local   = <machine>;local=5;javac=<runtime feature>
+machine = layout=5;digest=<name>;jdk=<feature>;parser=6;readerProjection=1
+local   = <machine>;local=23;javac=<full runtime version>;locale=root
 ```
 
 Parser changes when identical class bytes would yield different retained facts/projections. LOCAL changes when its record layout or persisted proof meaning changes. Incompatible commitments cannot take a current-format skip.
@@ -482,7 +485,7 @@ Parser changes when identical class bytes would yield different retained facts/p
 ### B.9 Header reverse keys
 
 ```text
-key = ASCII "X|H5|" || u8 form || zstr type || u8 kind || zstr name || id project || zstr path
+key = ASCII "X|H22|" || u8 form || zstr type || u8 kind || zstr name || id project || zstr module || u8 scope || zstr path
 value = empty
 form 0: T(type, kind, name)
 form 1: N(owner, TYPE, name)
@@ -501,6 +504,12 @@ member encoding = zstr memberInternalName || opt<str> exactInnerName || u16 emit
 ```
 
 Sorting is unsigned byte order. A type without member types has the original Digest(typeKey || oSum) key. A child method change cannot affect an outer stub that only emits the child's name/nesting/flags. S/ST are shared derivable caches and need not be retained by project roots.
+
+### B.11 Reader origins (Stage 3 amendment)
+
+LOCAL 23 extends Jar/Jrt route entries with `opt<id> readerImage` after their annotation identity. Their exact binding retains origin separately from k/a. `RT` appends `opt<id> readerBinding` after its existing fields. The binding is a ContentTree of `utf16 internalName -> u8 known || [id localClassImage]`, with keyed h; known=0 is explicitly unsupported, not absence. First-provider selection follows the actual classpath. The platform is discharged only through the fixed system/compiler input. Own/sibling S/ST keep their established resolution-only meaning. The separate Stage 3 compiler-view derivation is CV|Digest(bytes) → bytes, reached through the source binding described below; it never changes ST under an existing key.
+
+This root is an acceleration/storage coordinate, never an ACI dependency. It is built once per immutable scope; later explicit snapshot comparisons use Diff on the roots and direct per-class/per-operation keys. A metadata-only change can move RT while k, a and routeHash stay equal. Source-side reader extraction is still a Stage 3 completion obligation, not claimed by the binary vertical slice.
 
 ## Appendix C. Header compilation and SourceFacts
 
@@ -546,7 +555,7 @@ Emit this_class, flags, superclass/interfaces, signatures, permitted classes, ne
 
 API diff is Diff(T/O); metadata diff is equality of a then Diff(A/EA). Declaration upgrade impact is changed T/N/D prefixes → X → candidate F validation, including lookup absences. Stage 3 adds equivalent body-level proofs and executable results. Behavioral changes behind an equal API still require body/test analysis.
 
-Negative lookups are persisted observations with reverse reachability. Kept roots support content-history comparison; raw mutable K/V records are not themselves immutable historical snapshots. Shared semantic nodes/leaves/definer/stub records can be transported and digest-verified by a future cache. Each application uses existing projections instead of adding broad identities.
+Negative lookups are persisted observations with reverse reachability. Kept roots support content-history comparison; historical values are resolved by their immutable BV entry hashes, never by current raw mutable bindings. Shared semantic nodes/leaves/definer/stub records can be transported and digest-verified by a future cache. Each application uses existing projections instead of adding broad identities.
 
 ## Appendix E. Reconciliation record
 
@@ -555,3 +564,15 @@ The PR #58 review introduced split definer parts, header proofs, module descript
 Earlier statements that source k may differ because tail is inside T, source type annotations are deferred, all warning annotations are absent from A, nearest-state search is required, counts may be copied wholesale, incremental tree editing is future work, X is empty after cold boot, or memory is independent of project size are superseded. Historical acceptance of error-only stub tests does not exclude compiler warnings from the current resolution contract.
 
 Current completion evidence belongs in the associated progress/measurement notes. Remaining Stage 3 processor replay, body attribution/results/driver and the thirty Stage 3 invariants are not claimed complete by this reconciliation.
+### PR62 source-model and publication amendment (2026-10-07)
+
+Current LOCAL layout is 22. Header reverse keys use X|H22| and the SourceUnit suffix (module, scope, path). Rooted record values are immutable BV|Digest(value) blobs; current raw keys remain bindings and cannot resolve historical snapshots. LROOT history uses a versioned LSEQ counter updated atomically with the root/current reverse index, without a history scan.
+
+Source metadata uses PM trees of exact type/package keys to path plus PE declaration identity. PE nodes contain one declaration and ordered child IDs; nested declarations are shared, with lazy memoized reads. PB per scope indexes package presence/first metadata origin. Existing own/DD/DS/DC indexes select type definers, with the first occurrence of that k in the exact ordered origin binding selecting the source PM view. Equal T identities never identify source metadata globally. PB/PE roots are lookup/storage state and are not widened processor proof or ACI inputs.
+
+
+#### Source compiler-view binding (LOCAL 23 implementation)
+
+SL|project|module|scope = id k || id a || opt<id> compilerViewRoot || opt<id> readerImageRoot. compilerViewRoot is a ContentTree of utf16 internalName → contentId, with h=H(key || contentId); CV|contentId stores the exact bytes emitted for javac input. readerImageRoot is the independent ordered reader image extracted from those exact bytes. Neither root is a whole-environment proof input. They are persisted from the completed header model while that model is available, including private declarations and retained metadata absent from T/A. No executable body is attributed or serialized. Javac ClassWriter remains the metadata emitter; a classfile transform repairs enum/enclosing constructor parameters that native Lower would otherwise install. It preserves the order of the native metadata attributes. SourceFile and output-relevant native compiler settings are covered by the emitted bytes. Existing S/ST derivations and T/N/O/A/EA are unchanged.
+
+Built carries these roots independently of k/a and passes sibling reader images to origin binding. Stage 3 materialises CV, own-first then siblings in the route, and captures metadata operations on these inputs instead of treating them as fixed resolution stubs. Empty scopes have empty view trees. Scopes with header faults retain an explicit unavailable-view/non-reuse boundary; they do not acquire a proof of metadata parity. Concrete methods in this body-free compiler input have no Code; it is a javac declaration input, not a loadable result CF. Body-dependent synthetic initialization members such as <clinit> are excluded. Record/parameter-annotation/generic/failure reuse guards remain until their operation proofs are complete. The independent native comparison covers plain/annotated generic declarations, private/nested constructors, enums and records, with/without parameter names; broader acceptance remains open.

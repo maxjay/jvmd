@@ -90,7 +90,7 @@ public record Ann(String descriptor, List<Element> elements) {
                 out.u8(p.tag());
                 if (p.tag() == 'J' || p.tag() == 'D') out.u64(p.bits()); else out.u32(p.bits() & 0xFFFFFFFFL);
             }
-            case Val.Str s -> out.u8('s').str(s.value());
+            case Val.Str s -> out.u8('s').utf16(s.value());
             case Val.Enum e -> out.u8('e').str(e.descriptor()).str(e.constant());
             case Val.Cls c -> out.u8('c').str(c.descriptor());
             case Val.Nested n -> { out.u8('@'); n.annotation().encode(out); }
@@ -104,7 +104,7 @@ public record Ann(String descriptor, List<Element> elements) {
     public static Val decodeValue(Codec.Reader in) {
         int tag = in.u8();
         return switch (tag) {
-            case 's' -> new Val.Str(in.str());
+            case 's' -> new Val.Str(in.utf16());
             case 'Z', 'B', 'C', 'S', 'I', 'F' -> new Val.Prim(tag, in.u32());
             case 'J', 'D' -> new Val.Prim(tag, in.u64());
             case 'e' -> new Val.Enum(in.str(), in.str());

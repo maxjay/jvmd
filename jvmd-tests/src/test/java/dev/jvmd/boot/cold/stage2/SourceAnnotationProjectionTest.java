@@ -83,6 +83,60 @@ class SourceAnnotationProjectionTest {
                 """);
     }
 
+    @ParameterizedTest @MethodSource("cases")
+    void javaStringsInConstantsDefaultsAndAnnotationPathsMatchBinary(Digest digest, boolean parameters) throws Exception {
+        String text = "\\uD800|\\uDC00|\\uD83D\\uDE00|\\0|\\n|café";
+        compare(digest, parameters, false, """
+                package p;
+                import java.lang.annotation.*;
+                @Retention(RetentionPolicy.RUNTIME) @Target({ElementType.TYPE_USE,ElementType.RECORD_COMPONENT,ElementType.PARAMETER})
+                @interface A { String value() default "TEXT"; String[] array() default {"TEXT"}; }
+                @Retention(RetentionPolicy.CLASS) @interface B { A nested(); A[] array(); }
+                @B(nested=@A("TEXT"), array={@A(value="TEXT",array={"TEXT"})}) public class K {
+                    public static final String CONSTANT="TEXT";
+                    public @A("TEXT") String method(@A("TEXT") String parameter) { return parameter; }
+                    public record R(@A("TEXT") String component) {}
+                }
+                """.replace("TEXT", text));
+    }
+
+    @ParameterizedTest @MethodSource("cases")
+    void packageInfoEmissionPoliciesAndAnnotationsMatchBinary(Digest digest, boolean parameters) throws Exception {
+        int sequence=0;
+        for(var policy:List.of("legacy","nonempty","always"))for(var retention:List.of("NONE","SOURCE","CLASS","RUNTIME","DEPRECATED")) {
+            var project=dir.resolve("package-"+sequence++);
+            String annotation=retention.equals("NONE")?"":"@p.Label(p.Values.VALUE) "+(retention.equals("DEPRECATED")?"@Deprecated(since=\"1\",forRemoval=true) ":"");
+            var sources=Map.of("p/package-info.java","/** Package documentation. */ "+annotation+"package p;",
+                    "p/Label.java","package p; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy."+
+                            (retention.equals("NONE")||retention.equals("DEPRECATED")?"SOURCE":retention)+") @java.lang.annotation.Target(java.lang.annotation.ElementType.PACKAGE) public @interface Label {String value();} class Values {static final String VALUE=\"package\";}");
+            var options=new ArrayList<String>();options.add("-Xpkginfo:"+policy);if(parameters)options.add("-parameters");
+            var classes=Stage2Support.compile(project,sources,options,List.of());
+            var binaryFacts=new ArrayList<Fact>();var binaryEdges=new ArrayList<Entry>();
+            for(var c:classes.entrySet()) {
+                var parsed=ClassFacts.of(digest,c.getValue(),c.getKey().substring(0,c.getKey().length()-6));
+                binaryFacts.addAll(parsed.facts());binaryEdges.addAll(parsed.edges());
+            }
+            var expected=project(digest,binaryFacts,binaryEdges);
+            var inputs=new java.util.TreeMap<String,String>();sources.forEach((name,text)->inputs.put("app/src/main/java/"+name,text));
+            Stage2Support.write(project,inputs);
+            var model=dev.jvmd.index.layer.local.ProjectModel.parse(Stage2Support.model(project,
+                    new Stage2Support.Mod("app","g:app:1",List.of()).withOptions(options.toArray(String[]::new))));
+            var tree=new ContentTree(digest);var store=Stage2Support.jdkOnly(digest).copy();
+            var result=new Stage2(digest,tree,Stage2Support.FEATURE,1,project,ClassFacts::of).run(store,model);
+            assertThat(result.faults()).isEmpty();
+            var projectKey=Stage2.projectKey(digest,model);String path="app/src/main/java/p/package-info.java";
+            var row=dev.jvmd.index.layer.local.FileRow.decode(path,store.get(dev.jvmd.index.layer.local.LocalStore.fileKey(projectKey, Stage2Support.source(path))),digest.width());
+            if(!retention.equals("NONE"))assertThat(row.headerProof()).anyMatch(read->read.typeKey().equals("p/Values")&&read.kind()==dev.jvmd.index.layer.machine.Keys.FIELD&&read.name().equals("VALUE"));
+            var leaf=dev.jvmd.index.layer.machine.MachineLeaf.decode(store.get(MachineStore.leafKey(result.leaves().get("app/main"))),digest.width());
+            var annotations=dev.jvmd.index.layer.machine.AnnotationLeaf.decode(store.get(MachineStore.annotationLeafKey(result.annotations().get("app/main"))),digest.width());
+            var actual=new Projection(leaf.k(),result.annotations().get("app/main"),new Root(leaf.nHash(),leaf.r(),leaf.factCount(),leaf.nLevel()),annotations.annotations(),annotations.edges(),store);
+            assertThat(actual.k).as("%s/%s source/binary package-info projection",policy,retention).isEqualTo(expected.k);
+            sameTree(digest,"N",actual.names,expected.names,actual,expected);
+            sameTree(digest,"A",actual.annotations,expected.annotations,actual,expected);
+            sameTree(digest,"EA",actual.edges,expected.edges,actual,expected);
+        }
+    }
+
     private void compare(Digest digest, boolean parameters, boolean brokenBody, String source) throws Exception {
         var options = parameters ? List.of("-parameters") : List.<String>of();
         var classes = Stage2Support.compile(dir, Map.of("p/K.java", source), options, List.of());

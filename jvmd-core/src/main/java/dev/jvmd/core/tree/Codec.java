@@ -49,6 +49,12 @@ public final class Codec {
             u32(bytes.length);
             return raw(bytes);
         }
+        /** Java text: u32 UTF-16 code-unit count, then u16 code units, including NUL and unpaired surrogates. */
+        public Writer utf16(String s) {
+            u32(s.length());
+            for (int i = 0; i < s.length(); i++) u16(s.charAt(i));
+            return this;
+        }
         /** {@code zstr}: UTF-8 bytes then one 0x00. Java identifiers, internal names and descriptors cannot contain 0x00. */
         public Writer zstr(String s) { raw(s.getBytes(StandardCharsets.UTF_8)); return u8(0); }
         public Writer id(Identity id) { return raw(id.view()); }
@@ -79,11 +85,26 @@ public final class Codec {
         public long u64() { return (u32() << 32) | u32(); }
         public long i64() { return u64(); }
         public byte[] raw(int n) {
+            java.util.Objects.checkFromIndexSize(position, n, bytes.length);
             var out = Arrays.copyOfRange(bytes, position, position + n);
             position += n;
             return out;
         }
+        /** Consume a checked byte range without allocating a copy. */
+        public void skip(int n) {
+            java.util.Objects.checkFromIndexSize(position, n, bytes.length);
+            position += n;
+        }
         public String str() { return new String(raw(count()), StandardCharsets.UTF_8); }
+        /** Exact Java text; check the declared length before allocating or consuming its code units. */
+        public String utf16() {
+            if (remaining() < 4) throw new IllegalArgumentException("Truncated UTF-16 length");
+            long length = u32();
+            if (length > remaining() / 2) throw new IllegalArgumentException("Truncated UTF-16 text");
+            var text = new char[(int) length];
+            for (int i = 0; i < text.length; i++) text[i] = (char) u16();
+            return new String(text);
+        }
         public Identity id(int width) { return Identity.of(raw(width)); }
         public byte[] lenBytes() { return raw(count()); }
         /** {@code zstr}: UTF-8 bytes up to a 0x00, which is consumed and not part of the string. */

@@ -56,6 +56,20 @@ public final class Keys {
         return out.raw(m).toBytes();
     }
 
+    /** Exact package declaration identity, separate from a package-info class-file fact. */
+    public static byte[] packageElementKey(String qualifiedName) { return processorElementKey(new byte[0], "PACKAGE", qualifiedName); }
+
+    /** Processor-only elements (parameters, type parameters, packages, modules): disjoint from declaration fact keys. */
+    public static byte[] processorElementKey(byte[] parent, String kind, String name) {
+        return new Codec.Writer().u8(0).lenBytes(parent).zstr(kind).zstr(name).toBytes();
+    }
+
+    public static byte[] resourceKey(String path) { return new Codec.Writer().zstr(path).toBytes(); }
+
+    /** Exact generated output identity: source=0, class=1, other resource=2. */
+    public static byte[] generatedOutputKey(int kind, String path) { return new Codec.Writer().u8(kind).zstr(path).toBytes(); }
+    public static String generatedOutputPath(byte[] key) { var in = new Codec.Reader(key); in.u8(); return in.zstr(); }
+
     /** The {@code O} key of the type a fact belongs to. */
     public static byte[] ownerKeyOf(byte[] m) { return Arrays.copyOf(m, nul(m) + 1); }
 

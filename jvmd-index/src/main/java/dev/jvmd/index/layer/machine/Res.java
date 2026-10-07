@@ -106,12 +106,15 @@ public final class Res {
 
     public record Provides(String service, List<String> with) { }
 
+    /** Referenced nested declarations in native descriptor constant-pool traversal order. */
+    public record Inner(String name, String outer, String simpleName, int flags) { }
+
     /**
      * {@code str name || u16 flags || opt<str> version || list<requires> || list<exports> || list<opens> || list<str> uses ||
-     * list<provides>}: the {@code Module} attribute, with every name resolved.
+     * list<provides> || list<inner>}: the {@code Module} attribute and referenced {@code InnerClasses} metadata, with every name resolved.
      */
     public record Module(String name, int flags, String version, List<Requires> requires, List<Directive> exports, List<Directive> opens,
-                         List<String> uses, List<Provides> provides) {
+                         List<String> uses, List<Provides> provides, List<Inner> innerClasses) {
         void encode(Codec.Writer out) {
             out.str(name).u16(flags).optStr(version);
             out.u32(requires.size());
@@ -125,6 +128,8 @@ public final class Res {
                 out.str(p.service()).u32(p.with().size());
                 for (var w : p.with()) out.str(w);
             }
+            out.u32(innerClasses.size());
+            for (var inner : innerClasses) out.str(inner.name()).optStr(inner.outer()).optStr(inner.simpleName()).u16(inner.flags());
         }
 
         static Module decode(Codec.Reader in) {
@@ -140,7 +145,10 @@ public final class Res {
             n = in.count();
             var provides = new ArrayList<Provides>(n);
             for (int i = 0; i < n; i++) provides.add(new Provides(in.str(), strings(in)));
-            return new Module(name, flags, version, List.copyOf(requires), exports, opens, uses, List.copyOf(provides));
+            n = in.count();
+            var inners = new ArrayList<Inner>(n);
+            for (int i = 0; i < n; i++) inners.add(new Inner(in.str(), in.optStr(), in.optStr(), in.u16()));
+            return new Module(name, flags, version, List.copyOf(requires), exports, opens, uses, List.copyOf(provides), List.copyOf(inners));
         }
 
         private static void directives(Codec.Writer out, List<Directive> directives) {
@@ -177,7 +185,7 @@ public final class Res {
                 switch (constant.tag()) {
                     case 3, 4 -> out.u32(constant.bits() & 0xFFFFFFFFL);
                     case 5, 6 -> out.u64(constant.bits());
-                    case 8 -> out.str(constant.text());
+                    case 8 -> out.utf16(constant.text());
                     default -> throw new IllegalArgumentException("Unexpected ConstantValue tag " + constant.tag());
                 }
             }
@@ -194,7 +202,7 @@ public final class Res {
             var constant = switch (tag) {
                 case 3, 4 -> new Constant(tag, in.u32(), null);
                 case 5, 6 -> new Constant(tag, in.u64(), null);
-                case 8 -> new Constant(tag, 0, in.str());
+                case 8 -> new Constant(tag, 0, in.utf16());
                 default -> throw new IllegalArgumentException("Unexpected ConstantValue tag " + tag);
             };
             return new Field(access, signature, constant, Warnings.decode(in));

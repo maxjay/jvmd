@@ -65,8 +65,8 @@ class HeaderReverseTest {
         for (var consumer : consumers) {
             assertThat(consumer.project()).isEqualTo(before.project);
             paths.add(consumer.path());
-            var old = FileRow.decode(consumer.path(), before.store.get(LocalStore.fileKey(consumer.project(), consumer.path())), digest.width());
-            String module = consumer.path().substring(0, consumer.path().indexOf('/'));
+            var old = FileRow.decode(consumer.path(), before.store.get(LocalStore.fileKey(consumer.project(), consumer.source())), digest.width());
+            String module = consumer.module();
             var route = Route.decode(after.store.get(LocalStore.routeKey(after.project, module, LocalStore.MAIN)), digest.width());
             assertThat(HeaderProof.valid(old, new ContentTree(digest), leaf(digest, after, module), route, after.store::get))
                     .as("the selected fixture's candidate must actually have a changed consumed range: " + consumer.path()).isFalse();
@@ -83,15 +83,15 @@ class HeaderReverseTest {
                 "other/src/main/java/p/B.java", same,
                 "app/src/main/java/p/Unrelated.java", "package p; public class Unrelated { q.K onlyType; }"));
         var before = boot(digest);
-        var row1 = FileRow.decode("app/src/main/java/p/B.java", before.store.get(LocalStore.fileKey(before.project, "app/src/main/java/p/B.java")), digest.width());
-        var row2 = FileRow.decode("other/src/main/java/p/B.java", before.store.get(LocalStore.fileKey(before.project, "other/src/main/java/p/B.java")), digest.width());
+        var row1 = FileRow.decode("app/src/main/java/p/B.java", before.store.get(LocalStore.fileKey(before.project, Stage2Support.source("app/src/main/java/p/B.java"))), digest.width());
+        var row2 = FileRow.decode("other/src/main/java/p/B.java", before.store.get(LocalStore.fileKey(before.project, Stage2Support.source("other/src/main/java/p/B.java"))), digest.width());
         assertThat(row1.kappa()).isEqualTo(row2.kappa());
         assertThat(Route.decode(before.store.get(LocalStore.routeKey(before.project, "app", LocalStore.MAIN)), digest.width()).leafSetExt())
                 .isEqualTo(Route.decode(before.store.get(LocalStore.routeKey(before.project, "other", LocalStore.MAIN)), digest.width()).leafSetExt());
         var dependency = new ReverseIndex.Dependency(ReverseIndex.T, "q/K", Keys.FIELD, "VALUE");
         assertThat(ReverseIndex.consumers(digest, before.store, dependency)).hasSize(2);
-        assertThat(before.store.get(dependency.key(before.project, row1.path()))).isEmpty();
-        assertThat(before.store.get(dependency.key(before.project, row2.path()))).isEmpty();
+        assertThat(before.store.get(dependency.key(before.project, Stage2Support.source(row1.path())))).isEmpty();
+        assertThat(before.store.get(dependency.key(before.project, Stage2Support.source(row2.path())))).isEmpty();
         Stage2Support.write(root, Map.of("dep/src/main/java/q/K.java", "package q; public class K { public static final int VALUE = 2; }"));
         assertThat(candidates(digest, before, boot(digest))).containsExactly("app/src/main/java/p/B.java", "other/src/main/java/p/B.java");
     }
@@ -175,7 +175,7 @@ class HeaderReverseTest {
         assertThat(oldBase.h()).as("Base's own resolution identity excludes its separately keyed member type").isEqualTo(newBase.h());
         assertThat(oldBase.value()).isNotEqualTo(newBase.value());
         for (var path : List.of("app/src/main/java/p/Value.java", "app/src/main/java/p/Member.java")) {
-            var old = FileRow.decode(path, before.store.get(LocalStore.fileKey(before.project, path)), digest.width());
+            var old = FileRow.decode(path, before.store.get(LocalStore.fileKey(before.project, Stage2Support.source(path))), digest.width());
             assertThat(HeaderProof.valid(old, new ContentTree(digest), leaf(digest, after, "app"), newRoute, after.store::get)).isFalse();
         }
     }
@@ -215,7 +215,7 @@ class HeaderReverseTest {
                 "app/src/main/java/p/B.java", "package p; public class B { public static final int COPY = q.K.VALUE; }"));
         var before = boot(digest);
         var dependency = new ReverseIndex.Dependency(ReverseIndex.T, "q/K", Keys.FIELD, "VALUE");
-        byte[] oldKey = dependency.key(before.project, "app/src/main/java/p/B.java");
+        byte[] oldKey = dependency.key(before.project, Stage2Support.source("app/src/main/java/p/B.java"));
         Stage2Support.write(root, Map.of("app/src/main/java/p/B.java", "package p; public class B {}"));
         var after = boot(digest, before.store);
         assertThat(after.store.get(oldKey)).as("current secondary keys are removed atomically with root publication").isNull();

@@ -1,0 +1,63 @@
+PR62 indexed validation repair — 2026-10-07
+
+Base: 28f126eda685425dfa6d4e338cde3f61e70c676e plus this repair commit.
+Bodies format 14; LOCAL 22; MACHINE layout 4/parser 6.
+598 Java inputs frozen; SHA-256 of sorted raw-source manifest:
+2957c6fd20a742e14420a1571386ea1d68185aa1a9832ede45d4bd03044defe4
+All Java bytes verified unchanged after the run. Documentation is outside the source manifest.
+JDK 25.0.4.1+1; Maven 3.9.16; Windows; SHA-256 and SHA3-256.
+
+Command:
+mvn -B -pl jvmd-tests -am test -Dtest=ProofIndexTest,OutputRecoveryTest,FixedCompilerInputsTest,FixedMetadataTest,BodyOutputTest,BinaryMetadataAdmissionTest,BodyAttributeTest,BodyPoolTest,BodyProofTest,BodyRecordsTest,Stage3Test,ProcessedAttributeTest,BodyProcessorTest,BodyCollectorTest,ColdProjectBootTest,BodyGenerationTest,ModuleArchitectureTest,ForbiddenIdentifiersTest,Stage3ClasspathMeasurement,ProcessorReuseMeasurement -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+
+Result: 300 tests; 298 passed, 2 failed; zero errors/skips; 7m53s.
+The only failures are the unchanged initial ProcessorReuseMeasurement reusable-admission assertions, under both digests. F04's conservative metadata guard rejects that Lombok fixture before its edit loop. Its acceptance assertions have not been weakened.
+Local full log: review62-indexed-proof-frozen.log.
+
+Both digest repository oracles: 1,408 class files from 593 compilations; all 26 ordered diagnostic scopes equal; 10 descriptors emitted and compared. 334 files explicitly non-reusable per run. Fresh native equality is separate from proof/admission completeness.
+
+F05 evidence:
+- 576 full-proof state transitions per digest, with 24 own/ordered-route combinations. Indexed answers agree with full grouped reference validation.
+- Additional zero-only T and N queries test provider disappearance independently of positive header queries.
+- Native equal-T/different-N route-order fixture runs both directions.
+- Wrong starting binding rejects even an empty transition; source/basename/options/compiler changes reject. Unsupported metadata proofs cannot create an admitted index.
+- Production Attribute captures CI, the cold driver selects it under BROOT, and serial/parallel cold roots remain deterministic.
+- The native unrelated/consumed constant edit test reopens the persisted receipt, validates without reading C/RS/CF, preserves query root/ACI on success and rejects the consumed change. The historical CI remains unchanged.
+- Scale positive queries and type absences together: 257 / 2,049 / 16,385 entries, own and external edits, zero or one changed referenced question, both digests.
+- Current binding capture, persisted-header decoding, transition preparation and intersection are inside the allocation/work measurement. Raw node fetch bytes are logical store reads, not physical Rocks/JNI/disk I/O.
+- Receipt remains 320 bytes. Only 0 or 1 proof entries match. Query-tree reads are 4–8 nodes. Preparation includes 29–56 record reads in these fixtures. Allocation is reported below; these are observed thread allocation counts, not peak heap or portable timing bounds.
+- The validator writes no nodes; a refreshed compact receipt may be selected by its caller. Query root and ACI are unchanged when valid.
+
+Preceding focused gate: 174 tests passed after repairing value equality in CI. Native assertions were retained. The earlier failure was receipt object identity in Computed.equals, not evidence of native byte divergence.
+
+Boundaries:
+Preparation is shared per exact binding pair, not per consumer. Route moves or whole-leaf additions/removals can visit affected owner universes. Underlying Diff still has F09's cap-only worst case. No production tree code changed.
+The grouped validator remains an audit/reference fallback. The test reuse harness now reads compact CI receipts and memoises transitions by saved binding, but still enumerates all files; its initial F04 admission gate is failing. No passing end-to-end 2,000-file indexed run or complete LIVE scheduler is claimed.
+Processor observation size and independently current model verification remain separate costs and F04 obligations. Strict read-oracle coverage is excluded and remains open.
+Hosted Tests and benchmarks passed at 28f126ed before this repair; this record does not assert current full CI is green.
+
+Measured work rows:
+F05 Sha256 external=false referenced=false proof=257 receipt=320 prepareReads=29 prepareBytes=40051 proofNodes=4 proofBytes=22834 matched=0 allocated=186368
+F05 Sha256 external=false referenced=false proof=2049 receipt=320 prepareReads=39 prepareBytes=53149 proofNodes=8 proofBytes=14930 matched=0 allocated=192640
+F05 Sha256 external=false referenced=false proof=16385 receipt=320 prepareReads=47 prepareBytes=21861 proofNodes=6 proofBytes=25658 matched=0 allocated=154064
+F05 Sha256 external=true referenced=false proof=257 receipt=320 prepareReads=41 prepareBytes=41428 proofNodes=4 proofBytes=22834 matched=0 allocated=138616
+F05 Sha256 external=true referenced=false proof=2049 receipt=320 prepareReads=47 prepareBytes=55436 proofNodes=8 proofBytes=14930 matched=0 allocated=204120
+F05 Sha256 external=true referenced=false proof=16385 receipt=320 prepareReads=56 prepareBytes=25978 proofNodes=6 proofBytes=25658 matched=0 allocated=170032
+F05 Sha256 external=false referenced=true proof=257 receipt=320 prepareReads=29 prepareBytes=40051 proofNodes=4 proofBytes=22836 matched=1 allocated=123440
+F05 Sha256 external=false referenced=true proof=2049 receipt=320 prepareReads=39 prepareBytes=53149 proofNodes=6 proofBytes=14754 matched=1 allocated=190176
+F05 Sha256 external=false referenced=true proof=16385 receipt=320 prepareReads=47 prepareBytes=21861 proofNodes=6 proofBytes=25660 matched=1 allocated=154176
+F05 Sha256 external=true referenced=true proof=257 receipt=320 prepareReads=41 prepareBytes=41428 proofNodes=4 proofBytes=22836 matched=1 allocated=138728
+F05 Sha256 external=true referenced=true proof=2049 receipt=320 prepareReads=47 prepareBytes=55436 proofNodes=6 proofBytes=14754 matched=1 allocated=201816
+F05 Sha256 external=true referenced=true proof=16385 receipt=320 prepareReads=56 prepareBytes=25978 proofNodes=6 proofBytes=25660 matched=1 allocated=170144
+F05 Sha3 external=false referenced=false proof=257 receipt=320 prepareReads=29 prepareBytes=40051 proofNodes=4 proofBytes=22834 matched=0 allocated=123328
+F05 Sha3 external=false referenced=false proof=2049 receipt=320 prepareReads=31 prepareBytes=57281 proofNodes=8 proofBytes=16680 matched=0 allocated=199840
+F05 Sha3 external=false referenced=false proof=16385 receipt=320 prepareReads=39 prepareBytes=47327 proofNodes=8 proofBytes=22210 matched=0 allocated=205632
+F05 Sha3 external=true referenced=false proof=257 receipt=320 prepareReads=40 prepareBytes=41342 proofNodes=4 proofBytes=22834 matched=0 allocated=148528
+F05 Sha3 external=true referenced=false proof=2049 receipt=320 prepareReads=42 prepareBytes=59340 proofNodes=8 proofBytes=16680 matched=0 allocated=213920
+F05 Sha3 external=true referenced=false proof=16385 receipt=320 prepareReads=52 prepareBytes=40286 proofNodes=8 proofBytes=22210 matched=0 allocated=198616
+F05 Sha3 external=false referenced=true proof=257 receipt=320 prepareReads=29 prepareBytes=40051 proofNodes=4 proofBytes=22836 matched=1 allocated=123440
+F05 Sha3 external=false referenced=true proof=2049 receipt=320 prepareReads=31 prepareBytes=57281 proofNodes=6 proofBytes=16504 matched=1 allocated=197536
+F05 Sha3 external=false referenced=true proof=16385 receipt=320 prepareReads=39 prepareBytes=47327 proofNodes=8 proofBytes=22212 matched=1 allocated=205744
+F05 Sha3 external=true referenced=true proof=257 receipt=320 prepareReads=40 prepareBytes=41342 proofNodes=4 proofBytes=22836 matched=1 allocated=148640
+F05 Sha3 external=true referenced=true proof=2049 receipt=320 prepareReads=42 prepareBytes=59340 proofNodes=6 proofBytes=16504 matched=1 allocated=211616
+F05 Sha3 external=true referenced=true proof=16385 receipt=320 prepareReads=52 prepareBytes=40286 proofNodes=8 proofBytes=22212 matched=1 allocated=198728

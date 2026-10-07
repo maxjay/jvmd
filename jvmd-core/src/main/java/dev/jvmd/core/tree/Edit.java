@@ -14,8 +14,8 @@ import java.util.function.Function;
  * holds exactly what a full build would hold there, and the subtree's own chunking is what a full build would give it. A subtree with a
  * change is read and its children walked the same way, down to the leaf chunk, whose entries are merged with the changes. After a
  * change the builder may be mid-chunk (a removed boundary, an inserted entry moving a cap cut); the walk then reads on through the next
- * subtrees until a chunk ends where an old one ended, and from there reuses again. Content-defined boundaries make that happen within
- * a chunk or two, so the work is the length of the changed paths and not the size of the tree.
+ * subtrees until a chunk ends where an old one ended, and from there reuses again. Typical unconditioned hash boundaries permit
+ * local resynchronisation; adversarial cap-only runs can instead require a linear suffix rewrite.
  *
  * <p>The one subtree a boundary rule cannot vouch for is the last of a level, which a full build closes only because the input ended.
  * It is reused only if it also ended on a boundary of its own, so that appending to the tree cannot be mistaken for starting a new chunk.
@@ -50,13 +50,26 @@ final class Edit {
     private boolean pending(byte[] hi) { return next < changes.size() && (hi == null || Arrays.compareUnsigned(changes.get(next).key(), hi) < 0); }
 
     private void walk(Node.Child ref, int level, boolean rightmost, byte[] hi) {
-        if (!pending(hi) && out.emptyThrough(level) && (!rightmost || endedOnABoundary(ref, level))) {
-            out.inject(level, ref);
-            return;
+        List<Entry> entries = null;
+        List<Node.Child> children = null;
+        if (!pending(hi) && out.emptyThrough(level)) {
+            if (!rightmost) { out.inject(level, ref); return; }
+            var bytes = reader.apply(ref.hash());
+            boolean boundary;
+            if (level == 0) {
+                entries = Node.entries(bytes, tree.digest().width());
+                boundary = !entries.isEmpty() && (entries.size() == out.cap() || out.boundary(entries.getLast().key()));
+            } else {
+                children = Node.children(bytes, tree.digest().width());
+                boundary = children.size() == out.cap() || out.boundary(children.getLast().hash().view());
+            }
+            if (boundary) { out.inject(level, ref); return; }
         }
-        var bytes = reader.apply(ref.hash());
-        if (level == 0) { merge(Node.entries(bytes, tree.digest().width()), hi); return; }
-        var children = Node.children(bytes, tree.digest().width());
+        if (level == 0) {
+            if (entries == null) entries = Node.entries(reader.apply(ref.hash()), tree.digest().width());
+            merge(entries, hi); return;
+        }
+        if (children == null) children = Node.children(reader.apply(ref.hash()), tree.digest().width());
         for (int i = 0; i < children.size(); i++)
             walk(children.get(i), level - 1, rightmost && i == children.size() - 1, i + 1 < children.size() ? children.get(i + 1).first() : hi);
     }
@@ -75,15 +88,4 @@ final class Edit {
         }
     }
 
-    /** Did this node end on a chunk boundary (a boundary key or a full chunk), rather than because its level ran out of input? */
-    private boolean endedOnABoundary(Node.Child ref, int level) {
-        var bytes = reader.apply(ref.hash());
-        int width = tree.digest().width();
-        if (level == 0) {
-            var entries = Node.entries(bytes, width);
-            return !entries.isEmpty() && (entries.size() == out.cap() || out.boundary(entries.get(entries.size() - 1).key()));
-        }
-        var children = Node.children(bytes, width);
-        return children.size() == out.cap() || out.boundary(children.get(children.size() - 1).hash().view());
-    }
 }

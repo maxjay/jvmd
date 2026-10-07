@@ -1,0 +1,36 @@
+PR62 low-level processor admission/context follow-up
+Date: 2026-10-07
+Production unchanged from 5e6985e7b98e71d1b0a328619c27a256ebfea33f.
+Only Java-source change: jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BodyProcessorTest.java
+SHA256 of changed test at run: 39620a59399d059df3cebe28eb1212828113aa9807f2c2bdabbaadfd1fca1554
+
+Hosted Tests run 37610946033, at 5e6985e7:
+Phase 3: 860 tests, 6 failures, 0 errors/skips.
+All six failures were context-count expectations in three BodyProcessorTest
+methods under both digests. Native bytes, generated-source and diagnostic
+assertions passed before those final context assertions. The low-level helper
+uses Pool.withTask without Attribute's immutable compiler-input snapshot.
+It must therefore reject metadata admission for raw classpath jar completions
+and discard affected javac contexts. Updating assertions documents that
+intentional boundary; no integrity/admission check was weakened.
+InputTwo's no-external-metadata task remains admitted and can share its context.
+Processor-model observations and binary metadata admission are separate checks.
+
+Fresh local gate:
+JDK 25.0.4.1+1-LTS; Maven 3.9.16; Windows.
+mvn -B -pl jvmd-tests -am test
+  -Dtest=BodyProcessorTest,FixedCompilerInputsTest,ProcessedAttributeTest,BinaryMetadataAdmissionTest,BodyPoolTest
+  -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+
+BinaryMetadataAdmissionTest: 2 passed
+BodyProcessorTest: 14 passed
+ProcessedAttributeTest: 70 passed
+BodyPoolTest: 12 passed
+FixedCompilerInputsTest: 2 passed
+Total: 100 tests, 0 failures, 0 errors, 0 skips.
+BUILD SUCCESS. Total time: 01:10 min.
+Log: review62-processor-admission-contexts.log (ignored local log).
+
+This is not a passing full hosted suite or strict two-sided read-coverage gate.
+Earlier frozen 273-test/native-output evidence remains attributed to its exact
+594-source manifest. F04, F05 and F09 remain open.

@@ -1,0 +1,136 @@
+PR62 lexical/error/emission follow-up, 2026-10-07
+Base HEAD: ca706af486d2327145b10fc0f6d946ffc84b9140 plus this commit
+Java sources: 591 (tracked plus RetainedAnnotationDiagnosticTest.java)
+Sorted path/NUL/SHA256/LF manifest SHA256: 5c6f3ea1bfb2c2d4e631b10ce6b64d939b471b06dc96f06fdb1eef228114b88a
+Java source manifest unchanged throughout the native gate.
+JDK: 25.0.4.1+1; Maven: 3.9.16; Windows
+
+Command: mvn -B -pl jvmd-tests -am test -Dtest=Stage3ClasspathMeasurement,BodyCollectorTest,BodyPoolTest,RetainedAnnotationDiagnosticTest,BodyAttributeTest,BodyProofTest,ColdProjectBootTest,BodyGenerationTest,BodyReverseTest,BodyRecordsTest,ModuleArchitectureTest,ForbiddenIdentifiersTest -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+
+175 tests passed; zero failures/errors/skips; 4m03s.
+Both digests: all 1,384 class files and 26/26 diagnostic scopes equal fresh native javac. 586 files, 10 descriptors.
+
+digest: SHA-256
+project: C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566
+workers: 4
+stage3 wall ms: 37881
+jvmd-analyzer/main files=33 classes=125 equal=true
+jvmd-analyzer/test files=0 classes=0 equal=true
+jvmd-boot/main files=45 classes=163 equal=true
+jvmd-boot/test files=0 classes=0 equal=true
+jvmd-core/main files=49 classes=131 equal=true
+jvmd-core/test files=0 classes=0 equal=true
+jvmd-dist/main files=9 classes=39 equal=true
+jvmd-dist/test files=0 classes=0 equal=true
+jvmd-index-rocks/main files=21 classes=52 equal=true
+jvmd-index-rocks/test files=12 classes=13 equal=true
+jvmd-index/main files=97 classes=344 equal=true
+jvmd-index/test files=0 classes=0 equal=true
+jvmd-lsp/main files=2 classes=3 equal=true
+jvmd-lsp/test files=0 classes=0 equal=true
+jvmd-mcp/main files=2 classes=2 equal=true
+jvmd-mcp/test files=0 classes=0 equal=true
+jvmd-resolver/main files=7 classes=19 equal=true
+jvmd-resolver/maven3/main files=8 classes=20 equal=true
+jvmd-resolver/maven3/test files=0 classes=0 equal=true
+jvmd-resolver/maven4/main files=10 classes=22 equal=true
+jvmd-resolver/maven4/test files=0 classes=0 equal=true
+jvmd-resolver/test files=0 classes=0 equal=true
+jvmd-runtime/main files=17 classes=41 equal=true
+jvmd-runtime/test files=0 classes=0 equal=true
+jvmd-tests/main files=0 classes=0 equal=true
+jvmd-tests/test files=274 classes=410 equal=true
+classpath equality: 26/26 scopes; files=586 classes=1384
+module descriptors included in byte oracle: 10; emitted=10
+
+digest: SHA3-256
+project: C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566
+workers: 4
+stage3 wall ms: 37797
+jvmd-analyzer/main files=33 classes=125 equal=true
+jvmd-analyzer/test files=0 classes=0 equal=true
+jvmd-boot/main files=45 classes=163 equal=true
+jvmd-boot/test files=0 classes=0 equal=true
+jvmd-core/main files=49 classes=131 equal=true
+jvmd-core/test files=0 classes=0 equal=true
+jvmd-dist/main files=9 classes=39 equal=true
+jvmd-dist/test files=0 classes=0 equal=true
+jvmd-index-rocks/main files=21 classes=52 equal=true
+jvmd-index-rocks/test files=12 classes=13 equal=true
+jvmd-index/main files=97 classes=344 equal=true
+jvmd-index/test files=0 classes=0 equal=true
+jvmd-lsp/main files=2 classes=3 equal=true
+jvmd-lsp/test files=0 classes=0 equal=true
+jvmd-mcp/main files=2 classes=2 equal=true
+jvmd-mcp/test files=0 classes=0 equal=true
+jvmd-resolver/main files=7 classes=19 equal=true
+jvmd-resolver/maven3/main files=8 classes=20 equal=true
+jvmd-resolver/maven3/test files=0 classes=0 equal=true
+jvmd-resolver/maven4/main files=10 classes=22 equal=true
+jvmd-resolver/maven4/test files=0 classes=0 equal=true
+jvmd-resolver/test files=0 classes=0 equal=true
+jvmd-runtime/main files=17 classes=41 equal=true
+jvmd-runtime/test files=0 classes=0 equal=true
+jvmd-tests/main files=0 classes=0 equal=true
+jvmd-tests/test files=274 classes=410 equal=true
+classpath equality: 26/26 scopes; files=586 classes=1384
+module descriptors included in byte oracle: 10; emitted=10
+
+Focused native-observer/collector/proof/pool/format/architecture gate: 150 tests passed with diagnostic reporting enabled. This is not a strict coverage pass.
+
+Trace inventory: 203 traces.
+UNJUSTIFIED 22 observations / 6 distinct.
+4 Missing[kind=D, owner=java/lang/Value, name=]
+4 Missing[kind=D, owner=java/lang/java, name=]
+2 Missing[kind=D, owner=p/Value, name=]
+4 Missing[kind=D, owner=p/java, name=]
+4 Missing[kind=N, owner=java/lang/Object, name=java]
+4 Missing[kind=TYPE, owner=java/lang/String, name=]
+
+MISSING_QUERY 3535 observations / 44 distinct.
+4 Missing[kind=D, owner=java/lang, name=]
+175 Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=ANNOTATION_TYPE]
+177 Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=CONSTRUCTOR]
+177 Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=FIELD]
+177 Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=LOCAL_VARIABLE]
+177 Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=METHOD]
+177 Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=MODULE]
+177 Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=PACKAGE]
+177 Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=PARAMETER]
+177 Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=TYPE]
+175 Missing[kind=FIELD, owner=java/lang/annotation/RetentionPolicy, name=RUNTIME]
+10 Missing[kind=FIELD, owner=p/App$1, name=$SwitchMap$q$E]
+4 Missing[kind=METHOD, owner=, name=get]
+175 Missing[kind=METHOD, owner=java/lang/Deprecated, name=forRemoval]
+175 Missing[kind=METHOD, owner=java/lang/Deprecated, name=since]
+2 Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=forRemoval]
+6 Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=value]
+175 Missing[kind=METHOD, owner=java/lang/annotation/Retention, name=value]
+177 Missing[kind=METHOD, owner=java/lang/annotation/Target, name=value]
+4 Missing[kind=METHOD, owner=p/App$, name=apply]
+2 Missing[kind=METHOD, owner=p/App$, name=run]
+4 Missing[kind=METHOD, owner=q/First, name=]
+4 Missing[kind=METHOD, owner=q/Second, name=]
+2 Missing[kind=TYPE, owner=java/lang/Class, name=]
+175 Missing[kind=TYPE, owner=java/lang/Deprecated, name=]
+4 Missing[kind=TYPE, owner=java/lang/Error, name=]
+10 Missing[kind=TYPE, owner=java/lang/NoSuchFieldError, name=]
+2 Missing[kind=TYPE, owner=java/lang/RuntimeException, name=]
+16 Missing[kind=TYPE, owner=java/lang/String, name=]
+14 Missing[kind=TYPE, owner=java/lang/Throwable, name=]
+175 Missing[kind=TYPE, owner=java/lang/annotation/ElementType, name=]
+175 Missing[kind=TYPE, owner=java/lang/annotation/Retention, name=]
+175 Missing[kind=TYPE, owner=java/lang/annotation/RetentionPolicy, name=]
+175 Missing[kind=TYPE, owner=java/lang/annotation/Target, name=]
+20 Missing[kind=TYPE, owner=java/lang/invoke/CallSite, name=]
+6 Missing[kind=TYPE, owner=java/lang/invoke/MethodHandle, name=]
+20 Missing[kind=TYPE, owner=java/lang/invoke/MethodHandles$Lookup, name=]
+20 Missing[kind=TYPE, owner=java/lang/invoke/MethodHandles, name=]
+20 Missing[kind=TYPE, owner=java/lang/invoke/MethodType, name=]
+2 Missing[kind=TYPE, owner=java/lang/invoke/TypeDescriptor, name=]
+10 Missing[kind=TYPE, owner=java/util/function/Supplier, name=]
+2 Missing[kind=TYPE, owner=q/First$Value, name=]
+2 Missing[kind=TYPE, owner=q/Second$Value, name=]
+2 Missing[kind=TYPE, owner=q/Util, name=]
+
+F04 remains open. Empty/static-import and enum-scope observer corrections are independently tested. Remaining inventory is not automatically a count of semantic defects. RetainedAnnotationDiagnosticTest separately establishes a real diagnostic counterexample with equal T. No annotation projection/admission repair is claimed.

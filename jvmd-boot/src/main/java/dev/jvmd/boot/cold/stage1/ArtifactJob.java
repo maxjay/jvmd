@@ -27,7 +27,9 @@ import java.util.List;
  */
 public final class ArtifactJob {
     /** What indexing one location gave: its leaf key, or null if it is not a readable archive, and the entries skipped in it. */
-    public record Indexed(Identity k, Identity a, List<String> faults) { }
+    public record Indexed(Identity k, Identity a, List<String> faults,Identity reader) {
+        public Indexed(Identity k,Identity a,List<String> faults) {this(k,a,faults,null);}
+    }
 
     /**
      * Indexes one location into the shared node space and returns its leaf key (stage 2, 3.15): the same {@code L|k} and nodes a
@@ -39,7 +41,7 @@ public final class ArtifactJob {
         new ArtifactJob(digest, tree, jdkFeature, seen, leaves, written, store, parser, new ClassMemo(digest, List.of(location))).run(location);
         var observation = seen.all().get(0);
         if (seen.unreadableReason(observation) != null) return new Indexed(null, null, List.of(seen.unreadableReason(observation)));
-        return new Indexed(leaves.kFor(observation.bh()), leaves.aFor(observation.bh()), seen.skipped(observation.bh()));
+        return new Indexed(leaves.kFor(observation.bh()), leaves.aFor(observation.bh()), seen.skipped(observation.bh()),leaves.readerFor(observation.bh()));
     }
 
     /** Copy-and-digest chunk when hashing a mapped jar. One per worker thread; it sizes a copy, not a limit on anything. */
@@ -101,6 +103,7 @@ public final class ArtifactJob {
     private void work(Enumerate.Location location) {
         var builder = new LeafBuilder(tree, sink);
         var faults = new ArrayList<String>();
+        var readers=new java.util.TreeMap<byte[],dev.jvmd.core.tree.Entry>(java.util.Arrays::compareUnsigned);
         Identity bh;
         // The arena owns the mapping; leaving this block releases the jar before N, E and O are built.
         try (var arena = location.isModule() ? null : Arena.ofConfined()) {
@@ -139,7 +142,10 @@ public final class ArtifactJob {
                     faults.add(item.path());
                     continue;
                 }
-                if (facts.facts().isEmpty()) continue; // a local or anonymous class (stage 2, C.4): no facts, no type entry
+                if(facts.reader()!=null) {
+                    var image=dev.jvmd.index.layer.machine.ReaderImage.seal(tree,sink,facts.reader());readers.put(image.key(),image);
+                }
+                if (facts.facts().isEmpty()) continue; // Reader data above survives the API filter.
                 for (var fact : facts.facts()) builder.add(fact);
                 builder.edges(facts.edges());
             }
@@ -147,6 +153,8 @@ public final class ArtifactJob {
         seen.faults(bh, faults); // per location, into P| at commit
 
         var k = builder.seal();
+        // Independent of claim(k): equal resolution APIs can have distinct private reader metadata.
+        leaves.reader(bh,tree.build(readers.values(),sink.named("READER")).hash());
         store.putAnnotationLeaf(builder.a(), new dev.jvmd.index.layer.machine.AnnotationLeaf(builder.annotations(), builder.annotationEdges()).encode());
         if (!leaves.claim(k)) {
             leaves.attach(bh, k, builder.a());

@@ -1,0 +1,55 @@
+F09 focused comparison: isolated experiment, no production tree change
+Baseline production commit: 5e6985e7b98e71d1b0a328619c27a256ebfea33f
+Date: 2026-10-07
+Host: Windows; JDK 25.0.4.1+1-LTS; -Xmx2g -Xss16m
+Both SHA-256 and SHA3-256; C=128, B=32
+
+Fresh compile of the actual production hash/tree sources and the experiment:
+PowerShell from repository root:
+$localitySources = @(rg --files jvmd-core/src/main/java/dev/jvmd/core/hash jvmd-core/src/main/java/dev/jvmd/core/tree | Sort-Object)
+& 'C:\Users\Max\tools\jdk-25.0.4.1+1\bin\javac.exe' -d jvmd-tests/target/locality-fresh @localitySources docs/experiments/LocalityComparison.java
+& 'C:\Users\Max\tools\jdk-25.0.4.1+1\bin\java.exe' -Xmx2g -Xss16m -cp jvmd-tests/target/locality-fresh LocalityComparison > docs/measurements/pr62-locality-comparison.csv 2> review62-locality-comparison.log
+
+1176 data rows. Five 256-entry warm-up comparisons per digest, then independently
+measured operations: fresh build; first/middle/last deletion, middle replacement,
+first insertion; exact Diff for every edit; get; one-entry and half-range sums.
+21 fixtures per digest. Existing tree construction and copied store maps are
+outside edit/query counters. Every encoded read clones its buffer in both
+implementations. Node emissions include duplicates; new-node counts/bytes are
+content-address deduplicated. Thread allocation is the median of three measured
+executions, not maximum live memory. No physical Rocks/disk I/O or elapsed-time
+claim. No production ContentList change.
+
+Correctness validation outside the counters:
+- incremental/fresh root equality after every measured edit;
+- independent sums, exact changed maps, ordered enumeration and restore roots;
+- recursive stored hash/count/sum verification;
+- 2000 mixed history operations per digest, empty/prefix/FF keys and range checks;
+- shuffled reconstruction of the final map gives the same root;
+- 100 independently built multi-change map pairs per digest, exact Diff oracle.
+
+Complete stderr:
+Java=25.0.4.1+1-LTS; CAP=128; B=32; cloned reads; median of 3 allocations; no Rocks I/O
+PASS checks=2496354; production source unchanged; comparison only
+
+CSV SHA256: 02657b36c497a0a5e047e08c394dfd18e32ef58686d896376f9f6ebfe09f3652
+Source manifest SHA256: 8c8645f717ff9096ab2ac0c7fc13c20fc4de26c2f8a8c7a69a0a05df0b1d3ce6
+
+SHA256 source manifest:
+496da54fb6fc136d452d882e14e101e12ed952cfcf570983c4f2a79ed87d76c0  docs/experiments/LocalityComparison.java
+98e10a13c32535ad612f5052773531138dddb7e47e83f484d4011bdd0983b2a8  jvmd-core/src/main/java/dev/jvmd/core/hash/Digest.java
+994fd7e3f073f72d7ddc8c061bed3491434d9375cb1932a2c77323705ee263c6  jvmd-core/src/main/java/dev/jvmd/core/hash/digests/Sha256.java
+4f6517392048d08b24cc8cd183bdb0bb938a1c23f2493331f20a5e7eecba9572  jvmd-core/src/main/java/dev/jvmd/core/hash/Hash64.java
+982a78c112d37d37aad4524cb6cd74e6036b1c56923864f170ad801844cc72f7  jvmd-core/src/main/java/dev/jvmd/core/hash/Identity.java
+ae637bb02f284579c2780b9500a7c894301f8edda8460474192528d5f058bd65  jvmd-core/src/main/java/dev/jvmd/core/hash/Sum.java
+9af2cfdb41cfc955624a62bc9fc89051d7daa213a459879aaa42fc4d6b8021b2  jvmd-core/src/main/java/dev/jvmd/core/tree/Chunker.java
+0051777bde13b2cba8234ef62349382d9121318c00cd3e07a2f28d2bff8b27bc  jvmd-core/src/main/java/dev/jvmd/core/tree/Codec.java
+f4145731abeea9d2ec73ef19d16d8cec9b2fd7c1ead277c23dca38a84ef24d7b  jvmd-core/src/main/java/dev/jvmd/core/tree/ContentList.java
+16a94109f7e24e8472347f882949b70dd2e4edc8c9ee44a667e5802d46fe47f5  jvmd-core/src/main/java/dev/jvmd/core/tree/ContentTree.java
+19b79eb0bf6bb1711cbc30b8c2f489bd87382b1d0cab3b8f247b5e58ced9c867  jvmd-core/src/main/java/dev/jvmd/core/tree/Diff.java
+2655647175ec3e1fe4eba1d2f03241012482f8c85d96ddcbbaea6d541ba4220e  jvmd-core/src/main/java/dev/jvmd/core/tree/Edit.java
+d1c3210313a6547138b3dbf9ccc5d48990b59848543729f62505c03c7db12d09  jvmd-core/src/main/java/dev/jvmd/core/tree/Entry.java
+3b6583e9143100990f6167531f31146fa38e6934c4d73a3bad43de111f962dff  jvmd-core/src/main/java/dev/jvmd/core/tree/Node.java
+db6c7398a9e75252ec68b0cb0ffd334de177440c06c0abe47d8626e57e5dbb10  jvmd-core/src/main/java/dev/jvmd/core/tree/NodeSink.java
+41716d5877310f15ccce47752c6e52fb3d0e783cfee6c3b9e80bc665ad8033b3  jvmd-core/src/main/java/dev/jvmd/core/tree/OrderedDiff.java
+d21a948f89e02777faefc671dd40d5c23695e130c18f2f326a108a28d4a59f37  jvmd-core/src/main/java/dev/jvmd/core/tree/Root.java

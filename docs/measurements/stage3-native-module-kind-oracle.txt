@@ -1,0 +1,279 @@
+Native read oracle: exact module-descriptor classification
+Diagnostic collection only; strict coverage remains RED.
+
+A descriptor is identified by its ModuleSymbol owner and owner.module_info object identity.
+The module name stays qualified. It is not a body type named java/base/module-info.
+No module observation is excluded: every MODULE observation remains uncovered.
+Ordinary class observations, missing lookups and predefined-scope records remain separate.
+
+Completed proof traces: 500
+Loaded-class observations: 4872
+Module-descriptor observations: 18340
+External absent lookups: 2138
+Predefined-scope absent lookups: 342
+Uncovered observations: 21886
+Distinct uncovered observations: 190
+
+Count	Module descriptor
+262	java.base
+262	java.compiler
+262	java.datatransfer
+262	java.desktop
+262	java.instrument
+262	java.logging
+262	java.management
+262	java.management.rmi
+262	java.naming
+262	java.net.http
+262	java.prefs
+262	java.rmi
+262	java.scripting
+262	java.se
+262	java.security.jgss
+262	java.security.sasl
+262	java.smartcardio
+262	java.sql
+262	java.sql.rowset
+262	java.transaction.xa
+262	java.xml
+262	java.xml.crypto
+262	jdk.accessibility
+262	jdk.attach
+262	jdk.charsets
+262	jdk.compiler
+262	jdk.crypto.cryptoki
+262	jdk.crypto.ec
+262	jdk.crypto.mscapi
+262	jdk.dynalink
+262	jdk.editpad
+262	jdk.graal.compiler
+262	jdk.graal.compiler.management
+262	jdk.hotspot.agent
+262	jdk.httpserver
+262	jdk.incubator.vector
+262	jdk.internal.ed
+262	jdk.internal.jvmstat
+262	jdk.internal.le
+262	jdk.internal.md
+262	jdk.internal.opt
+262	jdk.internal.vm.ci
+262	jdk.jartool
+262	jdk.javadoc
+262	jdk.jcmd
+262	jdk.jconsole
+262	jdk.jdeps
+262	jdk.jdi
+262	jdk.jdwp.agent
+262	jdk.jfr
+262	jdk.jlink
+262	jdk.jpackage
+262	jdk.jshell
+262	jdk.jsobject
+262	jdk.jstatd
+262	jdk.localedata
+262	jdk.management
+262	jdk.management.agent
+262	jdk.management.jfr
+262	jdk.naming.dns
+262	jdk.naming.rmi
+262	jdk.net
+262	jdk.nio.mapmode
+262	jdk.sctp
+262	jdk.security.auth
+262	jdk.security.jgss
+262	jdk.unsupported
+262	jdk.unsupported.desktop
+262	jdk.xml.dom
+262	jdk.zipfs
+
+Count	Uncovered observation
+2	ABSENT Missing[kind=D, owner=com/google, name=]
+2	ABSENT Missing[kind=D, owner=com/google/auto, name=]
+2	ABSENT Missing[kind=D, owner=com/google/auto/value, name=]
+12	ABSENT Missing[kind=D, owner=java/io, name=]
+38	ABSENT Missing[kind=D, owner=java/lang, name=]
+12	ABSENT Missing[kind=D, owner=java/lang/annotation, name=]
+16	ABSENT Missing[kind=D, owner=java/util, name=]
+4	ABSENT Missing[kind=D, owner=javax/annotation, name=]
+4	ABSENT Missing[kind=D, owner=javax/annotation/processing, name=]
+4	ABSENT Missing[kind=D, owner=org/jspecify, name=]
+4	ABSENT Missing[kind=D, owner=org/jspecify/nullness, name=]
+4	ABSENT Missing[kind=D, owner=org/jspecify/nullness/Nullable, name=]
+4	ABSENT Missing[kind=D, owner=p/Holder$Nested, name=]
+4	ABSENT Missing[kind=D, owner=p/Metadata$Choice, name=]
+4	ABSENT Missing[kind=D, owner=p/Metadata$ImplicitChoice, name=]
+4	ABSENT Missing[kind=D, owner=p/Object, name=]
+4	ABSENT Missing[kind=D, owner=p/Override, name=]
+4	ABSENT Missing[kind=METHOD, owner=, name=get]
+2	ABSENT Missing[kind=METHOD, owner=java/io/Serializable, name=ordinal]
+2	ABSENT Missing[kind=METHOD, owner=java/io/Serializable, name=values]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/Comparable, name=ordinal]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/Comparable, name=valueOf]
+6	ABSENT Missing[kind=METHOD, owner=java/lang/Comparable, name=values]
+6	ABSENT Missing[kind=METHOD, owner=java/lang/Enum, name=values]
+12	ABSENT Missing[kind=METHOD, owner=java/lang/Number, name=valueOf]
+12	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=bootstrap]
+26	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=makeConcatWithConstants]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=metafactory]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=ordinal]
+28	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=requireNonNull]
+16	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=valueOf]
+6	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=values]
+6	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=forRemoval]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=nested]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=number]
+8	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=since]
+12	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=type]
+44	ABSENT Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=value]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/constant/Constable, name=ordinal]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/constant/Constable, name=valueOf]
+6	ABSENT Missing[kind=METHOD, owner=java/lang/constant/Constable, name=values]
+2	ABSENT Missing[kind=METHOD, owner=q/E, name=ordinal]
+4	ABSENT Missing[kind=N, owner=java/lang/Object, name=T]
+6	LOAD Plain
+8	LOAD com/google/auto/value/AutoBuilder
+8	LOAD com/google/auto/value/AutoOneOf
+4	LOAD com/google/auto/value/AutoValue
+4	LOAD com/google/auto/value/AutoValue$Builder
+4	LOAD com/google/auto/value/AutoValue$CopyAnnotations
+14	LOAD fixture/PackageTag
+6	LOAD fixture/PackageTags
+4	LOAD fixture/Spot
+4	LOAD fixture/Spots
+4	LOAD fixture/Tag
+4	LOAD fixture/Tags
+8	LOAD java/io/IOException
+342	LOAD java/io/Serializable
+472	LOAD java/lang/AutoCloseable
+40	LOAD java/lang/Boolean
+42	LOAD java/lang/Byte
+42	LOAD java/lang/Character
+24	LOAD java/lang/Class
+6	LOAD java/lang/CloneNotSupportedException
+4	LOAD java/lang/Comparable
+272	LOAD java/lang/Deprecated
+40	LOAD java/lang/Double
+4	LOAD java/lang/Enum$EnumDesc
+8	LOAD java/lang/Error
+42	LOAD java/lang/Float
+34	LOAD java/lang/Integer
+4	LOAD java/lang/InterruptedException
+42	LOAD java/lang/Long
+2	LOAD java/lang/MatchException
+2	LOAD java/lang/NoSuchFieldError
+8	LOAD java/lang/Number
+8	LOAD java/lang/Override
+2	LOAD java/lang/RuntimeException
+42	LOAD java/lang/Short
+42	LOAD java/lang/String
+4	LOAD java/lang/SuppressWarnings
+12	LOAD java/lang/Throwable
+44	LOAD java/lang/Void
+284	LOAD java/lang/annotation/ElementType
+4	LOAD java/lang/annotation/Inherited
+14	LOAD java/lang/annotation/Repeatable
+278	LOAD java/lang/annotation/Retention
+278	LOAD java/lang/annotation/RetentionPolicy
+284	LOAD java/lang/annotation/Target
+30	LOAD java/lang/invoke/CallSite
+16	LOAD java/lang/invoke/MethodHandle
+38	LOAD java/lang/invoke/MethodHandles
+38	LOAD java/lang/invoke/MethodHandles$Lookup
+30	LOAD java/lang/invoke/MethodType
+8	LOAD java/lang/invoke/TypeDescriptor
+4	LOAD java/net/package-info
+16	LOAD java/util/List
+4	LOAD java/util/Map
+4	LOAD java/util/Optional
+24	LOAD java/util/function/Supplier
+4	LOAD javax/annotation/processing/Generated
+12	LOAD late/Loaded
+2	LOAD lombok/AccessLevel
+4	LOAD p/Base$Inherited
+20	LOAD p/Beta
+4	LOAD p/Holder
+4	LOAD p/Holder$Nested
+10	LOAD p/Input
+4	LOAD p/Input$Nested
+10	LOAD p/Label
+34	LOAD p/Metadata
+6	LOAD p/Other
+28	LOAD p/Two
+12	LOAD p/Use
+4	LOAD p/Zeta
+6	LOAD p/package-info
+2	LOAD q/First$Value
+2	LOAD q/I
+6	LOAD q/Other
+2	LOAD q/Second$Value
+2	LOAD q/Util
+262	MODULE java.base
+262	MODULE java.compiler
+262	MODULE java.datatransfer
+262	MODULE java.desktop
+262	MODULE java.instrument
+262	MODULE java.logging
+262	MODULE java.management
+262	MODULE java.management.rmi
+262	MODULE java.naming
+262	MODULE java.net.http
+262	MODULE java.prefs
+262	MODULE java.rmi
+262	MODULE java.scripting
+262	MODULE java.se
+262	MODULE java.security.jgss
+262	MODULE java.security.sasl
+262	MODULE java.smartcardio
+262	MODULE java.sql
+262	MODULE java.sql.rowset
+262	MODULE java.transaction.xa
+262	MODULE java.xml
+262	MODULE java.xml.crypto
+262	MODULE jdk.accessibility
+262	MODULE jdk.attach
+262	MODULE jdk.charsets
+262	MODULE jdk.compiler
+262	MODULE jdk.crypto.cryptoki
+262	MODULE jdk.crypto.ec
+262	MODULE jdk.crypto.mscapi
+262	MODULE jdk.dynalink
+262	MODULE jdk.editpad
+262	MODULE jdk.graal.compiler
+262	MODULE jdk.graal.compiler.management
+262	MODULE jdk.hotspot.agent
+262	MODULE jdk.httpserver
+262	MODULE jdk.incubator.vector
+262	MODULE jdk.internal.ed
+262	MODULE jdk.internal.jvmstat
+262	MODULE jdk.internal.le
+262	MODULE jdk.internal.md
+262	MODULE jdk.internal.opt
+262	MODULE jdk.internal.vm.ci
+262	MODULE jdk.jartool
+262	MODULE jdk.javadoc
+262	MODULE jdk.jcmd
+262	MODULE jdk.jconsole
+262	MODULE jdk.jdeps
+262	MODULE jdk.jdi
+262	MODULE jdk.jdwp.agent
+262	MODULE jdk.jfr
+262	MODULE jdk.jlink
+262	MODULE jdk.jpackage
+262	MODULE jdk.jshell
+262	MODULE jdk.jsobject
+262	MODULE jdk.jstatd
+262	MODULE jdk.localedata
+262	MODULE jdk.management
+262	MODULE jdk.management.agent
+262	MODULE jdk.management.jfr
+262	MODULE jdk.naming.dns
+262	MODULE jdk.naming.rmi
+262	MODULE jdk.net
+262	MODULE jdk.nio.mapmode
+262	MODULE jdk.sctp
+262	MODULE jdk.security.auth
+262	MODULE jdk.security.jgss
+262	MODULE jdk.unsupported
+262	MODULE jdk.unsupported.desktop
+262	MODULE jdk.xml.dom
+262	MODULE jdk.zipfs

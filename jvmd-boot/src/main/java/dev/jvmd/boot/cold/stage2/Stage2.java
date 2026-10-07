@@ -38,8 +38,8 @@ import java.util.concurrent.ConcurrentSkipListMap;
  *
  * <p>Everything that shapes the result is a constructor argument with one call site ({@code BootDecision}): the digest, the tree's
  * boundary parameters, the JDK feature version, the worker count, the Maven repository root and the class parser stage 1 uses for
- * jars indexed on the spot. No LOCAL record is read before the root is written; MACHINE ({@code P|}, {@code L|}, {@code N|} and its
- * {@code ROOT}) is the committed layer below and may be.
+ * jars indexed on the spot. Before publication it reads MACHINE and shared derivations/capabilities listed in {@link LocalStore};
+ * it does not read a previous project's mutable file, route, configuration or domain records to construct the new root.
  */
 public final class Stage2 {
     /** What the boot did: the numbers of the one log line. {@code faults} are {@code path: declaration: reason}, and the classpath entries that bound to nothing. */
@@ -92,8 +92,10 @@ public final class Stage2 {
                 boot.jdkLeafSet = boot.jdkSetRoot.hash();
                 boot.sink.flush(); // publish main-thread leaf-set nodes before worker folds
                 var jars = new ArrayList<ProjectModel.Dependency>();
-                for (var module : model.modules())
+                for (var module : model.modules()) {
                     for (var scope : List.of(module.main(), module.test())) for (var d : scope.dependencies()) if (d.module() == null) jars.add(d);
+                    jars.addAll(module.processing().path());
+                }
                 defaults.prepare(jars);
                 for (var module : model.modules()) {
                     for (int scope : new int[] {LocalStore.MAIN, LocalStore.TEST}) {
@@ -115,28 +117,55 @@ public final class Stage2 {
                 boot.faults.addAll(defaults.notes());
                 runInDependencyOrder(boot, order);
 
+                // Global processor history can advance in another project/body generation without mutating this LOCAL snapshot.
+                for (var observation : boot.processorCapabilities.entrySet())
+                    store.observeProcessor(observation.getKey().path(), observation.getKey().name(), observation.getValue());
+
                 // Step 3: the LOCAL tree over the records. One batch for the records, one for the tree, one for the root.
                 var records = new ConcurrentSkipListMap<byte[], byte[]>(Arrays::compareUnsigned);
                 records.putAll(boot.definers);
+                for (var record : boot.processingRecords.entrySet()) {
+                    // Content-addressed derivations were already deduplicated by GeneratedOutputs.
+                    if (record.getKey()[0] == 'G') records.put(record.getKey(), record.getValue());
+                    else put(store, records, record.getKey(), record.getValue());
+                }
                 for (var module : model.modules()) {
                     var descriptor = new ModuleRecord(module.coordinate(), effectiveRelease(module), module.moduleInfo(), module.javacOptions(),
-                            module.main().sourceRoots(), module.test().sourceRoots()).encode();
+                            module.main().sourceRoots(), module.test().sourceRoots(), module.processing()).encode();
                     put(store, records, LocalStore.moduleKey(projectKey, module.name()), descriptor);
                     for (int scope : new int[] {LocalStore.MAIN, LocalStore.TEST}) {
                         var route = boot.routes.get(Boot.routeKey(module.name(), scope)).encode();
                         put(store, records, LocalStore.routeKey(projectKey, module.name(), scope), route);
-                        var binding = new dev.jvmd.index.layer.local.SourceLeaf(boot.built.leaf(module.name(), scope).k(), boot.built.a(module.name(), scope));
+                        var binding = boot.built.source(module.name(), scope);
                         put(store, records, LocalStore.sourceLeafKey(projectKey, module.name(), scope), binding.encode());
                     }
                 }
-                for (var row : new java.util.TreeMap<>(boot.files).values()) {
-                    put(store, records, LocalStore.fileKey(projectKey, row.path()), row.encode());
+                for (var file : new java.util.TreeMap<>(boot.files).entrySet()) {
+                    var row = file.getValue();
+                    put(store, records, LocalStore.fileKey(projectKey, file.getKey()), row.encode());
                     for (var dependency : dev.jvmd.index.layer.local.ReverseIndex.dependencies(row))
-                        records.put(dependency.key(projectKey, row.path()), Entry.NONE);
+                        records.put(dependency.key(projectKey, file.getKey()), Entry.NONE);
+                }
+                for (var diagnostics : new java.util.TreeMap<>(boot.headerDiagnostics).entrySet())
+                    put(store, records, LocalStore.headerDiagnosticsKey(projectKey, diagnostics.getKey()), diagnostics.getValue().encode());
+                store.flush();
+                var packages=new java.util.HashMap<Identity,List<Entry>>();
+                java.util.function.Function<byte[],byte[]> bindingRecords=key->{
+                    var value=records.get(key);return value==null?store.get(key):value;
+                };
+                for(var module:model.modules())for(int scope:new int[]{LocalStore.MAIN,LocalStore.TEST}) {
+                    var root=dev.jvmd.index.layer.local.ProcessorSources.packageIndex(tree,projectKey,module.name(),scope,bindingRecords,boot.sink,packages);
+                    put(store,records,LocalStore.processorBindingKey(projectKey,module.name(),scope),
+                            dev.jvmd.index.layer.local.DefinerIndex.encodeRoot(root));
+                }
+                var entries = new ArrayList<Entry>(records.size());
+                var values=new java.util.HashSet<Identity>();
+                for (var e : records.entrySet()) {
+                    var hash=digest.hash(e.getValue());
+                    entries.add(new Entry(e.getKey(), Entry.NONE, hash));
+                    if(values.add(hash))store.put(LocalStore.bodyValueKey(hash),e.getValue());
                 }
                 store.flush();
-                var entries = new ArrayList<Entry>(records.size());
-                for (var e : records.entrySet()) entries.add(new Entry(e.getKey(), Entry.NONE, digest.hash(e.getValue())));
                 var local = tree.build(entries, boot.sink);
                 boot.sink.flush();
 

@@ -14,7 +14,9 @@ public final class Bind {
     private Bind() { }
 
     /** The two independent identities a provider supplies. */
-    public record Leaf(Identity k, Identity a) { }
+    public record Leaf(Identity k, Identity a,Identity reader) {
+        public Leaf(Identity k,Identity a) {this(k,a,null);}
+    }
 
     /** A layer that may supply the leaf of a coordinate, by exact coordinate. */
     @FunctionalInterface public interface Provider {
@@ -39,13 +41,13 @@ public final class Bind {
             if (leaf == null) {
                 origin = Bound.Origin.EXTERNAL;
                 leaf = switch (entry) {
-                    case RouteEntry.Jar j -> j.defaultK() == null ? null : new Leaf(j.defaultK(), j.a());
-                    case RouteEntry.Jrt j -> new Leaf(j.k(), j.a());
+                    case RouteEntry.Jar j -> j.defaultK() == null ? null : new Leaf(j.defaultK(), j.a(),j.reader());
+                    case RouteEntry.Jrt j -> new Leaf(j.k(), j.a(),j.reader());
                     case RouteEntry.Sibling s -> throw new IllegalStateException("Module " + s.module() + " is bound before it is built");
                 };
             }
             if (leaf == null) continue; // a jar whose file is missing binds to nothing
-            bindings.add(new Bound.Binding(entry, leaf.k(), leaf.a(), origin));
+            bindings.add(new Bound.Binding(entry, leaf.k(), leaf.a(), origin,leaf.reader()));
         }
         var list = new ContentList(digest).builder(sink);
         var sequence = new ArrayList<Identity>(bindings.size());

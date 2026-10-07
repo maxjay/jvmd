@@ -33,15 +33,69 @@ public final class ProofCollector {
         public static final Observations NONE = new Observations(List.of(), List.of());
     }
 
+    /** Detached observations before lowering. Type lookup candidates become D absences or T headers at binding. */
+    public record Body(List<Proof.Range> ranges, List<String> typeLookups, UsesRecord uses, Set<String> ownTypes) {
+        public Body { ranges = List.copyOf(ranges); typeLookups = List.copyOf(typeLookups); ownTypes = Set.copyOf(ownTypes); }
+
+        /** Merge detached compiler reads after generation, retaining source spans for entries the tree already observed. */
+        public Body supplement(List<Proof.Range> observations) {
+            var all = new java.util.TreeSet<>(ranges);
+            var spans = new ArrayList<>(uses.uses());
+            for (var range : observations) if (!ownTypes.contains(range.type()) && all.add(range))
+                spans.add(new UsesRecord.Use(range.form(),range.type(),range.kind(),range.name(),List.of()));
+            return new Body(new ArrayList<>(all),typeLookups,mergeUses(spans),ownTypes);
+        }
+
+        /** Native lookup execution replaces inferred absence/member-type questions, retaining known source spans. */
+        public Body nativeLookups(List<Proof.Range> observations,List<String> lookups) {
+            if(lookups==null)return supplement(observations);
+            var observed=new java.util.HashSet<>(observations);
+            var actualTypes=new java.util.TreeSet<>(lookups);actualTypes.removeAll(ownTypes);
+            var kept=ranges.stream().filter(r->r.form()!=Proof.N || observed.contains(r)).toList();
+            var positions=new ArrayList<UsesRecord.Use>();
+            for(var use:uses.uses()) {
+                if(use.tree()==UsesRecord.D && !actualTypes.contains(use.type())) {
+                    // An inaccessible candidate can be completed/read while an import filter skips it.
+                    // Keep its known syntax span only when native execution observed that exact header.
+                    if(observed.contains(new Proof.Range(Proof.T,use.type(),Keys.TYPE,"")))
+                        positions.add(new UsesRecord.Use(Proof.T,use.type(),Keys.TYPE,"",use.spans()));
+                } else if(use.tree()!=Proof.N || observed.contains(new Proof.Range(Proof.N,use.type(),use.kind(),use.name())))positions.add(use);
+            }
+            for(var type:actualTypes)positions.add(new UsesRecord.Use(UsesRecord.D,type,Keys.TYPE,"",List.of()));
+            return new Body(kept,new ArrayList<>(actualTypes),mergeUses(positions),ownTypes).supplement(observations);
+        }
+
+        private static UsesRecord mergeUses(List<UsesRecord.Use> uses) {
+            var merged=new java.util.TreeMap<UsesRecord.Use,List<UsesRecord.Span>>();
+            for(var use:uses)merged.computeIfAbsent(use,k->new ArrayList<>()).addAll(use.spans());
+            return new UsesRecord(merged.entrySet().stream().map(e->new UsesRecord.Use(
+                    e.getKey().tree(),e.getKey().type(),e.getKey().kind(),e.getKey().name(),e.getValue())).toList());
+        }
+    }
+
+    public static Body bodies(CompilationUnitTree unit, Trees trees, Elements elements, Types types) {
+        return BodyCollector.collect(unit, trees, elements, types);
+    }
+
     /**
      * Header-only traversal: declaration types, annotations and constant initialisers. Never visits executable bodies.
      * Candidates become expected-zero entries only after the whole own leaf has been sealed.
      */
-    public static Observations headers(List<TypeElement> declarations, Trees trees, Elements elements, Types types) {
+    public static Observations headers(List<? extends Element> declarations, Trees trees, Elements elements, Types types) {
         if (declarations.isEmpty()) return Observations.NONE;
         var root = trees.getPath(declarations.getFirst());
         if (root == null) return Observations.NONE;
         var unit = root.getCompilationUnit();
+        return headers(declarations, unit, new TreePath(unit), trees, elements, types);
+    }
+
+    /** Descriptor service names share the ordinary classpath header lookup grammar, including imports and nested types. */
+    public static Observations module(CompilationUnitTree unit, ModuleTree module, Trees trees, Elements elements, Types types) {
+        return headers(List.of(), unit, new TreePath(new TreePath(unit), module), trees, elements, types);
+    }
+
+    private static Observations headers(List<? extends Element> declarations, CompilationUnitTree unit, TreePath scan,
+                                        Trees trees, Elements elements, Types types) {
         var packages = new LinkedHashSet<String>();
         packages.add("java/lang");
         var explicit = new HashSet<String>();
@@ -50,7 +104,7 @@ public final class ProofCollector {
         var explicitStatics = new HashSet<String>();
         var found = new LinkedHashSet<HeaderProof.Absence>();
         var ranges = new java.util.TreeSet<HeaderProof.Range>();
-        var hierarchy = new Hierarchy(types, elements, ranges);
+        var hierarchy = new Hierarchy(types, elements, trees, ranges);
         for (var imported : unit.getImports()) {
             // Imports classify absolute package/type prefixes too; the main scanner deliberately skips imports.
             qualifiedPrefixes(TreePath.getPath(unit, imported.getQualifiedIdentifier()), trees, hierarchy, found);
@@ -69,7 +123,7 @@ public final class ProofCollector {
         }
         String ownPackage = unit.getPackageName() == null ? "" : unit.getPackageName().toString().replace('.', '/');
         var own = new HashSet<String>();
-        for (var declaration : declarations) ownTypes(declaration, elements, own);
+        for (var declaration : declarations) if (declaration instanceof TypeElement type) ownTypes(type, elements, own);
         new TreePathScanner<Void, Void>() {
             private boolean valueContext;
 
@@ -86,7 +140,7 @@ public final class ProofCollector {
             }
 
             @Override public Void visitImport(ImportTree node, Void p) { return null; }
-            @Override public Void visitPackage(PackageTree node, Void p) { return null; }
+            @Override public Void visitPackage(PackageTree node, Void p) { scan(node.getAnnotations(), p); return null; }
             @Override public Void visitBlock(BlockTree node, Void p) { return null; }
             @Override public Void visitLambdaExpression(LambdaExpressionTree node, Void p) { return null; }
 
@@ -187,7 +241,7 @@ public final class ProofCollector {
                 for (var imported : memberImports) hierarchy.memberAbsences(imported, simple, found);
                 return null;
             }
-        }.scan(unit, null);
+        }.scan(scan, null);
         // A file's own declarations are already bound by its source content. Do not prove their unpersisted private members.
         ranges.removeIf(range -> own.contains(range.type()));
         found.removeIf(absence -> absence.form() == 1 && own.contains(absence.type()));
@@ -235,16 +289,22 @@ public final class ProofCollector {
     private static final class Hierarchy {
         private final Types types;
         private final Elements elements;
+        private final Trees trees;
         private final Map<String, List<TypeElement>> closures = new HashMap<>();
         private final Map<String, List<HeaderProof.Absence>> members = new HashMap<>();
         private final Set<String> fields = new HashSet<>();
         private final Set<HeaderProof.Range> ranges;
 
-        Hierarchy(Types types, Elements elements, Set<HeaderProof.Range> ranges) {
-            this.types = types; this.elements = elements; this.ranges = ranges;
+        Hierarchy(Types types, Elements elements, Trees trees, Set<HeaderProof.Range> ranges) {
+            this.types = types; this.elements = elements; this.trees = trees; this.ranges = ranges;
         }
 
         void note(Element element) {
+            // Access errors retain the actual declaration in javac's public original-type view, even for nested types.
+            if (element instanceof TypeElement type && type.asType() instanceof javax.lang.model.type.ErrorType error) {
+                var original = trees.getOriginalType(error);
+                if (original instanceof DeclaredType declared && original.getKind() != TypeKind.ERROR) element = declared.asElement();
+            }
             if (element instanceof TypeElement type && type.asType().getKind() != TypeKind.ERROR)
                 ranges.add(new HeaderProof.Range(binary(type, elements), Keys.TYPE, ""));
             else if (element instanceof VariableElement field && field.getEnclosingElement() instanceof TypeElement owner) {

@@ -72,7 +72,7 @@ class CurrentReverseTest {
         try (var rocks = generation.openLocal()) {
             for (LocalStore store : List.of(new InMemoryLocalStore(), rocks)) {
                 var project = digest.hash(new byte[]{3});
-                byte[] live = T.key(project, "live.java");
+                byte[] live = T.key(project, "fixture", 0, "live.java");
                 assertThatThrownBy(() -> store.put(live, Entry.NONE)).isInstanceOf(IllegalArgumentException.class);
                 var first = root(digest, store, List.of(live));
                 store.putLocalRoot(digest, project, first);
@@ -80,14 +80,14 @@ class CurrentReverseTest {
                     int version = round;
                     var historical = new ArrayList<byte[]>();
                     historical.add(live);
-                    IntStream.range(0, 500).forEach(i -> historical.add(T.key(project, "old-"+version+"-"+i+".java")));
+                    IntStream.range(0, 500).forEach(i -> historical.add(T.key(project, "fixture", 0, "old-"+version+"-"+i+".java")));
                     var unpublished = root(digest, store, historical);
                     assertThat(ReverseIndex.consumers(digest, store, T)).hasSize(1);
                     store.putLocalRoot(digest, project, unpublished);
                     assertThat(ReverseIndex.consumers(digest, store, T)).hasSize(501);
                     store.putLocalRoot(digest, project, first);
                     var meter = new Meter(store);
-                    assertThat(ReverseIndex.consumers(digest, meter.view(), T)).containsExactly(new ReverseIndex.Consumer(project, "live.java"));
+                    assertThat(ReverseIndex.consumers(digest, meter.view(), T)).containsExactly(new ReverseIndex.Consumer(project, "fixture", 0, "live.java"));
                     assertThat(meter.hits).isOne();
                     assertThat(meter.gets).as("no LOCAL membership or per-project root read").isZero();
                 }
@@ -112,7 +112,7 @@ class CurrentReverseTest {
         var store = new InMemoryLocalStore(); var project = digest.hash(new byte[]{4});
         var n = new ReverseIndex.Dependency(ReverseIndex.N, "q/Base", Keys.TYPE, "Inner");
         var d = new ReverseIndex.Dependency(ReverseIndex.D, "q/K", Keys.TYPE, "");
-        store.putLocalRoot(digest, project, root(digest, store, List.of(T.key(project, "t.java"), n.key(project, "n.java"), d.key(project, "d.java"))));
+        store.putLocalRoot(digest, project, root(digest, store, List.of(T.key(project, "fixture", 0, "t.java"), n.key(project, "fixture", 0, "n.java"), d.key(project, "fixture", 0, "d.java"))));
         byte[] nk = Keys.nameKey("Inner", Keys.TYPE, "q/Base", Keys.typeKey("q/Base$Inner"));
         var oldN = new Entry(nk, Entry.NONE, digest.hash(new byte[]{1}));
         var newN = new Entry(nk, Entry.NONE, digest.hash(new byte[]{2}));
@@ -126,7 +126,7 @@ class CurrentReverseTest {
         var member = new Entry(Keys.memberKey("q/K", Keys.FIELD, "VALUE", "I"), Entry.NONE, oldN.h());
         assertThat(ReverseIndex.candidates(digest, store, new ReverseIndex.Delta(
                 new Diff.Result(List.of(member), List.of(new Entry(member.key(), Entry.NONE, newN.h()))), NONE, NONE, NONE)))
-                .containsExactly(new ReverseIndex.Consumer(project, "t.java"));
+                .containsExactly(new ReverseIndex.Consumer(project, "fixture", 0, "t.java"));
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -135,8 +135,8 @@ class CurrentReverseTest {
         var n = new ReverseIndex.Dependency(ReverseIndex.N, "q/K", Keys.TYPE, "Inner");
         var method = new ReverseIndex.Dependency(ReverseIndex.T, "q/K", Keys.METHOD, "method");
         var d = new ReverseIndex.Dependency(ReverseIndex.D, "q/K", Keys.TYPE, "");
-        store.putLocalRoot(digest, project, root(digest, store, List.of(T.key(project, "field.java"),
-                n.key(project, "n.java"), method.key(project, "method.java"), d.key(project, "d.java"))));
+        store.putLocalRoot(digest, project, root(digest, store, List.of(T.key(project, "fixture", 0, "field.java"),
+                n.key(project, "fixture", 0, "n.java"), method.key(project, "fixture", 0, "method.java"), d.key(project, "fixture", 0, "d.java"))));
         var a = digest.hash(new byte[]{1}); var b = digest.hash(new byte[]{2}); var c = digest.hash(new byte[]{3});
         var key = Keys.ownerKey("q/K"); var h = digest.hash(new byte[]{4});
         var before = new Entry(key, new Codec.Writer().id(a).u32(3).id(a).id(b).id(c).toBytes(), h);

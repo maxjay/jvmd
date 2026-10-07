@@ -12,6 +12,7 @@ import java.lang.classfile.ClassFile;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Function;
@@ -92,15 +93,19 @@ public final class SourceFacts {
     }
 
     /** The facts of the top-level types a file declares, and of their member types, in declaration order. */
-    public Result of(List<? extends TypeElement> declared) {
+    public Result of(List<? extends TypeElement> declared) { return of(declared, null, false); }
+
+    /** Package-info emission is determined by the native header task's policy and completed package annotations. */
+    public Result of(List<? extends TypeElement> declared, javax.lang.model.element.PackageElement pkg, boolean packageClass) {
         var out = new Out();
         for (var type : declared) type(type, out);
+        if (packageClass) packageFact(java.util.Objects.requireNonNull(pkg), out);
         return new Result(List.copyOf(out.facts), List.copyOf(out.edges.values()), List.copyOf(out.targets), List.copyOf(out.typeKeys), List.copyOf(out.faults));
     }
 
     /**
      * The module descriptor fact of a {@code module-info.java} (stage 1, A.4 item 10; stage 2, section 8 and E.3): names and flags read
-     * from the parsed directives, no resolution, so the file need not be entered. It is encoded as {@code ClassFacts} encodes
+     * from the parsed directives and completed service type references. It is encoded as {@code ClassFacts} encodes
      * {@code module-info.class}: type key {@code module-info}, kind 5, access {@code ACC_MODULE}, then the {@code Module} attribute.
      * javac writes the implicit {@code requires java.base} first, as mandated, and a {@code requires_version} for every required module
      * that has a version, which is the one thing here that is not in the file; {@code versionOf} supplies it.
@@ -108,13 +113,29 @@ public final class SourceFacts {
      * @param moduleVersion the {@code --module-version} the build passed, which javac records as this module's own version; or null
      * @param versionOf     the version of a required module as javac would read it, or null
      */
-    public Result ofModule(com.sun.source.tree.ModuleTree module, String moduleVersion, Function<String, String> versionOf) {
+    public Result ofModule(com.sun.source.tree.ModuleTree module, javax.lang.model.element.ModuleElement element, String moduleVersion, Function<String, String> versionOf,
+                           Function<com.sun.source.tree.ExpressionTree, TypeElement> resolvedType) {
+        try { return module(module, element, moduleVersion, versionOf, resolvedType); }
+        catch (RuntimeException | StackOverflowError failure) {
+            return new Result(List.of(), List.of(), List.of(), List.of(),
+                    List.of(new FileRow.Fault(Keys.typeKey("module-info"), "module declaration could not be read: " + failure)));
+        }
+    }
+
+    private Result module(com.sun.source.tree.ModuleTree module, javax.lang.model.element.ModuleElement element, String moduleVersion, Function<String, String> versionOf,
+                          Function<com.sun.source.tree.ExpressionTree, TypeElement> resolvedType) {
         var out = new Out();
         var requires = new ArrayList<Res.Requires>();
         var exports = new ArrayList<Res.Directive>();
         var opens = new ArrayList<Res.Directive>();
         var uses = new ArrayList<String>();
         var provides = new ArrayList<Res.Provides>();
+        var resolved = new java.util.HashMap<String, TypeElement>();
+        Function<com.sun.source.tree.ExpressionTree, TypeElement> recordType = reference -> {
+            var type = resolvedType.apply(reference);
+            if (type != null) resolved.put(binaryName(type), type);
+            return type;
+        };
         boolean explicitBase = false;
         for (var directive : module.getDirectives()) {
             switch (directive) {
@@ -125,23 +146,92 @@ public final class SourceFacts {
                 }
                 case com.sun.source.tree.ExportsTree e -> exports.add(packageDirective(e.getPackageName().toString(), e.getModuleNames()));
                 case com.sun.source.tree.OpensTree o -> opens.add(packageDirective(o.getPackageName().toString(), o.getModuleNames()));
-                case com.sun.source.tree.UsesTree u -> uses.add(u.getServiceName().toString().replace('.', '/'));
+                case com.sun.source.tree.UsesTree u -> uses.add(moduleType(u.getServiceName(), recordType));
                 case com.sun.source.tree.ProvidesTree p -> {
                     var with = new ArrayList<String>();
-                    for (var implementation : p.getImplementationNames()) with.add(implementation.toString().replace('.', '/'));
-                    provides.add(new Res.Provides(p.getServiceName().toString().replace('.', '/'), with));
+                    for (var implementation : p.getImplementationNames()) with.add(moduleType(implementation, recordType));
+                    provides.add(new Res.Provides(moduleType(p.getServiceName(), recordType), with));
                 }
                 default -> { }
             }
         }
         if (!explicitBase) requires.add(0, new Res.Requires("java.base", MANDATED, versionOf.apply("java.base")));
+        var inners = new java.util.LinkedHashMap<String, Res.Inner>();
+        var annotations = retained(element);
+        // ClassWriter emits annotations before Module, with runtime-visible annotations before invisible ones.
+        // Descriptors of nested annotation types, enum values and class literals also contribute InnerClasses entries.
+        for (var visibility : new Retention[] {Retention.RUNTIME, Retention.CLASS})
+            for (var annotation : annotations) if (retention(annotation) == visibility) moduleAnnotation(annotation, inners);
+        for (var name : uses) moduleInner(resolved.get(name), inners);
+        for (var provide : provides) {
+            moduleInner(resolved.get(provide.service()), inners);
+            for (var name : provide.with()) moduleInner(resolved.get(name), inners);
+        }
         var descriptor = new Res.Module(module.getName().toString(), module.getModuleType() == com.sun.source.tree.ModuleTree.ModuleKind.OPEN ? 0x0020 : 0,
-                moduleVersion, requires, exports, opens, uses, provides);
-        var res = new Res.Type(Res.Type.MODULE, ClassFile.ACC_MODULE, null, null, List.of(), List.of(), null, null, null, List.of(), List.of(), descriptor, Res.Warnings.NONE);
-        var tail = Entry.NONE;
+                moduleVersion, requires, exports, opens, uses, provides, List.copyOf(inners.values()));
+        var warning = warnings(element);
+        // Lower copies the module's annotations to module_info, but not its DEPRECATED flag.
+        warning = new Res.Warnings(false, warning.deprecation(), warning.safeVarargs());
+        var res = new Res.Type(Res.Type.MODULE, ClassFile.ACC_MODULE, null, null, List.of(), List.of(), null, null, null, List.of(), List.of(), descriptor, warning);
+        var tail = tail(element, annotations, false, null);
         add(out, Keys.typeKey("module-info"), "module-info", res.encode(), tail);
         out.typeKeys.add("module-info");
-        return new Result(List.copyOf(out.facts), List.of(), List.of(), List.copyOf(out.typeKeys), List.of());
+        out.targets.addAll(inners.keySet());
+        return new Result(List.copyOf(out.facts), List.copyOf(out.edges.values()), List.copyOf(out.targets), List.copyOf(out.typeKeys), List.of());
+    }
+
+    private String moduleType(com.sun.source.tree.ExpressionTree reference, Function<com.sun.source.tree.ExpressionTree, TypeElement> resolvedType) {
+        var type = resolvedType.apply(reference);
+        if (type == null || type.asType().getKind() == TypeKind.ERROR)
+            throw new IllegalArgumentException("Unresolved module service type: " + reference);
+        return binaryName(type);
+    }
+
+    private void moduleInner(TypeElement type, Map<String, Res.Inner> into) {
+        if (!(type.getEnclosingElement() instanceof TypeElement outer)) return;
+        String name = binaryName(type);
+        if (into.containsKey(name)) return;
+        moduleInner(outer, into);
+        int flags = (int) ((com.sun.tools.javac.code.Symbol.ClassSymbol) type).flags() & 0x761f;
+        into.put(name, new Res.Inner(name, binaryName(outer), type.getSimpleName().toString(), flags));
+    }
+
+    private void moduleAnnotation(AnnotationMirror annotation, Map<String, Res.Inner> into) {
+        moduleInner((TypeElement) annotation.getAnnotationType().asElement(), into);
+        for (var value : annotation.getElementValues().values()) moduleAnnotationValue(value, into);
+    }
+
+    private void moduleAnnotationValue(AnnotationValue value, Map<String, Res.Inner> into) {
+        switch (value.getValue()) {
+            case AnnotationMirror nested -> moduleAnnotation(nested, into);
+            case VariableElement constant -> moduleInner((TypeElement) constant.getEnclosingElement(), into);
+            case TypeMirror type -> {
+                while (type instanceof ArrayType array) type = array.getComponentType();
+                if (type instanceof DeclaredType declared) moduleInner((TypeElement) declared.asElement(), into);
+            }
+            case List<?> array -> { for (var item : array) moduleAnnotationValue((AnnotationValue) item, into); }
+            default -> { }
+        }
+    }
+
+    private void packageFact(javax.lang.model.element.PackageElement pkg, Out out) {
+        String owner = pkg.getQualifiedName().toString().replace('.', '/') + "/package-info";
+        var key = Keys.typeKey(owner);
+        try {
+            // Lower emits a synthetic abstract interface with Object as superclass and the package's annotations.
+            // Synthetic is excluded from the resolution access mask, just as on the class-file side.
+            var warning = warnings(pkg);
+            // Lower copies annotations to package_info, but does not copy the package symbol's DEPRECATED flag.
+            warning = new Res.Warnings(false, warning.deprecation(), warning.safeVarargs());
+            var res = new Res.Type(1, ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT, null, "java/lang/Object",
+                    List.of(), List.of(), null, null, null, List.of(), List.of(), null, warning);
+            var tail = tail(pkg, retained(pkg), false, null);
+            add(out, key, "package-info", res.encode(), tail);
+            edge(out, "java/lang/Object", Edges.EXTENDS, key);
+            out.typeKeys.add(owner);
+        } catch (RuntimeException | StackOverflowError broken) {
+            out.faults.add(new FileRow.Fault(key, "package declaration could not be read: " + broken));
+        }
     }
 
     private static Res.Directive packageDirective(String packageName, List<? extends com.sun.source.tree.ExpressionTree> to) {

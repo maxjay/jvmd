@@ -1,0 +1,1173 @@
+Native javac read oracle: diagnostic collection, NOT a passing coverage gate
+Hooks: ClassReader.readClassFile; Symbol.complete; Resolve.findField/findImmediateMemberType/findMethod/loadClass.
+Boundary: Attribute.run. Collector execution is excluded from native observations.
+Corpus: Stage3ClasspathMeasurement (both digests) and Stage3Test (both digests); single shared report.
+No compiler-internal exclusions have been added. Missing lookup hooks/coverage remain work.
+completed Attribute traces: 1162
+loaded-class observations (distinct within each trace): 131542
+absent-lookup observations (distinct within each trace): 78836
+uncovered observations: 64133
+distinct uncovered observations across all traces: 1161
+
+Count	Uncovered observation
+2	ABSENT Missing[kind=D, owner=binary/entry, name=]
+4	ABSENT Missing[kind=D, owner=dev/jvmd, name=]
+2	ABSENT Missing[kind=D, owner=dev/jvmd/analyzer, name=]
+6	ABSENT Missing[kind=D, owner=dev/jvmd/index, name=]
+2	ABSENT Missing[kind=D, owner=dev/jvmd/index/layer, name=]
+2	ABSENT Missing[kind=D, owner=dev/jvmd/index/layer/local, name=]
+112	ABSENT Missing[kind=D, owner=java/lang, name=]
+2	ABSENT Missing[kind=D, owner=symbol/sourcefile, name=]
+2	ABSENT Missing[kind=FIELD, owner=, name=AESGCMNoPadding]
+2	ABSENT Missing[kind=FIELD, owner=, name=ANNOTATION]
+2	ABSENT Missing[kind=FIELD, owner=, name=Access]
+2	ABSENT Missing[kind=FIELD, owner=, name=Aggregate]
+2	ABSENT Missing[kind=FIELD, owner=, name=AlgebraicAccumulator]
+10	ABSENT Missing[kind=FIELD, owner=, name=Analyzer]
+16	ABSENT Missing[kind=FIELD, owner=, name=Ann]
+2	ABSENT Missing[kind=FIELD, owner=, name=AnnotationDefaultAttribute]
+2	ABSENT Missing[kind=FIELD, owner=, name=AnnotationElement]
+8	ABSENT Missing[kind=FIELD, owner=, name=AnnotationFixtures]
+6	ABSENT Missing[kind=FIELD, owner=, name=AnnotationLeaf]
+2	ABSENT Missing[kind=FIELD, owner=, name=AnnotationProcessing]
+2	ABSENT Missing[kind=FIELD, owner=, name=AnnotationValue]
+2	ABSENT Missing[kind=FIELD, owner=, name=Annotation]
+4	ABSENT Missing[kind=FIELD, owner=, name=AotStatus]
+4	ABSENT Missing[kind=FIELD, owner=, name=ApiFingerprint]
+2	ABSENT Missing[kind=FIELD, owner=, name=Application]
+2	ABSENT Missing[kind=FIELD, owner=, name=Arena]
+2	ABSENT Missing[kind=FIELD, owner=, name=Arguments]
+8	ABSENT Missing[kind=FIELD, owner=, name=Arrange]
+2	ABSENT Missing[kind=FIELD, owner=, name=Array]
+180	ABSENT Missing[kind=FIELD, owner=, name=Arrays]
+6	ABSENT Missing[kind=FIELD, owner=, name=ArtifactContext]
+28	ABSENT Missing[kind=FIELD, owner=, name=ArtifactIndexFormat]
+2	ABSENT Missing[kind=FIELD, owner=, name=ArtifactJob]
+10	ABSENT Missing[kind=FIELD, owner=, name=Assumptions]
+12	ABSENT Missing[kind=FIELD, owner=, name=Attribute]
+2	ABSENT Missing[kind=FIELD, owner=, name=AttributedMemos]
+6	ABSENT Missing[kind=FIELD, owner=, name=Attributes]
+8	ABSENT Missing[kind=FIELD, owner=, name=Base64]
+4	ABSENT Missing[kind=FIELD, owner=, name=BigInteger]
+6	ABSENT Missing[kind=FIELD, owner=, name=BinaryReader]
+4	ABSENT Missing[kind=FIELD, owner=, name=Bind]
+4	ABSENT Missing[kind=FIELD, owner=, name=Binding]
+6	ABSENT Missing[kind=FIELD, owner=, name=Bindings]
+16	ABSENT Missing[kind=FIELD, owner=, name=BodiesRoot]
+2	ABSENT Missing[kind=FIELD, owner=, name=BodyCollector]
+6	ABSENT Missing[kind=FIELD, owner=, name=BodyGeneration]
+2	ABSENT Missing[kind=FIELD, owner=, name=BodyPoolTest]
+2	ABSENT Missing[kind=FIELD, owner=, name=Body]
+32	ABSENT Missing[kind=FIELD, owner=, name=Boolean]
+6	ABSENT Missing[kind=FIELD, owner=, name=BootDecision]
+8	ABSENT Missing[kind=FIELD, owner=, name=BootFixtures]
+4	ABSENT Missing[kind=FIELD, owner=, name=Boot]
+2	ABSENT Missing[kind=FIELD, owner=, name=Bootstrap]
+4	ABSENT Missing[kind=FIELD, owner=, name=Bound]
+18	ABSENT Missing[kind=FIELD, owner=, name=ByteBuffer]
+8	ABSENT Missing[kind=FIELD, owner=, name=ByteOrder]
+14	ABSENT Missing[kind=FIELD, owner=, name=Byte]
+38	ABSENT Missing[kind=FIELD, owner=, name=CanonicalDigestWriter]
+2	ABSENT Missing[kind=FIELD, owner=, name=Capability]
+2	ABSENT Missing[kind=FIELD, owner=, name=Certificate]
+2	ABSENT Missing[kind=FIELD, owner=, name=Change]
+6	ABSENT Missing[kind=FIELD, owner=, name=Channels]
+30	ABSENT Missing[kind=FIELD, owner=, name=Character]
+2	ABSENT Missing[kind=FIELD, owner=, name=Charset]
+6	ABSENT Missing[kind=FIELD, owner=, name=ClassDesc]
+74	ABSENT Missing[kind=FIELD, owner=, name=ClassFacts]
+22	ABSENT Missing[kind=FIELD, owner=, name=ClassFile]
+10	ABSENT Missing[kind=FIELD, owner=, name=ClassLoader]
+2	ABSENT Missing[kind=FIELD, owner=, name=ClassMemo]
+2	ABSENT Missing[kind=FIELD, owner=, name=ClassModel]
+4	ABSENT Missing[kind=FIELD, owner=, name=ClassTransform]
+4	ABSENT Missing[kind=FIELD, owner=, name=ClassType]
+20	ABSENT Missing[kind=FIELD, owner=, name=Class]
+4	ABSENT Missing[kind=FIELD, owner=, name=ClasspathSearchProofs]
+12	ABSENT Missing[kind=FIELD, owner=, name=ClasspathSequence]
+6	ABSENT Missing[kind=FIELD, owner=, name=ClasspathSlots]
+2	ABSENT Missing[kind=FIELD, owner=, name=Cleaner]
+6	ABSENT Missing[kind=FIELD, owner=, name=CodeReader]
+98	ABSENT Missing[kind=FIELD, owner=, name=Collections]
+4	ABSENT Missing[kind=FIELD, owner=, name=Collectors]
+88	ABSENT Missing[kind=FIELD, owner=, name=Comparator]
+12	ABSENT Missing[kind=FIELD, owner=, name=CompilerInputs]
+8	ABSENT Missing[kind=FIELD, owner=, name=CompilerPool]
+8	ABSENT Missing[kind=FIELD, owner=, name=CompilerSettings]
+4	ABSENT Missing[kind=FIELD, owner=, name=CompletableFuture]
+2	ABSENT Missing[kind=FIELD, owner=, name=Completeness]
+4	ABSENT Missing[kind=FIELD, owner=, name=CompletionCandidate]
+4	ABSENT Missing[kind=FIELD, owner=, name=CompletionContextResolver]
+8	ABSENT Missing[kind=FIELD, owner=, name=CompletionProbe]
+12	ABSENT Missing[kind=FIELD, owner=, name=ConcurrentHashMap]
+2	ABSENT Missing[kind=FIELD, owner=, name=ConfigEntry]
+2	ABSENT Missing[kind=FIELD, owner=, name=Config]
+4	ABSENT Missing[kind=FIELD, owner=, name=ConflictResolver]
+2	ABSENT Missing[kind=FIELD, owner=, name=ConstantValueAttribute]
+10	ABSENT Missing[kind=FIELD, owner=, name=ContentTree]
+4	ABSENT Missing[kind=FIELD, owner=, name=Coordinate]
+2	ABSENT Missing[kind=FIELD, owner=, name=Counters]
+4	ABSENT Missing[kind=FIELD, owner=, name=Coverage]
+4	ABSENT Missing[kind=FIELD, owner=, name=DefinerCounts]
+36	ABSENT Missing[kind=FIELD, owner=, name=DefinerIndex]
+4	ABSENT Missing[kind=FIELD, owner=, name=Deflater]
+2	ABSENT Missing[kind=FIELD, owner=, name=DelegatingJavaFileManager]
+2	ABSENT Missing[kind=FIELD, owner=, name=Dependency]
+2	ABSENT Missing[kind=FIELD, owner=, name=DiagnosticEngine]
+4	ABSENT Missing[kind=FIELD, owner=, name=DiagnosticProjectionSufficiencyTest]
+6	ABSENT Missing[kind=FIELD, owner=, name=DiagnosticProjection]
+2	ABSENT Missing[kind=FIELD, owner=, name=DiagnosticStore]
+22	ABSENT Missing[kind=FIELD, owner=, name=Diagnostic]
+2	ABSENT Missing[kind=FIELD, owner=, name=Diagnostics]
+26	ABSENT Missing[kind=FIELD, owner=, name=Diff]
+2	ABSENT Missing[kind=FIELD, owner=, name=DirectoryInventoryJournal]
+10	ABSENT Missing[kind=FIELD, owner=, name=Dispatcher]
+10	ABSENT Missing[kind=FIELD, owner=, name=DocMarkdown]
+4	ABSENT Missing[kind=FIELD, owner=, name=DocTrees]
+2	ABSENT Missing[kind=FIELD, owner=, name=DocumentBuilderFactory]
+32	ABSENT Missing[kind=FIELD, owner=, name=Documents]
+2	ABSENT Missing[kind=FIELD, owner=, name=Domain]
+20	ABSENT Missing[kind=FIELD, owner=, name=Double]
+4	ABSENT Missing[kind=FIELD, owner=, name=DriverManager]
+156	ABSENT Missing[kind=FIELD, owner=, name=Duration]
+2	ABSENT Missing[kind=FIELD, owner=, name=ENCLOSES]
+2	ABSENT Missing[kind=FIELD, owner=, name=EXTENDS]
+2	ABSENT Missing[kind=FIELD, owner=, name=EdgeScope]
+6	ABSENT Missing[kind=FIELD, owner=, name=Edges]
+2	ABSENT Missing[kind=FIELD, owner=, name=Edit]
+2	ABSENT Missing[kind=FIELD, owner=, name=EditorQueries]
+18	ABSENT Missing[kind=FIELD, owner=, name=ElementKind]
+2	ABSENT Missing[kind=FIELD, owner=, name=Element]
+4	ABSENT Missing[kind=FIELD, owner=, name=Elements]
+2	ABSENT Missing[kind=FIELD, owner=, name=Encoder]
+10	ABSENT Missing[kind=FIELD, owner=, name=Entries]
+46	ABSENT Missing[kind=FIELD, owner=, name=Entry]
+4	ABSENT Missing[kind=FIELD, owner=, name=EnumSet]
+2	ABSENT Missing[kind=FIELD, owner=, name=Enum]
+24	ABSENT Missing[kind=FIELD, owner=, name=Enumerate]
+2	ABSENT Missing[kind=FIELD, owner=, name=EnvMasterSource]
+24	ABSENT Missing[kind=FIELD, owner=, name=Envelope]
+2	ABSENT Missing[kind=FIELD, owner=, name=EnvironmentTransition]
+2	ABSENT Missing[kind=FIELD, owner=, name=EvaluationCompiler]
+2	ABSENT Missing[kind=FIELD, owner=, name=EvaluationSupport]
+2	ABSENT Missing[kind=FIELD, owner=, name=EventRequest]
+2	ABSENT Missing[kind=FIELD, owner=, name=EventSet]
+2	ABSENT Missing[kind=FIELD, owner=, name=ExceptionsAttribute]
+38	ABSENT Missing[kind=FIELD, owner=, name=Executors]
+2	ABSENT Missing[kind=FIELD, owner=, name=ExtraInput]
+2	ABSENT Missing[kind=FIELD, owner=, name=FIELD_TYPE]
+10	ABSENT Missing[kind=FIELD, owner=, name=FactCodec]
+8	ABSENT Missing[kind=FIELD, owner=, name=Fact]
+2	ABSENT Missing[kind=FIELD, owner=, name=Field]
+14	ABSENT Missing[kind=FIELD, owner=, name=FileChannel]
+2	ABSENT Missing[kind=FIELD, owner=, name=FileInventory]
+30	ABSENT Missing[kind=FIELD, owner=, name=FileRow]
+16	ABSENT Missing[kind=FIELD, owner=, name=FileStateRegistry]
+22	ABSENT Missing[kind=FIELD, owner=, name=FileSystems]
+4	ABSENT Missing[kind=FIELD, owner=, name=FileTime]
+2	ABSENT Missing[kind=FIELD, owner=, name=FileVisitOption]
+4	ABSENT Missing[kind=FIELD, owner=, name=FileVisitResult]
+12	ABSENT Missing[kind=FIELD, owner=, name=File]
+522	ABSENT Missing[kind=FIELD, owner=, name=Files]
+8	ABSENT Missing[kind=FIELD, owner=, name=Fixtures]
+2	ABSENT Missing[kind=FIELD, owner=, name=Flags]
+18	ABSENT Missing[kind=FIELD, owner=, name=Float]
+18	ABSENT Missing[kind=FIELD, owner=, name=Format]
+2	ABSENT Missing[kind=FIELD, owner=, name=Found]
+8	ABSENT Missing[kind=FIELD, owner=, name=Framing]
+6	ABSENT Missing[kind=FIELD, owner=, name=GeneratedOutputs]
+10	ABSENT Missing[kind=FIELD, owner=, name=Generation]
+2	ABSENT Missing[kind=FIELD, owner=, name=GpgAgentMasterSource]
+6	ABSENT Missing[kind=FIELD, owner=, name=GramSet]
+32	ABSENT Missing[kind=FIELD, owner=, name=Hash256]
+4	ABSENT Missing[kind=FIELD, owner=, name=Hash64]
+78	ABSENT Missing[kind=FIELD, owner=, name=Hashing]
+28	ABSENT Missing[kind=FIELD, owner=, name=HeaderCompiler]
+2	ABSENT Missing[kind=FIELD, owner=, name=HeaderDiagnostics]
+12	ABSENT Missing[kind=FIELD, owner=, name=HeaderProof]
+2	ABSENT Missing[kind=FIELD, owner=, name=Header]
+22	ABSENT Missing[kind=FIELD, owner=, name=HexFormat]
+2	ABSENT Missing[kind=FIELD, owner=, name=HierarchyChoice]
+2	ABSENT Missing[kind=FIELD, owner=, name=HierarchyReads]
+2	ABSENT Missing[kind=FIELD, owner=, name=HttpServer]
+2	ABSENT Missing[kind=FIELD, owner=, name=IMPLEMENTS]
+44	ABSENT Missing[kind=FIELD, owner=, name=Identity]
+2	ABSENT Missing[kind=FIELD, owner=, name=InProcessCompiler]
+78	ABSENT Missing[kind=FIELD, owner=, name=IndexFixtures]
+2	ABSENT Missing[kind=FIELD, owner=, name=IndexMemo]
+4	ABSENT Missing[kind=FIELD, owner=, name=IndexService]
+8	ABSENT Missing[kind=FIELD, owner=, name=IndexStorage]
+18	ABSENT Missing[kind=FIELD, owner=, name=IndexStore]
+2	ABSENT Missing[kind=FIELD, owner=, name=IndexType]
+2	ABSENT Missing[kind=FIELD, owner=, name=Injector]
+2	ABSENT Missing[kind=FIELD, owner=, name=InnerClassInfo]
+2	ABSENT Missing[kind=FIELD, owner=, name=InnerClassesAttribute]
+2	ABSENT Missing[kind=FIELD, owner=, name=Instant]
+138	ABSENT Missing[kind=FIELD, owner=, name=Integer]
+2	ABSENT Missing[kind=FIELD, owner=, name=Invocation]
+6	ABSENT Missing[kind=FIELD, owner=, name=JarFile]
+4	ABSENT Missing[kind=FIELD, owner=, name=JavaCompiler]
+36	ABSENT Missing[kind=FIELD, owner=, name=JavaFileObject]
+4	ABSENT Missing[kind=FIELD, owner=, name=JavaRuntime]
+6	ABSENT Missing[kind=FIELD, owner=, name=JavaTypes]
+8	ABSENT Missing[kind=FIELD, owner=, name=JavacOptions]
+2	ABSENT Missing[kind=FIELD, owner=, name=JsonCreator]
+2	ABSENT Missing[kind=FIELD, owner=, name=JsonMapper]
+146	ABSENT Missing[kind=FIELD, owner=, name=Json]
+4	ABSENT Missing[kind=FIELD, owner=, name=KeyedFacts]
+76	ABSENT Missing[kind=FIELD, owner=, name=Keys]
+16	ABSENT Missing[kind=FIELD, owner=, name=Kind]
+2	ABSENT Missing[kind=FIELD, owner=, name=LanguageMode]
+2	ABSENT Missing[kind=FIELD, owner=, name=Leaf]
+2	ABSENT Missing[kind=FIELD, owner=, name=LegacyDispatcher]
+2	ABSENT Missing[kind=FIELD, owner=, name=LegacyTypes]
+16	ABSENT Missing[kind=FIELD, owner=, name=LinkOption]
+726	ABSENT Missing[kind=FIELD, owner=, name=List]
+2	ABSENT Missing[kind=FIELD, owner=, name=LiveSourceState]
+12	ABSENT Missing[kind=FIELD, owner=, name=LiveStateTree]
+16	ABSENT Missing[kind=FIELD, owner=, name=LocalFormat]
+40	ABSENT Missing[kind=FIELD, owner=, name=LocalRoot]
+102	ABSENT Missing[kind=FIELD, owner=, name=LocalStore]
+2	ABSENT Missing[kind=FIELD, owner=, name=Local]
+74	ABSENT Missing[kind=FIELD, owner=, name=Locale]
+2	ABSENT Missing[kind=FIELD, owner=, name=LockSupport]
+2	ABSENT Missing[kind=FIELD, owner=, name=LogicalSources]
+72	ABSENT Missing[kind=FIELD, owner=, name=Long]
+6	ABSENT Missing[kind=FIELD, owner=, name=MachineColdBootTest]
+40	ABSENT Missing[kind=FIELD, owner=, name=MachineLeaf]
+100	ABSENT Missing[kind=FIELD, owner=, name=MachineStore]
+20	ABSENT Missing[kind=FIELD, owner=, name=MachineTree]
+4	ABSENT Missing[kind=FIELD, owner=, name=ManagementFactory]
+478	ABSENT Missing[kind=FIELD, owner=, name=Map]
+2	ABSENT Missing[kind=FIELD, owner=, name=MasterDispatcher]
+164	ABSENT Missing[kind=FIELD, owner=, name=Math]
+4	ABSENT Missing[kind=FIELD, owner=, name=MavenEngine]
+46	ABSENT Missing[kind=FIELD, owner=, name=MavenFixtures]
+6	ABSENT Missing[kind=FIELD, owner=, name=MavenModelHelper]
+4	ABSENT Missing[kind=FIELD, owner=, name=MavenProjectTest]
+2	ABSENT Missing[kind=FIELD, owner=, name=MavenRepositorySystemUtils]
+4	ABSENT Missing[kind=FIELD, owner=, name=McpTools]
+2	ABSENT Missing[kind=FIELD, owner=, name=MemberReferenceTree]
+4	ABSENT Missing[kind=FIELD, owner=, name=MemorySegment]
+2	ABSENT Missing[kind=FIELD, owner=, name=MemoryType]
+26	ABSENT Missing[kind=FIELD, owner=, name=MessageDigest]
+4	ABSENT Missing[kind=FIELD, owner=, name=Message]
+2	ABSENT Missing[kind=FIELD, owner=, name=MethodHandles]
+4	ABSENT Missing[kind=FIELD, owner=, name=MethodSignature]
+8	ABSENT Missing[kind=FIELD, owner=, name=MethodTypeDesc]
+2	ABSENT Missing[kind=FIELD, owner=, name=ModelBuilderRequest]
+14	ABSENT Missing[kind=FIELD, owner=, name=Modifier]
+2	ABSENT Missing[kind=FIELD, owner=, name=ModuleArchitectureTest]
+6	ABSENT Missing[kind=FIELD, owner=, name=ModuleDescriptor]
+8	ABSENT Missing[kind=FIELD, owner=, name=ModuleLayer]
+14	ABSENT Missing[kind=FIELD, owner=, name=ModuleRecord]
+2	ABSENT Missing[kind=FIELD, owner=, name=ModuleStateInput]
+2	ABSENT Missing[kind=FIELD, owner=, name=Module]
+2	ABSENT Missing[kind=FIELD, owner=, name=Modules]
+2	ABSENT Missing[kind=FIELD, owner=, name=NAMESPACE]
+2	ABSENT Missing[kind=FIELD, owner=, name=NEGATIVE_RESOLUTION]
+16	ABSENT Missing[kind=FIELD, owner=, name=NamePath]
+4	ABSENT Missing[kind=FIELD, owner=, name=Names]
+12	ABSENT Missing[kind=FIELD, owner=, name=NamespaceResolutionProofs]
+2	ABSENT Missing[kind=FIELD, owner=, name=NestHostAttribute]
+6	ABSENT Missing[kind=FIELD, owner=, name=NestingKind]
+24	ABSENT Missing[kind=FIELD, owner=, name=Node]
+2	ABSENT Missing[kind=FIELD, owner=, name=ObjectReference]
+18	ABSENT Missing[kind=FIELD, owner=, name=Object]
+184	ABSENT Missing[kind=FIELD, owner=, name=Objects]
+8	ABSENT Missing[kind=FIELD, owner=, name=ObservationFaults]
+2	ABSENT Missing[kind=FIELD, owner=, name=Observation]
+2	ABSENT Missing[kind=FIELD, owner=, name=Observations]
+4	ABSENT Missing[kind=FIELD, owner=, name=Opcode]
+2	ABSENT Missing[kind=FIELD, owner=, name=OptionalInt]
+58	ABSENT Missing[kind=FIELD, owner=, name=Optional]
+4	ABSENT Missing[kind=FIELD, owner=, name=Options]
+6	ABSENT Missing[kind=FIELD, owner=, name=Order]
+6	ABSENT Missing[kind=FIELD, owner=, name=OutputStream]
+6	ABSENT Missing[kind=FIELD, owner=, name=Output]
+8	ABSENT Missing[kind=FIELD, owner=, name=OverlayFixtures]
+2	ABSENT Missing[kind=FIELD, owner=, name=PERMITS]
+2	ABSENT Missing[kind=FIELD, owner=, name=Pair]
+14	ABSENT Missing[kind=FIELD, owner=, name=Parser]
+242	ABSENT Missing[kind=FIELD, owner=, name=Path]
+4	ABSENT Missing[kind=FIELD, owner=, name=Pattern]
+2	ABSENT Missing[kind=FIELD, owner=, name=PermittedSubclassesAttribute]
+6	ABSENT Missing[kind=FIELD, owner=, name=PersistableProofKeys]
+2	ABSENT Missing[kind=FIELD, owner=, name=PinEntryMasterSource]
+2	ABSENT Missing[kind=FIELD, owner=, name=Plan]
+4	ABSENT Missing[kind=FIELD, owner=, name=Pool]
+4	ABSENT Missing[kind=FIELD, owner=, name=PosixFilePermissions]
+8	ABSENT Missing[kind=FIELD, owner=, name=PostingCodec]
+4	ABSENT Missing[kind=FIELD, owner=, name=Prepared]
+26	ABSENT Missing[kind=FIELD, owner=, name=ProcessHandle]
+22	ABSENT Missing[kind=FIELD, owner=, name=Processing]
+2	ABSENT Missing[kind=FIELD, owner=, name=ProcessorAllowlistTest]
+6	ABSENT Missing[kind=FIELD, owner=, name=ProcessorAllowlist]
+6	ABSENT Missing[kind=FIELD, owner=, name=ProcessorConfiguration]
+4	ABSENT Missing[kind=FIELD, owner=, name=ProcessorDeclaration]
+8	ABSENT Missing[kind=FIELD, owner=, name=ProcessorHost]
+8	ABSENT Missing[kind=FIELD, owner=, name=ProcessorPlan]
+8	ABSENT Missing[kind=FIELD, owner=, name=ProcessorReads]
+34	ABSENT Missing[kind=FIELD, owner=, name=ProcessorRecords]
+4	ABSENT Missing[kind=FIELD, owner=, name=ProcessorReplay]
+4	ABSENT Missing[kind=FIELD, owner=, name=ProcessorSettings]
+10	ABSENT Missing[kind=FIELD, owner=, name=ProcessorSources]
+2	ABSENT Missing[kind=FIELD, owner=, name=ProcessorState]
+2	ABSENT Missing[kind=FIELD, owner=, name=ProcessorTrees]
+2	ABSENT Missing[kind=FIELD, owner=, name=ProjectBuildingRequest]
+56	ABSENT Missing[kind=FIELD, owner=, name=ProjectModel]
+2	ABSENT Missing[kind=FIELD, owner=, name=Projection]
+8	ABSENT Missing[kind=FIELD, owner=, name=ProofCollector]
+24	ABSENT Missing[kind=FIELD, owner=, name=Proof]
+8	ABSENT Missing[kind=FIELD, owner=, name=Proxy]
+2	ABSENT Missing[kind=FIELD, owner=, name=QualifiedMemberMode]
+34	ABSENT Missing[kind=FIELD, owner=, name=QueryProof]
+2	ABSENT Missing[kind=FIELD, owner=, name=RECORD_COMPONENT_TYPE]
+2	ABSENT Missing[kind=FIELD, owner=, name=RESOLUTION_PATH]
+6	ABSENT Missing[kind=FIELD, owner=, name=ReadOracleTrace]
+2	ABSENT Missing[kind=FIELD, owner=, name=Reason]
+4	ABSENT Missing[kind=FIELD, owner=, name=Recomputation]
+4	ABSENT Missing[kind=FIELD, owner=, name=RecordAttribute]
+4	ABSENT Missing[kind=FIELD, owner=, name=RecordComponentInfo]
+4	ABSENT Missing[kind=FIELD, owner=, name=RecordingFile]
+2	ABSENT Missing[kind=FIELD, owner=, name=Relationship]
+6	ABSENT Missing[kind=FIELD, owner=, name=RepositoryPolicy]
+40	ABSENT Missing[kind=FIELD, owner=, name=RequestScope]
+20	ABSENT Missing[kind=FIELD, owner=, name=Res]
+20	ABSENT Missing[kind=FIELD, owner=, name=ResolutionFact]
+8	ABSENT Missing[kind=FIELD, owner=, name=Resolution]
+2	ABSENT Missing[kind=FIELD, owner=, name=ResolvedRelationship]
+2	ABSENT Missing[kind=FIELD, owner=, name=ResponseBudget]
+16	ABSENT Missing[kind=FIELD, owner=, name=ResultRecord]
+4	ABSENT Missing[kind=FIELD, owner=, name=Result]
+2	ABSENT Missing[kind=FIELD, owner=, name=Retention]
+16	ABSENT Missing[kind=FIELD, owner=, name=ReverseIndex]
+4	ABSENT Missing[kind=FIELD, owner=, name=RocksArtifactInventory]
+2	ABSENT Missing[kind=FIELD, owner=, name=RocksArtifactRepository]
+26	ABSENT Missing[kind=FIELD, owner=, name=RocksDB]
+2	ABSENT Missing[kind=FIELD, owner=, name=RocksIndexStore]
+2	ABSENT Missing[kind=FIELD, owner=, name=RocksIterator]
+4	ABSENT Missing[kind=FIELD, owner=, name=RouteEntry]
+26	ABSENT Missing[kind=FIELD, owner=, name=Route]
+52	ABSENT Missing[kind=FIELD, owner=, name=RpcException]
+8	ABSENT Missing[kind=FIELD, owner=, name=RuntimeCompiler]
+14	ABSENT Missing[kind=FIELD, owner=, name=RuntimeFixtures]
+2	ABSENT Missing[kind=FIELD, owner=, name=RuntimeInvisibleAnnotationsAttribute]
+4	ABSENT Missing[kind=FIELD, owner=, name=RuntimeVisibleAnnotationsAttribute]
+64	ABSENT Missing[kind=FIELD, owner=, name=Runtime]
+2	ABSENT Missing[kind=FIELD, owner=, name=Sample]
+4	ABSENT Missing[kind=FIELD, owner=, name=Scope]
+2	ABSENT Missing[kind=FIELD, owner=, name=Segment]
+28	ABSENT Missing[kind=FIELD, owner=, name=SemanticCompleteness]
+4	ABSENT Missing[kind=FIELD, owner=, name=SemanticContributions]
+2	ABSENT Missing[kind=FIELD, owner=, name=SemanticDeclaration]
+2	ABSENT Missing[kind=FIELD, owner=, name=SemanticDelta]
+10	ABSENT Missing[kind=FIELD, owner=, name=SemanticFact]
+6	ABSENT Missing[kind=FIELD, owner=, name=SemanticFacts]
+4	ABSENT Missing[kind=FIELD, owner=, name=SemanticKnowledge]
+4	ABSENT Missing[kind=FIELD, owner=, name=SemanticLayer]
+10	ABSENT Missing[kind=FIELD, owner=, name=SemanticMemoStore]
+8	ABSENT Missing[kind=FIELD, owner=, name=SemanticQueryProofs]
+18	ABSENT Missing[kind=FIELD, owner=, name=SemanticReadView]
+10	ABSENT Missing[kind=FIELD, owner=, name=SemanticReadViews]
+8	ABSENT Missing[kind=FIELD, owner=, name=SemanticType]
+4	ABSENT Missing[kind=FIELD, owner=, name=SemanticUnitMerkle]
+8	ABSENT Missing[kind=FIELD, owner=, name=SemanticUpdatePolicy]
+2	ABSENT Missing[kind=FIELD, owner=, name=ServerSocketChannel]
+2	ABSENT Missing[kind=FIELD, owner=, name=ServiceLoader]
+234	ABSENT Missing[kind=FIELD, owner=, name=Set]
+2	ABSENT Missing[kind=FIELD, owner=, name=SettingsUtils]
+114	ABSENT Missing[kind=FIELD, owner=, name=Sha256]
+8	ABSENT Missing[kind=FIELD, owner=, name=Short]
+2	ABSENT Missing[kind=FIELD, owner=, name=SignatureAttribute]
+8	ABSENT Missing[kind=FIELD, owner=, name=Signature]
+8	ABSENT Missing[kind=FIELD, owner=, name=Signatures]
+6	ABSENT Missing[kind=FIELD, owner=, name=SocketChannel]
+2	ABSENT Missing[kind=FIELD, owner=, name=SourceEntry]
+2	ABSENT Missing[kind=FIELD, owner=, name=SourceFacts]
+2	ABSENT Missing[kind=FIELD, owner=, name=SourceInput]
+10	ABSENT Missing[kind=FIELD, owner=, name=SourceLeaf]
+4	ABSENT Missing[kind=FIELD, owner=, name=SourceNamespaces]
+2	ABSENT Missing[kind=FIELD, owner=, name=SourceOverlay]
+2	ABSENT Missing[kind=FIELD, owner=, name=SourceProofEvidence]
+2	ABSENT Missing[kind=FIELD, owner=, name=SourceText]
+8	ABSENT Missing[kind=FIELD, owner=, name=SourceUnit]
+8	ABSENT Missing[kind=FIELD, owner=, name=SourceVersion]
+2	ABSENT Missing[kind=FIELD, owner=, name=Sources]
+2	ABSENT Missing[kind=FIELD, owner=, name=SqliteIndexStore]
+2	ABSENT Missing[kind=FIELD, owner=, name=SstSorter]
+82	ABSENT Missing[kind=FIELD, owner=, name=Stage2Support]
+54	ABSENT Missing[kind=FIELD, owner=, name=Stage2]
+2	ABSENT Missing[kind=FIELD, owner=, name=Stage3]
+162	ABSENT Missing[kind=FIELD, owner=, name=StandardCharsets]
+32	ABSENT Missing[kind=FIELD, owner=, name=StandardCopyOption]
+20	ABSENT Missing[kind=FIELD, owner=, name=StandardLocation]
+18	ABSENT Missing[kind=FIELD, owner=, name=StandardOpenOption]
+6	ABSENT Missing[kind=FIELD, owner=, name=StandardProtocolFamily]
+10	ABSENT Missing[kind=FIELD, owner=, name=StandardWatchEventKinds]
+2	ABSENT Missing[kind=FIELD, owner=, name=StaticContext]
+2	ABSENT Missing[kind=FIELD, owner=, name=StaticInputs]
+2	ABSENT Missing[kind=FIELD, owner=, name=StaticKey]
+2	ABSENT Missing[kind=FIELD, owner=, name=StepRequest]
+2	ABSENT Missing[kind=FIELD, owner=, name=StoredArtifact]
+88	ABSENT Missing[kind=FIELD, owner=, name=Stream]
+140	ABSENT Missing[kind=FIELD, owner=, name=String]
+24	ABSENT Missing[kind=FIELD, owner=, name=Stubs]
+12	ABSENT Missing[kind=FIELD, owner=, name=Sum]
+10	ABSENT Missing[kind=FIELD, owner=, name=SymbolIdentity]
+2	ABSENT Missing[kind=FIELD, owner=, name=Symbol]
+2	ABSENT Missing[kind=FIELD, owner=, name=SymbolicReference]
+4	ABSENT Missing[kind=FIELD, owner=, name=Symtab]
+6	ABSENT Missing[kind=FIELD, owner=, name=SyntheticProjects]
+2	ABSENT Missing[kind=FIELD, owner=, name=SystemPropertyMasterSource]
+254	ABSENT Missing[kind=FIELD, owner=, name=System]
+2	ABSENT Missing[kind=FIELD, owner=, name=TailStrippingTest]
+136	ABSENT Missing[kind=FIELD, owner=, name=TestSupport]
+4	ABSENT Missing[kind=FIELD, owner=, name=TextEdits]
+4	ABSENT Missing[kind=FIELD, owner=, name=TextNode]
+8	ABSENT Missing[kind=FIELD, owner=, name=ThreadLocal]
+110	ABSENT Missing[kind=FIELD, owner=, name=Thread]
+58	ABSENT Missing[kind=FIELD, owner=, name=TimeUnit]
+86	ABSENT Missing[kind=FIELD, owner=, name=ToolProvider]
+4	ABSENT Missing[kind=FIELD, owner=, name=TreePath]
+4	ABSENT Missing[kind=FIELD, owner=, name=Tree]
+32	ABSENT Missing[kind=FIELD, owner=, name=Trees]
+22	ABSENT Missing[kind=FIELD, owner=, name=TypeKind]
+2	ABSENT Missing[kind=FIELD, owner=, name=TypeTag]
+2	ABSENT Missing[kind=FIELD, owner=, name=Types]
+30	ABSENT Missing[kind=FIELD, owner=, name=URI]
+6	ABSENT Missing[kind=FIELD, owner=, name=UUID]
+6	ABSENT Missing[kind=FIELD, owner=, name=UnixDomainSocketAddress]
+14	ABSENT Missing[kind=FIELD, owner=, name=UsesRecord]
+4	ABSENT Missing[kind=FIELD, owner=, name=ValueLayout]
+2	ABSENT Missing[kind=FIELD, owner=, name=Value]
+2	ABSENT Missing[kind=FIELD, owner=, name=Verifier]
+4	ABSENT Missing[kind=FIELD, owner=, name=VersionModels]
+2	ABSENT Missing[kind=FIELD, owner=, name=Warnings]
+2	ABSENT Missing[kind=FIELD, owner=, name=WorkspaceContextManager]
+4	ABSENT Missing[kind=FIELD, owner=, name=WorkspaceManifest]
+2	ABSENT Missing[kind=FIELD, owner=, name=WorkspaceOverlay]
+2	ABSENT Missing[kind=FIELD, owner=, name=WorkspaceReadView]
+2	ABSENT Missing[kind=FIELD, owner=, name=WriteBatch]
+8	ABSENT Missing[kind=FIELD, owner=, name=Xpp3Dom]
+2	ABSENT Missing[kind=FIELD, owner=, name=binary]
+6	ABSENT Missing[kind=FIELD, owner=, name=c]
+2	ABSENT Missing[kind=FIELD, owner=, name=character]
+22	ABSENT Missing[kind=FIELD, owner=, name=com]
+4	ABSENT Missing[kind=FIELD, owner=, name=declared]
+100	ABSENT Missing[kind=FIELD, owner=, name=dev]
+2	ABSENT Missing[kind=FIELD, owner=, name=ex]
+2	ABSENT Missing[kind=FIELD, owner=, name=executable]
+2	ABSENT Missing[kind=FIELD, owner=, name=extended]
+2	ABSENT Missing[kind=FIELD, owner=, name=generic]
+2	ABSENT Missing[kind=FIELD, owner=, name=id]
+2	ABSENT Missing[kind=FIELD, owner=, name=identifier]
+2	ABSENT Missing[kind=FIELD, owner=, name=io]
+324	ABSENT Missing[kind=FIELD, owner=, name=java]
+68	ABSENT Missing[kind=FIELD, owner=, name=javax]
+2	ABSENT Missing[kind=FIELD, owner=, name=m]
+4	ABSENT Missing[kind=FIELD, owner=, name=method]
+2	ABSENT Missing[kind=FIELD, owner=, name=missing]
+2	ABSENT Missing[kind=FIELD, owner=, name=module]
+2	ABSENT Missing[kind=FIELD, owner=, name=n]
+4	ABSENT Missing[kind=FIELD, owner=, name=number]
+2	ABSENT Missing[kind=FIELD, owner=, name=observed]
+12	ABSENT Missing[kind=FIELD, owner=, name=org]
+2	ABSENT Missing[kind=FIELD, owner=, name=p]
+4	ABSENT Missing[kind=FIELD, owner=, name=parent]
+2	ABSENT Missing[kind=FIELD, owner=, name=present]
+2	ABSENT Missing[kind=FIELD, owner=, name=processors]
+2	ABSENT Missing[kind=FIELD, owner=, name=provided]
+22	ABSENT Missing[kind=FIELD, owner=, name=q]
+2	ABSENT Missing[kind=FIELD, owner=, name=raw]
+2	ABSENT Missing[kind=FIELD, owner=, name=s]
+2	ABSENT Missing[kind=FIELD, owner=, name=select]
+2	ABSENT Missing[kind=FIELD, owner=, name=source]
+2	ABSENT Missing[kind=FIELD, owner=, name=symbol]
+4	ABSENT Missing[kind=FIELD, owner=, name=t]
+6	ABSENT Missing[kind=FIELD, owner=, name=type]
+10	ABSENT Missing[kind=FIELD, owner=, name=value]
+4	ABSENT Missing[kind=FIELD, owner=, name=variable]
+2	ABSENT Missing[kind=FIELD, owner=, name=wrapped]
+2	ABSENT Missing[kind=FIELD, owner=, name=wrapper]
+2	ABSENT Missing[kind=FIELD, owner=, name=z]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/tree/TreeVisitor, name=id]
+4	ABSENT Missing[kind=FIELD, owner=com/sun/source/tree/TreeVisitor, name=method]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/tree/TreeVisitor, name=select]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/tree/TreeVisitor, name=type]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/tree/TreeVisitor, name=variable]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/util/TreePathScanner, name=id]
+4	ABSENT Missing[kind=FIELD, owner=com/sun/source/util/TreePathScanner, name=method]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/util/TreePathScanner, name=select]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/util/TreePathScanner, name=type]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/util/TreePathScanner, name=variable]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/util/TreeScanner, name=id]
+4	ABSENT Missing[kind=FIELD, owner=com/sun/source/util/TreeScanner, name=method]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/util/TreeScanner, name=select]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/util/TreeScanner, name=type]
+2	ABSENT Missing[kind=FIELD, owner=com/sun/source/util/TreeScanner, name=variable]
+2	ABSENT Missing[kind=FIELD, owner=dev/jvmd/analyzer/DiagnosticEngine, name=declared]
+2	ABSENT Missing[kind=FIELD, owner=dev/jvmd/analyzer/DiagnosticEngine, name=method]
+2	ABSENT Missing[kind=FIELD, owner=dev/jvmd/analyzer/DiagnosticEngine, name=variable]
+2	ABSENT Missing[kind=FIELD, owner=dev/jvmd/boot/cold/stage2/ProcessorReads$Model, name=executable]
+2	ABSENT Missing[kind=FIELD, owner=dev/jvmd/boot/cold/stage2/ProcessorReads$Model, name=type]
+2	ABSENT Missing[kind=FIELD, owner=dev/jvmd/index/IndexStore, name=value]
+2	ABSENT Missing[kind=FIELD, owner=java/io/Closeable, name=binary]
+2	ABSENT Missing[kind=FIELD, owner=java/io/Closeable, name=module]
+2	ABSENT Missing[kind=FIELD, owner=java/io/Closeable, name=source]
+2	ABSENT Missing[kind=FIELD, owner=java/io/Flushable, name=binary]
+2	ABSENT Missing[kind=FIELD, owner=java/io/Flushable, name=module]
+2	ABSENT Missing[kind=FIELD, owner=java/io/Flushable, name=source]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=binary]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=declared]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=io]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=method]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=module]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=number]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=observed]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=processors]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=source]
+8	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=value]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=variable]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/AutoCloseable, name=wrapper]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=binary]
+6	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=c]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=character]
+4	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=declared]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=ex]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=executable]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=extended]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=generic]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=id]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=identifier]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=io]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=m]
+4	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=method]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=module]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=n]
+4	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=number]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=observed]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=p]
+4	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=parent]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=present]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=processors]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=provided]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=raw]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=s]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=select]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=source]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=symbol]
+4	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=t]
+4	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=type]
+10	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=value]
+4	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=variable]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=wrapped]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=wrapper]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Object, name=z]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Record, name=p]
+2	ABSENT Missing[kind=FIELD, owner=java/lang/Record, name=parent]
+2	ABSENT Missing[kind=FIELD, owner=javax/tools/ForwardingJavaFileManager, name=binary]
+2	ABSENT Missing[kind=FIELD, owner=javax/tools/ForwardingJavaFileManager, name=module]
+2	ABSENT Missing[kind=FIELD, owner=javax/tools/ForwardingJavaFileManager, name=source]
+2	ABSENT Missing[kind=FIELD, owner=javax/tools/JavaFileManager, name=binary]
+2	ABSENT Missing[kind=FIELD, owner=javax/tools/JavaFileManager, name=module]
+2	ABSENT Missing[kind=FIELD, owner=javax/tools/JavaFileManager, name=source]
+2	ABSENT Missing[kind=FIELD, owner=javax/tools/OptionChecker, name=binary]
+2	ABSENT Missing[kind=FIELD, owner=javax/tools/OptionChecker, name=module]
+2	ABSENT Missing[kind=FIELD, owner=javax/tools/OptionChecker, name=source]
+4	ABSENT Missing[kind=METHOD, owner=, name=assertThatCode]
+122	ABSENT Missing[kind=METHOD, owner=, name=assertThatThrownBy]
+508	ABSENT Missing[kind=METHOD, owner=, name=assertThat]
+2	ABSENT Missing[kind=METHOD, owner=, name=descriptorNames]
+4	ABSENT Missing[kind=METHOD, owner=, name=fail]
+2	ABSENT Missing[kind=METHOD, owner=, name=typeNames]
+2	ABSENT Missing[kind=METHOD, owner=<any>, name=startsWith]
+2	ABSENT Missing[kind=METHOD, owner=com/sun/jdi/event/EventSet, name=resume]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/analyzer/CompilerPool$Problem, name=character]
+8	ABSENT Missing[kind=METHOD, owner=dev/jvmd/analyzer/CompilerPool$Problem, name=code]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/analyzer/CompilerPool$Problem, name=line]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/analyzer/CompilerPool$Problem, name=message]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/analyzer/DiagnosticEngine, name=isolated]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/analyzer/LogicalSources$Root, name=logical]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/analyzer/SourceNamespaces$Declaration, name=binaryName]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/analyzer/SourceText$Token, name=start]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/analyzer/SourceText$Token, name=text]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/boot/cold/stage1/Enumerate$Location, name=name]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/boot/cold/stage1/Enumerate, name=compareNames]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/boot/cold/stage3/Attribute$Computed, name=proof]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/boot/cold/stage3/Stage3$Scope, name=descriptorEmissions]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/core/Documents, name=close]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/core/Envelope, name=result]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/core/Hash256, name=hex]
+6	ABSENT Missing[kind=METHOD, owner=dev/jvmd/core/tree/Entry, name=key]
+6	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/ArtifactIndexFormat$SymbolRecord, name=id]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/ArtifactIndexFormat$SymbolRecord, name=name]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/BinaryReader$Symbol, name=key]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/BinaryReader$Symbol, name=kind]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/BinaryReader$Symbol, name=name]
+4	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/ClasspathSequence$Entry, name=key]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/ClasspathSequence$Entry, name=location]
+4	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/ClasspathSequence, name=identity]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/IndexSemanticState$ModuleStateInput, name=moduleId]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/IndexService$SourceEdge, name=kind]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/IndexStore$ClasspathSearchProof, name=binaryName]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/IndexStore$IndexedSemanticSymbol, name=name]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/IndexStore$ResolvedRelationship, name=kind]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/IndexStore$SymbolicReference, name=kind]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/IndexStore$SymbolicReference, name=sourceScip]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/IndexStore$SymbolicReference, name=targetBinaryKey]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticFact, name=apiIdentity]
+4	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticFact, name=documentationIdentity]
+6	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticFact, name=id]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticFact, name=name]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticFact, name=namespaceIdentity]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticFact, name=resolutionIdentity]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticReadView$Symbol, name=fqn]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticReadView$Symbol, name=id]
+6	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticReadView$Symbol, name=name]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticType, name=display]
+4	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticType, name=identity]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/SemanticUpdatePolicy$ProofConsumer, name=file]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/Bound$Binding, name=k]
+6	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/FileRow$Proof, name=typeKey]
+4	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/FileRow, name=genId]
+10	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/FileRow, name=generated]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/FileRow, name=kappa]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/HeaderProof$Absence, name=form]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/HeaderProof$Absence, name=name]
+6	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/HeaderProof$Absence, name=type]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/ProcessorDeclaration, name=name]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/ProcessorRecords$Capability, name=merge]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/ProcessorRecords$Capability, name=reusable]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/Proof$Range, name=type]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/Proof$Type, name=key]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/ResultRecord$ClassFile, name=internalName]
+4	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/ReverseIndex$Consumer, name=path]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/local/RouteEntry$Jrt, name=k]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/machine/Ann$Element, name=name]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/machine/Fact, name=entry]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/layer/machine/Fact, name=h]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/rocks/RocksArtifactInventory$Entry, name=path]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/rocks/RocksArtifactRepository$Publication, name=reused]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/index/rocks/SourceOverlay$SemanticEntry, name=symbol]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/resolver/Resolution$Module, name=directory]
+6	ABSENT Missing[kind=METHOD, owner=dev/jvmd/resolver/Resolution$Module, name=gav]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/resolver/Resolution$Node, name=gav]
+2	ABSENT Missing[kind=METHOD, owner=dev/jvmd/resolver/Resolution$Node, name=id]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/Double, name=doubleValue]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/Enum, name=name]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/Integer, name=intValue]
+16	ABSENT Missing[kind=METHOD, owner=java/lang/Integer, name=sum]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/Long, name=longValue]
+14	ABSENT Missing[kind=METHOD, owner=java/lang/Long, name=sum]
+8	ABSENT Missing[kind=METHOD, owner=java/lang/Math, name=max]
+18	ABSENT Missing[kind=METHOD, owner=java/lang/Object, name=toString]
+8	ABSENT Missing[kind=METHOD, owner=java/lang/ProcessHandle, name=destroyForcibly]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/ProcessHandle, name=isAlive]
+8	ABSENT Missing[kind=METHOD, owner=java/lang/String, name=compareTo]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/String, name=length]
+4	ABSENT Missing[kind=METHOD, owner=java/lang/String, name=strip]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/classfile/ClassModel, name=isModuleInfo]
+2	ABSENT Missing[kind=METHOD, owner=java/lang/module/ModuleDescriptor$Requires, name=name]
+2	ABSENT Missing[kind=METHOD, owner=java/net/URI, name=toString]
+6	ABSENT Missing[kind=METHOD, owner=java/nio/file/Path, name=getNameCount]
+50	ABSENT Missing[kind=METHOD, owner=java/nio/file/Path, name=toString]
+4	ABSENT Missing[kind=METHOD, owner=java/util/ArrayList, name=add]
+52	ABSENT Missing[kind=METHOD, owner=java/util/Arrays, name=compareUnsigned]
+4	ABSENT Missing[kind=METHOD, owner=java/util/List, name=copyOf]
+2	ABSENT Missing[kind=METHOD, owner=java/util/List, name=size]
+4	ABSENT Missing[kind=METHOD, owner=java/util/Map$Entry, name=getKey]
+4	ABSENT Missing[kind=METHOD, owner=java/util/Map$Entry, name=getValue]
+2	ABSENT Missing[kind=METHOD, owner=java/util/ServiceLoader$Provider, name=get]
+4	ABSENT Missing[kind=METHOD, owner=java/util/Set, name=size]
+2	ABSENT Missing[kind=METHOD, owner=java/util/stream/Stream, name=noneMatch]
+2	ABSENT Missing[kind=METHOD, owner=javax/lang/model/element/Element, name=getSimpleName]
+2	ABSENT Missing[kind=METHOD, owner=javax/lang/model/element/Modifier, name=toString]
+4	ABSENT Missing[kind=METHOD, owner=javax/tools/Diagnostic, name=getCode]
+4	ABSENT Missing[kind=METHOD, owner=org/codehaus/plexus/util/xml/Xpp3Dom, name=getValue]
+2	ABSENT Missing[kind=METHOD, owner=org/rocksdb/RocksDB, name=close]
+2	ABSENT Missing[kind=N, owner=, name=AbstractMap]
+2	ABSENT Missing[kind=N, owner=, name=AbstractSession]
+2	ABSENT Missing[kind=N, owner=, name=ArtifactAdmission]
+4	ABSENT Missing[kind=N, owner=, name=ArtifactInventory]
+100	ABSENT Missing[kind=N, owner=, name=AutoCloseable]
+2	ABSENT Missing[kind=N, owner=, name=Closeable]
+6	ABSENT Missing[kind=N, owner=, name=Comparable]
+2	ABSENT Missing[kind=N, owner=, name=DefinerIndex]
+2	ABSENT Missing[kind=N, owner=, name=DiagnosticEngine]
+2	ABSENT Missing[kind=N, owner=, name=Digest]
+2	ABSENT Missing[kind=N, owner=, name=Entries]
+2	ABSENT Missing[kind=N, owner=, name=ForwardingJavaFileManager]
+2	ABSENT Missing[kind=N, owner=, name=FunctionalInterface]
+2	ABSENT Missing[kind=N, owner=, name=Hash256]
+2	ABSENT Missing[kind=N, owner=, name=Identity]
+4	ABSENT Missing[kind=N, owner=, name=IndexSemanticState]
+2	ABSENT Missing[kind=N, owner=, name=IndexStorageProvider]
+4	ABSENT Missing[kind=N, owner=, name=IndexStorage]
+4	ABSENT Missing[kind=N, owner=, name=IndexStore]
+2	ABSENT Missing[kind=N, owner=, name=JavacTrees]
+2	ABSENT Missing[kind=N, owner=, name=List]
+6	ABSENT Missing[kind=N, owner=, name=LocalStore]
+6	ABSENT Missing[kind=N, owner=, name=MachineStore]
+4	ABSENT Missing[kind=N, owner=, name=Models]
+2	ABSENT Missing[kind=N, owner=, name=NodeSink]
+2	ABSENT Missing[kind=N, owner=, name=ProcessorReads]
+2	ABSENT Missing[kind=N, owner=, name=RuntimeException]
+2	ABSENT Missing[kind=N, owner=, name=SemanticType]
+2	ABSENT Missing[kind=N, owner=, name=SourceUnit]
+2	ABSENT Missing[kind=N, owner=, name=StandardJavaFileManager]
+2	ABSENT Missing[kind=N, owner=, name=String]
+422	ABSENT Missing[kind=N, owner=, name=Tag]
+2	ABSENT Missing[kind=N, owner=, name=TreePathScanner]
+2	ABSENT Missing[kind=N, owner=, name=Void]
+8	ABSENT Missing[kind=N, owner=, name=WorkspaceReader]
+2	ABSENT Missing[kind=N, owner=, name=WorkspaceSource]
+4	ABSENT Missing[kind=N, owner=, name=q]
+2	ABSENT Missing[kind=N, owner=com/sun/source/tree/TreeVisitor, name=id]
+4	ABSENT Missing[kind=N, owner=com/sun/source/tree/TreeVisitor, name=method]
+2	ABSENT Missing[kind=N, owner=com/sun/source/tree/TreeVisitor, name=select]
+2	ABSENT Missing[kind=N, owner=com/sun/source/tree/TreeVisitor, name=type]
+2	ABSENT Missing[kind=N, owner=com/sun/source/tree/TreeVisitor, name=variable]
+2	ABSENT Missing[kind=N, owner=com/sun/source/util/TreePathScanner, name=id]
+4	ABSENT Missing[kind=N, owner=com/sun/source/util/TreePathScanner, name=method]
+2	ABSENT Missing[kind=N, owner=com/sun/source/util/TreePathScanner, name=select]
+2	ABSENT Missing[kind=N, owner=com/sun/source/util/TreePathScanner, name=type]
+2	ABSENT Missing[kind=N, owner=com/sun/source/util/TreePathScanner, name=variable]
+2	ABSENT Missing[kind=N, owner=com/sun/source/util/TreeScanner, name=id]
+4	ABSENT Missing[kind=N, owner=com/sun/source/util/TreeScanner, name=method]
+2	ABSENT Missing[kind=N, owner=com/sun/source/util/TreeScanner, name=select]
+2	ABSENT Missing[kind=N, owner=com/sun/source/util/TreeScanner, name=type]
+2	ABSENT Missing[kind=N, owner=com/sun/source/util/TreeScanner, name=variable]
+2	ABSENT Missing[kind=N, owner=dev/jvmd/analyzer/DiagnosticEngine, name=declared]
+2	ABSENT Missing[kind=N, owner=dev/jvmd/analyzer/DiagnosticEngine, name=method]
+2	ABSENT Missing[kind=N, owner=dev/jvmd/analyzer/DiagnosticEngine, name=variable]
+2	ABSENT Missing[kind=N, owner=dev/jvmd/boot/cold/stage2/ProcessorReads$Model, name=executable]
+2	ABSENT Missing[kind=N, owner=dev/jvmd/index/IndexStore, name=value]
+2	ABSENT Missing[kind=N, owner=java/io/Closeable, name=binary]
+2	ABSENT Missing[kind=N, owner=java/io/Closeable, name=module]
+2	ABSENT Missing[kind=N, owner=java/io/Closeable, name=source]
+2	ABSENT Missing[kind=N, owner=java/io/Flushable, name=binary]
+2	ABSENT Missing[kind=N, owner=java/io/Flushable, name=module]
+2	ABSENT Missing[kind=N, owner=java/io/Flushable, name=source]
+2	ABSENT Missing[kind=N, owner=java/lang/AutoCloseable, name=binary]
+2	ABSENT Missing[kind=N, owner=java/lang/AutoCloseable, name=declared]
+2	ABSENT Missing[kind=N, owner=java/lang/AutoCloseable, name=method]
+2	ABSENT Missing[kind=N, owner=java/lang/AutoCloseable, name=module]
+2	ABSENT Missing[kind=N, owner=java/lang/AutoCloseable, name=number]
+2	ABSENT Missing[kind=N, owner=java/lang/AutoCloseable, name=observed]
+2	ABSENT Missing[kind=N, owner=java/lang/AutoCloseable, name=processors]
+2	ABSENT Missing[kind=N, owner=java/lang/AutoCloseable, name=source]
+8	ABSENT Missing[kind=N, owner=java/lang/AutoCloseable, name=value]
+2	ABSENT Missing[kind=N, owner=java/lang/AutoCloseable, name=variable]
+2	ABSENT Missing[kind=N, owner=java/lang/AutoCloseable, name=wrapper]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=binary]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=character]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=declared]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=ex]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=executable]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=extended]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=generic]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=id]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=identifier]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=m]
+4	ABSENT Missing[kind=N, owner=java/lang/Object, name=method]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=module]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=n]
+4	ABSENT Missing[kind=N, owner=java/lang/Object, name=number]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=observed]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=p]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=present]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=processors]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=s]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=select]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=source]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=symbol]
+4	ABSENT Missing[kind=N, owner=java/lang/Object, name=t]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=type]
+10	ABSENT Missing[kind=N, owner=java/lang/Object, name=value]
+4	ABSENT Missing[kind=N, owner=java/lang/Object, name=variable]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=wrapped]
+2	ABSENT Missing[kind=N, owner=java/lang/Object, name=wrapper]
+2	ABSENT Missing[kind=N, owner=java/lang/Record, name=p]
+2	ABSENT Missing[kind=N, owner=javax/tools/ForwardingJavaFileManager, name=binary]
+2	ABSENT Missing[kind=N, owner=javax/tools/ForwardingJavaFileManager, name=module]
+2	ABSENT Missing[kind=N, owner=javax/tools/ForwardingJavaFileManager, name=source]
+2	ABSENT Missing[kind=N, owner=javax/tools/JavaFileManager, name=binary]
+2	ABSENT Missing[kind=N, owner=javax/tools/JavaFileManager, name=module]
+2	ABSENT Missing[kind=N, owner=javax/tools/JavaFileManager, name=source]
+2	ABSENT Missing[kind=N, owner=javax/tools/OptionChecker, name=binary]
+2	ABSENT Missing[kind=N, owner=javax/tools/OptionChecker, name=module]
+2	ABSENT Missing[kind=N, owner=javax/tools/OptionChecker, name=source]
+5	LOAD autovalue/shaded/com/google/auto/service/AutoService
+5	LOAD autovalue/shaded/net/ltgt/gradle/incap/IncrementalAnnotationProcessor
+5	LOAD autovalue/shaded/net/ltgt/gradle/incap/IncrementalAnnotationProcessorType
+26	LOAD com/fasterxml/jackson/core/JsonGenerator
+46	LOAD com/fasterxml/jackson/core/JsonParser
+52	LOAD com/fasterxml/jackson/core/JsonPointer
+2	LOAD com/fasterxml/jackson/core/JsonProcessingException
+8	LOAD com/fasterxml/jackson/core/exc/StreamReadException
+18	LOAD com/fasterxml/jackson/core/type/TypeReference
+28	LOAD com/fasterxml/jackson/databind/JavaType
+10	LOAD com/fasterxml/jackson/databind/JsonMappingException
+2	LOAD com/sun/jdi/Field
+2	LOAD com/sun/source/tree/ClassTree
+2	LOAD com/sun/source/tree/MethodTree
+2	LOAD com/sun/source/tree/Scope
+2	LOAD com/sun/source/util/DocTreeFactory
+2	LOAD com/sun/source/util/SourcePositions
+2	LOAD com/sun/source/util/TreePath
+2	LOAD com/sun/source/util/Trees
+4	LOAD com/sun/tools/javac/api/DiagnosticFormatter$Configuration
+2	LOAD com/sun/tools/javac/code/Kinds
+2	LOAD com/sun/tools/javac/code/Type$Visitor
+2	LOAD com/sun/tools/javac/code/Types$TypeMapping
+2	LOAD com/sun/tools/javac/main/Option
+2	LOAD com/sun/tools/javac/tree/JCTree
+2	LOAD com/sun/tools/javac/util/JCDiagnostic$DiagnosticInfo
+2	LOAD com/sun/tools/javac/util/Name
+8	LOAD dev/jvmd/analyzer/CompilerPool
+2	LOAD dev/jvmd/analyzer/NamespaceResolutionProofs$Header
+2	LOAD dev/jvmd/analyzer/Parser
+48	LOAD dev/jvmd/boot/cold/stage1/Stage1
+8	LOAD dev/jvmd/boot/cold/stage3/Attribute
+2	LOAD dev/jvmd/boot/cold/stage3/ModuleDescriptor
+2	LOAD dev/jvmd/core/Documents
+28	LOAD dev/jvmd/core/Documents$Range
+2	LOAD dev/jvmd/core/Envelope
+4	LOAD dev/jvmd/core/Hashing
+4	LOAD dev/jvmd/core/LiveStateTree
+2	LOAD dev/jvmd/core/hash/Identity
+2	LOAD dev/jvmd/core/tree/Codec
+2	LOAD dev/jvmd/dist/WorkspaceBindings$OwnerSource
+1	LOAD dev/jvmd/index/ArtifactIndexFormat
+2	LOAD dev/jvmd/index/ArtifactIndexFormat$ArtifactData
+2	LOAD dev/jvmd/index/ClasspathSequence
+50	LOAD dev/jvmd/index/IndexStorage
+4	LOAD dev/jvmd/index/IndexStore$ClasspathContext
+4	LOAD dev/jvmd/index/QueryProof
+2	LOAD dev/jvmd/index/SemanticMemoStore
+4	LOAD dev/jvmd/index/SymbolDescription$DeclarationLocation
+6	LOAD dev/jvmd/index/layer/local/FileRow
+2	LOAD dev/jvmd/index/layer/local/HeaderProof
+2	LOAD dev/jvmd/index/layer/local/ProcessorDeclaration
+12	LOAD dev/jvmd/index/layer/local/ProcessorRecords
+4	LOAD dev/jvmd/index/layer/local/ProcessorRecords$Context
+2	LOAD dev/jvmd/index/layer/local/ProjectModel
+4	LOAD dev/jvmd/index/layer/local/Proof
+3	LOAD dev/jvmd/index/layer/local/ResultRecord
+2	LOAD dev/jvmd/index/layer/local/Route
+4	LOAD dev/jvmd/index/layer/machine/Keys
+144	LOAD java/base/module-info
+144	LOAD java/compiler/module-info
+144	LOAD java/datatransfer/module-info
+144	LOAD java/desktop/module-info
+144	LOAD java/instrument/module-info
+19	LOAD java/io/DataInput
+26	LOAD java/io/DataOutput
+453	LOAD java/io/File
+452	LOAD java/io/InputStream
+20	LOAD java/io/OutputStream
+53	LOAD java/io/Reader
+46	LOAD java/io/Serializable
+22	LOAD java/io/Writer
+31	LOAD java/lang/AbstractStringBuilder
+18	LOAD java/lang/Appendable
+260	LOAD java/lang/AutoCloseable
+740	LOAD java/lang/Boolean
+956	LOAD java/lang/Byte
+942	LOAD java/lang/Character
+669	LOAD java/lang/Class
+24	LOAD java/lang/CloneNotSupportedException
+331	LOAD java/lang/Deprecated
+900	LOAD java/lang/Double
+6	LOAD java/lang/Enum
+226	LOAD java/lang/Error
+950	LOAD java/lang/Float
+558	LOAD java/lang/Integer
+2	LOAD java/lang/Iterable
+714	LOAD java/lang/Long
+40	LOAD java/lang/MatchException
+58	LOAD java/lang/Module
+48	LOAD java/lang/NoSuchFieldError
+12	LOAD java/lang/ProcessBuilder$Redirect
+4	LOAD java/lang/Runnable
+66	LOAD java/lang/RuntimeException
+962	LOAD java/lang/Short
+22	LOAD java/lang/String
+518	LOAD java/lang/StringBuffer
+461	LOAD java/lang/StringBuilder
+30	LOAD java/lang/Throwable
+808	LOAD java/lang/Void
+274	LOAD java/lang/annotation/ElementType
+15	LOAD java/lang/annotation/Repeatable
+285	LOAD java/lang/annotation/Retention
+285	LOAD java/lang/annotation/RetentionPolicy
+274	LOAD java/lang/annotation/Target
+2	LOAD java/lang/classfile/ClassSignature
+2	LOAD java/lang/classfile/MethodSignature
+2	LOAD java/lang/classfile/Signature
+2	LOAD java/lang/classfile/constantpool/ClassEntry
+2	LOAD java/lang/classfile/constantpool/ConstantValueEntry
+2	LOAD java/lang/classfile/constantpool/DoubleEntry
+2	LOAD java/lang/classfile/constantpool/FloatEntry
+2	LOAD java/lang/classfile/constantpool/IntegerEntry
+2	LOAD java/lang/classfile/constantpool/LoadableConstantEntry
+2	LOAD java/lang/classfile/constantpool/LongEntry
+2	LOAD java/lang/classfile/constantpool/Utf8Entry
+2	LOAD java/lang/constant/ClassDesc
+2	LOAD java/lang/foreign/AddressLayout
+4	LOAD java/lang/foreign/MemorySegment
+2	LOAD java/lang/foreign/ValueLayout$OfBoolean
+2	LOAD java/lang/foreign/ValueLayout$OfChar
+2	LOAD java/lang/foreign/ValueLayout$OfDouble
+2	LOAD java/lang/foreign/ValueLayout$OfFloat
+2	LOAD java/lang/instrument/IllegalClassFormatException
+896	LOAD java/lang/invoke/CallSite
+876	LOAD java/lang/invoke/MethodHandle
+954	LOAD java/lang/invoke/MethodHandles
+954	LOAD java/lang/invoke/MethodHandles$Lookup
+896	LOAD java/lang/invoke/MethodType
+332	LOAD java/lang/invoke/TypeDescriptor
+4	LOAD java/lang/reflect/AccessFlag
+144	LOAD java/logging/module-info
+144	LOAD java/management/module-info
+144	LOAD java/management/rmi/module-info
+500	LOAD java/math/BigDecimal
+500	LOAD java/math/BigInteger
+144	LOAD java/naming/module-info
+2	LOAD java/net/InetAddress
+464	LOAD java/net/URI
+499	LOAD java/net/URL
+144	LOAD java/net/http/module-info
+17	LOAD java/nio/ByteBuffer
+4	LOAD java/nio/CharBuffer
+6	LOAD java/nio/channels/AsynchronousByteChannel
+2	LOAD java/nio/charset/Charset
+6	LOAD java/nio/charset/CharsetDecoder
+4	LOAD java/nio/charset/CharsetEncoder
+4	LOAD java/nio/charset/StandardCharsets
+2	LOAD java/nio/file/FileSystem
+2	LOAD java/nio/file/Files
+16	LOAD java/nio/file/LinkOption
+56	LOAD java/nio/file/Path
+10	LOAD java/nio/file/WatchEvent
+10	LOAD java/nio/file/WatchEvent$Kind
+6	LOAD java/nio/file/attribute/BasicFileAttributes
+144	LOAD java/prefs/module-info
+144	LOAD java/rmi/module-info
+144	LOAD java/scripting/module-info
+144	LOAD java/se/module-info
+144	LOAD java/security/jgss/module-info
+144	LOAD java/security/sasl/module-info
+144	LOAD java/smartcardio/module-info
+144	LOAD java/sql/module-info
+144	LOAD java/sql/rowset/module-info
+358	LOAD java/time/Duration
+480	LOAD java/time/Instant
+480	LOAD java/time/LocalDate
+480	LOAD java/time/LocalDateTime
+480	LOAD java/time/LocalTime
+480	LOAD java/time/OffsetDateTime
+480	LOAD java/time/OffsetTime
+480	LOAD java/time/Period
+480	LOAD java/time/YearMonth
+480	LOAD java/time/ZonedDateTime
+144	LOAD java/transaction/xa/module-info
+2	LOAD java/util/ArrayList
+52	LOAD java/util/Collection
+105	LOAD java/util/Comparator
+480	LOAD java/util/Date
+210	LOAD java/util/Iterator
+2	LOAD java/util/LinkedHashMap
+58	LOAD java/util/List
+19	LOAD java/util/ListIterator
+20	LOAD java/util/Locale
+100	LOAD java/util/Map
+20	LOAD java/util/Map$Entry
+28	LOAD java/util/NavigableMap
+384	LOAD java/util/Optional
+480	LOAD java/util/OptionalDouble
+478	LOAD java/util/OptionalInt
+480	LOAD java/util/OptionalLong
+5	LOAD java/util/Random
+4	LOAD java/util/ResourceBundle
+2	LOAD java/util/ServiceLoader
+10	LOAD java/util/Set
+486	LOAD java/util/Spliterator
+2	LOAD java/util/concurrent/BlockingQueue
+2	LOAD java/util/concurrent/Callable
+470	LOAD java/util/concurrent/CompletableFuture
+470	LOAD java/util/concurrent/CompletionStage
+2	LOAD java/util/concurrent/ConcurrentNavigableMap
+4	LOAD java/util/concurrent/ExecutionException
+2	LOAD java/util/concurrent/Executors
+446	LOAD java/util/concurrent/Future
+3	LOAD java/util/concurrent/RunnableFuture
+2	LOAD java/util/concurrent/RunnableScheduledFuture
+22	LOAD java/util/concurrent/TimeoutException
+468	LOAD java/util/concurrent/atomic/AtomicBoolean
+444	LOAD java/util/concurrent/atomic/AtomicInteger
+480	LOAD java/util/concurrent/atomic/AtomicIntegerArray
+480	LOAD java/util/concurrent/atomic/AtomicIntegerFieldUpdater
+470	LOAD java/util/concurrent/atomic/AtomicLong
+480	LOAD java/util/concurrent/atomic/AtomicLongArray
+480	LOAD java/util/concurrent/atomic/AtomicLongFieldUpdater
+480	LOAD java/util/concurrent/atomic/AtomicMarkableReference
+474	LOAD java/util/concurrent/atomic/AtomicReference
+480	LOAD java/util/concurrent/atomic/AtomicReferenceArray
+480	LOAD java/util/concurrent/atomic/AtomicReferenceFieldUpdater
+480	LOAD java/util/concurrent/atomic/AtomicStampedReference
+480	LOAD java/util/concurrent/atomic/LongAdder
+25	LOAD java/util/function/BiConsumer
+4	LOAD java/util/function/BiFunction
+4	LOAD java/util/function/BinaryOperator
+4	LOAD java/util/function/BooleanSupplier
+4	LOAD java/util/function/Consumer
+480	LOAD java/util/function/DoublePredicate
+9	LOAD java/util/function/Function
+6	LOAD java/util/function/IntFunction
+476	LOAD java/util/function/IntPredicate
+480	LOAD java/util/function/LongPredicate
+4	LOAD java/util/function/LongSupplier
+256	LOAD java/util/function/Predicate
+342	LOAD java/util/function/Supplier
+4	LOAD java/util/function/UnaryOperator
+4	LOAD java/util/jar/Attributes$Name
+480	LOAD java/util/regex/Matcher
+2	LOAD java/util/regex/Pattern
+480	LOAD java/util/stream/DoubleStream
+462	LOAD java/util/stream/IntStream
+476	LOAD java/util/stream/LongStream
+270	LOAD java/util/stream/Stream
+144	LOAD java/xml/crypto/module-info
+144	LOAD java/xml/module-info
+26	LOAD javax/annotation/processing/ProcessingEnvironment
+5	LOAD javax/annotation/processing/SupportedAnnotationTypes
+2	LOAD javax/annotation/processing/SupportedSourceVersion
+2	LOAD javax/inject/Named
+2	LOAD javax/lang/model/SourceVersion
+2	LOAD javax/lang/model/element/Element
+2	LOAD javax/lang/model/element/Modifier
+2	LOAD javax/lang/model/element/ModuleElement
+4	LOAD javax/lang/model/type/TypeVisitor
+2	LOAD javax/tools/Diagnostic
+26	LOAD javax/tools/JavaCompiler
+2	LOAD javax/tools/JavaFileManager
+144	LOAD jdk/accessibility/module-info
+144	LOAD jdk/attach/module-info
+144	LOAD jdk/charsets/module-info
+144	LOAD jdk/compiler/module-info
+144	LOAD jdk/crypto/cryptoki/module-info
+144	LOAD jdk/crypto/ec/module-info
+144	LOAD jdk/crypto/mscapi/module-info
+144	LOAD jdk/dynalink/module-info
+144	LOAD jdk/editpad/module-info
+144	LOAD jdk/graal/compiler/management/module-info
+144	LOAD jdk/graal/compiler/module-info
+144	LOAD jdk/hotspot/agent/module-info
+144	LOAD jdk/httpserver/module-info
+144	LOAD jdk/incubator/vector/module-info
+2	LOAD jdk/internal/classfile/impl/AnnotationImpl
+2	LOAD jdk/internal/classfile/impl/BufferedCodeBuilder
+2	LOAD jdk/internal/classfile/impl/BufferedFieldBuilder
+2	LOAD jdk/internal/classfile/impl/BufferedMethodBuilder
+4	LOAD jdk/internal/classfile/impl/SignaturesImpl
+2	LOAD jdk/internal/classfile/impl/SignaturesImpl$MethodSignatureImpl
+2	LOAD jdk/internal/classfile/impl/Util
+2	LOAD jdk/internal/constant/PrimitiveClassDescImpl
+144	LOAD jdk/internal/ed/module-info
+144	LOAD jdk/internal/jvmstat/module-info
+144	LOAD jdk/internal/le/module-info
+144	LOAD jdk/internal/md/module-info
+144	LOAD jdk/internal/opt/module-info
+144	LOAD jdk/internal/vm/ci/module-info
+144	LOAD jdk/jartool/module-info
+144	LOAD jdk/javadoc/module-info
+144	LOAD jdk/jcmd/module-info
+144	LOAD jdk/jconsole/module-info
+144	LOAD jdk/jdeps/module-info
+144	LOAD jdk/jdi/module-info
+144	LOAD jdk/jdwp/agent/module-info
+25	LOAD jdk/jfr/Enabled
+25	LOAD jdk/jfr/Registered
+25	LOAD jdk/jfr/StackTrace
+144	LOAD jdk/jfr/module-info
+144	LOAD jdk/jlink/module-info
+144	LOAD jdk/jpackage/module-info
+144	LOAD jdk/jshell/module-info
+144	LOAD jdk/jsobject/module-info
+144	LOAD jdk/jstatd/module-info
+144	LOAD jdk/localedata/module-info
+144	LOAD jdk/management/agent/module-info
+144	LOAD jdk/management/jfr/module-info
+144	LOAD jdk/management/module-info
+144	LOAD jdk/naming/dns/module-info
+144	LOAD jdk/naming/rmi/module-info
+144	LOAD jdk/net/module-info
+144	LOAD jdk/nio/mapmode/module-info
+144	LOAD jdk/sctp/module-info
+144	LOAD jdk/security/auth/module-info
+144	LOAD jdk/security/jgss/module-info
+144	LOAD jdk/unsupported/desktop/module-info
+144	LOAD jdk/unsupported/module-info
+144	LOAD jdk/xml/dom/module-info
+144	LOAD jdk/zipfs/module-info
+5	LOAD lombok/AccessLevel
+2	LOAD org/apache/maven/api/services/Request
+2	LOAD org/apache/maven/api/services/Result
+2	LOAD org/apache/maven/api/services/xml/XmlReaderRequest
+4	LOAD org/apache/maven/api/xml/XmlNode
+2	LOAD org/apache/maven/di/Key
+2	LOAD org/apache/maven/project/ReactorModelPool
+68	LOAD org/apiguardian/api/API
+68	LOAD org/apiguardian/api/API$Status
+8	LOAD org/assertj/core/api/AbstractCollectionAssert
+2	LOAD org/assertj/core/api/AbstractListAssert
+10	LOAD org/assertj/core/api/AbstractThrowableAssert
+480	LOAD org/assertj/core/api/AssertDelegateTarget
+26	LOAD org/assertj/core/api/AssertFactory
+480	LOAD org/assertj/core/api/AssertProvider
+18	LOAD org/assertj/core/api/AtomicIntegerFieldUpdaterAssert
+18	LOAD org/assertj/core/api/AtomicLongFieldUpdaterAssert
+18	LOAD org/assertj/core/api/AtomicMarkableReferenceAssert
+18	LOAD org/assertj/core/api/AtomicReferenceArrayAssert
+18	LOAD org/assertj/core/api/AtomicReferenceAssert
+18	LOAD org/assertj/core/api/AtomicReferenceFieldUpdaterAssert
+18	LOAD org/assertj/core/api/AtomicStampedReferenceAssert
+16	LOAD org/assertj/core/api/ClassBasedNavigableIterableAssert
+16	LOAD org/assertj/core/api/ClassBasedNavigableListAssert
+2	LOAD org/assertj/core/api/CollectionAssert
+18	LOAD org/assertj/core/api/CompletableFutureAssert
+16	LOAD org/assertj/core/api/FactoryBasedNavigableIterableAssert
+10	LOAD org/assertj/core/api/FactoryBasedNavigableListAssert
+18	LOAD org/assertj/core/api/FutureAssert
+15	LOAD org/assertj/core/api/InstanceOfAssertFactory
+18	LOAD org/assertj/core/api/IterableAssert
+18	LOAD org/assertj/core/api/IteratorAssert
+10	LOAD org/assertj/core/api/ListAssert
+16	LOAD org/assertj/core/api/MapAssert
+18	LOAD org/assertj/core/api/Object2DArrayAssert
+18	LOAD org/assertj/core/api/ObjectArrayAssert
+15	LOAD org/assertj/core/api/ObjectAssert
+16	LOAD org/assertj/core/api/OptionalAssert
+18	LOAD org/assertj/core/api/PredicateAssert
+18	LOAD org/assertj/core/api/SpliteratorAssert
+128	LOAD org/assertj/core/api/ThrowableAssert
+4	LOAD org/assertj/core/api/filter/FilterOperator
+38	LOAD org/assertj/core/data/Index
+2	LOAD org/assertj/core/data/Offset
+224	LOAD org/assertj/core/description/Description
+18	LOAD org/assertj/core/internal/annotation/Contract
+2	LOAD org/eclipse/aether/RequestTrace
+2	LOAD org/eclipse/sisu/Typed
+280	LOAD org/junit/jupiter/api/Assertions
+2	LOAD org/junit/jupiter/api/Test
+8	LOAD org/junit/jupiter/api/extension/ExtendWith
+16	LOAD org/junit/jupiter/api/io/CleanupMode
+8	LOAD org/junit/jupiter/params/ArgumentCountValidationMode
+13	LOAD org/junit/jupiter/params/provider/ArgumentsSource
+14	LOAD org/rocksdb/ColumnFamilyHandle
+6	LOAD org/rocksdb/DirectSlice
+6	LOAD org/rocksdb/Slice
+14	LOAD org/rocksdb/WriteBatchWithIndex
+2	LOAD org/xml/sax/InputSource

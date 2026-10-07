@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 /**
  * One module and scope (stage 2, 4 step 2 and 5.4): bind its route, header-compile its source files against the classpath of jars
@@ -71,7 +72,8 @@ final class ModuleJob {
         }
 
         // 3. Header-compile the scope's source files. A module-info.java is parsed with the rest and never entered.
-        var options = module.javacOptions();
+        var options = new ArrayList<>(module.javacOptions());
+        options.addAll(module.processing().options());
         int release = HeaderCompiler.effectiveRelease(module.release(), options.contains("--enable-preview"), Runtime.version().feature());
         var found = sources(module.scope(scope).sourceRoots());
         var toCompile = new ArrayList<HeaderCompiler.Source>(found.size());
@@ -81,16 +83,31 @@ final class ModuleJob {
         var builder = new LeafBuilder(boot.tree, sink);
         var pending = new ArrayList<Pending>();
         var seen = new HashSet<ByteBuffer>();
+        var processing = module.processing().path().isEmpty() || found.isEmpty() ? null : new ModuleProcessing(boot, module, scope, options, release,
+                found.stream().map(Found::path).toList());
+        var processorHost = processing == null ? null : processing.host;
         long headerStarted = System.nanoTime();
-        var compiled = HeaderCompiler.compile(toCompile, classpath, Path.of(boot.model.jdkHome()), release, options, digest);
+        HeaderCompiler.Compiled compiled;
+        try { compiled = HeaderCompiler.compile(toCompile, classpath, Path.of(boot.model.jdkHome()), release, options, digest, processorHost); }
+        catch (RuntimeException | Error failed) { if (processorHost != null) processorHost.close(); throw failed; }
         boot.headerNanos.addAndGet(System.nanoTime() - headerStarted);
-        try (compiled) {
+        HeaderView.Roots compilerView=null;
+        try (processorHost; compiled) {
             var extract = new SourceFacts(digest, compiled.elements, compiled.types, options.contains("-parameters"));
+            var declarations = new SourceDeclarations(boot, compiled);
             var unitsByPath = new HashMap<String, HeaderCompiler.Unit>();
             for (var u : compiled.units) unitsByPath.put(u.path, u);
+            var initialPaths = found.stream().map(Found::path).collect(Collectors.toSet());
+            for (var unit : compiled.units) if (!initialPaths.contains(unit.path)) {
+                found.add(new Found(unit.path, boot.model.resolve(unit.path), 0));
+                boot.sourceFiles.incrementAndGet();
+            }
             // 4. Each compilation unit, in path order.
             for (var file : found) {
                 var unit = unitsByPath.get(file.path());
+                if (file.path().equals("module-info.java") || file.path().endsWith("/module-info.java"))
+                    boot.headerDiagnostics.put(new dev.jvmd.index.layer.local.SourceUnit(module.name(), scope, file.path()),
+                            new dev.jvmd.index.layer.local.HeaderDiagnostics(unit.moduleDiagnostics));
                 var kappa = unit.kappa == null ? sums.zero() : unit.kappa; // javac could not read it: the file is a parse fault
                 if (!unit.parsed()) {
                     pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sums.zero(), List.of(),
@@ -102,14 +119,19 @@ final class ModuleJob {
                 SourceFacts.Result result;
                 if (unit.module != null) {
                     // The descriptor of the module's own main code; a test scope has none (its module is patched, not declared).
-                    result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)))
+                    result = scope == LocalStore.MAIN ? extract.ofModule(unit.module, unit.moduleElement, moduleVersion(options), name -> boot.moduleVersion(name, bound.sequence(), releaseOption(options)),
+                            unit.moduleTypes::get)
                             : SourceFacts.Result.NONE;
-                } else result = extract.of(unit.declared);
-                var reads = ProofCollector.headers(unit.declared, compiled.trees, compiled.elements, compiled.types);
-                boot.factsNanos.addAndGet(System.nanoTime() - factsStarted);
+                } else result = extract.of(unit.declared, unit.packageDeclaration, unit.packageClass);
+                var proofDeclarations = new ArrayList<javax.lang.model.element.Element>(unit.declared);
+                if (unit.packageDeclaration != null) proofDeclarations.add(unit.packageDeclaration);
+                var reads = unit.module != null ? ProofCollector.module(unit.moduleUnit, unit.module, compiled.trees, compiled.elements, compiled.types)
+                        : ProofCollector.headers(proofDeclarations, compiled.trees, compiled.elements, compiled.types);
                 boot.parsedFiles.incrementAndGet();
                 var faults = new ArrayList<>(result.faults());
                 faults.addAll(unit.faults);
+                declarations.add(file.path(), unit.declared, unit.packageDeclaration, faults);
+                boot.factsNanos.addAndGet(System.nanoTime() - factsStarted);
                 var sum = sums.zero();
                 var kept = new HashSet<ByteBuffer>();
                 for (var fact : result.facts()) {
@@ -122,8 +144,20 @@ final class ModuleJob {
                 builder.edges(result.edges());
                 var types = new ArrayList<String>();
                 for (var type : result.typeKeys()) if (kept.contains(ByteBuffer.wrap(Keys.typeKey(type)))) types.add(type);
-                pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sum, types, faults, new TreeSet<>(result.headerTargets()), reads));
+                var absences = new ArrayList<>(reads.absences());
+                var headerTargets = new TreeSet<>(result.headerTargets());
+                if (processorHost != null) for (var read : processorHost.readsFor(file.file().toAbsolutePath().normalize().toUri())) {
+                    headerTargets.addAll(read.types());
+                    for (var name : read.missingTypes()) for (var candidate : ProcessorReads.absentCandidates(name))
+                        absences.add(new HeaderProof.Absence(0, candidate, ""));
+                }
+                pending.add(new Pending(file.path(), unit.size, file.mtimeNanos(), kappa, sum, types, faults, headerTargets,
+                        new ProofCollector.Observations(reads.ranges(), absences.stream().distinct().toList())));
             }
+            declarations.finish(module.name(), scope);
+            // Invalid header scopes keep their explicit unsupported boundary; never manufacture a view from error types.
+            if(!compiled.hasHeaderErrors() && pending.stream().allMatch(p->p.faults().isEmpty()))
+                compilerView=new HeaderView(compiled,options.contains("-parameters")).persist(boot.tree,store,sink);
         }
 
         // 5. Sort the facts by m and stream them into the leaf's shape.
@@ -146,7 +180,9 @@ final class ModuleJob {
         sink.flush();
 
         // 6. Register the leaf for the modules that depend on this one.
-        boot.built.register(module.name(), module.coordinate(), scope, leaf, builder.a());
+        boot.built.register(module.name(), module.coordinate(), scope, leaf, builder.a(),compilerView);
+        var readerBinding=dev.jvmd.index.layer.local.ReaderBinding.build(boot.tree,leaf,compilerView==null?null:compilerView.reader(),bound,store::get,sink);
+        boot.routes.compute(Boot.routeKey(module.name(),scope),(key,value)->value.withReaderBinding(readerBinding));
 
         // 7. The definer indexes of this route, then the header proof of every file from what they resolve.
         long definerStarted = System.nanoTime();
@@ -163,10 +199,19 @@ final class ModuleJob {
                 var external = resolver.definer(type);
                 return external == null ? null : boot.leaf(external);
             };
+            // A failed lookup may have found an inaccessible declaration. Its flags can repair the error, so a present
+            // candidate becomes a type-header read instead of disappearing when the expected-absence candidates bind.
+            for (var candidate : p.reads().absences()) if (candidate.form() == 0 && definer.apply(candidate.type()) != null)
+                all.add(new HeaderProof.Range(candidate.type(), Keys.TYPE, ""));
             var absences = p.reads().absences().stream().filter(a -> HeaderProof.absent(a, boot.tree, definer, boot::node)).toList();
             var row = new FileRow(p.path(), p.kappa(), p.size(), p.mtimeNanos(), p.sum(), List.copyOf(p.types()), List.copyOf(p.faults()), headerProof(all, definer), leaf.r(), absences);
-            boot.files.put(row.path(), row);
+            boot.files.put(new dev.jvmd.index.layer.local.SourceUnit(module.name(), scope, row.path()), row);
             for (var fault : row.faults()) boot.faults.add(row.path() + ": " + (fault.m().length == 0 ? "" : Keys.ownerOf(fault.m()) + ": ") + fault.reason());
+        }
+        if (processing != null) {
+            var rows = new TreeMap<String, FileRow>();
+            for (var p : pending) rows.put(p.path(), boot.files.get(new dev.jvmd.index.layer.local.SourceUnit(module.name(), scope, p.path())));
+            processing.finish(rows);
         }
         sink.flush();
         return leaf;

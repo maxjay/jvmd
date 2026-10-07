@@ -1,0 +1,35 @@
+digest: SHA3-256
+project: C:\Users\Max\.codex\worktrees\stage3-descriptor-validation\jvmd-stage-2-cold-boot-eb9566
+workers: 4
+stage3 wall ms: 22996
+jvmd-analyzer/main files=33 classes=125 equal=true
+jvmd-analyzer/test files=0 classes=0 equal=true
+jvmd-boot/main files=42 classes=145 equal=true
+jvmd-boot/test files=0 classes=0 equal=true
+jvmd-core/main files=48 classes=129 equal=true
+jvmd-core/test files=0 classes=0 equal=true
+jvmd-dist/main files=9 classes=39 equal=true
+jvmd-dist/test files=0 classes=0 equal=true
+jvmd-index-rocks/main files=21 classes=52 equal=false
+jvmd-index-rocks/test files=12 classes=13 equal=true
+jvmd-index/main files=92 classes=330 equal=true
+jvmd-index/test files=0 classes=0 equal=true
+jvmd-lsp/main files=2 classes=3 equal=true
+jvmd-lsp/test files=0 classes=0 equal=true
+jvmd-mcp/main files=2 classes=2 equal=true
+jvmd-mcp/test files=0 classes=0 equal=true
+jvmd-resolver/main files=7 classes=19 equal=true
+jvmd-resolver/maven3/main files=8 classes=20 equal=true
+jvmd-resolver/maven3/test files=0 classes=0 equal=true
+jvmd-resolver/maven4/main files=10 classes=22 equal=true
+jvmd-resolver/maven4/test files=0 classes=0 equal=true
+jvmd-resolver/test files=0 classes=0 equal=true
+jvmd-runtime/main files=17 classes=41 equal=true
+jvmd-runtime/test files=0 classes=0 equal=true
+jvmd-tests/main files=0 classes=0 equal=true
+jvmd-tests/test files=264 classes=389 equal=true
+classpath equality: 25/26 scopes; files=567 classes=1329
+module descriptors included in byte oracle: 10; emitted=10
+jvmd-index-rocks/main diagnostics differ
+  native=[Message[path=jvmd-index-rocks/src/main/java/module-info.java, diagnostic=Diagnostic[kind=1, start=96, end=106, code=compiler.warn.requires.transitive.automatic, message=requires transitive directive for an automatic module]]]
+  body=[]

@@ -1,0 +1,53 @@
+PR62 frozen processor-metadata follow-up — 2026-10-07
+
+Base: 14f627cf562eda617600c4b0930e75ad4efb30e4 plus this repair commit.
+Frozen Java inputs: 596; SHA-256 of sorted source manifest:
+2f4b8195f808b7df7b2af24c005145d1896c8d6d4a8c9cb27f327056c477f674
+All listed Java bytes verified unchanged after the run. Documentation is outside this manifest.
+JDK: 25.0.4.1+1; Maven 3.9.16; Windows; SHA-256 and SHA3-256.
+
+Independent failing-before evidence:
+ProcessedAttributeTest.frozenMetadataStillNeedsProofOfCrossInputEnumQueries failed under both digests: the old proof remained valid when a project enum constant used by retained metadata in a byte-fixed processor jar disappeared.
+The jar, client and recorded T observations did not change; native compiler.warn.unknown.enum.constant did.
+This disproves admission based solely on frozen processor bytes.
+
+Repair:
+Body format 13. Immutable processor-classpath payloads are admitted only for a closed platform annotation/enum vocabulary with known member/constant names. Custom annotations, custom enums, class literals and unsupported defaults reject reuse. The predicate is deliberately conservative even for custom metadata wholly inside fixed inputs.
+No broad new jar, route or A-root identity is added.
+Checks include private members, type/parameter annotations and record components; Code metadata is excluded.
+Predicate results are cached once per immutable classfile URI per pool, including across context resets and workers. MetadataStatistics counts parsed files and bytes.
+Rejected bodies emit native fresh results but no ACI/RS/U and cannot validate; their contexts are reset to preserve repeated completion diagnostics.
+This is an admission repair, not a complete metadata-query projection.
+
+Preliminary gates:
+150 tests passed in review62-fixed-metadata-gate2.log.
+5 tests passed in review62-fixed-platform-metadata.log after adding platform member/enum-name checks.
+Neither is substituted for the final frozen run.
+
+Final command:
+mvn -B -pl jvmd-tests -am test -Dtest=OutputRecoveryTest,FixedCompilerInputsTest,FixedMetadataTest,BodyOutputTest,BinaryMetadataAdmissionTest,BodyAttributeTest,BodyPoolTest,BodyProofTest,BodyRecordsTest,Stage3Test,ProcessedAttributeTest,BodyProcessorTest,BodyCollectorTest,ColdProjectBootTest,BodyGenerationTest,ModuleArchitectureTest,ForbiddenIdentifiersTest,Stage3ClasspathMeasurement,ProcessorReuseMeasurement -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+
+Final result: 292 tests; 290 passed, 2 failed; 0 errors/skips; 7m48s.
+Local log: review62-fixed-metadata-frozen.log.
+The two unchanged ProcessorReuseMeasurement cases FAIL at initial reusable-admission assertions. No test has been disabled or relaxed to call this acceptance gate green.
+The stricter guard affects Lombok metadata in that 2,000-file fixture. Prior 2/1/1,000 affected-file counts do not describe this revision.
+F04 / invariant 27 remain unfinished.
+
+Passing final evidence:
+- 72 ProcessedAttributeTest cases, including 96 production cross-input Attribute calls per digest over RUNTIME/CLASS, class/private-field location, both mutation directions, old RS present/absent and repeats. Ordered native diagnostics and class bytes match; every unsafe result rejects reuse. Raw proof comparisons demonstrate the gap. Repeats do not parse additional metadata files.
+- FixedCompilerInputsTest: 4 cases; same-size/same-mtime frozen input replacement, cached admission counters, and malformed fixed platform enum metadata which must warn on both repeated tasks. Rejected tasks use fresh contexts.
+- FixedMetadataTest: native-encoded retained annotation locations (bounds, arrays, receivers, parameters, records, private fields/methods), defaults and executable-Code exclusion.
+- 8 OutputRecoveryTest cases, including 54 injected boundary/reopen scenarios and 16/64 MiB retention axes.
+- Body collector, attribute, proof/result, processor, output, pool, cold-driver and architecture gates in the command above.
+
+Repository native oracle, each digest:
+26/26 scopes equal for class bytes and full ordered diagnostics.
+591 compilations; 1,398 class files; all 10 descriptors emitted and compared.
+333 files explicitly non-reusable due to the temporary metadata boundary.
+This establishes fresh native equality, not reuse admission or strict native read completeness.
+
+Remaining:
+F04 exact metadata/query projection, two-sided native read proof, module directive/provider validation and general persisted processor verification.
+F05 indexed changed-query validation; current grouped proof scan remains.
+F09 separate architecture decision after the committed comparison; production tree unchanged.
+Hosted Tests/benchmarks passed at 14f627cf before this new repair. No claim of green current full CI.

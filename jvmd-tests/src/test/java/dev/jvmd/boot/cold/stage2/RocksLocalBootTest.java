@@ -11,6 +11,7 @@ import dev.jvmd.index.layer.local.LocalFormat;
 import dev.jvmd.index.layer.local.LocalRoot;
 import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
+import dev.jvmd.index.layer.local.ReverseIndex;
 import dev.jvmd.index.layer.machine.Format;
 import dev.jvmd.index.layer.machine.MachineStore;
 import dev.jvmd.index.rocks.layer.Generation;
@@ -26,9 +27,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * Stage 2 through {@link BootDecision} on the real store: a MACHINE boot of a small repository and the JDK, a LOCAL cold boot of a
+ * Stages 2 and 3 through {@link BootDecision} on the real store: a MACHINE boot of a small repository and the JDK, a LOCAL cold boot of a
  * project, a second start that logs the skip and touches nothing, and the records on disk, which are exactly those of the section 4
- * table with {@code C|}, {@code X|} and {@code RS|} empty.
+ * table with rooted {@code C|}, {@code CI|}, {@code CF|}, {@code RS|} and {@code OUT|} records.
  */
 @Tag("phase-3")
 class RocksLocalBootTest {
@@ -59,8 +60,8 @@ class RocksLocalBootTest {
 
             var first = BootDecision.local(indexDir, model, repository);
             assertThat(first).as("a cold boot").isPresent();
-            assertThat(first.get().faults()).isEmpty();
-            assertThat(first.get().modules()).isEqualTo(4);
+            assertThat(first.get().headers().orElseThrow().faults()).isEmpty();
+            assertThat(first.get().headers().orElseThrow().modules()).isEqualTo(4);
             var second = BootDecision.local(indexDir, model, repository);
             assertThat(second).as("the second start logs the skip line and does nothing else").isEmpty();
 
@@ -70,10 +71,26 @@ class RocksLocalBootTest {
             try (var store = Generation.of(indexDir, format).open()) {
                 var kinds = new TreeMap<String, Integer>();
                 for (var key : store.keys()) kinds.merge(kind(key), 1, Integer::sum);
-                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT");
-                assertThat(kinds).as("C| and RS| are empty after a cold boot").doesNotContainKeys("C", "RS");
-                for (var key : store.keys()) if (kind(key).equals("X")) assertThat(key[2]).as("header range reverse keys have their own namespace").isEqualTo((byte) 'H');
-                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT");
+                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "BV", "BSEQ", "BM", "PB", "PE", "CF", "CV", "C", "CI", "RS", "U", "OUT");
+                assertThat(kinds.get("C")).as("one body proof per compiled source").isEqualTo(Fixtures.multi().size());
+                for (var key : store.keys()) if (kind(key).equals("X")) assertThat(ReverseIndex.isHeaderKey(key) || ReverseIndex.isBodyKey(key))
+                        .as("versioned current header and body reverse namespaces").isTrue();
+                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "CF", "CV", "C", "CI", "RS", "U", "OUT");
+                var tree = new ContentTree(digest);
+                var bodies = dev.jvmd.index.layer.local.BodiesRoot.decode(store.get(LocalStore.bodiesRootKey(projectKey)), digest.width());
+                int indexed = 0;
+                for (var key : store.keys()) if (kind(key).equals("CI")) {
+                    var selected = tree.get(bodies.bodiesRoot(), h -> store.get(MachineStore.nodeKey(h)), key);
+                    assertThat(selected).as("indexed receipt selected by persisted BROOT").isNotNull();
+                    var value = dev.jvmd.index.layer.local.RootedRecords.value(tree, store::get, selected);
+                    assertThat(value).as("indexed receipt selected by persisted BROOT").isEqualTo(store.get(key));
+                    var receipt = dev.jvmd.index.layer.local.ProofIndex.decode(value, digest.width());
+                    tree.verify(tree.root(receipt.queries(), h -> store.get(MachineStore.nodeKey(h))), h -> store.get(MachineStore.nodeKey(h)));
+                    assertThat(tree.get(bodies.bodiesRoot(), h -> store.get(MachineStore.nodeKey(h)), LocalStore.resultKey(receipt.aci())))
+                            .as("persisted receipt names a selected admitted result").isNotNull();
+                    indexed++;
+                }
+                assertThat(indexed).isEqualTo(kinds.get("CI")).isPositive().isLessThanOrEqualTo(kinds.get("C"));
                 assertThat(kinds.get("MOD")).isEqualTo(4);
                 assertThat(kinds.get("RT")).isEqualTo(8);
                 assertThat(kinds.get("SL")).isEqualTo(8);
@@ -102,19 +119,19 @@ class RocksLocalBootTest {
                         .contains("server-a/src/main/java/a/Server.java");
                 for (var consumer : consumers) {
                     assertThat(consumer.project()).isEqualTo(projectKey);
-                    assertThat(store.get(dependency.key(consumer.project(), consumer.path()))).isEmpty();
+                    assertThat(store.get(dependency.key(consumer.project(), consumer.source()))).isEmpty();
                 }
             }
-            // Neither old header-proof layout may take the current-format skip branch.
-            for (int legacy : List.of(1, 2, 3, 4)) {
+            // No previous LOCAL layout may take the current-format skip branch, even with identical runtime and locale.
+            for (int legacy = 1; legacy < LocalFormat.LAYOUT; legacy++) {
                 try (var store = Generation.of(indexDir, format).openLocal()) {
                     var root = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(projectKey)));
                     store.putLocalRoot(digest, projectKey, LocalRoot.encode(digest,
-                            format + ";local=" + legacy + ";javac=" + Runtime.version().feature(), root.local(), root.machineRoot(), root.modelHash()));
+                            LocalFormat.of(format).replace(";local=" + LocalFormat.LAYOUT + ";", ";local=" + legacy + ";"), root.local(), root.machineRoot(), root.modelHash()));
                 }
                 var rebuilt = BootDecision.local(indexDir, model, repository);
                 assertThat(rebuilt).as("local=" + legacy + " must not skip the current LOCAL cold boot").isPresent();
-                assertThat(rebuilt.orElseThrow().faults()).isEmpty();
+                assertThat(rebuilt.orElseThrow().headers().orElseThrow().faults()).isEmpty();
                 try (var store = Generation.of(indexDir, format).open()) {
                     assertThat(LocalRoot.formatOf(store.get(LocalStore.localRootKey(projectKey)))).isEqualTo(LocalFormat.of(format));
                 }
@@ -127,7 +144,7 @@ class RocksLocalBootTest {
     private static String kind(byte[] key) {
         if (new String(key, StandardCharsets.US_ASCII).equals("ROOT")) return "ROOT";
         var text = new String(key, StandardCharsets.ISO_8859_1);
-        for (var tag : List.of("LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "DF|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
+        for (var tag : List.of("BROOT|", "BV|", "BSEQ|", "BM|", "PB|", "PE|", "CF|", "CV|", "CI|", "OUT|", "U|", "LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "DF|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
         if (key[0] == 'L' && key.length == 33) return "L";
         if (key[0] == 'N' && key.length == 33) return "N";
         if (key[0] == 'P') return "P";

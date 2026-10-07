@@ -43,6 +43,34 @@ class StubProjectionTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void binaryConstantsAndAnnotationDefaultsRetainExactJavaStrings(Digest digest) throws Exception {
+        String literal = "\\uD800|\\uDC00|\\uD83D\\uDE00|\\0|\\n|café";
+        String expected = new String(new char[]{0xd800,'|',0xdc00,'|',0xd83d,0xde00,'|',0,'|','\n','|','c','a','f',0xe9});
+        var classes = Stage2Support.compile(dir.resolve("strings"), Map.of(
+                "p/K.java", "package p; public class K { public static final String VALUE=\""+literal+"\"; }",
+                "p/Label.java", "package p; public @interface Label { String value() default \""+literal+"\"; }"), List.of(), List.of());
+        var projected = stubs(digest, classes);
+        var nativeField = ClassFile.of().parse(classes.get("p/K.class")).fields().getFirst()
+                .findAttribute(java.lang.classfile.Attributes.constantValue()).orElseThrow().constant();
+        assertThat(((java.lang.classfile.constantpool.StringEntry) nativeField).stringValue()).isEqualTo(expected);
+        var stubField = ClassFile.of().parse(projected.get("p/K.class")).fields().getFirst()
+                .findAttribute(java.lang.classfile.Attributes.constantValue()).orElseThrow().constant();
+        assertThat(((java.lang.classfile.constantpool.StringEntry) stubField).stringValue()).isEqualTo(expected);
+        var defaultValue = ClassFile.of().parse(projected.get("p/Label.class")).methods().getFirst()
+                .findAttribute(java.lang.classfile.Attributes.annotationDefault()).orElseThrow().defaultValue();
+        assertThat(((java.lang.classfile.AnnotationValue.OfString) defaultValue).stringValue()).isEqualTo(expected);
+        var stubPath = Files.createDirectories(dir.resolve("string-stubs"));
+        for (var entry : projected.entrySet()) {
+            var path = stubPath.resolve(entry.getKey()); Files.createDirectories(path.getParent()); Files.write(path, entry.getValue());
+        }
+        var client = Map.of("Use.java", "@p.Label(p.K.VALUE) class Use { String value(){return p.K.VALUE;} }");
+        var nativeClient = Stage2Support.compile(dir.resolve("string-native-client"), client, List.of("-g"), List.of(dir.resolve("strings/classes")));
+        var stubClient = Stage2Support.compile(dir.resolve("string-stub-client"), client, List.of("-g"), List.of(stubPath));
+        assertThat(stubClient.keySet()).isEqualTo(nativeClient.keySet());
+        stubClient.forEach((name, bytes) -> assertThat(bytes).as(name).isEqualTo(nativeClient.get(name)));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void dollarNamesSurviveTheInnerClassesProjection(Digest digest) throws Exception {
         for (boolean nested : new boolean[] {false, true}) {
             String fixture = "dollar-" + nested;

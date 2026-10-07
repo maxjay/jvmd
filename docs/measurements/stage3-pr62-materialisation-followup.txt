@@ -1,0 +1,725 @@
+PR62 follow-up repair validation — 2026-10-07
+
+Base: b0cc463968f4df121626158ee66908de723e9e75 plus this repair commit.
+Frozen Java inputs: 594; SHA-256 of sorted source manifest:
+00bd5ced159403bde89d578cbe84a8a910160744990a797afe219cfbcc286df9
+All listed Java bytes were verified unchanged after the run. Repository documentation changes are outside this source manifest.
+
+JDK: 25.0.4.1+1; Maven 3.9.16; Windows; both SHA-256 and SHA3-256 where parameterized.
+Command:
+mvn -B -pl jvmd-tests -am test -Dtest=OutputRecoveryTest,FixedCompilerInputsTest,BodyOutputTest,BinaryMetadataAdmissionTest,BodyAttributeTest,BodyPoolTest,BodyProofTest,BodyRecordsTest,Stage3Test,ProcessedAttributeTest,BodyCollectorTest,ColdProjectBootTest,BodyGenerationTest,ModuleArchitectureTest,ForbiddenIdentifiersTest,Stage3ClasspathMeasurement,ProcessorReuseMeasurement -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+
+273 tests passed; 0 failures/errors/skips; 10m36s. This is a focused/native/measurement gate, not an unfiltered full-suite or strict read-oracle pass.
+All 70 ProcessedAttributeTest cases pass. Fresh ordinary binary results explicitly reject reuse. The AutoValue/late-class fixtures now assert this boundary while retaining native-byte/diagnostic and processor-model checks.
+F04: 64 production attributions per digest; class and private-member metadata; repaired enum values/annotation removal; both directions; old RS present/absent; two tasks in each pool. Full native messages/positions/order and class bytes match.
+F20: 9 interruption boundaries x 3 next targets x 2 digests = 54 Rocks close/reopen recoveries, plus original obstruction repro, concurrent writers, other scope/store ownership rejection.
+F19: retained prior CF arrays at each later CF read are zero at both 16 and 64 MiB total output, largest blob 1 MiB. Staging retains path/content references; changed payloads occupy disk, not a heap map.
+Frozen processor-classpath regression: replace original jar with same size/mtime after snapshot; javac emits original bytes from the existing processorPathHash-bound copy. Removing fixed inputs resets the context, reads new ordinary bytes and rejects reuse.
+
+F04 remains open for the exact metadata/query projection and strict two-sided read coverage, module validation and processor boundaries. Fixed byte inputs do not prove all declaration queries made during their decoding. F05 grouped-proof scan remains open. F09 locality contract remains a user decision, not an accepted deviation.
+
+Selected work/measurement output:
+field addition: attributed=2 retained rooted selections=1998 validation ms=654 attribution ms=693
+body edit: attributed=1 retained rooted selections=1999 validation ms=571 attribution ms=696
+config edit: attributed=1000 retained rooted selections=1000 validation ms=332 attribution ms=14386
+config deletion: attributed=1000 retained rooted selections=1000 validation ms=338 attribution ms=14071
+digest: SHA-256
+files: 2000
+initial cold driver ms: 11177
+field addition: attributed=2 retained rooted selections=1998 validation ms=654 attribution ms=693
+body edit: attributed=1 retained rooted selections=1999 validation ms=571 attribution ms=696
+config edit: attributed=1000 retained rooted selections=1000 validation ms=332 attribution ms=14386
+config deletion: attributed=1000 retained rooted selections=1000 validation ms=338 attribution ms=14071
+field addition: attributed=2 retained rooted selections=1998 validation ms=601 attribution ms=690
+body edit: attributed=1 retained rooted selections=1999 validation ms=619 attribution ms=675
+config edit: attributed=1000 retained rooted selections=1000 validation ms=365 attribution ms=14199
+config deletion: attributed=1000 retained rooted selections=1000 validation ms=366 attribution ms=13796
+digest: SHA3-256
+files: 2000
+initial cold driver ms: 10109
+field addition: attributed=2 retained rooted selections=1998 validation ms=601 attribution ms=690
+body edit: attributed=1 retained rooted selections=1999 validation ms=619 attribution ms=675
+config edit: attributed=1000 retained rooted selections=1000 validation ms=365 attribution ms=14199
+config deletion: attributed=1000 retained rooted selections=1000 validation ms=366 attribution ms=13796
+digest: SHA-256
+digest: SHA3-256
+F19 SHA-256 totalMiB=16 priorLiveMiB=0 staged=16
+F19 SHA-256 totalMiB=64 priorLiveMiB=0 staged=64
+F19 SHA3-256 totalMiB=16 priorLiveMiB=0 staged=16
+F19 SHA3-256 totalMiB=64 priorLiveMiB=0 staged=64
+
+stage3-classpath-SHA-256.txt
+digest: SHA-256
+project: C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566
+workers: 4
+stage3 wall ms: 63050
+jvmd-analyzer/main files=33 classes=125 equal=true
+jvmd-analyzer/test files=0 classes=0 equal=true
+jvmd-boot/main files=45 classes=167 equal=true
+jvmd-boot/test files=0 classes=0 equal=true
+jvmd-core/main files=49 classes=131 equal=true
+jvmd-core/test files=0 classes=0 equal=true
+jvmd-dist/main files=9 classes=39 equal=true
+jvmd-dist/test files=0 classes=0 equal=true
+jvmd-index-rocks/main files=21 classes=52 equal=true
+jvmd-index-rocks/test files=12 classes=13 equal=true
+jvmd-index/main files=97 classes=344 equal=true
+jvmd-index/test files=0 classes=0 equal=true
+jvmd-lsp/main files=2 classes=3 equal=true
+jvmd-lsp/test files=0 classes=0 equal=true
+jvmd-mcp/main files=2 classes=2 equal=true
+jvmd-mcp/test files=0 classes=0 equal=true
+jvmd-resolver/main files=7 classes=19 equal=true
+jvmd-resolver/maven3/main files=8 classes=20 equal=true
+jvmd-resolver/maven3/test files=0 classes=0 equal=true
+jvmd-resolver/maven4/main files=10 classes=22 equal=true
+jvmd-resolver/maven4/test files=0 classes=0 equal=true
+jvmd-resolver/test files=0 classes=0 equal=true
+jvmd-runtime/main files=17 classes=41 equal=true
+jvmd-runtime/test files=0 classes=0 equal=true
+jvmd-tests/main files=0 classes=0 equal=true
+jvmd-tests/test files=277 classes=417 equal=true
+classpath equality: 26/26 scopes; files=589 classes=1395
+module descriptors included in byte oracle: 10; emitted=10
+temporary metadata non-reuse boundary: 332 files; fresh native equality is independent of reuse admission
+
+
+stage3-classpath-SHA3-256.txt
+digest: SHA3-256
+project: C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566
+workers: 4
+stage3 wall ms: 62061
+jvmd-analyzer/main files=33 classes=125 equal=true
+jvmd-analyzer/test files=0 classes=0 equal=true
+jvmd-boot/main files=45 classes=167 equal=true
+jvmd-boot/test files=0 classes=0 equal=true
+jvmd-core/main files=49 classes=131 equal=true
+jvmd-core/test files=0 classes=0 equal=true
+jvmd-dist/main files=9 classes=39 equal=true
+jvmd-dist/test files=0 classes=0 equal=true
+jvmd-index-rocks/main files=21 classes=52 equal=true
+jvmd-index-rocks/test files=12 classes=13 equal=true
+jvmd-index/main files=97 classes=344 equal=true
+jvmd-index/test files=0 classes=0 equal=true
+jvmd-lsp/main files=2 classes=3 equal=true
+jvmd-lsp/test files=0 classes=0 equal=true
+jvmd-mcp/main files=2 classes=2 equal=true
+jvmd-mcp/test files=0 classes=0 equal=true
+jvmd-resolver/main files=7 classes=19 equal=true
+jvmd-resolver/maven3/main files=8 classes=20 equal=true
+jvmd-resolver/maven3/test files=0 classes=0 equal=true
+jvmd-resolver/maven4/main files=10 classes=22 equal=true
+jvmd-resolver/maven4/test files=0 classes=0 equal=true
+jvmd-resolver/test files=0 classes=0 equal=true
+jvmd-runtime/main files=17 classes=41 equal=true
+jvmd-runtime/test files=0 classes=0 equal=true
+jvmd-tests/main files=0 classes=0 equal=true
+jvmd-tests/test files=277 classes=417 equal=true
+classpath equality: 26/26 scopes; files=589 classes=1395
+module descriptors included in byte oracle: 10; emitted=10
+temporary metadata non-reuse boundary: 332 files; fresh native equality is independent of reuse admission
+
+
+Separate F10 recheck: 2 tests passed (same frozen sources).
+F10 Sha256 extra route origins=0 node reads=800
+F10 Sha256 extra route origins=128 node reads=800
+F10 Sha256 extra route origins=4096 node reads=800
+F10 Sha3 extra route origins=0 node reads=900
+F10 Sha3 extra route origins=128 node reads=900
+F10 Sha3 extra route origins=4096 node reads=900
+
+Full source manifest:
+3c2bef00821221645d1b6e7d4f4f4b7b2f80fcf1c1799853136b6dd82a2c4000  benchmarks/harness/agent/AllocationAgent.java
+712929bef838448112b5603ca4c606c62a7ff19c115a8cda5daf385f379fb738  benchmarks/harness/BodyEdits.java
+552a4599896430afa7ba7a6e61c6ceeddab1acee4db6ccf6898ff1532c73f622  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/AccessibilityCache.java
+30fb6832cb8670106b3d229437f5a75de8e8692bba00a692280a8661edb913dd  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Analyzer.java
+faede8eb3986577ae336e97a58d2f65058965c740b7321873b277221294e2d4f  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/ApiFingerprint.java
+11711ddbff42fa4d8fdf692a8adaa52c5c002ef9edacc13d78daff2836183cf9  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/AttributedMemos.java
+6bc47aaaf5651424daa4ceda5885d83cc985baeb231fcda255763fc1a963714b  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/BinaryProjections.java
+f9c69f9b531806e3cfd6e9159e5502bf2eb43956c9c40495f660de472e387c95  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Bindings.java
+b3258ada8d27028abd8544aaef5d041481691b69e085ccbf253d58808d7aeed5  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/ClasspathProofEvidence.java
+2ff010cf85fe99913f50d14ebf423685c0e793be299d24a27b9fb21e546293c7  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/CompilerPool.java
+0dbb44f5728922610d7ccea7c4f6c624fdc280aa598e7f61e561f8cf34d91296  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/CompletionContextResolver.java
+41df30a5d4a61f18d742f5047afd336dfb9f2064f50e51a7798d11588202431d  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/CompletionProbe.java
+301056c95e9984eeace62df5bb04c76b98a61f173f41f88f6ce279c67e6d7ca1  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Dependencies.java
+e6957007eb504c2245e252328c70fda5302893f96e173d1d7c407bf0843c4c93  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/DiagnosticEngine.java
+28d038d223acac366fdd2a7ada6963a4ad1a52748589f4850601666c9847d1da  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/DiagnosticProjection.java
+246bd9f3dd22457b1b650e9a56a1c2de363c66a608521a14317581d65eb57efa  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/DiagnosticStore.java
+657be809650a7d58e318e14075fa121f0d44caf3f0e239d523928a3bbc53ed92  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/EditorQueries.java
+62b8214bd4fa571b05b34f94c0627254b462d750843448f4ea641fc0913c6d32  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Focusing.java
+511aba6ee08e26ae9c033699fbe19b9916014d03a0ecd025c586408b403c9f1b  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/IndexedFileManager.java
+32701cedc3b9519647b50a786404a1bb7e84bdd4930cbc216189e7e192b100cd  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/LogicalSources.java
+2044ccf46947a2bbbf558c8680b1aaf77968651ac88d5aef3d007a6a910bb830  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/NamespaceResolutionProofs.java
+98865657ba173608bc7af53915627a44476b16885c663d58f41269ae5b17c749  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/ObservationFaults.java
+36182b29a6d617e81aca9985457f8370d792f5dafec316aa4bfa0a43195bbdb2  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Parser.java
+63b81aa6fcb0cc9d06c451df3a90307eb1b0e2171b76085d38bd49bbf6f7541f  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/Processing.java
+1c5186b24a261d18d846cb82663084cbe2b29f82be853fa438ef7822602fcdb8  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/ProcessorAllowlist.java
+21385c6abd5fc19ac4a9ce98b4ba4dedaa7dc37abbd615f74f0d0291a53ed7f7  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/ReleasePlatformCache.java
+2fee79f5a4793417d970310d50e3a4aed95f14d0b42a6d36fd43df09bd2a41ed  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SemanticContributions.java
+25ba9a57e0bd4b21b220e791b4ceb4ddb1b3172bb0c106f3e24ad6104c27eae3  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SemanticDeclaration.java
+800f64991d00de0c099b274117d942b2f761e057bea7e4a17a067e617fe68eed  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SemanticFacts.java
+65b857678ede691fae3ce0527eb2e54671e3bd7f95d4410a2055be45a5a6e577  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SourceNamespaces.java
+e0f83e6d038ac5beb11250c50fcffc803333c7f7d2c41ed64d45d64c893266f2  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SourceProofEvidence.java
+f48e7e4cb5ff232d30f2ad7ee2b0e6a5b4be046cf61802e977a8201b13442987  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SourceText.java
+6ed790da9100ae02c3751e811bb15fffb33a7a8cbe11daba795b9732613f0b9c  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/StaticInputs.java
+a82f405c195a1c68b727dedd1bc700be3d2fc7726ba1e76c955013f55af729ea  jvmd-analyzer/src/main/java/dev/jvmd/analyzer/SymbolIdentity.java
+c85cdd5ee29af16a0bd134201502787122693f904fa7ebc0c0a436eead233462  jvmd-analyzer/src/main/java/module-info.java
+6f7d1eb756d5ebb5015f05b7fcf2ee1f007316398fdb1681fe53e6e7221bb105  jvmd-boot/src/main/java/dev/jvmd/boot/BootDecision.java
+4a802413cf53fe9ad1463ac07b4cbd1fa72d57d2e2005b4fc1c6105ed31eee27  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/ArtifactJob.java
+b242c9cfdd09df57fdc48ae3c47d91bceb8d3845b2a1c14f9cf496ac9fb93dbf  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/ClassMemo.java
+e25f2661ce9fe80ee1c4bbe260b580b5c88029ef7e2869c9d79dd3ca67a9fcef  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Entries.java
+d377935828a6c03521b8a806f4c5a21fd6d0ad895efa0d33599470d0f912a855  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Enumerate.java
+0873c5009311d3313f977cf608b9bc296439d347c4bf8362367cf515a07b7ebd  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Leaves.java
+7d96613d9342fee784273a7dde0a42b3b6f90b4449e0ad48f1b7252d67c35733  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Seen.java
+241b523ecb49b12c6f9046b1bb9fb14d10c0c9bcc4d29c5524a2049a83e8d0fa  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Stage1.java
+f4ec00091e7e1a17241ee657010b4c3a6974c420663a99248c9dab8d7660ba23  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage1/Written.java
+721a6d2d632a2cb2640ac6639aef9b8d04fab9829563b7326c69d8a7f7b09edb  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/Boot.java
+b066bb1d9113578b987e18ad656a1489cafc268a4ca12523baa6a36ef096beee  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/Built.java
+c098eec5ff51bd5cd1a88101e66561b5d542ed5e29f68c7be67e5a1611e25ca7  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/Defaults.java
+44b421fb146d70982455c51f278d61cad097ec0a752340f702dc3b59381a0704  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/FrozenConfiguration.java
+1e00b150790b35e390363578239a2a5178e457a25ddf205f157ac1de76d04663  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/HeaderCompiler.java
+cd0ca2e48697102e73f900bf669f285894f806baeb513117e8705a4e5c44efe6  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/IndexMemo.java
+38027d198cfce8ed1fcdc5a0296aa95ec27a10dda3c9af4b611dd7759c898d2b  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/JavacOptions.java
+477d431c0ec878137a4cceae343527e1c8c3776c4ff17e6106698d4e143faf60  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ModuleJob.java
+eb95d59d2c67de568d75b024c74f5efc791d5b092519a38031b295bb2985cffe  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ModuleLint.java
+601debe609846c3a44571b302aa52082dec08aceb7fd80a2800516c9a80aa099  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ModuleProcessing.java
+86a44302169d231d3bf0748978c1fef02b71914633b82f4af4f74560839753ca  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/Order.java
+e5a34bff89c829cbce20dda64f496071bf403201177e834fc27a0fe263403786  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ProcessorCapture.java
+6976e458543c95c3bf35a454fa92183817c2466f1ceee163c67356a36e815547  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ProcessorConfiguration.java
+fe00847bef44b5d23f438be52ff762a607e6e0456424caecb52b5f08a76a7175  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ProcessorHost.java
+31db2077677c5acc901a7e29114b98ddc182cc25dc7cb0f222181b9aa8bc631c  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ProcessorPath.java
+7668ad2ca53388957c6b2fbc3de08cd7a99068a680c08352625f8595d18a9a9f  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ProcessorReads.java
+a7cf9869cc1d16a09ef46021fc26bda40048839900bed1b324c431946e4e8717  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ProcessorReplay.java
+d7ec3c52bdb2febe49e83801500c5e485f84d7d7698289276ba1d6cd1e51f20e  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ProcessorSourceElements.java
+3c1614973888d35588a74a05ec5eda4429f4a6c355b1f98b2b1b9d5234dcf3f6  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ProcessorSourcePackages.java
+09893c17c27d79ecae10029d69d7ed68d61957e89f0c28dc82dfc717e540c82d  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ProcessorSourceQueries.java
+15d381ed1ae0cec6460d609f3d5604ac252bae9358afd735c670091eea542fd9  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ProcessorSourceTypes.java
+6ed687b1f30c2bc1f87395504bb46feb520a08cdac08de2bad80fe73f64b3b2e  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/ProcessorTrees.java
+b3380437f654630eb124dc23bde1af7ab60394cd5ae89d2c772fb74297027321  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/SourceDeclarations.java
+2afade0ff233933b30896ef284d0767bfbc183f63e66ac85a17f4fe203e4a868  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/Stage2.java
+cca759300bb4dc1070094fdd08109c05f7e7f4cea9fe0bcec32ecf3cea3eb3f5  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage2/StubDirectories.java
+830e61875bdf8e0c16421ef5fb20829d4b916563b8fe19bea712edd06229e85c  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage3/Arrange.java
+3870750c28d1c36670a1f1f6ab58a1983e54b23b902aabc6bedf2c8010c7b93b  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage3/Attribute.java
+54968923b66b07adaf20210935f3ed82b3b8d217470ad3b3649cc6ee77c5317d  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage3/BodyGeneration.java
+f579cd913d78c94b69c7807b35f56adf94f2d916b0b407d5efad9f63e0fb86f1  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage3/Diagnostics.java
+a2277e7eab7109276059d60913afdaf9a426f18c1d60d50c71fc1819c6ff8d53  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage3/ModuleDescriptor.java
+f8b6094c231be54a456a525fa11852752f64a774e95f1e8818909b727e2c10aa  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage3/Output.java
+29341c07e8c5596f6df8ba753f50e0e6c0de920a1d2e25f52c34f9e537455abb  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage3/Pool.java
+aa232878cfbcb3617fb04fa9d83e3182c98b309eccc88a271db2bfe449eea5cb  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage3/ProcessorBody.java
+99551244cd36be0ad332a463351a1e6622617a13acb8b67071ace9d1a60f9f0b  jvmd-boot/src/main/java/dev/jvmd/boot/cold/stage3/Stage3.java
+1c0d1368c4c86872b2c92ffbb15ecc4ddb027c695887722022a0e845f07f7ae4  jvmd-boot/src/main/java/dev/jvmd/boot/warm/package-info.java
+8ec2b69265c7c3f4fbbd08831e9efe4c35c8e4a946fc8cbb48f37f080d2530f1  jvmd-boot/src/main/java/module-info.java
+d1a4d603eb50bc11d44b76fe2894a974b4f97441e477813f13e29130776d25e8  jvmd-core/src/main/java/dev/jvmd/core/AlgebraicAccumulator.java
+3efeb42ef068dc5a66c06bd902af6c9029b356e39e9ab8ddc6a16e9dc70b68f5  jvmd-core/src/main/java/dev/jvmd/core/AnnotationProcessing.java
+504936bafce4bab65fef4c90f98f3be46b9a6924e6c972e85f23111fd22ec2c7  jvmd-core/src/main/java/dev/jvmd/core/AotStatus.java
+2e460f7114e8aef3e6f2ee1f916f3732a9500690ab17889c2b297ba218a61e13  jvmd-core/src/main/java/dev/jvmd/core/CanonicalDigestWriter.java
+fc424b5849d50d5bead2ffcfe1e3ecbabc26d8d09fa45b92c29da7807270b2a0  jvmd-core/src/main/java/dev/jvmd/core/CompilerInputs.java
+cc04fb9450b75762f0ac811201b281fa5848e7d5a378e12616b65b0966e6395f  jvmd-core/src/main/java/dev/jvmd/core/Config.java
+0350cfb250014d5da6de503c0846dfd87bfd9e0d6bebf88150e9b6172d1e6fb3  jvmd-core/src/main/java/dev/jvmd/core/DirectoryInventoryJournal.java
+8d8ca6eda6876c3197a6a7d6c5093f82bf40c891204bc7fbc5802429f6682e40  jvmd-core/src/main/java/dev/jvmd/core/Dispatcher.java
+4cf7f59900e7775f0a4508b2c8a8ccf5afa85fef5c5969c0167c25949942b221  jvmd-core/src/main/java/dev/jvmd/core/Documents.java
+1adbd035e3261fa41c1e9fa625453d7f2c6e4a1d0f26cb88755466c06a170428  jvmd-core/src/main/java/dev/jvmd/core/Envelope.java
+0010b19392a4057e4b42f9c0bf271dd1236fd945dc8bb3d811d2ae359e424dbc  jvmd-core/src/main/java/dev/jvmd/core/FileInventory.java
+bfb969d0677195e041436be77a7575a4b7fe5166912b18ce4864e7e243f61e70  jvmd-core/src/main/java/dev/jvmd/core/FileObservationJournal.java
+66e8aae46ea8a6be3ac674803c0c2aaf411d01e9e431979e02e334a49b212d89  jvmd-core/src/main/java/dev/jvmd/core/FileStateRegistry.java
+e244344054ca80deaa02ff60fe10217a34e682f56198c1b130b702917ecf4b20  jvmd-core/src/main/java/dev/jvmd/core/Framing.java
+98e10a13c32535ad612f5052773531138dddb7e47e83f484d4011bdd0983b2a8  jvmd-core/src/main/java/dev/jvmd/core/hash/Digest.java
+994fd7e3f073f72d7ddc8c061bed3491434d9375cb1932a2c77323705ee263c6  jvmd-core/src/main/java/dev/jvmd/core/hash/digests/Sha256.java
+4f6517392048d08b24cc8cd183bdb0bb938a1c23f2493331f20a5e7eecba9572  jvmd-core/src/main/java/dev/jvmd/core/hash/Hash64.java
+982a78c112d37d37aad4524cb6cd74e6036b1c56923864f170ad801844cc72f7  jvmd-core/src/main/java/dev/jvmd/core/hash/Identity.java
+ae637bb02f284579c2780b9500a7c894301f8edda8460474192528d5f058bd65  jvmd-core/src/main/java/dev/jvmd/core/hash/Sum.java
+9ac074d02147b29c79e22c4cacb34bf2e972d032c345442ebf19b550233d862e  jvmd-core/src/main/java/dev/jvmd/core/Hash256.java
+2a54a4ad3ebc2d83e2569adc271220247e9ba53bb5d476ef3f44e4051a991b43  jvmd-core/src/main/java/dev/jvmd/core/Hashing.java
+55c7386ac6d1825b3e92931c716dbd6cd5ad459003f7671bf8252ee438ba3013  jvmd-core/src/main/java/dev/jvmd/core/JavaTypes.java
+a52ab755abe73872dc0922bfc53ac0d5de9fccd01c81e49c87c0270d65453cd1  jvmd-core/src/main/java/dev/jvmd/core/Json.java
+ed178dcede93623ec259b4edcd52c2ef4875e1b6a8ba71062ee1e61004de5e76  jvmd-core/src/main/java/dev/jvmd/core/LiveEnvironmentState.java
+6978701a5e398b8462c661dbcd3a4e95ad4889adc26042586b17180f33dbed05  jvmd-core/src/main/java/dev/jvmd/core/LiveSourceState.java
+6fff486a8543b7fa6b10455cafd90fc0e8d16c81c82c9fd6c911d397aee3934d  jvmd-core/src/main/java/dev/jvmd/core/LiveStateTree.java
+265071d7eb2f6151a375bc345c5d48fe3e8e6ecae27d36f93ec405c70d559899  jvmd-core/src/main/java/dev/jvmd/core/Metrics.java
+700c0473b10b8c717a20e04a6ce5655e27f45a06a208657b1296234d374168e0  jvmd-core/src/main/java/dev/jvmd/core/NamePath.java
+4a90378c1b3785bb9d4c25506bd62673e8bb7df95dd08edf78073d0dd0898393  jvmd-core/src/main/java/dev/jvmd/core/RequestScope.java
+5ca3f68121c0c75b7bc1dc7caaa2e06ce5063126f06b66d956cbe80b925e2f75  jvmd-core/src/main/java/dev/jvmd/core/ResponseBudget.java
+dd0bc328dc783d7e0425e2851a3bccbeb102369d7017fc59e4edfbf601a59e5e  jvmd-core/src/main/java/dev/jvmd/core/RpcException.java
+d61122d96ba06921e1d5e31e043cf81d76b07b4d93c5902ff0ca1cc75ca7435d  jvmd-core/src/main/java/dev/jvmd/core/Session.java
+9fb118407c16ee44713c7f1b829def66eae273b672f02f2d87c0972d6eafdd28  jvmd-core/src/main/java/dev/jvmd/core/Sessions.java
+8e8094032e4246660784dac941bcd041dedbd818032d0d0edb300875402f3d70  jvmd-core/src/main/java/dev/jvmd/core/TextEdits.java
+9af2cfdb41cfc955624a62bc9fc89051d7daa213a459879aaa42fc4d6b8021b2  jvmd-core/src/main/java/dev/jvmd/core/tree/Chunker.java
+0051777bde13b2cba8234ef62349382d9121318c00cd3e07a2f28d2bff8b27bc  jvmd-core/src/main/java/dev/jvmd/core/tree/Codec.java
+f4145731abeea9d2ec73ef19d16d8cec9b2fd7c1ead277c23dca38a84ef24d7b  jvmd-core/src/main/java/dev/jvmd/core/tree/ContentList.java
+16a94109f7e24e8472347f882949b70dd2e4edc8c9ee44a667e5802d46fe47f5  jvmd-core/src/main/java/dev/jvmd/core/tree/ContentTree.java
+19b79eb0bf6bb1711cbc30b8c2f489bd87382b1d0cab3b8f247b5e58ced9c867  jvmd-core/src/main/java/dev/jvmd/core/tree/Diff.java
+2655647175ec3e1fe4eba1d2f03241012482f8c85d96ddcbbaea6d541ba4220e  jvmd-core/src/main/java/dev/jvmd/core/tree/Edit.java
+d1c3210313a6547138b3dbf9ccc5d48990b59848543729f62505c03c7db12d09  jvmd-core/src/main/java/dev/jvmd/core/tree/Entry.java
+3b6583e9143100990f6167531f31146fa38e6934c4d73a3bad43de111f962dff  jvmd-core/src/main/java/dev/jvmd/core/tree/Node.java
+db6c7398a9e75252ec68b0cb0ffd334de177440c06c0abe47d8626e57e5dbb10  jvmd-core/src/main/java/dev/jvmd/core/tree/NodeSink.java
+41716d5877310f15ccce47752c6e52fb3d0e783cfee6c3b9e80bc665ad8033b3  jvmd-core/src/main/java/dev/jvmd/core/tree/OrderedDiff.java
+d21a948f89e02777faefc671dd40d5c23695e130c18f2f326a108a28d4a59f37  jvmd-core/src/main/java/dev/jvmd/core/tree/Root.java
+12752d7daf9b0cff486cdc2dacc0b1dc7a4612985516bb50a6d64b4bb8f6c66d  jvmd-core/src/main/java/dev/jvmd/core/UnixServer.java
+247e730f8a79f38ddefad15bdba73348f307076fe90e30a31fee0117f31871c5  jvmd-core/src/main/java/dev/jvmd/core/Verifier.java
+a47738a59433388fbb8de9e0624c30189acb9ff019822d8c9a3d1031394745bd  jvmd-core/src/main/java/dev/jvmd/core/WorkspaceManifest.java
+c56c2a39ad52499b2c14bae25b79fcc3bfbaabe935c4cdae1f7fc5f5c901581d  jvmd-core/src/main/java/module-info.java
+b4b5bfe2b850783b4227a3eeb829346b4f77b0f9089ddf906d6479d4e4b205f4  jvmd-dist/src/main/java/dev/jvmd/dist/Application.java
+bbf1fda6d362feede68c98b9e4a7236b29627bb5943b6d1899c3055edc6a155d  jvmd-dist/src/main/java/dev/jvmd/dist/BindingFacts.java
+90ba1acebd73ab6defba544ac0747f17cb7e3a9f4a1401338d8e1ef8425dd80c  jvmd-dist/src/main/java/dev/jvmd/dist/IndexSmoke.java
+6056f68314e51225cf679056608cb30fabc9b403add9d13ec0e6f8b2f9f94d80  jvmd-dist/src/main/java/dev/jvmd/dist/ModuleAnalyzerRegistry.java
+b2d06f8603199ac742e4c805c3faad53a7c7b29babb609de9df3f0d0e0774d72  jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceAnalysisCoordinator.java
+3ced9447dda3326c3b50f31541a88b928ee79a6cc1dbc2f23e909757a43e00f1  jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceBindings.java
+dfb39041d55859cf84dae3e47fc134482a13e3c43988ba80feda76568d11c769  jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceContextManager.java
+7c22bdc9833c0037280f3e70f6855ee7b3445c228614f3382915d028f54c759c  jvmd-dist/src/main/java/dev/jvmd/dist/WorkspaceReadView.java
+b4511948d054016ef5817175b0bcaf4ddc5c28417236063b44ec238a5702d93b  jvmd-dist/src/main/java/module-info.java
+b0fc723881bc0ee034175e66893bab483fb631b1d429d75bcd0272aaa1b842ce  jvmd-index/src/main/java/dev/jvmd/index/ArtifactAdmission.java
+44deb17fdf15f5849c32dc4fafbb64b49f3249a9cd856fadff7142d5a92c7e92  jvmd-index/src/main/java/dev/jvmd/index/ArtifactContext.java
+c5149e7db2669f9c1a1425b650cac934b8f919560d8eb37856f0c844484beea0  jvmd-index/src/main/java/dev/jvmd/index/ArtifactIndexFormat.java
+c576f0b83ed65f1c1492e50fda23bec40fb747a871ed9a8b8e27e10c527e5648  jvmd-index/src/main/java/dev/jvmd/index/ArtifactInventory.java
+a3b38ce3c553ace235274940c79c40b119de2d3a195c8267c9d13128df6a289f  jvmd-index/src/main/java/dev/jvmd/index/BinaryReader.java
+c0f73628496724f43aa083c49723e834fe53e4e3c37d33685038281301fe22d5  jvmd-index/src/main/java/dev/jvmd/index/ClasspathSearchProofs.java
+d5666dea01995732cec3c3bb5d303c63f7d61935961f41f3c113402a609fcbe9  jvmd-index/src/main/java/dev/jvmd/index/ClasspathSequence.java
+589317b45487c6f12df847c4f3494e91c69e6900615ef69500e50cbda75bb0b5  jvmd-index/src/main/java/dev/jvmd/index/ClasspathSlots.java
+d72ebda2aba5a19dcb7f547a0b603e575bcb9cd40fe577cc23448eb38537adf1  jvmd-index/src/main/java/dev/jvmd/index/CodePass.java
+002e2af19b0add6544d1c7aa0d8c7ed3a1890738ff87bc4823c62608966e2fa4  jvmd-index/src/main/java/dev/jvmd/index/CodeReader.java
+dcb07661f0d47f053183b9c2cb0f4b75aef81a95b0529fb55c5b0f0ab103bc84  jvmd-index/src/main/java/dev/jvmd/index/CompletionCandidate.java
+57dd7baf666b0fd55ae33ed5320499488dda3b32e0c792b27918eb6c1fa53153  jvmd-index/src/main/java/dev/jvmd/index/DocMarkdown.java
+3cded924f9c41036272d86bd84be56009aa1df6a22a7f1ba4e176f7031309a99  jvmd-index/src/main/java/dev/jvmd/index/Documentation.java
+c6b7a7a2a7c63fb42940708f777c552ce7f3f6c0386886d4891c7ea93e940ecc  jvmd-index/src/main/java/dev/jvmd/index/DocumentSemanticSnapshot.java
+ff14c946c24fcea2d3c06813c15b05b2dc4ffce03b504be34f27efd4a0848084  jvmd-index/src/main/java/dev/jvmd/index/EdgeScope.java
+0dfd37acc0fd31245f34af5c830fe99648c042a3b254c5e9f7f290d58b59a489  jvmd-index/src/main/java/dev/jvmd/index/FactCodec.java
+2b54f16df52c79100d795af38906371df8ada3fb0f04c69c009db31ad4de7768  jvmd-index/src/main/java/dev/jvmd/index/FileSemanticContribution.java
+9a58579ac4cf2fa89fa387c096dc03f676bbd6bfaab784fd061d4f68c014ab1b  jvmd-index/src/main/java/dev/jvmd/index/IndexSemanticState.java
+75a3ec05a3bd0d1fd036e26926fdf6e141245c8774c7937c4a33ea26eb2a551e  jvmd-index/src/main/java/dev/jvmd/index/IndexService.java
+1b8bd114764729789fe3e1039a33b295f5f9077f7602956dd42b607c3be58a79  jvmd-index/src/main/java/dev/jvmd/index/IndexStorage.java
+55e5b087274d90e9e6e01b672a37efa2ae5e6d0446475a8a9fdc809324427297  jvmd-index/src/main/java/dev/jvmd/index/IndexStorageProvider.java
+ff378307a3bc4047b8245f1e652443c06f74648bdc3deb2a9830b84a87ebe85f  jvmd-index/src/main/java/dev/jvmd/index/IndexStore.java
+cd08fd0aa18777b4264cf83308cdd8aa34b4177839bfb6ebe98a51ebfd56d1a9  jvmd-index/src/main/java/dev/jvmd/index/layer/local/Bind.java
+5363a2d593895a238f606d9536fa3707d56a24d1b9c560599d121915807fe6b3  jvmd-index/src/main/java/dev/jvmd/index/layer/local/BodiesRoot.java
+4be5ba78b69e94215330c068d06d84d6be896aee858fc94b9e69ff68f1bba39f  jvmd-index/src/main/java/dev/jvmd/index/layer/local/BodyCollector.java
+e0f15815408bbe12010df0af1cad1281228e16ca69f918b38a4fa926bdcbd6cf  jvmd-index/src/main/java/dev/jvmd/index/layer/local/BodyRecords.java
+90b7607a2173d61e4c8b598f2030434a697cf9a7dac01d4452bc03c6a179d499  jvmd-index/src/main/java/dev/jvmd/index/layer/local/BodySelection.java
+39dbd5642f68f3175aeb11332b14454c4ffdce6cf407e04126a5e43c7b43e95d  jvmd-index/src/main/java/dev/jvmd/index/layer/local/Bound.java
+93e459ac4a74ab79d281a270ab8249aea3cdfc8c013c9fef4f0c7acb6a3d15dc  jvmd-index/src/main/java/dev/jvmd/index/layer/local/Coordinate.java
+935facc81950431178d9600ec9fc3c1821aa48ed37cfad20b05e01d61ed622c5  jvmd-index/src/main/java/dev/jvmd/index/layer/local/DefinerCounts.java
+bc8e02a0e876a53270507a460a161421426073354be8d6da58b51c0a18b4b1a6  jvmd-index/src/main/java/dev/jvmd/index/layer/local/DefinerIndex.java
+045d39add5f14bd4bf9a0d74a3c861833589f0e86d485ab0a1fb4b66c237a776  jvmd-index/src/main/java/dev/jvmd/index/layer/local/FileRow.java
+d78f056ef353d8d060fdecdcce164192b906e3eecf57fe4fde2275a6f88473fa  jvmd-index/src/main/java/dev/jvmd/index/layer/local/GeneratedOutputs.java
+80e73be80863730f2bd7c5ad9acc3cfbddfe739db3a4184adafd9e9c68e9dbbc  jvmd-index/src/main/java/dev/jvmd/index/layer/local/HeaderDiagnostics.java
+d3f742bb2744784e26a37f3a1f3307cbe44f285fd30d42627125ed54aa4d26ea  jvmd-index/src/main/java/dev/jvmd/index/layer/local/HeaderProof.java
+5e0ea5490e8335f47dfd2d5f575ee2475dc04e43872aed5d3c9530d9383f6b8a  jvmd-index/src/main/java/dev/jvmd/index/layer/local/LocalFormat.java
+84b5b3f7bb87ead2d14f9f52a7ec3c5eb1d78e172b82d0967642fce55529fa27  jvmd-index/src/main/java/dev/jvmd/index/layer/local/LocalRoot.java
+6f66ad26f4fa828ee2e6fffc30857decc2ae765b1cc699debf581532c05b5963  jvmd-index/src/main/java/dev/jvmd/index/layer/local/LocalStore.java
+23df76403554184e616b39a107ecb9db8d2cb763af3e16bed6e7908cc786cbf3  jvmd-index/src/main/java/dev/jvmd/index/layer/local/ModuleRecord.java
+9289416637518a702a6c99ba88d9cbea92c359486820313cb2d830fc2e4172ad  jvmd-index/src/main/java/dev/jvmd/index/layer/local/NamedMembers.java
+76f6a77d86e5ec68fd2501370f9ac49e44fccb8113972c0c8e83d3e6288e748b  jvmd-index/src/main/java/dev/jvmd/index/layer/local/ProcessorDeclaration.java
+4b1b85748b4ef9f44dd78695130d3b511706d443c0d7c803cb697310c9965115  jvmd-index/src/main/java/dev/jvmd/index/layer/local/ProcessorElementProjection.java
+edf0b8f72a5d2fb4086bbd3fec681919b6adfd88cb118a327576b6c42e4c7229  jvmd-index/src/main/java/dev/jvmd/index/layer/local/ProcessorModuleQuery.java
+e5a1bf497ccbe98e70eb74c9d6e39ce191d88a064a87a7d0d609eafac8dfa905  jvmd-index/src/main/java/dev/jvmd/index/layer/local/ProcessorPlan.java
+0b8d7ad531b4bc7f2e9411ab049ec9756a3a86f6e61e2010119d43d72a07eddd  jvmd-index/src/main/java/dev/jvmd/index/layer/local/ProcessorRecords.java
+a317996bf33f528c17da1d058a59aca04e642eb64cdc7602e0a6b7ad5581da7b  jvmd-index/src/main/java/dev/jvmd/index/layer/local/ProcessorSources.java
+43034e02689778b4c46be088a4162e5c19e0c7735e907c93576528072f17f773  jvmd-index/src/main/java/dev/jvmd/index/layer/local/ProjectModel.java
+77e53b01fe1ada54c978433f910f98d3a0cd9345fb2d09ee9268f1e2d06ca60e  jvmd-index/src/main/java/dev/jvmd/index/layer/local/Proof.java
+dedc260eda24476e29a9833d8fcc16b12516caa127ba559f9204db029e0fcd34  jvmd-index/src/main/java/dev/jvmd/index/layer/local/ProofCollector.java
+e90c604d56093f52382a8a248454e83bda7efadb2273e9e65b4ff456cf5a7f65  jvmd-index/src/main/java/dev/jvmd/index/layer/local/ResultRecord.java
+ec8c6bfcf72ee8978135d1699c61a46059a1749bfad6c67e4221ad5b9b7b1bbf  jvmd-index/src/main/java/dev/jvmd/index/layer/local/ReverseIndex.java
+9d5e1061c292579a4421779e225798173b2f6de5f272642e10f9e8c1d72ff54b  jvmd-index/src/main/java/dev/jvmd/index/layer/local/RootedRecords.java
+8f1b870d31272df0bc180a0c36a5fabc1cc40828f6effa1d3f1b263d9fede0fd  jvmd-index/src/main/java/dev/jvmd/index/layer/local/Route.java
+65f5132e85d92c75230ff632c425f8f1d76cf4c99a9092c8e88f76c11f3f5ceb  jvmd-index/src/main/java/dev/jvmd/index/layer/local/RouteEntry.java
+64b98c99523ef090e61c4c44feced2bc6cb6f9589534219946e3d03bbb1ca6a4  jvmd-index/src/main/java/dev/jvmd/index/layer/local/SourceFacts.java
+b110d93718e27caf70078dfbf76aae4bcf91f69b4a13c476dc2271ec28bf173e  jvmd-index/src/main/java/dev/jvmd/index/layer/local/SourceLeaf.java
+01e88c9e52750789edc3068c13d199b03831bebf197d282e136acb5c09e34497  jvmd-index/src/main/java/dev/jvmd/index/layer/local/SourceUnit.java
+3b019b11cef9088ba19eb9fd177c8640aa92abcd882ad7ac2acdfa68f40239d7  jvmd-index/src/main/java/dev/jvmd/index/layer/local/UsesRecord.java
+f997b1e70161d88f8604295ac626a35f95e78c90f6aa8352d5c2fb2ea9f3d278  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/Ann.java
+6974bfe78d0d2b2f48aca8ea3eda97bd63f197726623a78a57470332415f0bcf  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/AnnotationLeaf.java
+caf6e362eb2646c531b1bba23b3989ae8dfea95f0940f1ac6f58f164f9d68b1e  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/ClassFacts.java
+1d48d635f1570a596d1c9f87d9a2516b60a34d375e07ba39345327ee40540026  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/Edges.java
+a111cd4be50169317a27102b5e4fecd1e80ae4cd1c1412448651f25befa597bd  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/Fact.java
+c63a52892a0af65a83030ec82a69506f85bd9ec7debb61555ddd63cf6f2ac5e7  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/Format.java
+1afb67d2140b1763d96da8c871cd995744ac5ef5386961ac108a87aea54148a1  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/Keys.java
+573d381ddefc62d6a4b7c5efe9ec0c607b011e1f1c79d495d370c81d2fb9418d  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/LeafBuilder.java
+cab9ddf8378cddbc0e41a04617a49f6f3926e8930dd440bdf3243c94cc9044be  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/MachineLeaf.java
+229b781a03945688fcdbcf0d0880fa83fd071b6fda478cf1d96128b4e4148686  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/MachineStore.java
+a955e99a961f9aef65739afbfae80c685d7bcb4cc4a49e5624638c693e19d790  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/MachineTree.java
+7361b8ed12b8ca735dc02a3ebfb5e2f742fe482c17305d913a6c0e534f256726  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/Res.java
+bee8e78840b7a7ef4d8ddefb5059735a8a8ab85df4094e90d00f2d24ac3d7526  jvmd-index/src/main/java/dev/jvmd/index/layer/machine/Stubs.java
+c952633f102641b255bec9bbdcfdd702f9c82b6423006ed02dd7b97656a94b25  jvmd-index/src/main/java/dev/jvmd/index/LocalArtifacts.java
+23666bc5b59f212d753bf5ac9ccbcc2a4f7e3a3ad23a2b39b5a3a1f68d823d0f  jvmd-index/src/main/java/dev/jvmd/index/MachineDependencyState.java
+59303f0d0765c82cd401c85aa8c84c794072adf827cfcf3c695cdaa9b288e0ac  jvmd-index/src/main/java/dev/jvmd/index/PersistableProofKeys.java
+49e204524b9e75ddf5b45e2bb635a30843c9a6692622e1e57eeaf68f9fc37ce2  jvmd-index/src/main/java/dev/jvmd/index/QueryProof.java
+24bf49fc2aa18e54e30f35d05211fc1f23943f6d9e2c541b3415f9c24af7601e  jvmd-index/src/main/java/dev/jvmd/index/ResidentSemanticState.java
+c856ad7f5563e95918a18c31dabbabf3598d4666c9431209f892d8a41431c5a9  jvmd-index/src/main/java/dev/jvmd/index/ResolutionFact.java
+e86f28872d2c1068651af1620c112866d88f0b4e04610ba90ee4c727c008793e  jvmd-index/src/main/java/dev/jvmd/index/SemanticCompleteness.java
+e48c26349f90c6871b9d224c8accafe5a6e2a237cf50d2109bc05650078d0d8f  jvmd-index/src/main/java/dev/jvmd/index/SemanticDelta.java
+215a650f77d3a690953ef2f94dd4ed3cb918cf98e1aade5de3128479ab2b6937  jvmd-index/src/main/java/dev/jvmd/index/SemanticFact.java
+a56eef238fe03e5b15f31ff05a9ea8a48ff7cebb2c760fa9dddc9d5b3b55be13  jvmd-index/src/main/java/dev/jvmd/index/SemanticKnowledge.java
+fe879348b49519957ae346bda4b4fc238b3cc06a8002ea15a55530cfc1cfd498  jvmd-index/src/main/java/dev/jvmd/index/SemanticMemoStore.java
+4d9bf8ae743b0ca34843a779c17f40c3fc8a21e5a3123729659fc09c7774dc63  jvmd-index/src/main/java/dev/jvmd/index/SemanticQueryProofs.java
+be985fa206e9a2ae9c6146584c97b5ff1a265ee222b35b87534cdc26ee2e0eee  jvmd-index/src/main/java/dev/jvmd/index/SemanticReadView.java
+6c031985342861554644096efb941d24d47c79957d532262e0a3a2963e025b12  jvmd-index/src/main/java/dev/jvmd/index/SemanticReadViews.java
+76ba2e369b8f2e014e21eae92a324bb83f7e79225328ab4c3aaae1d9c442db5c  jvmd-index/src/main/java/dev/jvmd/index/SemanticSnapshot.java
+3c0bf0b0fc0b8bb1c14df8ad6a9faef26686266bf08290db5178fbe232cb9ea0  jvmd-index/src/main/java/dev/jvmd/index/SemanticType.java
+b3890bc8cb6c229d956e3bdf5b4b8e7d19ec50ddbbbff2561ce13dd327651730  jvmd-index/src/main/java/dev/jvmd/index/SemanticUnitMerkle.java
+eeb07a7ae892693519fea3f9db0c49b6c7cdbb7eacbd65784bbb29a4d101a25f  jvmd-index/src/main/java/dev/jvmd/index/SemanticUnitState.java
+cb12b92020c584495b081a104ff426361ded5a63dc4f08e4fce76cc76626ae3f  jvmd-index/src/main/java/dev/jvmd/index/SemanticUpdatePolicy.java
+63d276d259ea370f1ce269b32b2de4831932990e131c4e102a3129bd8dfa1ad9  jvmd-index/src/main/java/dev/jvmd/index/Signatures.java
+ede5719e6a605395f33f03baafdd0c521d0e4981d6d9cefbfb16b9abc41a6aa7  jvmd-index/src/main/java/dev/jvmd/index/SourceIndexPublisher.java
+ba39848d0b09008beb5131a9492f546a116e50a9ec45df23dff8b70821dcf928  jvmd-index/src/main/java/dev/jvmd/index/SourceJoin.java
+a88a894d31bc40edf5ff3491e4c6346bfb67884c6fcd71214ab5ee0c543a7e99  jvmd-index/src/main/java/dev/jvmd/index/SymbolDescription.java
+a3a514ec22e2e1ada6f2708fa0ba8b8d32f881768f38781b54a7380e6293e233  jvmd-index/src/main/java/dev/jvmd/index/SymbolReadView.java
+3f6cadf6243d7c5c534edaace7c004651eee5def7b9a711ba45b049a4ce10772  jvmd-index/src/main/java/dev/jvmd/index/WorkspaceSemanticIdentity.java
+cf417f6a1fc677d3b157fb63c1aa0cffb29565c225632a684eb29f5025d342d0  jvmd-index/src/main/java/module-info.java
+e26e4f9b00b21835d0abd3df52177494628ac6dc6f673af4caa485535fc68240  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/GramPostings.java
+799475a1523b7eb049ad0de3667614ee05ddbd21b023410c767858ed21fded26  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/GramSet.java
+51a0d4dc51609bdc81f2a15ae0f75cef080998158797b6ead62b991c44d57c73  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/KeyedFacts.java
+8846389a6a4e05f60b120d77acbdd16bbca2fc8f189863b55778e4bb929e9a0f  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/layer/Generation.java
+d5c77f53fada44e7d765ee98969cb9b99e397739394d4f7c624353bfc816cbe6  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/layer/RocksLocalStore.java
+60daac2e09f30ecfa9f50ae7fd2eeeeb5aaded130312500ea0dfa7b74ce23c16  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/layer/RocksMachineStore.java
+7f8d6ec9bd3e647bdede6dd57d9a81b46e9d9cb9cfbf01b09648ce5f35f96c8d  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/PostingCodec.java
+8540ba48b40a6e51ceb0e911b92e4534cfcc6e9e32a1d6decac463747e7c0059  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksArtifactAdmission.java
+0ab833e8758a30d0e314bc0e03b4a6f53bdbb23e2b079871c32314f2eb585da9  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksArtifactInventory.java
+04ae1c50e47bdd2e073fc5a775f5662d59ec4239f15b81ebbe0d54f4eee4f53f  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksArtifactRepository.java
+441d32250d6b16aacaf037c06e1bcc60c1f4cd3bc49b7c010cae3687931cf8b8  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexSemanticState.java
+813f77a728154ca343cbd089135be803e64bc2740462b763875f7d28397bebb6  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexStorage.java
+12bfab64f356d5f23130f24ee0e56f07d69f45a82d0d660d74e3222e07312551  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexStorageProvider.java
+c4f0da19a948855a98b696154f95a779f7cb290542205aa74f7e53ca749bd37c  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksIndexStore.java
+9b925058e53a1e74cd642f022e62b314d2f37d638324125e90e1da057ea5c41b  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksMemory.java
+43d8e4cd6f75e0a1b6aa0a001a6274913fcff6d723797fcc21ddb63de7ccd210  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksMigrationManager.java
+2436a09818eb1c4dee74522e124aa1cdc92e1f214e7151b8da639420ed5125f4  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksSemanticInvalidation.java
+2068e9ecb33b04b76320a6a4b1e0619ee596572491796af1724f4cf944eddb82  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/RocksWorkspaceState.java
+601c56c6df8b8efcdf1315dcbbbe3dbc30fface1d9d946ad641c1eb740df1cac  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/SourceOverlay.java
+85d47b0bdfa6d8a0db1a65fadbc11af437c32efe376d0e1386f249df08a94a2f  jvmd-index-rocks/src/main/java/dev/jvmd/index/rocks/SstSorter.java
+9a8f31b2f4bb7c2fb922325d9b419e01e8ea26e2d45c86f20775546ed8098df0  jvmd-index-rocks/src/main/java/module-info.java
+e1733d1c8814496d76f6aefd572267cae13065e52555a7bd1d431a10053b338c  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/GramPostingsTest.java
+80f73a3114e3a1c60e7d953646c542a656c9c9aef808a8344a49edcd67672d37  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/GramSetTest.java
+69d7cb12c788d760fa5f7bc528b2068b360bc01c8d61af051b7b3bd8da574030  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/PostingCodecTest.java
+1e1483bff191a4a216351724a163fdf6e1e7895b20d8728b1d1c06b18ca24ed9  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksArtifactInventoryTest.java
+81320c2ff0e2925ac258b1f8e5e3661577b69336b721f51826dca7a205e409b0  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksArtifactRepositoryTest.java
+097af3f23f6afaf057e5439194253503276b05cdbcc097ef6f7670c030b77313  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksIndexStorageProviderTest.java
+e5e16bd6a40ae224c1b5f5c427ace89ce4ffb3e61d7f3159c1cd5f0f4b007265  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksMigrationManagerTest.java
+0eaec5e009b9cb6727dc416abb5279a4d15521dddebd45e4106cef7f57348286  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksSemanticInvalidationTest.java
+9d0bd6ed3ff68447c1c64e22b999cfa1267b2d272f0e7506a2f9608187c8c831  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/RocksWorkspaceStateTest.java
+8bad51e02da201600b5baa815e3bae081e3bc805d5934cf6e544448fc63389ed  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SemanticUpdatePolicyTest.java
+62e7561b2a5cf74b3860f53fd5c41982cb20cc93b99459bca6ad3d054fc20e2d  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SourceOverlayTest.java
+acb4d19486049eed564f76b768f00ac22fd6904fb2fd93127144ea7da7bbe461  jvmd-index-rocks/src/test/java/dev/jvmd/index/rocks/SstSorterTest.java
+9472701ea538334d9447ce2a8d3eaa938810286e524b9b234bcfa81a11771597  jvmd-lsp/src/main/java/dev/jvmd/lsp/LspFacade.java
+be1fd2509757093ba9335aaacbbe9aacec1e9f761f24fde7d0777ec741db2375  jvmd-lsp/src/main/java/module-info.java
+81e381ce378928d228190581671d4dcde56c144fbc29bda9fdcc2b2e616d01f7  jvmd-mcp/src/main/java/dev/jvmd/mcp/McpTools.java
+8211ad5912654c033f334e75b869692ca37abea49530b70db6e2511bc17f40d9  jvmd-mcp/src/main/java/module-info.java
+9b23476f57b2d43cf31ed9b01ac26c757df33e60857df1054f65890540948e30  jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/Bundle.java
+4c40b1cc8d64486d4d9f3d97da5439d525d898df63a6eba4fc1e9244f994934d  jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/CompilerSettings.java
+5650a9ad0aeac3b6b68f7c4f32283b35f0001b2b050bc8d07831aafba0fca5e7  jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/MavenEngine.java
+98fb5e61acfbde685e76eacf1c719c7f50eb16ba0dd4d3d446889376a94c1471  jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/Models.java
+b37c686261fa2b722d916b6595fc5635ebcf121e57e43b5b60117cbc3fb612ba  jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/OverlayReader.java
+393979e79a6ea2d48bd8205b85e5540dc7f55f7f5a2f9b97e182af52dc9358f7  jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/ProcessorSettings.java
+f62306d82020271a746ec745c5b926f812e03168c533642bedda5abe79168ab5  jvmd-resolver/engine/src/main/java/dev/jvmd/resolver/engine/ReactorPoms.java
+a546a9928e5cd0876c8724498950791311d95254b694604052c0c5babbbeed40  jvmd-resolver/maven3/src/main/java/dev/jvmd/resolver/engine/VersionModels.java
+f4cb007b50d9ef2034c27640ea38f2c6f2cd145b6b92e8ac4116bc2496bdd72b  jvmd-resolver/maven4/src/main/java/dev/jvmd/resolver/engine/Credentials.java
+c2651787e58c55d0ee66064e5d1f4b7ca398e6c2adc0d23f47f8a9a1394ca326  jvmd-resolver/maven4/src/main/java/dev/jvmd/resolver/engine/NativeSession.java
+54526a820fdbcb729ff0cb9a232eb9395a4d667379c1a5355fc7676f5d51c8a7  jvmd-resolver/maven4/src/main/java/dev/jvmd/resolver/engine/VersionModels.java
+80ee7746a23ec1d6aab4ac2570555fbbb5dd10787b82f56e2666b3af1270b449  jvmd-resolver/src/main/java/dev/jvmd/resolver/MavenEnvironment.java
+ecafece5c7f261b41fb4e26f0a1d78cf730dbc06ab3f2d042af2b2015b55e48b  jvmd-resolver/src/main/java/dev/jvmd/resolver/MavenResolver.java
+a3b925049d202c2bf3dad508affe73d1fd2f87ca92308320c480500df3b0316c  jvmd-resolver/src/main/java/dev/jvmd/resolver/ProjectModelState.java
+15cae65151366e7bbfd5d0021b6d39f3376ef78aefff94ccacd92565a9d95cf8  jvmd-resolver/src/main/java/dev/jvmd/resolver/Resolution.java
+c65c7089ca06535bca75461d75444f28c96ac0e841ddf847468c949c452e8809  jvmd-resolver/src/main/java/dev/jvmd/resolver/WorkspaceOverlay.java
+f1787290f29f9113d18ab8a812c7b77358e7eda8d7fc1030ce4540416845e82c  jvmd-resolver/src/main/java/dev/jvmd/resolver/WorkspaceSource.java
+d735ee204503f89fc1cc84be900bf701d42b848bc2b8e498bfc3f451557f5e95  jvmd-resolver/src/main/java/module-info.java
+0ecb88e72e8927cf744156f8f820e1582f44e920cfa379d080c79880ef55480b  jvmd-runtime/src/main/java/dev/jvmd/runtime/CompiledEvaluation.java
+e89656e4d6276d6185c28c9479d4c7f7c7ef7c6a8d6598796eb7004d1ab7a22b  jvmd-runtime/src/main/java/dev/jvmd/runtime/DebugSession.java
+810524d45650c8c34c97ad9825680e257a2dfd83d2eb0169b0460b17cc8e8b80  jvmd-runtime/src/main/java/dev/jvmd/runtime/EvaluationBridge.java
+cd0525c0253b07267279cc28b4f4ad4534359e6cfa9296fcfd64b5aaafaffd68  jvmd-runtime/src/main/java/dev/jvmd/runtime/EvaluationCompiler.java
+49237a05e2f994f3c369858fb898fde39caa6cf136262f17ec24edc69ed3feee  jvmd-runtime/src/main/java/dev/jvmd/runtime/EvaluationSupport.java
+356ccbcf16f4ebb5f8cce00e0d8c4fb078e96172f536c68543146a6c9cf7fffc  jvmd-runtime/src/main/java/dev/jvmd/runtime/ExpressionEvaluator.java
+041dbe2936fb988b0ae458ba3402e81ac5bbb1249e1a28e3ddb0fa3f0fea8f2a  jvmd-runtime/src/main/java/dev/jvmd/runtime/FlightRecorder.java
+6e82fc50afe39f1b70d58a6a61f00867032be21820c4f88d926166aaf9b3c148  jvmd-runtime/src/main/java/dev/jvmd/runtime/HotSwap.java
+0e21a3fa54b1e2bc5438c14ad04dd02a9598a765b0672b03954dae4d553ad8fa  jvmd-runtime/src/main/java/dev/jvmd/runtime/InProcessCompiler.java
+843a80981262f254af2b22935ecc6957f680721876037fe1c60b8f6cd94cb0ae  jvmd-runtime/src/main/java/dev/jvmd/runtime/Inspection.java
+b2164d00c4956cbd921fc5a66a7a48ee89033ea8b688fe0f0c2b374567bc4611  jvmd-runtime/src/main/java/dev/jvmd/runtime/JavaRuntime.java
+bfb8a538563afc08434fe91a8aab1de9036ea3fdb579fa8dbbf7a125cde3d298  jvmd-runtime/src/main/java/dev/jvmd/runtime/MemoryView.java
+dd4976e1e902d6f059ca46f109181a5a5b6eaddae0906b241a76614c4fb23b9a  jvmd-runtime/src/main/java/dev/jvmd/runtime/ObjectHandles.java
+3cbf390077d51d0f864ca2767214ca44547fd78242fe8e9515020c88033f6534  jvmd-runtime/src/main/java/dev/jvmd/runtime/RunManager.java
+a9da057182b616ac325aa16000a4274a4b92c24d8f192db36300c1bdf8a0af36  jvmd-runtime/src/main/java/dev/jvmd/runtime/RuntimeCompiler.java
+748431fc38afb855e0cf7771212540e2db981a45e2cce30bc09277870d56af85  jvmd-runtime/src/main/java/dev/jvmd/runtime/SourceLookup.java
+4a413d64beae33508598157a847ab6bb3fe6719bddd12a5ca57d49dc4be58a9e  jvmd-runtime/src/main/java/module-info.java
+3902c9de7e56faa352d4d9ee6c50972ae5809c86a11838e852596c891d52b494  jvmd-tests/smoke/AotFixture.java
+0cad1c779f88cb31a5b6ba02b86d6d97d5e15becc23c944b68b143dc7982d4a0  jvmd-tests/smoke/compiler/TolerantCompilerSmoke.java
+7c766308fcb46a171194c21b5af2ad1aeec8e6c4e803886533cde2ae76cac9e7  jvmd-tests/smoke/fixtures/base/dev/jvmd/smoke/Debuggee.java
+da534cd994bdc6dc982d6cffebfd3a7d03cd7e53881b4b43f3380f3eedb91a4c  jvmd-tests/smoke/fixtures/base/dev/jvmd/smoke/SwapTarget.java
+dd6042fcc35caeeeabcdcb4652f8e276bf0abd29cf67ab987d9150c6b58acd76  jvmd-tests/smoke/fixtures/body/dev/jvmd/smoke/SwapTarget.java
+2ec9b19f91c048b18314a03456db259e96ebcf2d472ad46fa83e046fb9a7c5f0  jvmd-tests/smoke/fixtures/enhanced/dev/jvmd/smoke/SwapTarget.java
+d6027e4bf693f31bc6c0d3e7f3a7d341adda2d96ab43b7695476827035d9aba2  jvmd-tests/smoke/index/src/main/java/dev/jvmd/smoke/IndexSmoke.java
+8ae7c29c7eaec21a6c20971de33dd0280a9cedcfad46e10919b2277ea2747bda  jvmd-tests/smoke/index/src/main/java/dev/jvmd/smoke/SourceJoin.java
+604fbb34f0c112c8b14fe1c95907088af63a505fd2f792fe2b3fbbe4c03d3714  jvmd-tests/smoke/JdiSmoke.java
+1d37603b664d03b673439dfffcbb536d24f21b523bdbdc788f23352f357755ee  jvmd-tests/smoke/resolver/src/main/java/dev/jvmd/smoke/ResolverOfflineSmoke.java
+2fb639ac4d426cf1748756b4db32925bb5b39ffff1cdacb506cfc1f4445e3bc5  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage1/ClassMemoTest.java
+b35a222647613fa9701bdf1f4d01b58e92b0ee8c02d825e1d7990355575cf1af  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BinaryMetadataAdmissionTest.java
+e58e2e08a6dee88cd06a5a6844696c6baff0099fb405d73679576565b2dad48e  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BodyAttributeTest.java
+bfd0e892f5c5f78f90c039a6a0e207566eacb6d08f7d26ff19f2ab4d3db93e61  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BodyCollectorTest.java
+06393beae499a1a6b488f1da710bf7a7c1c5f01706097d40633f74428c7a698c  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BodyGenerationTest.java
+88621dbe2202829079f2f302dc974e827322d5bd164a2864d37064b8f3ec2038  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BodyOutputTest.java
+fbce0936e5c256a27dcb3ae66386bdd53727db3320c0e428aef4176eb8a975a5  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BodyPlanningTest.java
+436059c273ad7c0106611f555c472752a36680d6d7201bb31b346b3406fa1866  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BodyProcessorTest.java
+96d97da6942e51465020ba499fe69b0a467217b493c3649f73b6f71cb88c6120  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BodyProofTest.java
+5c95cf5c8c71dc0151ccd1db50351eb3e8252043f3df6e0fe2820db7e5fc3c52  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BodyRecordsTest.java
+4583c7f919cecb1346a53ad34e6d818d1b04cd8ed5585ee53efe2b58d70e9cfd  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BodyReverseTest.java
+e85663407414efcae51f5fe8d54956f80d23a9c375ff6307dcff937654abf511  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/BodySelectionTest.java
+ea53e0c66c3d79c43db41fd6d1aac08f23818911bed235bdce9df75f02ca2664  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ColdProjectBootTest.java
+31ba97d29555b85a4647007df7537fbc58b774a7b0100ff0bf71d7a3cdde90ec  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/CurrentBodyReverseTest.java
+4b2e6acede4a5db49cdc0e75a3ab65ba8e5463780536545edfc326e1dad31d47  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/CurrentReverseTest.java
+4d2993ffecbd32851b1068fe42e2fee736afd771e79dbf80d8c21624e8f33605  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/Digests.java
+a887205a4ff5a3e40394ffedc5118793651a4560ab9da7b39d75e2cd14352050  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/FactCodecsTest.java
+8f7e6c3ba2b31fc22bb699cdd7f4e66015bf249bde992b7fcbb4e653f5796711  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/Fixtures.java
+d53fde60e5a9a86f0b43e68c876db8f41310a11cca3beff214e4b43b2a375a5e  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/GeneratedOutputsTest.java
+2c2bb9a02255f9f07dba22fdac35a2cbf815935d6544afada1c1a98474368673  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/HeaderAbsencesTest.java
+49452919e9c6a600b7238a7f15f868e2cdab1135bff39ac13ad172f2ff7ef02c  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/HeaderEnvironmentTest.java
+e7561bb590dc729d6db2de2508ad48549efa570f248014ac7e213efc6d0de81e  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/HeaderReverseTest.java
+e3a2e592e2fa5e66f3f6f683aefc6ded29a0667367bb5ef82dbae3fb94685ef8  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/InMemoryLocalStore.java
+14d4948e52af8e6a53379d67868d53fb3b3ca1eafb354ed5b3829d4f3b82d2cb  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/LocalCodecsTest.java
+384f5129f0fc53c2e4fcbd25369dc8dcae62d91e0f5738b453be3bcdfcb3e39e  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/LocalColdBootTest.java
+2a7ae72a7487319f4a88b88b4624b9b8f25bd679f2c39feb03fa19db08b8f540  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/MavenModelHelper.java
+8f6f5d5a99c2a016f0d272af456d7243b261c48fea27c9f44d306114029dafd2  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/MavenProjectTest.java
+4238b6414a8d68abba2e930e5833e6d1e53aaf6222b2f99d0f4fb2efc63cf3d0  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ModuleAnnotationProjectionTest.java
+b75e9180ae19b3cbb5b8b5a755830183fa6cf9e0406c3d289ce53e7735ab5df5  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ModuleDerivationTest.java
+285a6340d8b317612afe3667248e86848c122e363adb8590f538beda5f8c4d42  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ModuleDescriptorTest.java
+f14c8b24afa4912294d963d22c9448638b5896b1519f227a256501638bcd64ad  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ModuleHeaderLintTest.java
+d63d815706be7d1d3296c42d11cc570f90aee73d1cf29559c271cf3953744159  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ModuleLintTest.java
+8549349b0b344e50c26eb000c316fdefea4edaba81b7feaee6945e63a1d18114  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/PersistedLeavesTest.java
+99523b9e805131cf2feebb03602044897592f4719d88ed1a5867a468ad894125  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessedAttributeTest.java
+194e9c78e830df36675093ad4d5bd44433fd050738107d2e10393bac630d9d31  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorCaptureTest.java
+8be9b8b6bf4eb499166ba501a13bbb7d49dd5869ec7f4c0cddbdc7dabc3c8622  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorConfigurationTest.java
+27f08f97c8902633cd696bf181ddcb4536be825524fb887f88729170fb3e8cee  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorDiagnosticsTest.java
+5008ddcf787374b6fb43964d725e08087947475c6131b58fbb7f0d84c1609eb0  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorEmptyOutputTest.java
+5f86990327a622a279b0a03a7ac5c7011fd51453d2c5f803be7a29bfa3b0918b  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorHistoryTest.java
+1699942cc435be2cc047b569d934819dbb48a5ad3cbd35db063c012ba8885923  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorHostTest.java
+4408c93ce3ecf6b8a6a76b27f32a01474c6957ae14454db922f28c5aac595bd6  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorModelTest.java
+23583228f50c9d8e992301942910e559a9b38154a2d7b139c506c835cd508c0f  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorPlanTest.java
+457e53d5cd782cc37bd3912ded54c9142300b283262b1305dc2f4d61629d078b  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorProjectionTest.java
+973b5ca226fbbbd3bd000191dad717d9beff4560356b44f30ccaaa64e5fbcc29  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorReadTest.java
+4dbbc46425132caf5579ab5a5a79bbcdd8d055d9e13bd186072e8733f593cda3  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorReplayTest.java
+e11afd2ecf7e086fe5c6cc954d62b0d5aca487f6f15bb1922c8b2078f4bc249f  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorReuseMeasurement.java
+25b6a3b66ea7b299e4e5849546e05b1a4d7d6eaeef8ca33d271d3e20d10b27ad  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorRoundsTest.java
+533031158499fb696d21f7621f8f129d133b5c40a461555d2f1f0f537886a702  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorSourcesTest.java
+b32973f45ff390b907a6507ea9f3e86dcafcdef15325ee99fef291ca7a3305bc  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ProcessorStage2Test.java
+56c9f578b6b6431f01542b006e2b29ef27cdb2ccdc4440c124c518bff1bac656  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/RetainedAnnotationDiagnosticTest.java
+7e0f4ae53a7149d01c04b6dc6e6fdc86fbb746cc2d1d55725f5af828aec4eb5e  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/RocksLocalBootTest.java
+9c6bfe22cbe2e882008dce7088700054ba615e6b7a2d78b08da962bbcd6dd806  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/ScopeDiagnosticsTest.java
+ee8da4e5836bcd92b7d1163df9e7d7c65b90db77091573048c799eeb2d0f7274  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/SourceAnnotationProjectionTest.java
+7a412f996627803965948312d59afef5c6294325291cb1dfdc93c253711ca832  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/Stage2Measurement.java
+fb03c229dcf29139a628b2ddaf2abc3b9c7880b2318a7c09578173cf5cc905ae  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/Stage2Support.java
+8527fcab92881788f3120e9e59f508a9a7b10f0a01ab7eb3eb35c27c8623c68f  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/Stage3ClasspathMeasurement.java
+db8fb34bfe13dbe07e4cd324ea2a0dd3db9fdfbdb3199be4b8829900f327c46b  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/Stage3Test.java
+d5afb065ac819e52b1fa44dab0dea4867c1cf7143e92fc65e28589ed10fc4fe3  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/StubProjectionTest.java
+9c4faa3edc350cb9b0673db28541c9070ffc549f5f6df556dbb3a9cbea71daa7  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage2/TailStrippingTest.java
+9dde565dcb2688817e75186e55799d38286b929275213edeb41ea3a19851796b  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage3/BodyPoolTest.java
+190552dea64627c040de8989e2c7cca1db0d07e4efc8ce5b3feb2eda0ddc230c  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage3/FixedCompilerInputsTest.java
+d2afa8a82c773538681718a1dac514f77cbd5bcb3b34ba4ecbd1d0f0514eee4e  jvmd-tests/src/test/java/dev/jvmd/boot/cold/stage3/OutputRecoveryTest.java
+92672a438d4cd80668f4657a4bfc5c82deb7dbd8b26966d6cbcf56f682d1f637  jvmd-tests/src/test/java/dev/jvmd/index/CaptureFrontierRaceTest.java
+c7a51368e58ed09dc744875322ccc5e273e101a8191518cf1f1fbf18db537152  jvmd-tests/src/test/java/dev/jvmd/index/ConfigurationWorkCountTest.java
+1eda3ba16a7c949532d990498436bac6821d7df7e75b510fb1aaea0cc1bdbeee  jvmd-tests/src/test/java/dev/jvmd/index/FactCodecEquivalenceTest.java
+73207f9faeee5ab410aa8be1320c7a76da3921616dc7c4e4f3e1626b98930de6  jvmd-tests/src/test/java/dev/jvmd/index/IndexDatabase.java
+a04942e4699c4b47396c3f9c9b3372628aafcbcf749264b25762cb25782813dc  jvmd-tests/src/test/java/dev/jvmd/index/layer/local/BodyIdentityTest.java
+a2ab3198efcd1a1afb7229a89a85ca6b47e8c4d3ec3323f738dbcc3be84d6e15  jvmd-tests/src/test/java/dev/jvmd/index/layer/local/DefinerStateTest.java
+7a46ed65a3e3867a63bf7f9da8bc400803eb1559c897900ba633fd0e14de5c24  jvmd-tests/src/test/java/dev/jvmd/index/layer/local/NamedMembersWorkTest.java
+8fb7956712e43b5bcaa7607a4e52c238b0d9ffb503d11c9402fd0749b79abc63  jvmd-tests/src/test/java/dev/jvmd/index/NamespaceWorkCountTest.java
+276de6c846e3cc8fa2df44c573129d3779ab01ab2d356555a364d319f492de04  jvmd-tests/src/test/java/dev/jvmd/index/OwnerCutoffTest.java
+51178be656b3e7fd4a87ed13982af30c239dee76aa1977b830bd88db6221222f  jvmd-tests/src/test/java/dev/jvmd/index/PackageDeclarationCertificateTest.java
+d2559731d8df99ee7f405b46e3661c5f3c2e720bc315e9e9df2b4fd8b4b117f0  jvmd-tests/src/test/java/dev/jvmd/index/rocks/RocksMemoryTest.java
+d1b4daaafebbf3d74be833a0dda76eeca06e53fb8db773c19af02dbe99e44b20  jvmd-tests/src/test/java/dev/jvmd/index/SccWorkCountTest.java
+07692672c30b2a36d6c2094a980dfe623ef4b4ef6ef28ee1470e94e2db661449  jvmd-tests/src/test/java/dev/jvmd/index/SqliteIndexStore.java
+29d8a6d07d3c02c5cc74c61afc3a20f3c1e5996a57a06151d187fa05d8ec494c  jvmd-tests/src/test/java/dev/jvmd/index/UnknownObservationCertificateTest.java
+dbdcbf7a6f7f5e038c1e28723d7835c6cf587004a642adf96462a48a929aaa5b  jvmd-tests/src/test/java/dev/jvmd/tests/AnalyzerFaultDegradeTest.java
+0b37e9a6e139c479d180150a0c3376ad6c9cf442055fbf92d3e44fa3d5a32088  jvmd-tests/src/test/java/dev/jvmd/tests/AnnotationFixtures.java
+70736e5dff7a3101858de0c73d8c767ef3d8882469cd20a9d0f3c38de237d224  jvmd-tests/src/test/java/dev/jvmd/tests/AnnotationProcessingBindingsTest.java
+2fd6c3fed0796e6f5d4cab773cc5d3333fd15345578788e4521dcd36a005398f  jvmd-tests/src/test/java/dev/jvmd/tests/AotDaemon.java
+d33f77a0794ce5bbba343f4dd311dff6f4a3d41912d24778c7c85ea80996fc1b  jvmd-tests/src/test/java/dev/jvmd/tests/AotRuntimeStatusTest.java
+066d203e821d6f9861ca5a6ffb922069f55b4abbd98791c4a4fa9a90a3f041e0  jvmd-tests/src/test/java/dev/jvmd/tests/AotTrainingScriptTest.java
+4d4a8ffc56e593897c76830a92cfd38bca34ee16ff792bba9d79df9ed4e7606b  jvmd-tests/src/test/java/dev/jvmd/tests/ApiFingerprintInvalidationTest.java
+37b95a29456ae3ce696e68ab133a7ed387525b0e2d6341e8ecd4b9329d03291f  jvmd-tests/src/test/java/dev/jvmd/tests/ArtifactIndexFormatTest.java
+bb01feb34bb33678e466e50505493c44fa520c3fd104bd68a1ce95dd4a149c3c  jvmd-tests/src/test/java/dev/jvmd/tests/ArtifactResolutionIdentityTest.java
+c37e95f8b828c0d7c54da030c3f6d0b8879730481ac3200c3361eb5a7c1197dd  jvmd-tests/src/test/java/dev/jvmd/tests/ArtifactSignatureVariantTest.java
+c58ce9380cc1a1f5ab59ab1a7e581b63b747b725363f79e853d520c592740c1f  jvmd-tests/src/test/java/dev/jvmd/tests/AttributedMemoIntegrationTest.java
+5b24377c61d9c6ccb3b791694defd5856808cd63a127e30633c3a4918e65560c  jvmd-tests/src/test/java/dev/jvmd/tests/AttributedMemoOwnershipTest.java
+d46e2e9b895c5f0d75b2045bfbcc2949c7a83ce97915c86888d446f43beb1eaa  jvmd-tests/src/test/java/dev/jvmd/tests/AuthenticatedRepositoryTest.java
+bb0573fcb142f9d03986424c5a0754e93ee6a749e9b26c977cf11d49b768bca9  jvmd-tests/src/test/java/dev/jvmd/tests/BatchBindingsTest.java
+e85bc1932d6a2647942fc0f3ffc686c046f12c8ead71dbcf3a7cb18f42cce1dc  jvmd-tests/src/test/java/dev/jvmd/tests/BatchDiagnosticsTest.java
+4b0eb0e8998aefb070b55048bd8e56abca6c09619d1e8b04819ca62a1941e05a  jvmd-tests/src/test/java/dev/jvmd/tests/BinarySkeletonTest.java
+2239e5ed2f6ad8b318b1fa4595238e3bffc8debe0a0cf25561d040e9c5d70c11  jvmd-tests/src/test/java/dev/jvmd/tests/boot/BootFixtures.java
+97a34d2f89447ecb068724f61aefae040f6637b6392de94653dde83377796f05  jvmd-tests/src/test/java/dev/jvmd/tests/boot/ContentTreeEditTest.java
+58f025506ca86a7b9fbd2d9a660b74def4e3bec8653e67672b51380fe81cb341  jvmd-tests/src/test/java/dev/jvmd/tests/boot/ContentTreeTest.java
+3946a755644fd6489c9d60b9ec8ff30d6c9d22e88fa1371c63690c54d01ea08e  jvmd-tests/src/test/java/dev/jvmd/tests/boot/InMemoryMachineStore.java
+6c97960953a50cd0cce2fd695ddac68c2da81a1b34bb6884472a66fe6b4b5e37  jvmd-tests/src/test/java/dev/jvmd/tests/boot/Layout4Test.java
+177bc3964f2f2ff73e783f534b0b8c8f73c55d8aa55773bdb8f3d6e88cedbb85  jvmd-tests/src/test/java/dev/jvmd/tests/boot/MachineColdBootTest.java
+1e79a4a530b496a8a8d8de58c4ae5870f388ad3acee2a506894326f6d6ef7daf  jvmd-tests/src/test/java/dev/jvmd/tests/boot/RealRepositoryBootTest.java
+368aaabbb61faa4e6427d35bd4048912aac7830b77c7ebc7ee9736e8d3319683  jvmd-tests/src/test/java/dev/jvmd/tests/boot/Review62TreeTest.java
+cea61450e2191017cb3f401491fff776f0aef3a69419fdc27fff7138dbf9c687  jvmd-tests/src/test/java/dev/jvmd/tests/boot/RocksMachineBootTest.java
+5c806d26018ab50a36a527dd480245e5207008e21211c3878211e09010959cd6  jvmd-tests/src/test/java/dev/jvmd/tests/boot/Stage1Measurement.java
+c2ca575db03efacdad7a3bfd968187c66a3cc7fce83ec560d56081cf60257891  jvmd-tests/src/test/java/dev/jvmd/tests/boot/TestDigests.java
+494728fe79d8bf1353dd2cdcb9910c18888140ac0955f9af3204d15d0323048f  jvmd-tests/src/test/java/dev/jvmd/tests/boot/ZipBuilder.java
+92e0855c372b2e5f1b45534331117dc84d489d619bc78d650683ec67836a7a30  jvmd-tests/src/test/java/dev/jvmd/tests/boot/ZipReaderTest.java
+2e541512696d84f280947fea3ae1fcf79086c884b2e3b0feb7b6e72a137e451a  jvmd-tests/src/test/java/dev/jvmd/tests/BoundedBindingsBuildTest.java
+eccd82391f5156d6a2fec15dec4484de132b80c6ba5e41d471f05bc75451cca3  jvmd-tests/src/test/java/dev/jvmd/tests/BuiltWorkspaceReaderTest.java
+a1d6da9c6e2571185b87343f9a3f4856f80676d6848bbb067e079290df747c41  jvmd-tests/src/test/java/dev/jvmd/tests/CanonicalResolutionIdentityTest.java
+bb6ca6d7f1b5e2c0d62bc902e0fec2e5f65aa809632c1f221f65b129eedf1c54  jvmd-tests/src/test/java/dev/jvmd/tests/ClasspathLifecycleIntegrationTest.java
+da579b005695bf00ed13e497f9a609e3f4acf2eaf26d40b09c6fbd8893150f39  jvmd-tests/src/test/java/dev/jvmd/tests/ClasspathSearchProofIntegrationTest.java
+93f62feb9be4bd2d6661eac686bb416ac2f95c59466e45ba34176e5b334a5e17  jvmd-tests/src/test/java/dev/jvmd/tests/ClasspathSequenceTest.java
+5043bc0f0b11add67aa818bfd8e67a4f489cb0d80f28062ea272f4e092baf6f0  jvmd-tests/src/test/java/dev/jvmd/tests/CompactConstructorBindingsTest.java
+fc92a420f472e6c51eb18883866ccf7f50ddbfddb6d626c7a7ef1c75cd145909  jvmd-tests/src/test/java/dev/jvmd/tests/CompiledEvaluationTest.java
+8af90292c36e9d4162fae498108ce0164f0941a479f10a9d670fa2f1c4cd8095  jvmd-tests/src/test/java/dev/jvmd/tests/CompiledSourcePoolReuseTest.java
+2bf84479b7f694bd6f622e7b73390a1db81625d05a550dbe376ee90358f541dd  jvmd-tests/src/test/java/dev/jvmd/tests/CompilerInputsTest.java
+b398c66463fd899877e4c5db494862c808253a4db14538d8f319ab2125838152  jvmd-tests/src/test/java/dev/jvmd/tests/CompilerPoolLifecycleTest.java
+7495b26f99aacbfd085ce67fa75c20b5ef370747bd795a3d670d6a85d4ee4be0  jvmd-tests/src/test/java/dev/jvmd/tests/CompletedDependencyCaptureTest.java
+0c75aa165b8d04c946352ee00a48a7cc6b9d3f58d8577c9fa4f42caee6c82651  jvmd-tests/src/test/java/dev/jvmd/tests/CompletionContextResolverTest.java
+0d5f6ef7d862fa09f2f9b689f28c5816f95a8a636a6207045d3b661c59f318e9  jvmd-tests/src/test/java/dev/jvmd/tests/CompletionPrefixCacheTest.java
+863ca5eb36761282e20762fb635f1e6bea01d9c85405df08843543455ab1ccd6  jvmd-tests/src/test/java/dev/jvmd/tests/CompletionProbeTest.java
+cbd1958a31bb8a27e8e4136c582f578d7a72e6667be3a9a159b45d04b214016b  jvmd-tests/src/test/java/dev/jvmd/tests/ConflictLosersTest.java
+a2a1c9253dca0e8eda5280e2bc39a280dfbfa4adf8c417d6a92cade019cd188b  jvmd-tests/src/test/java/dev/jvmd/tests/CorpusAgentSessionTest.java
+a96a964650b19e847bc0a21f6c57699e48c9531512808fb110b4724d781ac4a2  jvmd-tests/src/test/java/dev/jvmd/tests/CorpusLspSessionTest.java
+ff0086690b7def638f698e8b7667d862e69ece5695fbafe453cf1ea5ccab6cbf  jvmd-tests/src/test/java/dev/jvmd/tests/DaemonIndexReadinessTest.java
+6d151d3b01dd98a9edf5247e722d734d75547ce85619e1a0045923bc71715c9c  jvmd-tests/src/test/java/dev/jvmd/tests/DebuggerSteppingTest.java
+181668dfc63c7045c435b336a9a049300764370abf839d872a5d7659ecadc3ef  jvmd-tests/src/test/java/dev/jvmd/tests/DebugInformationTest.java
+877aadbb3e1d7a2ac0678f5939f45734b750d137000da36f6be7bc4177f1d0e2  jvmd-tests/src/test/java/dev/jvmd/tests/DependencyDefinitionTest.java
+8bda596c7578c2de3dc4085c12e7040edbe271f081124d9b5e2628ce4a9efde5  jvmd-tests/src/test/java/dev/jvmd/tests/DependencyFindPaginationTest.java
+686bde2446ff916742fc7db9e2afc34ace21467e7251c8a820fcf44aa4efa30c  jvmd-tests/src/test/java/dev/jvmd/tests/DependencyGraphToolTest.java
+b2b40e854915d6de8e476e848374e26bf5fd877a1f51540128f8f2378a8b4f57  jvmd-tests/src/test/java/dev/jvmd/tests/DependencyHierarchyTest.java
+84f1d3cbfb8620874e90eba61f5d0ef2fbc21408bccf3cb8f1889b100439bb7e  jvmd-tests/src/test/java/dev/jvmd/tests/DiagnosticIdentityTest.java
+1be29d13ec2fdb52322b800c64a9e2d270d1adfdd194cd8a664bbbfac20e106b  jvmd-tests/src/test/java/dev/jvmd/tests/DiagnosticProjectionSufficiencyTest.java
+4802c11c7b50e851212623d064e548b3f077babb1d443f58f90180d57706d27e  jvmd-tests/src/test/java/dev/jvmd/tests/DiagnosticRequestContextTest.java
+c44beb4f47ba0fc012718de21cddf11065fee158c13ebe6066f3f17615c36d35  jvmd-tests/src/test/java/dev/jvmd/tests/DiagnosticSchedulingTest.java
+d2bff58bf738d179d4e4d7cafc50553d1e5749d6fd040d2ecc4ad5ba2af0c14b  jvmd-tests/src/test/java/dev/jvmd/tests/DiagnosticSnapshotCleanupTest.java
+6bd8186b6f84fd2c879bfa43c49c4c30ce7c03174c17ce5e38c17183d07de3c9  jvmd-tests/src/test/java/dev/jvmd/tests/DocumentContextProofTest.java
+a9623a8cbef428b391a79c36bcda6ced7be351d39f745882c8b277539cae61c7  jvmd-tests/src/test/java/dev/jvmd/tests/DocumentSynchronizationTest.java
+e94b91ff38fb5cdb1c231d500fbdface80c146c4355c6d45f5e18bee36d55a03  jvmd-tests/src/test/java/dev/jvmd/tests/EagerRepositoryIndexTest.java
+049614b860e80af6fae40bfafa701f830ee011da194a584bbb46deef4239dbd8  jvmd-tests/src/test/java/dev/jvmd/tests/EffectiveCompilerOptionsTest.java
+2492c997bfaa4990445eb6e74850cc8ea70910e0a1044529afadcc7458fcfc02  jvmd-tests/src/test/java/dev/jvmd/tests/EnhancedHotSwapTest.java
+1d95b78b7f42c931263905cf31030bde470cc9446aac755ef7b53f289107bf4b  jvmd-tests/src/test/java/dev/jvmd/tests/EnvelopeTest.java
+dca9666b42100ff6f2af7438258fca3cffc070f052dd9de936f38a865e2f9310  jvmd-tests/src/test/java/dev/jvmd/tests/EvaluationDeadlineTest.java
+65f35447069e7a33c9fe226abf5bb315ae14dc68f17c0a174ab041b13454eab1  jvmd-tests/src/test/java/dev/jvmd/tests/ExternalAnnotationProcessingTest.java
+bb4d26a3dff8dccc0a3125545734c8e4046a669459b5fb1451776fc7c600747e  jvmd-tests/src/test/java/dev/jvmd/tests/ExternalSourceRootTest.java
+f123acd0afa6dcc2d600a0f66d8eb81342687e6cacad590b8e64c40839c24499  jvmd-tests/src/test/java/dev/jvmd/tests/FileInventoryTest.java
+ebc5b6572321a222ff20e83ceb190f841f22618e5f960621018fc571b7e7eeb4  jvmd-tests/src/test/java/dev/jvmd/tests/FileStatePersistenceTest.java
+44a269e0e922b1da9c99ab7bbb913a7635a1e19d030ac9ce7a0fb53865dd3ea0  jvmd-tests/src/test/java/dev/jvmd/tests/FindDepthPaginationTest.java
+1ecaf0c0a9764b7eaab9943aca76725a9df0c453f5798b016858199b27aed142  jvmd-tests/src/test/java/dev/jvmd/tests/FocusedSignatureDependencyTest.java
+5f45f89606b1caa7e5e543680c9de862e48e6dceaceada9d0631ba2f36d794a1  jvmd-tests/src/test/java/dev/jvmd/tests/FocusingTest.java
+f250cd00bc0b48f1f91d03dd9da357ede0fced24f8597d7c3c68655c3df68a5b  jvmd-tests/src/test/java/dev/jvmd/tests/ForbiddenIdentifiersTest.java
+f82cabf552d27521d2dc8078ea145839c45bcf46e4975bf9802a2906c9b51023  jvmd-tests/src/test/java/dev/jvmd/tests/GeneratedSourcePathTest.java
+b8a2aba7c204a12d1aeabe3787b7253255dd33ce15218955c16da71325053724  jvmd-tests/src/test/java/dev/jvmd/tests/HotswapAgentTest.java
+d879ac009625325d789dbf2f3a9e9f8e3f7532821ee3d39570b80a5eaf388e3a  jvmd-tests/src/test/java/dev/jvmd/tests/IdentifierSweepTest.java
+35b13ea297a937b17efc58d0c83883b69bb47a488a172a05e196e8b9e3e303a2  jvmd-tests/src/test/java/dev/jvmd/tests/IdentifierTokensTest.java
+46b678b6a0e2795b2e47b763b9127f56b617848109e29403dc7f4071932cc86b  jvmd-tests/src/test/java/dev/jvmd/tests/IdleShutdownTest.java
+a97d2b35eef0af4e073c00069868b3ec6f1b953edb618819180df5b7ac46b089  jvmd-tests/src/test/java/dev/jvmd/tests/IndexedFileManagerTest.java
+f04528e7be6201187e39e1989e5076c0c7a1c518b32f2cf4bec0b0cfb14d544b  jvmd-tests/src/test/java/dev/jvmd/tests/IndexFixtures.java
+9c96692f911824d0b412803aa85d109581480b60a259740d42ffbe21294244b7  jvmd-tests/src/test/java/dev/jvmd/tests/IndexInvalidationTest.java
+c2a84484399366788d4458b087364ace9e75e73d8cb36249b6c9136d11062684  jvmd-tests/src/test/java/dev/jvmd/tests/IndexMembershipMigrationTest.java
+3cb1c8afba8fbf8496669f90e4dbf001554fb63779b7b2a639b5f67bcc86c136  jvmd-tests/src/test/java/dev/jvmd/tests/IndexSchemaTest.java
+24925c6a520d8a4d4ef08db3f17c614f37e986947a9010b2283394cb0a814846  jvmd-tests/src/test/java/dev/jvmd/tests/IndexSearchTest.java
+2122fdd481ed7834008daef8114f78783145dda5f9138f12c17f1971ba820af6  jvmd-tests/src/test/java/dev/jvmd/tests/IndexStoreContractTest.java
+324558d6f1304488a295e4340e2fef85918da3aed844c35015b07112b3081fe3  jvmd-tests/src/test/java/dev/jvmd/tests/InheritDocTest.java
+eae6662db47de216dba80e2748a38dca84095c2dceb57c3570f6c9de2c980491  jvmd-tests/src/test/java/dev/jvmd/tests/InputBoundaryRepairTest.java
+5c81258e8d8263a3ba88c73f5910623904ed2b7f81fbf2b9af96737b51bcb592  jvmd-tests/src/test/java/dev/jvmd/tests/JlinkImageTest.java
+e5a3922fa3c3580123580885f8150dd74410b84a224ffac152e11df83e9d0e2a  jvmd-tests/src/test/java/dev/jvmd/tests/JsonRpcServerTest.java
+11836d080b52e9f18965b171973adafde7e8b974ffcb0eba845d27caad002213  jvmd-tests/src/test/java/dev/jvmd/tests/LazyCodeReferencesTest.java
+336f4dcdb754abdf740637516d9abe8bdad63e78b07b1c30ac1758bcf3214c59  jvmd-tests/src/test/java/dev/jvmd/tests/LiveSourceStateTest.java
+6675f445ec4ed0fd3f80b2823a09fc200ea18283208ea10164de91eb0a3e5b86  jvmd-tests/src/test/java/dev/jvmd/tests/LiveStateTreeTest.java
+81bce68777377a80ae48b25f2389c375580ae80dd8fa32e54bfbeed7d26874e8  jvmd-tests/src/test/java/dev/jvmd/tests/LiveVerifiedAgreementTest.java
+0f0fa82726e076ef8dc9fa2f281645e90aea2eb7f8e53021b29791bfb89aa466  jvmd-tests/src/test/java/dev/jvmd/tests/LiveVerifiedDiagnosticsTest.java
+e035e6b8d35e93e7b36d375636e0b3cdd2d7713e1969faa65cf0777dbaedffd6  jvmd-tests/src/test/java/dev/jvmd/tests/LocalModuleIndexTest.java
+d36e16dd422ad2e25cf0b41c77ea5eaea1dea01e528e78c4bedeb98753a08c2d  jvmd-tests/src/test/java/dev/jvmd/tests/LombokPolicyTest.java
+d34fd3159e1820a0c40474382b607f0acf9c14867a132d61b2fedc10f61edcbd  jvmd-tests/src/test/java/dev/jvmd/tests/LspFacadeTest.java
+e7f6e7e2eb33db2b026965d342ec7f97ef1f10a65c8b8b983d3514ca805a6deb  jvmd-tests/src/test/java/dev/jvmd/tests/LspStdioTest.java
+23684d2b27ea879cead79e24cfbfbb0da261262cbd83e72c4cc3e38ce74f91d7  jvmd-tests/src/test/java/dev/jvmd/tests/MachineSemanticQueryProofTest.java
+d2d5f02fe61e3cd41470d21a07e62af184f10c7bf6412d7e81f76cd55507b0c7  jvmd-tests/src/test/java/dev/jvmd/tests/MachineWorkspaceIdentityTest.java
+70faaa3e4f424225b829dfd04a35b66e551403200511bf51ebb22f398823cd15  jvmd-tests/src/test/java/dev/jvmd/tests/MaintainedCompletionContextTest.java
+4966d8e025dd88717b040b8109c7073f9c663c9034d1c4912c152f0943a413c3  jvmd-tests/src/test/java/dev/jvmd/tests/MaintainedSemanticObservationTest.java
+c95a3e61064ca893161d152de795050209282f4fa17717bcaa37063e69f05d0c  jvmd-tests/src/test/java/dev/jvmd/tests/Maven383CompatibilityTest.java
+499af95584950bf7c3f917cf0928897c9919f9e4c5f8e0058d642a0994a8e4ba  jvmd-tests/src/test/java/dev/jvmd/tests/Maven4ResolutionTest.java
+c22674de5e1498a5b049377c98c8bc6a0ed85f59d19a2c621830b430668bf391  jvmd-tests/src/test/java/dev/jvmd/tests/MavenBundleIsolationTest.java
+dfbff3501260f482c820c5fcc5e44ca6391483c8f96d595a378b1d8d0f455c6c  jvmd-tests/src/test/java/dev/jvmd/tests/MavenFixtures.java
+914389547901ca7ae3c44b7741ae84140c48a0122dbc0275922c42b78ab7392e  jvmd-tests/src/test/java/dev/jvmd/tests/MavenWorkspaceResolutionTest.java
+ee8230d193eb38ae31162606682778f583470127ec9f71abe167204f22db7e64  jvmd-tests/src/test/java/dev/jvmd/tests/McpResponseBudgetTest.java
+2a1d788a93d3029ca3f296e0c5b310573a496c1cdb28b58891420c9238306ba2  jvmd-tests/src/test/java/dev/jvmd/tests/McpStdioTest.java
+0b1c1a26a8331962d2ed2be8eb9298f5ce048a41c4dedadcb391ec97eec25ccd  jvmd-tests/src/test/java/dev/jvmd/tests/McpToolSchemasTest.java
+a32989be8879aaadb392d7cab92812b3aef819075a7aafa08c668298f34f37ae  jvmd-tests/src/test/java/dev/jvmd/tests/ModularAnalysisTest.java
+07eabc02b32b271db9551aeed51bea21e653aadaf48f6ab064d88ed3edb6b7d4  jvmd-tests/src/test/java/dev/jvmd/tests/ModuleAnalyzerContextReuseTest.java
+cc77af1b415e62efa6eb4b592fd82787f846b3ebbe2e414841160b9e679dcd5a  jvmd-tests/src/test/java/dev/jvmd/tests/ModuleArchitectureTest.java
+27b51ce66e374a0d615aa5a386f1ad54f59332e9f051454c1abec5503fbed625  jvmd-tests/src/test/java/dev/jvmd/tests/MultiModuleApiChangeTest.java
+1fb17655c426cb823d0b6ce4d39a8a436a612baf7d861b691b387f2dc9fcf3ac  jvmd-tests/src/test/java/dev/jvmd/tests/MultiReleaseIndexTest.java
+554e17a23896a7d4796cbbbc16d2ca188729f4e9d3151fac847f78c92d3dfb28  jvmd-tests/src/test/java/dev/jvmd/tests/NamePathResolutionTest.java
+a2c9293df8bc3005acf1817139602287ae68fa7ecc76111fb5ea3ff61b972dc4  jvmd-tests/src/test/java/dev/jvmd/tests/NamespaceResolutionProofsTest.java
+45b169c0c6ae483080b89a7c6a7c1e7b5360d88b4bc6996d3480813ca860c8fb  jvmd-tests/src/test/java/dev/jvmd/tests/ObjectHandleExpiryTest.java
+ca45a403ccf1649b17183fff58f98973381922e869a358f9101b6fa76de7567a  jvmd-tests/src/test/java/dev/jvmd/tests/OfflineFirstResolutionTest.java
+e08f2f26fac84e6a6927e707e3053ef05c55ae7ca8c79199981b20f4eb8a9973  jvmd-tests/src/test/java/dev/jvmd/tests/oracle/ReadOracleAgent.java
+997e02261ef65871ee43a7fc2c844c56813903194e8cddae365ecd18f5056fc9  jvmd-tests/src/test/java/dev/jvmd/tests/oracle/ReadOracleCoverageTest.java
+2a9c5459627bd55ca8e48ff975f3bc4069f8d97b5a256b0955e96ab17b81c404  jvmd-tests/src/test/java/dev/jvmd/tests/oracle/ReadOracleInstrumentationTest.java
+00d2077c5bcefde7e8987caad649cffc5319643673e3915184f503f38e8a07a0  jvmd-tests/src/test/java/dev/jvmd/tests/oracle/ReadOracleTrace.java
+f50289740ee785b313a9b7b2769b7785c62e36759e7738f55f8f72b9dd48b747  jvmd-tests/src/test/java/dev/jvmd/tests/OverlayFixtures.java
+d0bb829c926e7488aac52c67bd5a79dad0a3147b48d8410d7130df52ffc4f8d4  jvmd-tests/src/test/java/dev/jvmd/tests/PackageOverviewTest.java
+1afd275a37f82c9654d21f0e5b399ff291d61042acc12995f6a4e3c4a3b87dda  jvmd-tests/src/test/java/dev/jvmd/tests/ParseOverviewTest.java
+3764250217a0f1b4e20bd2aedd8f2214b06493aa1838cd310519a5bfc7764a2e  jvmd-tests/src/test/java/dev/jvmd/tests/PersistentDiagnosticsTest.java
+78bc8bf9ccccdd357a6a241445675ea3a922113a16249385ab768817efbcaca0  jvmd-tests/src/test/java/dev/jvmd/tests/PomChangeClasspathDiffTest.java
+9d47087a32bda432977b6db75ea5bf2b16637d7470a554ae3fcd42b8796fb2ee  jvmd-tests/src/test/java/dev/jvmd/tests/PreciseCertificateTest.java
+df43f3cc9ea84d30c451dad4d3918d55f8f046ef007df431f95bbd941743c308  jvmd-tests/src/test/java/dev/jvmd/tests/ProcessorAllowlistTest.java
+ff8816e7c135f79d21eb41b9d32eac34464d0e51469fab1f6e6602518392b5ca  jvmd-tests/src/test/java/dev/jvmd/tests/ProcessorBindingTest.java
+08220bb312b59ad2a9853e96d7cd1ef027bba981fecd8f79859adbc0d47734f7  jvmd-tests/src/test/java/dev/jvmd/tests/ProjectResolutionHotPathTest.java
+a54142ebf4fc16103296321746ba5d6814a582d1bf46600bb6018944a9ac6868  jvmd-tests/src/test/java/dev/jvmd/tests/ProofDagOrderingTest.java
+603dd23077b2dd27740a596409b9df8010887b88d56bfa173b01b404e56b0138  jvmd-tests/src/test/java/dev/jvmd/tests/QueryProofTest.java
+c92ce381592ca611401e055dbb12856b05aa33f370c8ba52d99148ca4070894b  jvmd-tests/src/test/java/dev/jvmd/tests/ReactorClassBindingTest.java
+10ed105efd062808e8ee3ed3247ee4ada44a0ad75f6eba243d5fd7d4e59c94f9  jvmd-tests/src/test/java/dev/jvmd/tests/ReadinessGatingTest.java
+43338cc000df082c991d160659ae775c9a9fdf26e1073f4a7678b676b9a3cec0  jvmd-tests/src/test/java/dev/jvmd/tests/RealProjectBenchmark.java
+fc37851d6cca60e301ecf33ded794f883ccef946235cf0649d4245383266fa01  jvmd-tests/src/test/java/dev/jvmd/tests/ReferenceIndexStorage.java
+3f5da03ce1ad614c6734d3eb52b84d32d19b5d32d5c96fbb2c39069346c262f3  jvmd-tests/src/test/java/dev/jvmd/tests/ReleasePlatformReuseTest.java
+0596ddac18dda0da0ede120a2fd1d6d6d9ef527d1fe318cb3eb9db8cc52756ba  jvmd-tests/src/test/java/dev/jvmd/tests/RepositoryIndexExitTest.java
+0a0644ef88736bd74986510a7f53838877fb57f5d19486bb326e8b4822d3a018  jvmd-tests/src/test/java/dev/jvmd/tests/RequestScopeConcurrencyTest.java
+23fdb3b3651c793b9a12c3f70bd2390b1510cce61ce98775356e7f358af861e8  jvmd-tests/src/test/java/dev/jvmd/tests/RequestScopeOptionalMetricsTest.java
+6693a431f0bc7f401813166d5e85250a7186d3241c32d2606dff7f005149b355  jvmd-tests/src/test/java/dev/jvmd/tests/RequestScopeTraceTest.java
+063f2fc5112af5d1a93c9c49763a5d83ce9ed6a2f2a621256f26cccc5fa6f8cb  jvmd-tests/src/test/java/dev/jvmd/tests/ResidentCompletionCorrectnessTest.java
+179c1198d7f2d721f7668e67545381bf549abdd54ae6d4ad17e6433ee99c283d  jvmd-tests/src/test/java/dev/jvmd/tests/ResidentSemanticStateTest.java
+f0a7db6b6658cce3cbc3d9218ffc30c0e0b28e8b39489621ef37176e25860864  jvmd-tests/src/test/java/dev/jvmd/tests/ResolutionCacheTest.java
+96c6458c5364caf7bb4f64acf335f788eba2e8b1c7d55c904fe4995816f0677e  jvmd-tests/src/test/java/dev/jvmd/tests/ResolverBootstrapTest.java
+8724cda11fe21674ff42d8c4b66a725adb1fa922c6c8d6fc9e3626b2936a4bcd  jvmd-tests/src/test/java/dev/jvmd/tests/ResolverMajorAlignmentTest.java
+f44354f2e7ee1178fbd8bd2aa7c538b787d270fa468848c3c368f6530212ee33  jvmd-tests/src/test/java/dev/jvmd/tests/ResponseBudgetTest.java
+600fc46007eed76ccc989bf9140790c60b7acf64c950b7f8f44566c35a68a4a5  jvmd-tests/src/test/java/dev/jvmd/tests/RestartScenarioTest.java
+24a6d7062ca39fa29db1bfa0c88f55a8f63e76f4b5751166200cac62d98ac910  jvmd-tests/src/test/java/dev/jvmd/tests/RestartStableIdentityTest.java
+c104bc2644ae69621712bee18384b03b9ca219335a820bbcd38c994df8ea64c4  jvmd-tests/src/test/java/dev/jvmd/tests/RetainedSessionAttachTest.java
+ba67755c74c4a9d084f95fcf339e4319091628c56c29cb256c9b2d59073a50ae  jvmd-tests/src/test/java/dev/jvmd/tests/ReverseDependencyInvalidationTest.java
+cd2fe717e0cb0f3a3091cbdd6ddc6a5caba8fa582df826bdd8e3b62071cd5adf  jvmd-tests/src/test/java/dev/jvmd/tests/RocksSqliteAgreementTest.java
+6942bf09bcfdfc38af66dfef791a0813cefa440f4782ac2ff3858fc9e51c18c5  jvmd-tests/src/test/java/dev/jvmd/tests/RocksStorageIntegrationTest.java
+7a858d5a870ef9a2e71ab18288482f3c045e1be2f027772073420776cdd7e4ea  jvmd-tests/src/test/java/dev/jvmd/tests/RocksStoreIntegrationTest.java
+8faf4e7bbf7c5b42d4b81bc6ed40b377ebab9ec98e9ae0e520252d98d93e4c0e  jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeCompilerIsolationTest.java
+11cb04716ed6e812718427fa2f00f1cfcc870c6e73968ff53b23fd0f2071c24a  jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeFixtures.java
+118d2681b83b1fe35dbe54f218e020372cfff399a78282ae0556abf6dbfcf273  jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeInspectionTest.java
+fe9d4ede16c5a0036833547fab81d00fbdfd4187cbf15165616729488c362db2  jvmd-tests/src/test/java/dev/jvmd/tests/RuntimeProtocolTest.java
+fd23ac707bd730a2c4bb0966fe27aa205efecdfde114a9371a0ee7d06647bc4b  jvmd-tests/src/test/java/dev/jvmd/tests/ScopedNamePathTest.java
+347ea3ffcd8f59e658e31a694a2eaf2748f760de7c7c04047e9f1539f9561eac  jvmd-tests/src/test/java/dev/jvmd/tests/SemanticClasspathIdentityTest.java
+a3ac2b27adaddf3aa8d3e110555490fd4c2b183038b177fafe0157e55a902a5e  jvmd-tests/src/test/java/dev/jvmd/tests/SemanticEditsTest.java
+79c562efb661ba0a0a0deaede8da8624c0a80206062ab9b4b6366002877ca2fd  jvmd-tests/src/test/java/dev/jvmd/tests/SemanticFactLifetimeTest.java
+f9da1f53467e8d617a50e71970c709de269f59dc9a6bba9f32b142540c22a5ee  jvmd-tests/src/test/java/dev/jvmd/tests/SemanticFactResolutionIdentityTest.java
+7f7cc928aa6acf900b37c3d7e9179c8459402d6470dd5a512bbe80ae6367125a  jvmd-tests/src/test/java/dev/jvmd/tests/SemanticImpactTest.java
+7bb0d3d9c5cda3321bf4ac5b7b3b519966f05740ddb6d1d3bc4f043e41325998  jvmd-tests/src/test/java/dev/jvmd/tests/SemanticMemoStoreTest.java
+d9dd2b72e13e4ae5c79f7b540eeab85104c1958b9236c313aa243123d29a4a2c  jvmd-tests/src/test/java/dev/jvmd/tests/SemanticProofDagTest.java
+e7e7be4d07c2cc1b2cf8e45e5f22ad4148ff1b7bb254ee36ad526e46464fd0ee  jvmd-tests/src/test/java/dev/jvmd/tests/SemanticReadViewTest.java
+ca3e7bd3696c68c4deb8513a6f5b7a6f184c2e23e07a6f17385c754fac41219c  jvmd-tests/src/test/java/dev/jvmd/tests/SessionManagerTest.java
+6c7912eab0fce8b22b3c6bfe7db42383cce1a12689a548fa680d6f36dd980a24  jvmd-tests/src/test/java/dev/jvmd/tests/SharedClasspathIdentityTest.java
+fda012441a493046a99f3c07d2ce9f2206e4a55ca7a78e4426bc43d9f9b975da  jvmd-tests/src/test/java/dev/jvmd/tests/SignatureClosureTest.java
+e9a2ea35e2463768aacecf0b0eee8197ceaef139596a65b9d4c62f81500bfa9d  jvmd-tests/src/test/java/dev/jvmd/tests/SourceContextReuseTest.java
+8991b6690e9306c8eb670dec6e233e00bf2995e4be0aa2ef73315b936ae2fc82  jvmd-tests/src/test/java/dev/jvmd/tests/SourceDocumentationJoinTest.java
+b6e47678aba684e513263c360ae3a07861f74b46de2ff59f3566e988c3b3c0fc  jvmd-tests/src/test/java/dev/jvmd/tests/SourceEditBinaryCacheTest.java
+589ed1f1b3767835ee4ea2fb25d75e1d783ab8267ad0617461e85e9ec7e5dfa6  jvmd-tests/src/test/java/dev/jvmd/tests/SourceFactsMigrationTest.java
+b5f2a091d7711f346e6a4d5b782d5d7c5bc8b597efebcb895a8ed6af1d86b01e  jvmd-tests/src/test/java/dev/jvmd/tests/SourceIndexPublisherTest.java
+45b401303ace39a4bd0508ef2d5eb0275ca6b0a036be3620e9bc5f65dba88dda  jvmd-tests/src/test/java/dev/jvmd/tests/SourceJarBodyTest.java
+c0624ef24c73f5f8a65f0d4025e998ec0b4f93865156cf7a56f3002f198467cc  jvmd-tests/src/test/java/dev/jvmd/tests/SourceNamespaceMemoTest.java
+b8a8e4a4cf4931e16a19764085af1a3921edbd1e6042853c908cf552376f4088  jvmd-tests/src/test/java/dev/jvmd/tests/SourceOverlayNavigationTest.java
+368ad31cbdefd7361c3da91ccb39048403a4e1823069d0df428162185bb3787f  jvmd-tests/src/test/java/dev/jvmd/tests/SourceProofMutationIntegrationTest.java
+ef36c3b319782c41059b54f2e328f1bcc0f6063141060e003f16d063731b6933  jvmd-tests/src/test/java/dev/jvmd/tests/StaticImportRenameTest.java
+f47e18d7bd1192c2c39db25de9e2b8b8f89a50433fce49343baeb149bbaa4df5  jvmd-tests/src/test/java/dev/jvmd/tests/StratificationDifferentialTest.java
+65f93e0567a38a7b507144abcf4ddefb5e6c4eca3a69a5f0d8b6503601fe10ef  jvmd-tests/src/test/java/dev/jvmd/tests/StructuredRequestLogTest.java
+9d1e3f5d883d3fd6c8fde3d3104ac37f2c72d7d42dec2f1c30bc29209ecc7214  jvmd-tests/src/test/java/dev/jvmd/tests/SyntaxDiagnosticsTest.java
+64b23c4ff50521db2c4fce816e95d8d254a1162548a603d75340f97bdb4ea4ff  jvmd-tests/src/test/java/dev/jvmd/tests/SyntheticProjects.java
+1a2720b70add9cd37df78c2299a91769b6ca0734fd34275666a16c6600f4cec8  jvmd-tests/src/test/java/dev/jvmd/tests/TestSupport.java
+f50fc8b20033e03cdd2c6de0229e4b831e9f4339b167923aafea5b1ffa5df197  jvmd-tests/src/test/java/dev/jvmd/tests/TierOneOverviewTest.java
+086415f1f6007fd3f32444fe6935a15b8868667b281454b97401b86eced5984d  jvmd-tests/src/test/java/dev/jvmd/tests/TolerantAttributionTest.java
+666a98876751a35289c3c51687bc98f6a84eb053652c3fe1f7296c6e1a2c2109  jvmd-tests/src/test/java/dev/jvmd/tests/UnimportedTypeCompletionTest.java
+8add61a40f9d4f1143f7a885c8e7f36bd9e7163aeaaac1d745595f8ffcbce1e1  jvmd-tests/src/test/java/dev/jvmd/tests/UnsavedDocumentsTest.java
+2b6ad7246bb68f3046dff6bf4bc18175ad8dd6dc012612859d68fdf948606200  jvmd-tests/src/test/java/dev/jvmd/tests/WarmRestartGateTest.java
+040b1acb14b88973d72119ce0c4531869f74b13286b6025e0f62d9e8dae36df2  jvmd-tests/src/test/java/dev/jvmd/tests/WarmRestartScalingBenchmark.java
+bb94e4d5e9c902fb2a41afc33760666cbf47e85720be63583772df213947ef22  jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceBindingsCacheTest.java
+cecb656b29fe85d7b47714545083312705466a7acdc1897702ffd5a4883f95c4  jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceBindingsTest.java
+07735ae4cd30a35535313515ad12766049ffb14245f183d121e7ba990fdfb624  jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceDebugSourceTest.java
+22eac2004f3a29a8c91e771f3d8630f735553d55cee7662636797f887d6edf65  jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceIndexLoadTest.java
+2f82ebcb6aa7a0339a39b779ddceb8cdf51c482f09909cf92acd57fd89b8c75c  jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceManifestTest.java
+0de54cb4d729e7a74c7c2f0701f44be88fe6b68ee0812b85f05fc8e219946458  jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceReaderSmokeTest.java
+bf21db412394d1c728a24f6f387d9f45c704e68ef12e07f6d15f956f0f44b2e1  jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceSemanticProtocolTest.java

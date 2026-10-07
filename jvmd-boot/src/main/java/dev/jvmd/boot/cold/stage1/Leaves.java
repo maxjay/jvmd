@@ -20,6 +20,10 @@ final class Leaves {
     /** byte hash -> leaf key, so a location that lost {@code Seen} or {@code claim} resolves through its byte hash. */
     private final ConcurrentHashMap<Identity, Identity> aByHash = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Identity, Identity> kByHash = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Identity, Identity> readerByHash = new ConcurrentHashMap<>();
+    void reader(Identity bh,Identity root) {readerByHash.put(bh,root);}
+    Identity readerFor(Identity bh) {return readerByHash.get(bh);}
+    java.util.Map<Identity,Identity> readers() {return java.util.Collections.unmodifiableMap(readerByHash);}
 
     /** True for exactly one caller per leaf key: that job builds N, E, O and L. */
     boolean claim(Identity k) { return claimed.add(k); }

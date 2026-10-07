@@ -37,7 +37,7 @@ class HeaderAbsencesTest {
 
     private FileRow row(Digest digest, Booted boot, String name) {
         String path = "app/src/main/java/p/" + name + ".java";
-        return FileRow.decode(path, boot.store.get(LocalStore.fileKey(Stage2.projectKey(digest, boot.model), path)), digest.width());
+        return FileRow.decode(path, boot.store.get(LocalStore.fileKey(Stage2.projectKey(digest, boot.model), Stage2Support.source(path))), digest.width());
     }
 
     private boolean valid(Digest digest, FileRow old, Booted current) {

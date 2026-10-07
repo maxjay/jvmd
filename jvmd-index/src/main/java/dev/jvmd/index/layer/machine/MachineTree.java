@@ -27,12 +27,15 @@ public final class MachineTree {
      * field is the digest of every preceding byte. A reader verifies the record by recomputing it.
      */
     public static byte[] encodeRoot(Digest digest, Format format, Root m) {
-        var body = new Codec.Writer(128).str(format.toString()).id(m.hash()).id(m.sum()).u32(m.count()).u8(m.level()).toBytes();
+        return encodeRoot(digest,format,m,null);
+    }
+    public static byte[] encodeRoot(Digest digest, Format format, Root m, Identity readers) {
+        var body = new Codec.Writer(128).str(format.toString()).id(m.hash()).id(m.sum()).u32(m.count()).u8(m.level()).optId(readers).toBytes();
         return new Codec.Writer(body.length + digest.width()).raw(body).id(digest.hash(body)).toBytes();
     }
 
     /** A decoded ROOT value. */
-    public record RootRecord(String format, Root root, Identity digest) { }
+    public record RootRecord(String format, Root root, Identity digest, Identity readers) { }
 
     /** Decodes a ROOT value and verifies its trailing digest; throws if it does not match. */
     public static RootRecord decodeRoot(Digest digest, byte[] value) {
@@ -43,10 +46,11 @@ public final class MachineTree {
         var sum = in.id(width);
         int count = in.count();
         int level = in.u8();
+        var readers=in.u8()==0?null:in.id(width);
         int bodyLength = in.position();
         var stored = in.id(width);
         if (!digest.hash(Arrays.copyOfRange(value, 0, bodyLength)).equals(stored)) throw new IllegalStateException("ROOT digest mismatch");
-        return new RootRecord(format, new Root(hash, sum, count, level), stored);
+        return new RootRecord(format, new Root(hash, sum, count, level), stored,readers);
     }
 
     /**
@@ -54,23 +58,27 @@ public final class MachineTree {
      * are the entry paths skipped in this location (A.7); an unreadable location has the zero {@code bh}, no {@code k} and one fault.
      */
     public static byte[] encodePath(Identity bh, Identity kOrNull, Identity aOrNull, long size, long mtimeNanos, List<String> faults) {
-        var out = new Codec.Writer(128).id(bh).optId(kOrNull).optId(aOrNull).u64(size).i64(mtimeNanos).u32(faults.size());
+        return encodePath(bh,kOrNull,aOrNull,null,size,mtimeNanos,faults);
+    }
+    public static byte[] encodePath(Identity bh, Identity kOrNull, Identity aOrNull,Identity reader, long size, long mtimeNanos, List<String> faults) {
+        var out = new Codec.Writer(128).id(bh).optId(kOrNull).optId(aOrNull).optId(reader).u64(size).i64(mtimeNanos).u32(faults.size());
         for (var fault : faults) out.str(fault);
         return out.toBytes();
     }
 
     /** A decoded {@code P|} value. */
-    public record PathRecord(Identity bh, Identity k, Identity a, long size, long mtimeNanos, List<String> faults) { }
+    public record PathRecord(Identity bh, Identity k, Identity a,Identity reader, long size, long mtimeNanos, List<String> faults) { }
 
     public static PathRecord decodePath(byte[] value, int width) {
         var in = new Codec.Reader(value);
         var bh = in.id(width);
         var k = in.u8() == 1 ? in.id(width) : null;
         var a = in.u8() == 1 ? in.id(width) : null;
+        var reader=in.u8()==1?in.id(width):null;
         long size = in.u64(), mtime = in.i64();
         int n = in.count();
         var faults = new ArrayList<String>(n);
         for (int i = 0; i < n; i++) faults.add(in.str());
-        return new PathRecord(bh, k, a, size, mtime, List.copyOf(faults));
+        return new PathRecord(bh, k, a,reader, size, mtime, List.copyOf(faults));
     }
 }

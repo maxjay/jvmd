@@ -15,7 +15,12 @@ import java.util.List;
  *                    The file's facts are valid while those ranges and its absences hold under the current binding.
  */
 public record FileRow(String path, Identity kappa, long size, long mtimeNanos, Identity sum, List<String> typeKeys, List<Fault> faults,
-                      List<Proof> headerProof, Identity ownR, List<HeaderProof.Absence> absences) {
+                      List<Proof> headerProof, Identity ownR, List<HeaderProof.Absence> absences,
+                      boolean generated, String originPath, Identity genId, ProcessorRecords.Context processor) {
+    public FileRow(String path, Identity kappa, long size, long mtimeNanos, Identity sum, List<String> typeKeys, List<Fault> faults,
+                   List<Proof> headerProof, Identity ownR, List<HeaderProof.Absence> absences) {
+        this(path, kappa, size, mtimeNanos, sum, typeKeys, faults, headerProof, ownR, absences, false, null, null, null);
+    }
     /** One fault: {@code m} is the declaration's key (empty when the whole file is the fault, a parse error) and {@code reason} javac's words. */
     public record Fault(byte[] m, String reason) { }
 
@@ -26,8 +31,8 @@ public record FileRow(String path, Identity kappa, long size, long mtimeNanos, I
 
     /**
      * {@code id κ || u64 size || i64 mtime || id sum || list<zstr> typeKeys || list<(u32 len || m || str reason)> faults ||
-     * list<(zstr typeKey || u8 kind || zstr name || id sum)> headerProof || id ownR || list<absence>}.
-     * A fault's {@code m} is length-prefixed because a member key contains NUL bytes.
+     * list<(zstr typeKey || u8 kind || zstr name || id sum)> headerProof || id ownR || list<absence> || u8 generated || opt<zstr originPath> ||
+     * opt<id genId> || opt<processorContext>}. A fault's {@code m} is length-prefixed because a member key contains NUL bytes.
      */
     public byte[] encode() {
         var out = new Codec.Writer(256).id(kappa).u64(size).i64(mtimeNanos).id(sum).u32(typeKeys.size());
@@ -38,6 +43,10 @@ public record FileRow(String path, Identity kappa, long size, long mtimeNanos, I
         for (var p : headerProof) out.zstr(p.typeKey()).u8(p.kind()).zstr(p.name()).id(p.sum());
         out.id(ownR).u32(absences.size());
         for (var absence : absences) absence.encode(out);
+        out.u8(generated ? 1 : 0).u8(originPath == null ? 0 : 1);
+        if (originPath != null) out.zstr(originPath);
+        out.optId(genId).u8(processor == null ? 0 : 1);
+        if (processor != null) processor.encode(out);
         return out.toBytes();
     }
 
@@ -59,6 +68,11 @@ public record FileRow(String path, Identity kappa, long size, long mtimeNanos, I
         int a = in.count();
         var absences = new ArrayList<HeaderProof.Absence>(a);
         for (int i = 0; i < a; i++) absences.add(HeaderProof.Absence.decode(in));
-        return new FileRow(path, kappa, size, mtime, sum, List.copyOf(types), List.copyOf(faults), List.copyOf(proof), ownR, List.copyOf(absences));
+        boolean generated = in.u8() == 1;
+        String origin = in.u8() == 1 ? in.zstr() : null;
+        var genId = in.optId(width);
+        var processor = in.u8() == 1 ? ProcessorRecords.Context.decode(in, width) : null;
+        return new FileRow(path, kappa, size, mtime, sum, List.copyOf(types), List.copyOf(faults), List.copyOf(proof), ownR, List.copyOf(absences),
+                generated, origin, genId, processor);
     }
 }

@@ -16,21 +16,31 @@ import java.util.function.Supplier;
 final class Built {
     private final ConcurrentHashMap<String, MachineLeaf> leaves = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Identity> annotations = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, HeaderView.Roots> views = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bind.Leaf> byCoordinate = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Identity, MachineLeaf> byKey = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Identity, CompletableFuture<MachineLeaf>> claims = new ConcurrentHashMap<>();
 
     /** The leaf of {@code module} for {@code scope}; the main leaf is also what the module's coordinate resolves to. */
     void register(String module, String coordinate, int scope, MachineLeaf leaf, Identity a) {
+        register(module,coordinate,scope,leaf,a,null);
+    }
+    void register(String module, String coordinate, int scope, MachineLeaf leaf, Identity a, HeaderView.Roots view) {
         leaves.put(module + "\0" + scope, leaf);
         annotations.put(module + "\0" + scope, a);
         byKey.put(leaf.k(), leaf);
-        if (scope == 0) byCoordinate.put(coordinate, new Bind.Leaf(leaf.k(), a));
+        if(view!=null)views.put(module+"\0"+scope,view);
+        if (scope == 0) byCoordinate.put(coordinate, new Bind.Leaf(leaf.k(), a,view==null?null:view.reader()));
     }
 
     MachineLeaf leaf(String module, int scope) { return leaves.get(module + "\0" + scope); }
 
     Identity a(String module, int scope) { return annotations.get(module + "\0" + scope); }
+    dev.jvmd.index.layer.local.SourceLeaf source(String module,int scope) {
+        var view=views.get(module+"\0"+scope);
+        return new dev.jvmd.index.layer.local.SourceLeaf(leaf(module,scope).k(),a(module,scope),
+                view==null?null:view.classes(),view==null?null:view.reader());
+    }
 
     /** A leaf some job of this boot has built and committed, by its key, or null. */
     MachineLeaf byKey(Identity k) { return byKey.get(k); }

@@ -258,6 +258,12 @@ public final class Pool implements AutoCloseable {
         @Override public void readClassFile(Symbol.ClassSymbol symbol) {
             try { super.readClassFile(symbol); } finally { read.accept(symbol); }
         }
+        @Override protected Symbol.ClassSymbol enterClass(com.sun.tools.javac.util.Name name) {
+            var symbol=super.enterClass(name);if(read!=null)read.accept(symbol);return symbol;
+        }
+        @Override protected Symbol.ClassSymbol enterClass(com.sun.tools.javac.util.Name name,Symbol.TypeSymbol owner) {
+            var symbol=super.enterClass(name,owner);if(read!=null)read.accept(symbol);return symbol;
+        }
     }
 
     /** Closing waits for borrowed workers and prevents both queued and subsequent tasks from borrowing them. */

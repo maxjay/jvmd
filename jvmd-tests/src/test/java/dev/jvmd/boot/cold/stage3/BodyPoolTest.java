@@ -159,6 +159,22 @@ class BodyPoolTest {
         }
     }
 
+    @Test void incompleteMemberTypePlaceholdersAreEvictedWithTheirOldOwner() throws Exception {
+        var library=Map.of("p/Outer","package p; public class Outer { public static class Nested {} public static int value=1; }");
+        var own=stubs(javac("own",library,List.of()));
+        String first="class First { int x=p.Outer.value; }";
+        String second="class Second { p.Outer.Nested value; }";
+        var expected=bytes(javac("freshNested",Map.of("Second",second),List.of(own)));
+        try(var pool=new Pool(configuration(own,List.of(),List.of("p/Outer","p/Outer$Nested")),1)) {
+            for(int run=0;run<3;run++) {
+                pool.withTask(source("First",first),null,BodyPoolTest::phases);
+                var errors=new ArrayList<String>();
+                var next=pool.withTask(source("Second",second),d->errors.add(d.getCode()),BodyPoolTest::phases);
+                assertThat(errors).isEmpty();sameBytes(next.classes(),expected);
+            }
+        }
+    }
+
     @Test void ownCleanupCountsOnlyCompletedOrEnteredNames() throws Exception {
         Pool.OwnStatistics baseline=null;
         for(int unrelated:List.of(0,128,1024)) {

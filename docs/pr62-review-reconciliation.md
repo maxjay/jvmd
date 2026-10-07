@@ -61,7 +61,7 @@ The setup/publication gate (review62-setup-reuse-gate.log) passes **145 tests** 
 
 | Axis | Measured result |
 | --- | --- |
-| Own names 5 / 133 / 1,029, same six tasks | 15 eviction probes and 3 lazy stub lookups in each case. |
+| Own names 5 / 133 / 1,029, same six tasks | 18 eviction probes and 3 lazy stub lookups in each case. |
 | Unrelated direct members 0 / 128 / 4,096, same 400 questions | 3 native name queries and 2 member visits in each case. |
 | Independent module scopes 2 / 8, W=1 / 4 | Actual peak managers 1 / 4, respectively; zero live managers after return. |
 | Eight Lombok body tasks over one scope | One jar-byte hash, one declaration-jar open, one loader; fresh processor instances. One configuration file byte read/hash. |
@@ -69,7 +69,7 @@ The setup/publication gate (review62-setup-reuse-gate.log) passes **145 tests** 
 
 Processor execution reads private immutable jar copies. Ordinary path replacements are rejected using metadata checks; even a same-size/same-mtime replacement cannot change executed bytes. The supported Lombok configuration bridge similarly serves frozen bytes to Lombok's own parser and bubbling resolver, under original diagnostic paths. Counter and mutation tests cover snapshot reuse, ordinary-change rejection and same-metadata changes; a new scope detects stale content hashes. Metadata checks still cost the actual jar/configuration chain length. Configuration imports remain unsupported for reuse and use fresh native resolution. Generic processors retain native configuration reads/checks and isolated loaders rather than assuming that arbitrary loader static state or filesystem reads are reusable.
 
-The compiler-manager limit is global to one Stage3 run. Module concurrency is bounded by W and the maximum dependency-level width; each active scope receives a fixed floor(W/moduleConcurrency) share, capped by its row count. This can leave unused capacity for skewed DAGs, but never creates W managers per each of W module workers. Own symbols are tracked at native class completion and source ENTER; lazy stub restoration touches those names only.
+The compiler-manager limit is global to one Stage3 run. Module concurrency is bounded by W and the maximum dependency-level width; each active scope receives a fixed floor(W/moduleConcurrency) share, capped by its row count. This can leave unused capacity for skewed DAGs, but never creates W managers per each of W module workers. Own symbols are tracked at native class entry (including incomplete nested placeholders), completion and source ENTER; lazy stub restoration touches those names only.
 
 | 2,000-file harness operation | SHA-256 | SHA3-256 |
 | --- | --- | --- |
@@ -81,3 +81,12 @@ The compiler-manager limit is global to one Stage3 run. Module concurrency is bo
 Each state is compared with fresh native whole-module output bytes. The harness still inspects every proof (roughly 299-652 ms in these runs), and its attribution timings include the changed-task work, not the complete edit pipeline. Unchanged selections now stay selected through BM manifests: they are not reloaded from RS/U/CF. Changed results feed Output.apply and commitUnitsDelta. These measurements do not claim a production LIVE scheduler or constant total edit cost.
 
 F04 remains open. The independent agent now also records successful named native member queries and native hierarchy/header questions, excludes the production collector and its supplemental hierarchy traversal, and compares both missing queries and unjustified persisted ranges. Owner-load and module-load inventories remain visible and cannot make the query check pass. The full fixture inventory, module diagnostic gap and closure/discharge rules are still under investigation.
+
+
+## Native-output follow-up
+
+The full-project byte oracle found a cleanup regression after the setup repair: ClassReader may enter a nested own-type placeholder without completing it. Tracking completion alone left that symbol pointing at an evicted owner. The cleanup now also tracks both native enterClass paths. The direct regression compiles an own nested type through a reused worker after an earlier task only created its placeholder; all 12 pool tests pass. The bounded cleanup counter is 18 probes/3 stub lookups at 5/133/1,029 own names.
+
+Descriptor-only automatic-module lint uses javac's module-location and multi-release handling without changing the ordinary classpath task's graph. Independent native tests cover ordinary/transitive requires, disabled categories, transitive fallback, @SuppressWarnings, explicit modules and multi-release descriptors at releases 21/25. ModuleLintTest plus BodyPoolTest passes 14 tests (review62-module-lint-tests.log).
+
+The first digest's repository oracle now matches class bytes and diagnostics in 26/26 scopes (1,378 classes, 583 files, 10 descriptors). The second digest was invalidated by a concurrent edit to an oracle test source and must be rerun on a frozen checkout; this is not a passing two-digest gate. F04's module directive/provider validation and exact query-closure obligations remain open. The warning repair is not evidence that those wider obligations are complete.

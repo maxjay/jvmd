@@ -101,7 +101,7 @@ public final class ProcessorPath implements java.io.Closeable {
         // Lombok's shadow loader uses JarURLConnection resources outside URLClassLoader's closeable set.
         // These private snapshot URLs belong only to this scope; release their JDK cache handles before deletion.
         for(var url:urls)try {
-            var connection=(java.net.JarURLConnection)new URL("jar:"+url+"!/").openConnection();
+            var connection=(java.net.JarURLConnection)java.net.URI.create("jar:"+url+"!/").toURL().openConnection();
             connection.getJarFile().close();
         }catch(IOException e){if(failure==null)failure=e;else failure.addSuppressed(e);}
         for(var file:copies)try{Files.deleteIfExists(file);}catch(IOException e){if(failure==null)failure=e;else failure.addSuppressed(e);}

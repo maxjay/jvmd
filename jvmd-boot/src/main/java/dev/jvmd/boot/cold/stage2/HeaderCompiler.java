@@ -333,6 +333,7 @@ final class HeaderCompiler {
                     var annotate = com.sun.tools.javac.comp.Annotate.instance(task.getContext());
                     annotate.annotateLater(declaration.mods.annotations, annotationEnv, declaration.sym, declaration);
                     annotate.flush();
+                    ModuleLint.requires(task.getContext(),declaration,classpath,jdkHome,charset(javacOptions),release);
                     for (var directive : unit.module.getDirectives()) {
                         if (directive instanceof com.sun.source.tree.UsesTree use)
                             resolve.accept(use.getServiceName());

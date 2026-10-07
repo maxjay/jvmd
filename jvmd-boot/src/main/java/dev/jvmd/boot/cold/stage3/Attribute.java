@@ -153,9 +153,8 @@ public final class Attribute {
             body=host.bodyObservations().withConfiguredProcessors(options.processing.names());
             if (!faults.isEmpty()) body=body.rejectReuse();
         } catch (IOException failure) { throw new UncheckedIOException(failure); }
-        var bound=Arrange.body(tree,own,route,row.processor(),completed.value().supplement(completed.reads()),store::get);
+        var bound=Arrange.body(tree,own,route,row.processor(),completed.value().supplement(completed.reads()),completed.readerReads(),store::get);
         var proof=body==null ? bound.proof() : bound.proof().withProcessorBody(body);
-        proof=proof.withReaderReads(completed.readerReads());
         faults.addAll(completed.readerFaults());
         if (!completed.metadataSupported()) {
             faults.add("unsupported for reuse: retained binary metadata reads have no exact proof projection");

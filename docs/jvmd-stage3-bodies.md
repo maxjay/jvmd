@@ -800,6 +800,8 @@ MACHINE ROOT appends `opt<id> readerCatalog` before its trailing digest. P appen
 
 The first production slice marks record/parameter-annotation recipes unsupported. It is not the complete supported metadata contract. Unsupported/faulted recipes may not be interpreted as empty. A local image is a symbolic input, not an environment-dependent decoded answer; native cross-input operations are separately observed below.
 
+Failed and unsupported native operations still retain their exact observed questions in rejected C and current X. A recovered named-member result with a caught native failure is not discarded before recording its question. An unsupported local answer is retained only for discovery; it cannot establish an admitted CI/ACI. Thrown class reads retain the recipe question in their actual parameter-name mode. Native exceptions and ordered diagnostics remain authoritative. This does not yet admit completion failures or claim a sufficient persisted failure-answer contract.
+
 ## Appendix B. Record codecs
 
 Primitives as stage 2 appendix B: `u8`, `u16`, `u32`, `u64`, `i64`, `str`, `zstr`, `id`, `list<X>`, `opt<X>`. Big-endian. `|` in a key is the byte `0x7C`.
@@ -1255,4 +1257,4 @@ ProcessorPath owns immutable jar copies for one compiler scope, hashes them once
 
 The global Stage3 file-manager budget is W, including concurrently active module scopes. Fixed shares trade some utilization for a simple bound: moduleConcurrency=min(W, maximum dependency-level width), scopeShare=floor(W/moduleConcurrency), capped by rows. Actual manager acquisition/release is counted. After a task, the pool inspects only own names observed at source ENTER or native class entry/completion, including incomplete nested placeholders. Re-seeding uses lazy point lookups of those stubs; it does not allocate a file object for every own type per worker.
 
-The PR62 reconciliation register contains counter-based work-axis evidence and two-digest 2,000-file native-byte results. The measurement retains unchanged BM selections and uses Output.apply/commitUnitsDelta for changes, but still scans all proofs in its test-only reuse loop. It does not establish production LIVE integration or constant total edit cost. Independent query-level completeness/minimality remains an open gate.
+The PR62 reconciliation register contains counter-based work-axis evidence and the original two-digest 2,000-file admission/selective-reuse results. The controlled old/new snapshot harness uses current-X candidates, indexed CI validation, unchanged BM selections and Output.apply/commitUnitsDelta. Rooted non-reuse admission discovery does not require a caller-supplied file/proof inventory. General processor-model verification/selectors and complete physical work measurements remain open. These are Stage 3 primitive obligations; the general event scheduler remains outside this stage. Independent query-level completeness/minimality remains an open gate.

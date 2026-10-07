@@ -23,6 +23,46 @@ class NativeReaderSliceTest {
     static Stream<Digest> digests(){return Stream.of(Sha256.INSTANCE,new Digests.Sha3());}
     @AfterAll static void release(){Stage2Support.release();}
     private static final SourceUnit APP=new SourceUnit("app",0,"app/src/main/java/p/App.java");
+    @ParameterizedTest @MethodSource("digests")
+    void rejectedNativeOperationsStillPublishTheirExactReverseQuestions(Digest digest) throws Exception {
+        for(boolean missingOwner:List.of(true,false)) {
+            var root=directory.resolve(missingOwner?"failure":"unsupported");
+            var binaries=new TreeMap<>(Stage2Support.compile(root.resolve("build"),Map.of(
+                "q/Mode.java","package q; public enum Mode { X }",
+                "q/Ann.java","package q; public @interface Ann { Mode value(); Class<?> literal() default String.class; }",
+                "q/Lib.java","package q; public class Lib { @Ann(value=Mode.X"+(missingOwner?"":",literal=String.class")+") private int hidden; public static int call(){return 1;} }"),List.of(),List.of()));
+            if(missingOwner)binaries.remove("q/Mode.class");
+            var jar=Stage2Support.pack(root.resolve("lib.jar"),binaries);
+            Stage2Support.write(directory,Map.of(APP.path(),"package p; public class App { int value(){return q.Lib.call();} }"));
+            var model=ProjectModel.parse(Stage2Support.model(directory,new Stage2Support.Mod("app","g:app:1",List.of(Stage2Support.Dep.jar("g:lib:1",jar.toString())))));
+            var tree=new ContentTree(digest);var store=Stage2Support.jdkOnly(digest).copy();var project=Stage2.projectKey(digest,model);
+            boot(digest,tree,store,model);
+            var result=new Stage3(digest,tree,Stage2Support.FEATURE,1,directory).run(store,model);
+            var computed=result.scopes().get("app/main").files().getFirst().computed();
+            assertThat(computed.reusable()).isFalse();assertThat(computed.indexed()).isNull();
+            var query=new ReverseIndex.Dependency(ReverseIndex.M,missingOwner?"q/Mode":"q/Lib",
+                    missingOwner?ReaderImage.VARIABLE:ReaderImage.RECIPE,missingOwner?"X":"");
+            assertThat(computed.proof().readerReads()).extracting(Proof.ReaderRead::query).contains(query);
+            assertThat(Proof.decode(computed.proof().encode(),digest.width()).readerReads()).isEqualTo(computed.proof().readerReads());
+            assertThat(ReverseIndex.bodyConsumers(digest,store,query)).containsExactly(new ReverseIndex.Consumer(project,APP));
+            var messages=new ArrayList<ResultRecord.Diagnostic>();
+            DiagnosticListener<JavaFileObject> listener=d->messages.add(new ResultRecord.Diagnostic(switch(d.getKind()){
+                case ERROR->0;case WARNING,MANDATORY_WARNING->1;default->2;
+            },d.getStartPosition(),d.getEndPosition(),d.getCode(),d.getMessage(Locale.ROOT)));
+            var output=Files.createDirectories(root.resolve("native"));var compiler=ToolProvider.getSystemJavaCompiler();
+            try(var files=compiler.getStandardFileManager(listener,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8)) {
+                files.setLocationFromPaths(StandardLocation.CLASS_PATH,List.of(jar));files.setLocationFromPaths(StandardLocation.SOURCE_PATH,List.of());
+                files.setLocationFromPaths(StandardLocation.CLASS_OUTPUT,List.of(output));
+                var options=Attribute.Options.unprocessed(digest,ModuleRecord.decode(store.get(LocalStore.moduleKey(project,"app"))),Stage2Support.JDK);
+                var task=compiler.getTask(null,files,listener,options.javac(),null,files.getJavaFileObjects(directory.resolve(APP.path())));
+                task.setLocale(Locale.ROOT);assertThat(task.call()).isTrue();
+            }
+            assertThat(computed.result().diagnostics()).containsExactlyElementsOf(messages);
+            if(missingOwner)assertThat(messages).extracting(ResultRecord.Diagnostic::code).contains("compiler.warn.unknown.enum.constant.reason");
+            assertThat(store.get(LocalStore.classFileKey(computed.result().classFiles().getFirst().contentHash())))
+                    .isEqualTo(Files.readAllBytes(output.resolve("p/App.class")));
+        }
+    }
     private record Snapshot(MachineLeaf own,Route route,LocalRoot local) { }
     private Snapshot boot(Digest digest,ContentTree tree,InMemoryLocalStore store,ProjectModel model) throws Exception {
         var result=new Stage2(digest,tree,Stage2Support.FEATURE,2,directory,ClassFacts::of).run(store,model);

@@ -71,7 +71,15 @@ final class NativeReaderCapture {
         if(operation.equals("failure") || event[4]!=null) {
             // The native Throwable is captured independently of its bottom-type recovery value.
             faults.add("Native reader completion failure: "+(event[4]==null?"unknown":event[4].getClass().getName()));
-            effects=true;return;
+            effects=true;
+            if(operation.equals("failure")) {
+                // A thrown class read still consumed this precise input. It cannot be admitted,
+                // but its question must survive publication for discovery after repair.
+                if(requesting!=null && !platform(requesting) && !fixed.test(requesting)
+                        && event[3] instanceof com.sun.tools.javac.jvm.ClassReader reader)
+                    query(requesting,ReaderImage.RECIPE,reader.saveParameterNames?"parameters":"",requesting);
+                return;
+            }
         }
         if(requesting==null) {faults.add("Missing native reader requester");return;}
         if(operation.equals("unsupported")) {
@@ -125,9 +133,10 @@ final class NativeReaderCapture {
         var local=answers.computeIfAbsent(q,key->ReaderBinding.local(inputs.tree(),inputs.binding(),q.type(),q.kind(),q.name(),id->{
             var bytes=inputs.records().apply(MachineStore.nodeKey(id));nodeReads++;nodeBytes+=bytes.length;return bytes;
         }));
-        if(local[0]==ReaderBinding.UNSUPPORTED) {faults.add("No supported reader view for "+q.type());return null;}
         var answer=inputs.tree().digest().hash(local);
         current.put(q,answer);retained.computeIfAbsent(requester,k->new TreeMap<>()).put(q,answer);
+        // An unsupported answer is retained only in rejected C/current X. It cannot produce CI/ACI.
+        if(local[0]==ReaderBinding.UNSUPPORTED) {faults.add("No supported reader view for "+q.type());return null;}
         return local;
     }
     private void reuse(Symbol.ClassSymbol owner) {

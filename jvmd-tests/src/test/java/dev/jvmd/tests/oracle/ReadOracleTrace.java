@@ -56,6 +56,16 @@ public final class ReadOracleTrace {
         Trace(Object row) { file = call(row, "path").toString(); own = new TreeSet<>(strings(call(row, "typeKeys"))); poolOnly = false; }
         Trace(String file) { this.file = file; own = Set.of(); poolOnly = true; }
         boolean own(String type) { return own.contains(type); }
+        boolean ownSymbol(Object symbol) {
+            if(own(binary(symbol)))return true;
+            // COMPOUND is javac's actual intersection symbol, not an external empty-name type.
+            if(((Long)field(symbol,"flags_field") & 16777216L)!=0)return true;
+            for(Object current=symbol;current!=null && current.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol");current=field(current,"owner")) {
+                if(fileKind(field(current,"classfile")).equals("CLASS"))return false;
+                if(fileKind(field(current,"sourcefile")).equals("SOURCE"))return true;
+            }
+            return false;
+        }
     }
 
     public static void begin(Object row) { PENDING.remove(); CURRENT.set(new Trace(row)); }
@@ -126,7 +136,7 @@ public final class ReadOracleTrace {
 
     /** Retain only symbols from the native iterator; observing must never force a new lookup or iteration. */
     private static Iterable<?> memberNames(Iterable<?> original,Object owner,Object name,Trace trace) {
-        if(trace.own(binary(owner)) || fileKind(field(owner,"classfile")).equals("SOURCE"))return original;
+        if(trace.ownSymbol(owner) || fileKind(field(owner,"classfile")).equals("SOURCE"))return original;
         // Import scopes ask kind-filtered questions without calling findMethodInScope/findImmediateMemberType.
         // Identify the native caller across Scope's lazy adapters; observe only iterators actually consumed.
         String form=StackWalker.getInstance().walk(frames->frames
@@ -171,7 +181,7 @@ public final class ReadOracleTrace {
         if(trace==null || trace.suspended!=0)return original;
         var owner=field(scope,"owner");
         if(owner==null || !owner.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol")
-                || trace.own(binary(owner)) || !fileKind(field(owner,"classfile")).equals("CLASS"))return original;
+                || trace.ownSymbol(owner) || !fileKind(field(owner,"classfile")).equals("CLASS"))return original;
         var stack=nativeStack();
         // These native loops inspect exactly the method contract domain, even for empty scopes.
         // Their filters and generation-time bridge predicate are independently audited in the JDK source.
@@ -212,8 +222,10 @@ public final class ReadOracleTrace {
         var trace=CURRENT.get();
         if(trace==null || trace.suspended!=0 || symbol==null
                 || !symbol.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol"))return;
-        if(!trace.own(binary(symbol)) && fileKind(field(symbol,"classfile")).equals("CLASS")) {
+        if(!trace.ownSymbol(symbol) && fileKind(field(symbol,"classfile")).equals("CLASS")) {
             var query=new Missing("TYPE",binary(symbol),"");trace.query(query);
+            // Native hierarchy/flags operations can consume a cached symbol without Resolve.loadClass.
+            completedValue(symbol,trace);
             if(nativeStack().contains("com.sun.tools.javac.jvm.ClassReader.readMethod:"))remember(symbol,query);
             // Resolve.findMethod's DEFAULT_OK branch skips an interface with no defaults.
             // Its answer implies this requested name has no default candidates; a new default
@@ -312,7 +324,7 @@ public final class ReadOracleTrace {
         if (site == null || !site.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol")) return;
         owner = binary(site);
         // Source-owned declarations are already bound by the compilation's bytes; no external proof is required.
-        if (trace.own(owner) || fileKind(field(site, "classfile")).equals("SOURCE")) return;
+        if (trace.ownSymbol(site) || fileKind(field(site, "classfile")).equals("SOURCE")) return;
         String form = switch (operation) { case "findField" -> "FIELD"; case "findMethod" -> "METHOD"; default -> "N"; };
         var observation = new Missing(form, owner, name.toString());
         if(site==predefined || trace.intrinsic.contains(site))trace.predefined.add(observation);
@@ -330,12 +342,12 @@ public final class ReadOracleTrace {
         else if (!trace.nonemptyIterators.remove(iterator)) {
             var owner = field(scope, "owner");
             if (owner != null && owner.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol")
-                    && !trace.own(binary(owner)) && !fileKind(field(owner, "classfile")).equals("SOURCE"))
+                    && !trace.ownSymbol(owner) && !fileKind(field(owner, "classfile")).equals("SOURCE"))
                 (owner == predefined || trace.intrinsic.contains(owner) ? trace.predefined : trace.absent).add(new Missing("METHOD", binary(owner), name.toString()));
         }
         var owner=field(scope,"owner");
         if(owner!=null && owner!=predefined && !trace.intrinsic.contains(owner) && owner.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol")
-                && !trace.own(binary(owner)) && !fileKind(field(owner,"classfile")).equals("SOURCE"))
+                && !trace.ownSymbol(owner) && !fileKind(field(owner,"classfile")).equals("SOURCE"))
             trace.query(new Missing("METHOD",binary(owner),name.toString()));
         return hasNext;
     }

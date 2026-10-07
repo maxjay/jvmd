@@ -53,17 +53,29 @@ class BodyCollectorTest {
         var boot=new Stage2(digest,tree,Stage2Support.FEATURE,2,dir,ClassFacts::of).run(store,model);
         assertThat(boot.faults()).isEmpty();
         var own=MachineLeaf.decode(store.get(MachineStore.leafKey(boot.leaves().get("app/main"))),digest.width());
-        var dependency=MachineLeaf.decode(store.get(MachineStore.leafKey(boot.leaves().get("dep/main"))),digest.width());
-        var route=Route.decode(store.get(LocalStore.routeKey(Stage2.projectKey(digest,model),"app",0)),digest.width());
+        var project=Stage2.projectKey(digest,model);
+        var route=Route.decode(store.get(LocalStore.routeKey(project,"app",0)),digest.width());
         var generation=dir.resolve("body-stubs-"+(generations++));
-        var ownStubs=stubs(digest,tree,store,own,generation.resolve("own"));
-        var depStubs=stubs(digest,tree,store,dependency,generation.resolve("dep"));
+        var ownStubs=view(digest,tree,store,SourceLeaf.decode(store.get(LocalStore.sourceLeafKey(project,"app",0)),digest.width()),generation.resolve("own"));
+        var depStubs=view(digest,tree,store,SourceLeaf.decode(store.get(LocalStore.sourceLeafKey(project,"dep",0)),digest.width()),generation.resolve("dep"));
         var config=new Pool.Configuration(new Pool.Key(route.routeHash(),own.k()),ownStubs.path(),List.of(depStubs.path()),
-                StandardCharsets.UTF_8,List.of("-proc:none","-implicit:none","-encoding","UTF-8","-g","-parameters"),ownStubs.types(),List.of(depStubs.path()));
+                StandardCharsets.UTF_8,List.of("-proc:none","-implicit:none","-encoding","UTF-8","-g","-parameters"),ownStubs.types(),List.of(depStubs.path()),
+                new Pool.ReaderInputs(tree,route.readerBinding(),store::get,true));
         return new State(tree,store,own,route,config);
     }
 
     record StubDir(Path path,List<String> types) { }
+    private StubDir view(Digest digest,ContentTree tree,InMemoryLocalStore store,SourceLeaf source,Path directory) throws IOException {
+        if(source.compilerView()==null)return stubs(digest,tree,store,MachineLeaf.decode(store.get(MachineStore.leafKey(source.k())),digest.width()),directory);
+        var names=new ArrayList<String>();Files.createDirectories(directory);
+        tree.forEach(source.compilerView(),id->store.get(MachineStore.nodeKey(id)),entry->{
+            String name=new dev.jvmd.core.tree.Codec.Reader(entry.key()).utf16();names.add(name);
+            var file=directory.resolve(name+".class");
+            try {Files.createDirectories(file.getParent());Files.write(file,store.get(LocalStore.compilerViewKey(dev.jvmd.core.hash.Identity.of(entry.value()))));}
+            catch(IOException failure){throw new UncheckedIOException(failure);}
+        });
+        return new StubDir(directory,names);
+    }
     private StubDir stubs(Digest digest,ContentTree tree,InMemoryLocalStore store,MachineLeaf leaf,Path directory) throws IOException {
         var types=new ArrayList<String>();Files.createDirectories(directory);
         for(var stub:Stubs.stubs(digest,tree,leaf,id -> store.get(MachineStore.nodeKey(id)),Stubs.Cache.NONE)) {
@@ -90,8 +102,8 @@ class BodyCollectorTest {
             } catch(IOException ex) { throw new UncheckedIOException(ex); }
         });
         var reads=result.value().supplement(result.reads());
-        var arranged=Arrange.body(state.tree(),state.own(),state.route(),null,reads,state.store()::get);
-        return new Compiled(arranged.proof(),reads,arranged.uses(),List.copyOf(errors),result.classes());
+        var arranged=Arrange.body(state.tree(),state.own(),state.route(),null,reads,result.readerReads(),state.store()::get);
+        return new Compiled(result.metadataSupported()?arranged.proof():arranged.proof().rejectReuse(),reads,arranged.uses(),List.copyOf(errors),result.classes());
     }
 
     private static Proof.Range t(String type,int kind,String name) { return new Proof.Range(Proof.T,type,kind,name); }

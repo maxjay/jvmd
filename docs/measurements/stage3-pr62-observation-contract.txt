@@ -261,3 +261,28 @@ review62-source-view-strict.log sha256=5645eedc1d4ae49424f9b8c7af568651d23d225af
 review62-header-view-native-v2.log sha256=ea540a6444564d599fe7fbba392170450285c92cc70ef57d12a8316e30370790
 review62-header-view-native-v3.log sha256=c9e10274e8d63bd24a0a478a6e6b0dc85233a163c6ba1957dbc1dfbc2d642119
 review62-header-view-native.log sha256=de502cee11c4ddb1c3a78c5860c9a14949981090f2a843f33eb6fe45651f0f5d
+
+Rejected-query publication and strict collector checkpoint, 7 October 2026
+Parent: 167977c9; approved format reservations unchanged. PR62 draft/unmerged; F09 open.
+Failed/unsupported exact questions persist in rejected C/current X. Guards stay: no CI/ACI admission for these answers. The before-repair regression failed twice on the missing q/Mode VAR question. Its repair retains caught-failure questions and unsupported recipe questions, preserving native bytes and complete ordered diagnostics under both digests. Thrown class reads now also retain their actual recipe mode.
+40 PASS:
+mvn -B -pl jvmd-tests -am test -Dtest=NativeReaderSliceTest,NativeBridgeContractTest,BodyValidationNativeTest,BodyGenerationTest,OutputRecoveryTest,ModuleArchitectureTest -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+
+The full strict harness now uses CV/ReaderInputs and observes the complete arranged proof after M attachment. First bound run: 94 tests, 16 failures. Exact current native observations, not a production proof, remain the oracle's expected inputs.
+A field lookup no longer completes a same-name nested class. NamedMembers retains native name enumeration once and completes only the requested symbol kind. F14 remains three queries/two visited members for 0, 128 and 4,096 unrelated declarations.
+Independent cached header queries import the oracle's own earlier native reader observations. Generated symbols are classified by actual source ownership/COMPOUND flags, not dollar names. Binary symbols with source attributes remain external. Intrinsics retain their separate recorded inventory. An intermediate change lost two intrinsic controls; those controls are unchanged and pass after the correction.
+
+Final full strict run: 95 tests, 87 PASS, 8 FAIL, no errors/skips. Gate OPEN.
+mvn -B -pl jvmd-tests -am test -Pread-oracle -Dtest=BodyCollectorTest,NativeReaderSliceTest,SourceReaderViewTest,NamedMembersWorkTest,ReadOracleInstrumentationTest,ReadOracleCoverageTest -Djvmd.readOracle.sites=true -Djvmd.readOracle.report=target/reader-native-origin-strict-v2.txt -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,benchmark
+Remaining collector cases (both digests): ambiguous inherited member types, ambiguous imported types, intersection/lambda/reference/enum compound fixture, and pooled hierarchy queries. Problems include inferred absences not queried after ambiguity, missing whole-method intersection checks, generated lexical absences, and a pooled String T observation. No strict assertion was disabled.
+
+Final ordinary preservation: 207 PASS, zero failures/errors/skips.
+mvn -B -pl jvmd-tests -am test -Dtest=BodyCollectorTest,NamedMembersWorkTest,NativeReaderSliceTest,SourceReaderViewTest,NativeBridgeContractTest,BodyPoolTest,BodyGenerationTest,BodyValidationNativeTest,ModuleArchitectureTest,OutputRecoveryTest,LocalColdBootTest -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+No broad native repository byte rerun is claimed after this checkpoint; the frozen 167977c9 run remains the last such evidence. Current binary/source fixtures independently compare native bytes/ordered diagnostics. Full metadata/failure and pooled-effect sufficiency, processor selectors/model verification, descriptor header validation, complete work costs and separate F09 remain open.
+review62-reader-failure-discovery-before.log sha256=ea25febde119c53fdf4c5ddf3fa3f3f834a91964c3a4b82ce560f4349fe54dd1
+review62-reader-failure-discovery.log sha256=c8a5d59135ad1eda07acd6efeab534c1ccf8e69913a24d34d8ea85cc3bf0f73d
+review62-reader-full-bound-strict.log sha256=cf53eadb8834448aeb8aefd3b03e2b6a21549322bf3cacd73d962312362b638e
+review62-reader-lazy-members-strict.log sha256=6aaef137dcbf492e6e0250e71c9ba10a312725b21ebb49b1ab94f0b4d3320127
+review62-reader-native-origin-strict.log sha256=ceebf60220670a25e41d44bfdc890a6345611c504a63b82e1b53dc23922006d1
+review62-reader-native-origin-strict-v2.log sha256=88607e5ff0fb2bde774e8a5f6a14af4166aa534a033858d93f5989dca0899b23
+review62-reader-discovery-preservation.log sha256=c80b1688400ee28e9a39768b746a2991bfa6be984e15edfc9092d0412ff15496

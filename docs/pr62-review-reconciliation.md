@@ -30,6 +30,14 @@ The broader phase-2/phase-3 run has 926 tests: 900 pass, ten fail and sixteen er
 
 ## Findings
 
+### Rejected questions and strict collector isolation, 2026-10-07
+
+Native completion failures previously returned before recording their named question, and unsupported recipes returned before recording any M question. Both cases now publish the exact question through rejected C/current X; their guards remain, and neither creates CI/ACI. The failing-before two-digest regression now passes and compares native bytes plus complete ordered diagnostics, including the missing-owner reason. The focused publication/materialisation/bridge gate passes 40 tests.
+
+The collector harness now uses production CV/reader bindings and attaches M before the independent checker observes Arrange's complete proof. No expected proof is supplied to the oracle. A real collector defect also completed a same-name nested type during a field-only question; kind-specific lazy completion repairs it while retaining one name scan and the original F14 counters (three queries/two visited members through 4,096 unrelated declarations). The independent oracle recognises compiler-created symbols through actual source ownership/COMPOUND state, preserves its separate intrinsic inventory, and imports its own prior reader observations on an actual cached-symbol header query.
+
+The final strict run has 95 tests: 87 pass, eight fail in four two-digest collector scenarios. The 14 independent controls and source/binary reader slices pass. Remaining failures are inferred package absences after ambiguity, intersection method-contract coverage/generated lexical absences, and a pooled String header observation. The first bound run had 16 collector failures; an intermediate oracle ownership change also lost two intrinsic-inventory controls, which were repaired without weakening those controls. The ordinary preservation gate passes 207 tests. These repairs do not close the full strict gate, metadata operation/failure admission, pooled effect contract or the remaining Stage 3 obligations.
+
 The frozen source-view native repository/original Lombok gate passes four tests under both digests: every class byte and ordered diagnostic matches in 26/26 scopes (610 files, 1,452 classes, ten descriptors). The original 2,000-file admission and selective-reuse assertions pass unchanged. There are now 474 guarded files because the richer source representation exposes additional unproved metadata operations. This remains an acceptance obligation, not the finished reuse contract. Commands, guard counts, source manifests and log identities are in the existing evidence register. No Java source changed during that final run.
 
 ### Native reader proof follow-up, 2026-10-07

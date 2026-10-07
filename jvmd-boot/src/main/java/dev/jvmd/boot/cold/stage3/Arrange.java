@@ -24,6 +24,12 @@ public final class Arrange {
     /** A failed simple-name lookup may have seen an inaccessible or ambiguous, but present, declaration. */
     public static Body body(ContentTree tree, MachineLeaf own, Route route, ProcessorRecords.Context processor,
                             ProofCollector.Body collected, Function<byte[], byte[]> records) {
+        return body(tree,own,route,processor,collected,java.util.List.of(),records);
+    }
+
+    /** The complete detached proof is observable only after native reader questions have been attached. */
+    public static Body body(ContentTree tree, MachineLeaf own, Route route, ProcessorRecords.Context processor,
+                            ProofCollector.Body collected, java.util.List<Proof.ReaderRead> readers, Function<byte[], byte[]> records) {
         var read = new DefinerIndex.Reader(tree, own, route, records);
         var ranges = new TreeSet<>(collected.ranges());
         var absent = new TreeSet<String>();
@@ -40,7 +46,7 @@ public final class Arrange {
         }
         var uses = new ArrayList<UsesRecord.Use>();
         spans.forEach((key,positions) -> uses.add(new UsesRecord.Use(key.tree(),key.type(),key.kind(),key.name(),new ArrayList<>(positions))));
-        return new Body(proof(tree,own,route,processor,ranges,absent,read),new UsesRecord(uses));
+        return new Body(proof(tree,own,route,processor,ranges,absent,read).withReaderReads(readers),new UsesRecord(uses));
     }
 
     public static Proof proof(ContentTree tree, MachineLeaf own, Route route, ProcessorRecords.Context processor,

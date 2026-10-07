@@ -100,7 +100,7 @@ public final class NativeReaderAgent {
                             var end=out.newLabel();var handler=out.newLabel();
                             out.labelBinding(end).exceptionCatchAll(start,end,handler).labelBinding(handler);
                             out.dup();int failure=out.allocateLocal(TypeKind.REFERENCE);out.astore(failure);
-                            event(out,"failure",-1,read?1:0,-1,failure);out.athrow();
+                            event(out,"failure",-1,read?1:0,read?0:-1,failure);out.athrow();
                         }
                         private void event(CodeBuilder out,String op,int value,int requester,int arg,int failure) {
                             out.ldc(op);load(out,value);

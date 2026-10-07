@@ -69,6 +69,12 @@ public final class ProcessorPath implements java.io.Closeable {
         } catch(IOException|RuntimeException|Error failure) {try{close();}catch(IOException close){failure.addSuppressed(close);}throw failure;}
     }
     public Identity identity() {return identity;}
+    /** Compiler classpath entries may share these same frozen inputs already bound by processorPathHash. */
+    public Map<Path,Path> compilerCopies() {
+        var out=new LinkedHashMap<Path,Path>();
+        for(int i=0;i<originals.size();i++)out.put(originals.get(i),copies.get(i));
+        return Map.copyOf(out);
+    }
     public synchronized void configuration(FrozenConfiguration configuration) {
         if(shared!=null)throw new IllegalStateException("Processor loader already initialized");
         this.configuration=configuration;

@@ -59,6 +59,7 @@ final class ProcessorBody {
         return prepared;
     }
     private synchronized void checkPrepared() throws IOException {if(prepared!=null)prepared.check();}
+    synchronized dev.jvmd.boot.cold.stage2.ProcessorPath compilerInputs() { return prepared; }
     synchronized dev.jvmd.boot.cold.stage2.ProcessorPath.Statistics statistics() {
         return prepared==null?new dev.jvmd.boot.cold.stage2.ProcessorPath.Statistics(0,0,0):prepared.statistics();
     }

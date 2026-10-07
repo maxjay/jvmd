@@ -59,7 +59,7 @@ class BodyCollectorTest {
         var ownStubs=stubs(digest,tree,store,own,generation.resolve("own"));
         var depStubs=stubs(digest,tree,store,dependency,generation.resolve("dep"));
         var config=new Pool.Configuration(new Pool.Key(route.routeHash(),own.k()),ownStubs.path(),List.of(depStubs.path()),
-                StandardCharsets.UTF_8,List.of("-proc:none","-implicit:none","-encoding","UTF-8","-g","-parameters"),ownStubs.types());
+                StandardCharsets.UTF_8,List.of("-proc:none","-implicit:none","-encoding","UTF-8","-g","-parameters"),ownStubs.types(),List.of(depStubs.path()));
         return new State(tree,store,own,route,config);
     }
 

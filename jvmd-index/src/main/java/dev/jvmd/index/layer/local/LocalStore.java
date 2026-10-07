@@ -77,6 +77,12 @@ public interface LocalStore extends MachineStore {
     static byte[] materialisedKey(Identity projectKey, String module, int scope, Identity directory) {
         return join("MAT|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope}, "|", directory.view());
     }
+    /** Empty when idle; otherwise the OUT root of an interrupted/in-progress filesystem transition. Read before MAT. */
+    static byte[] materialisingKey(Identity projectKey, String module, int scope, Identity directory) {
+        return join("MATP|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope}, "|", directory.view());
+    }
+    /** Random ownership token for this store's directory lineage, not a semantic/content identity. */
+    static byte[] materialisationOwnerKey(Identity directory) { return join("MATOWNER|", directory.view()); }
     static byte[] bodiesRootKey(Identity projectKey) { return join("BROOT|", projectKey.view()); }
     static byte[] bodySelectionKey(Identity projectKey) { return join("BM|", projectKey.view()); }
     static byte[] bodiesRootHistoryKey(Identity projectKey, int n) {

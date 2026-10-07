@@ -70,7 +70,7 @@ class Stage3ClasspathMeasurement {
         var actual=new Stage3(digest,tree,Stage2Support.FEATURE,workers,repository).run(store,model);
         var failures=new ArrayList<String>();var report=new StringBuilder("digest: "+digest.name()+"\n");
         report.append("project: ").append(root).append("\nworkers: ").append(workers).append("\nstage3 wall ms: ").append(actual.wallMillis()).append('\n');
-        int equal=0,descriptors=0,files=0,classCount=0;
+        int equal=0,descriptors=0,files=0,classCount=0,rejected=0;
         for(var scope:actual.scopes().entrySet()) {
             int slash=scope.getKey().lastIndexOf('/');String module=scope.getKey().substring(0,slash);int kind=scope.getKey().endsWith("/main")?0:1;
             var expected=nativeScopes.get(scope.getKey());var classes=new TreeMap<String,byte[]>();var messages=new ArrayList<Message>();
@@ -84,8 +84,14 @@ class Stage3ClasspathMeasurement {
                 } else {
                     assertThat(computed.proof()).isNotNull();assertThat(proof).isNotNull();
                 }
-                assertThat(computed.reusable()).as(file.path()+": "+computed.faults()).isTrue();
-                assertThat(tree.get(actual.bodies().bodiesRoot(),id->store.get(MachineStore.nodeKey(id)),LocalStore.resultKey(computed.aci()))).isNotNull();
+                if(computed.reusable()) {
+                    assertThat(computed.faults()).isEmpty();
+                    assertThat(tree.get(actual.bodies().bodiesRoot(),id->store.get(MachineStore.nodeKey(id)),LocalStore.resultKey(computed.aci()))).isNotNull();
+                } else {
+                    rejected++;
+                    assertThat(computed.faults()).containsExactly("unsupported for reuse: retained binary metadata reads have no exact proof projection");
+                    assertThat(computed.proof().reusable()).isFalse();assertThat(computed.aci()).isNull();
+                }
                 files++;
                 for(var c:computed.result().classFiles())classes.put(c.internalName(),store.get(LocalStore.classFileKey(c.contentHash())));
 
@@ -112,10 +118,12 @@ class Stage3ClasspathMeasurement {
         }
         report.append("classpath equality: ").append(equal).append('/').append(nativeScopes.size()).append(" scopes; files=").append(files).append(" classes=").append(classCount).append('\n');
         report.append("module descriptors included in byte oracle: ").append(descriptors).append("; emitted=").append(actual.scopes().values().stream().mapToInt(Stage3.Scope::descriptorEmissions).sum()).append('\n');
+        report.append("temporary metadata non-reuse boundary: ").append(rejected).append(" files; fresh native equality is independent of reuse admission\n");
         for(var failure:failures)report.append(failure).append('\n');
         Files.writeString(Path.of("target/stage3-classpath-"+digest.name()+".txt"),report);
         System.out.println(report);
-        assertThat(actual.faults()).isEmpty();assertThat(failures).isEmpty();
+        assertThat(actual.faults()).hasSize(rejected).allMatch(f -> f.endsWith("unsupported for reuse: retained binary metadata reads have no exact proof projection"));
+        assertThat(failures).isEmpty();
         assertThat(actual.bodies().current(LocalRoot.decode(digest,store.get(LocalStore.localRootKey(project))))).isTrue();
     }
 

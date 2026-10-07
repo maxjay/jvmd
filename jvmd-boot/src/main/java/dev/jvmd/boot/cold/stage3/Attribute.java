@@ -147,7 +147,11 @@ public final class Attribute {
         } catch (IOException failure) { throw new UncheckedIOException(failure); }
         var bound=Arrange.body(tree,own,route,row.processor(),completed.value().supplement(completed.reads()),store::get);
         var proof=body==null ? bound.proof() : bound.proof().withProcessorBody(body);
-        var aci=body==null || body.reusable() ? proof.aci(digest,basename,row.kappa(),options.hash()) : null;
+        if (!completed.metadataSupported()) {
+            faults.add("unsupported for reuse: retained binary metadata reads have no exact proof projection");
+            proof=proof.rejectReuse();
+        }
+        var aci=proof.reusable() && (body==null || body.reusable()) ? proof.aci(digest,basename,row.kappa(),options.hash()) : null;
         boolean attributed=messages.stream().noneMatch(d -> d.kind()==0);
         var records=new TreeMap<byte[],byte[]>(Arrays::compareUnsigned);
         var classes=new ArrayList<ResultRecord.ClassFile>();
@@ -175,7 +179,7 @@ public final class Attribute {
                 var reads=ProofCollector.bodies(unit,Trees.instance(task),task.getElements(),task.getTypes());
                 task.generate();return reads;
             } catch(IOException failure) { throw new UncheckedIOException(failure); }
-        });
+        }, processing==null ? null : processing.compilerInputs());
     }
 
     private void publish(FileRow row,TreeMap<byte[],byte[]> records) {

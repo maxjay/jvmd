@@ -154,11 +154,11 @@ public final class Stage3 {
         var descriptor=ModuleRecord.decode(required(generation.local(LocalStore.moduleKey(project,module.name()))));
         var own=SourceLeaf.decode(required(generation.local(LocalStore.sourceLeafKey(project,module.name(),scope))),digest.width());
         var route=Route.decode(required(generation.local(LocalStore.routeKey(project,module.name(),scope))),digest.width());
-        var classpath=new ArrayList<Path>();
+        var classpath=new ArrayList<Path>();var siblingStubs=new ArrayList<Path>();
         for(var entry:route.entries())switch(entry) {
             case RouteEntry.Sibling sibling -> {
                 var source=SourceLeaf.decode(required(generation.local(LocalStore.sourceLeafKey(project,sibling.module(),LocalStore.MAIN))),digest.width());
-                classpath.add(stubs.get(source.k()).path());
+                var path=stubs.get(source.k()).path();classpath.add(path);siblingStubs.add(path);
             }
             case RouteEntry.Jar jar -> {if(jar.defaultK()!=null)classpath.add(repository.resolve(jar.location()));}
             case RouteEntry.Jrt ignored -> { }
@@ -168,7 +168,7 @@ public final class Stage3 {
         var options=processed?Attribute.Options.processed(digest,descriptor,Path.of(model.jdkHome()),plan.invocation())
                 :Attribute.Options.unprocessed(digest,descriptor,Path.of(model.jdkHome()));
         var ownStubs=stubs.get(own.k());var configuration=new Pool.Configuration(new Pool.Key(route.routeHash(),own.k()),ownStubs.path(),classpath,
-                options.charset(),options.javac(),ownStubs.types());
+                options.charset(),options.javac(),ownStubs.types(),siblingStubs);
         var descriptorOptions=new ArrayList<>(descriptor.javacOptions());descriptorOptions.addAll(descriptor.processing().options());
         var headerOptions=dev.jvmd.boot.cold.stage2.JavacOptions.optionsHash(digest,descriptorOptions,
                 dev.jvmd.boot.cold.stage2.JavacOptions.effectiveRelease(descriptor.release(),descriptorOptions.contains("--enable-preview"),Runtime.version().feature()),null,List.of());

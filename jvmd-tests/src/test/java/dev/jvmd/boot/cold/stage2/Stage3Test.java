@@ -146,13 +146,15 @@ class Stage3Test {
             new Stage2(digest,tree,Stage2Support.FEATURE,workers,dir,ClassFacts::of).run(store,model);
             assertThat(store.withPrefix("F")).as("one header row per compilation, despite identical physical source").hasSize(4);
             var actual=driver(digest,tree,workers).run(store,model);
-            assertThat(actual.files()).isEqualTo(4);assertThat(actual.faults()).isEmpty();
+            assertThat(actual.files()).isEqualTo(4);
+            assertThat(actual.faults()).hasSize(4).allMatch(f -> f.endsWith("unsupported for reuse: retained binary metadata reads have no exact proof projection"));
+            actual.scopes().values().forEach(s -> s.files().forEach(f -> assertThat(f.computed().reusable()).isFalse()));
             sameBytes(classes(store,actual.scopes().get("left/main")),expectedLeft);
             sameBytes(classes(store,actual.scopes().get("right/main")),expectedRight);
             sameBytes(classes(store,actual.scopes().get("left/test")),expectedLeft);
             sameBytes(classes(store,actual.scopes().get("right/test")),expectedRight);
             assertThat(store.withPrefix("C")).hasSize(4);
-            assertThat(store.withPrefix("RS")).as("equal consumed inputs still share results across scopes").hasSize(2);
+            assertThat(store.withPrefix("RS")).as("ordinary jar metadata is not covered by reusable body proofs").isEmpty();
             assertThat(store.withPrefix("CF")).hasSize(2);
             var left=FileRow.decode(path,store.get(LocalStore.fileKey(actual.project(),"left",0,path)),digest.width());
             var right=FileRow.decode(path,store.get(LocalStore.fileKey(actual.project(),"right",0,path)),digest.width());

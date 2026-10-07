@@ -15,7 +15,7 @@ import java.util.TreeMap;
 import java.util.function.Function;
 
 /** Stage 3 B.1: a resolution proof grouped by type, with independent T/N ranges and exact type absences. */
-public record Proof(Header header, List<Type> types, List<String> absent, ProcessorRecords.Body processorBody) {
+public record Proof(Header header, List<Type> types, List<String> absent, ProcessorRecords.Body processorBody, boolean reusable) {
     public static final int T = 0, N = 1;
 
     public record Header(Identity routeHash, Identity ddSum, Identity dsSum, Identity dcSum, Identity ownR,
@@ -56,9 +56,13 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
         }
     }
 
-    public Proof(Header header, List<Type> types, List<String> absent) { this(header, types, absent, null); }
+    public Proof(Header header, List<Type> types, List<String> absent) { this(header, types, absent, null, true); }
+    public Proof(Header header, List<Type> types, List<String> absent, ProcessorRecords.Body processorBody) {
+        this(header, types, absent, processorBody, true);
+    }
 
-    public Proof withProcessorBody(ProcessorRecords.Body body) { return new Proof(header, types, absent, body); }
+    public Proof withProcessorBody(ProcessorRecords.Body body) { return new Proof(header, types, absent, body, reusable); }
+    public Proof rejectReuse() { return new Proof(header, types, absent, processorBody, false); }
 
     public Proof {
         Objects.requireNonNull(header);
@@ -81,7 +85,7 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
     private static int compareNames(String a, String b) { return Arrays.compareUnsigned(Keys.ownerKey(a), Keys.ownerKey(b)); }
 
     public byte[] encode() {
-        var out = new Codec.Writer().id(header.routeHash()).id(header.ddSum()).id(header.dsSum()).id(header.dcSum()).id(header.ownR());
+        var out = new Codec.Writer().u8(reusable ? 1 : 0).id(header.routeHash()).id(header.ddSum()).id(header.dsSum()).id(header.dcSum()).id(header.ownR());
         processor(out, header.processor());
         out.u8(processorBody == null ? 0 : 1);
         if (processorBody != null) processorBody.encode(out);
@@ -97,6 +101,8 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
 
     public static Proof decode(byte[] bytes, int width) {
         var in = new Codec.Reader(bytes);
+        int reusable = in.u8();
+        if (reusable > 1) throw new IllegalArgumentException("Invalid body proof admission");
         var route = in.id(width); var dd = in.id(width); var ds = in.id(width); var dc = in.id(width); var own = in.id(width);
         int presence = in.u8();
         if (presence > 1) throw new IllegalArgumentException("Invalid processor context presence");
@@ -115,7 +121,7 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
         var absent = new ArrayList<String>();
         for (int i = 0, n = in.count(); i < n; i++) absent.add(in.zstr());
         if (in.remaining() != 0) throw new IllegalArgumentException("Trailing proof bytes");
-        return new Proof(new Header(route, dd, ds, dc, own, context), types, absent, body);
+        return new Proof(new Header(route, dd, ds, dc, own, context), types, absent, body, reusable == 1);
     }
 
     /**
@@ -130,6 +136,7 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
      * Generated-output conservation is checked separately. Both processor checks precede every resolution shortcut. */
     public boolean valid(ContentTree tree, MachineLeaf own, Route route, ProcessorRecords.Context processor,
                          ProcessorRecords.Body currentBody, Function<byte[], byte[]> records) {
+        if (!reusable) return false;
         if (!Objects.equals(header.processor(), processor)) return false;
         if (processor != null) {
             if (processorBody == null || currentBody == null || !processorBody.reusable() || !currentBody.reusable()
@@ -166,6 +173,7 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
 
     /** Compiler builds share a MACHINE store, so the result address itself must bind this fixed input. */
     Identity aci(Digest digest, String basename, Identity kappa, Identity options, String javacVersion) {
+        if (!reusable) throw new IllegalStateException("Body result has unsupported metadata observations");
         if (header.processor() != null && (processorBody == null || !processorBody.reusable()))
             throw new IllegalStateException("Processor result has no reusable model observations");
         var out = new Codec.Writer().str("jvmd:body-result:1").str(javacVersion).str("locale=root").str(basename).id(kappa).id(options);

@@ -118,6 +118,15 @@ class ProcessedAttributeTest {
         assertThat(actual.keySet()).isEqualTo(expected.keySet()); actual.forEach((name, bytes) -> assertThat(bytes).as(name).isEqualTo(expected.get(name)));
     }
     private void allFiles(State state, boolean reusable) throws Exception {
+        allFiles(state,reusable,false);
+    }
+    private static void rejectsBinaryMetadata(Attribute.Computed computed) {
+        assertThat(computed.reusable()).isFalse();
+        assertThat(computed.proof().reusable()).isFalse();
+        assertThat(computed.faults()).containsExactly("unsupported for reuse: retained binary metadata reads have no exact proof projection");
+        assertThat(computed.proof().processorBody().reusable()).isTrue();
+    }
+    private void allFiles(State state, boolean reusable, boolean binaryMetadata) throws Exception {
         var expected = oracle(state); var actual = new TreeMap<String,byte[]>(); var messages = new ArrayList<ResultRecord.Diagnostic>();
         var local = state.store().get(LocalStore.localRootKey(state.project()));
         var declarations = ProcessorSources.load(state.tree(), LocalRoot.decode(state.tree().digest(), local), state.project(), "app", 0, state.store()::get);
@@ -129,9 +138,10 @@ class ProcessedAttributeTest {
             var attribute = attribute(state, pool);
             for (var path : state.rows().keySet()) {
                 var computed = run(state, attribute, path); actual.putAll(state.classes(computed)); messages.addAll(computed.result().diagnostics());
-                assertThat(computed.reusable()).as(path + ": " + computed.faults()).isEqualTo(reusable);
+                assertThat(computed.reusable()).as(path + ": " + computed.faults()).isEqualTo(reusable && !binaryMetadata);
+                if(binaryMetadata)rejectsBinaryMetadata(computed);
                 assertThat(Proof.decode(computed.proof().encode(), state.tree().digest().width())).isEqualTo(computed.proof());
-                if (reusable) {
+                if (reusable && !binaryMetadata) {
                     assertThat(computed.faults()).isEmpty();
                     assertThat(ResultRecord.decode(state.store().get(LocalStore.resultKey(computed.aci())), state.tree().digest().width())).isEqualTo(computed.result());
                     assertThat(UsesRecord.decode(state.store().get(LocalStore.usesKey(computed.aci())))).isEqualTo(computed.uses());
@@ -144,14 +154,14 @@ class ProcessedAttributeTest {
                 var again = run(state, attribute, path); assertThat(again).isEqualTo(computed);
                 assertThat(state.store().recordWriteCount()).isEqualTo(writes);
             }
-            assertThat(pool.statistics().contexts()).isEqualTo(1);
+            assertThat(pool.statistics().contexts()).isEqualTo(binaryMetadata ? 2 * state.rows().size() : 1);
             assertThat(pool.statistics().tasks()).isEqualTo(2 * state.rows().size());
         }
         sameBytes(actual, expected.classes()); assertThat(messages).isEqualTo(expected.messages());
         assertThat(state.store().get(LocalStore.localRootKey(state.project()))).isEqualTo(local);
         assertThat(state.store().get(LocalStore.bodiesRootKey(state.project()))).isNull();
         assertThat(dir.resolve(".jvmd/body-capture")).doesNotExist();
-        if (!reusable) { assertThat(state.store().withPrefix("RS")).isEmpty(); assertThat(state.store().withPrefix("U")).isEmpty(); }
+        if (!reusable || binaryMetadata) { assertThat(state.store().withPrefix("RS")).isEmpty(); assertThat(state.store().withPrefix("U")).isEmpty(); }
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -165,7 +175,7 @@ class ProcessedAttributeTest {
                     public static Value of(String name) { return new AutoValue_Value(name); }
                 }
                 """), List.of(processor), List.of(annotation));
-        assertThat(state.faults()).isEmpty(); assertThat(state.rows()).hasSize(2); allFiles(state, true);
+        assertThat(state.faults()).isEmpty(); assertThat(state.rows()).hasSize(2); allFiles(state, true, true);
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -678,7 +688,7 @@ class ProcessedAttributeTest {
             try (var pool = new Pool(state.pool(), 1)) {
                 for (int repeat = 0; repeat < 2; repeat++) {
                     var actual = run(state, attribute(state, pool), "app/src/main/java/p/Input.java");
-                    assertThat(actual.reusable()).as(actual.faults().toString()).isTrue();
+                    rejectsBinaryMetadata(actual); // ordinary late.Loaded metadata is not in the processor byte inputs.
                     assertThat(actual.result().diagnostics()).as("query before lookup: %s, repeat %s", before, repeat)
                             .isEqualTo(expected.messages());
                 }
@@ -779,7 +789,7 @@ class ProcessedAttributeTest {
         try (var pool = new Pool(state.pool(), 1)) {
             for (int repeat = 0; repeat < 2; repeat++) {
                 var actual = run(state, attribute(state, pool), "app/src/main/java/p/Input.java");
-                assertThat(actual.reusable()).as(actual.faults().toString()).isTrue();
+                rejectsBinaryMetadata(actual); // ordinary late.Loaded metadata is not in the processor byte inputs.
                 assertThat(actual.result().diagnostics()).isEqualTo(expected.messages());
                 assertThat(state.classes(actual)).allSatisfy((name, bytes) -> assertThat(bytes).isEqualTo(expected.classes().get(name)));
             }

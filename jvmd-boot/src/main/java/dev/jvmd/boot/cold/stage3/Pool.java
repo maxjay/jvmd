@@ -57,15 +57,21 @@ public final class Pool implements AutoCloseable {
 
     /** Options already fixed by the module's attribution policy, including source/system/encoding/processing. */
     public record Configuration(Key key, Path ownStubs, List<Path> route, Charset charset,
-                                List<String> options, List<String> ownTypes) {
+                                List<String> options, List<String> ownTypes, List<Path> siblingStubs) {
+        public Configuration(Key key, Path ownStubs, List<Path> route, Charset charset,
+                             List<String> options, List<String> ownTypes) {
+            this(key, ownStubs, route, charset, options, ownTypes, List.of());
+        }
         public Configuration {
             Objects.requireNonNull(key); Objects.requireNonNull(ownStubs); Objects.requireNonNull(charset);
             route = List.copyOf(route); options = List.copyOf(options); ownTypes = List.copyOf(ownTypes);
+            siblingStubs = List.copyOf(siblingStubs);
+            if (!route.containsAll(siblingStubs)) throw new IllegalArgumentException("Sibling stubs must belong to the bound route");
         }
     }
 
     /** No compiler tree or symbol may escape the callback; the caller returns its detached observations. */
-    public record Completed<T>(T value, Map<String, byte[]> classes, List<Proof.Range> reads) { }
+    public record Completed<T>(T value, Map<String, byte[]> classes, List<Proof.Range> reads, boolean metadataSupported) { }
     private record Observed<T>(T value, List<Proof.Range> reads) { }
     public record Statistics(int workers, long contexts, long tasks) { }
     public record OwnStatistics(long evictionProbes, long stubLookups) { }
@@ -94,6 +100,15 @@ public final class Pool implements AutoCloseable {
     private volatile boolean closed;
     private int active;
     private final List<java.io.Closeable> resources=new ArrayList<>();
+    private record CompilerInputs(Identity identity, java.util.Set<Path> originals) { }
+    private final Map<CompilerInputs,Map<Path,Path>> compilerInputs = new java.util.HashMap<>();
+
+    private synchronized Map<Path,Path> compilerCopies(dev.jvmd.boot.cold.stage2.ProcessorPath snapshot) {
+        if (snapshot == null) return Map.of();
+        var copies = snapshot.compilerCopies();
+        // The owning pool keeps the first immutable copy alive; equivalent task hosts need not rebind the compiler.
+        return compilerInputs.computeIfAbsent(new CompilerInputs(snapshot.identity(), copies.keySet()), key -> copies);
+    }
 
     synchronized <T extends java.io.Closeable> T own(T resource) {
         if(closed)throw new IllegalStateException("Compiler pool is closed");
@@ -128,8 +143,13 @@ public final class Pool implements AutoCloseable {
     /** Compiles this immutable byte snapshot with javac's own decoder and encoding diagnostics. */
     public <T> Completed<T> withTask(URI uri, byte[] bytes, DiagnosticListener<? super JavaFileObject> diagnostics,
                                      Function<JavacTask,T> action) throws InterruptedException {
+        return withTask(uri,bytes,diagnostics,action,null);
+    }
+
+    <T> Completed<T> withTask(URI uri, byte[] bytes, DiagnosticListener<? super JavaFileObject> diagnostics,
+                              Function<JavacTask,T> action, dev.jvmd.boot.cold.stage2.ProcessorPath snapshot) throws InterruptedException {
         var source = new ByteSource(uri,bytes);
-        try { return withTask(source,diagnostics,action); }
+        try { return withTask(source,diagnostics,action,snapshot); }
         finally { source.manager = null; }
     }
 
@@ -283,6 +303,11 @@ public final class Pool implements AutoCloseable {
     /** One explicitly supplied source; callers collect observations after analyze and before generate mutates trees. */
     public <T> Completed<T> withTask(JavaFileObject source, DiagnosticListener<? super JavaFileObject> diagnostics,
                                      Function<JavacTask, T> action) throws InterruptedException {
+        return withTask(source, diagnostics, action, null);
+    }
+
+    private <T> Completed<T> withTask(JavaFileObject source, DiagnosticListener<? super JavaFileObject> diagnostics,
+                                     Function<JavacTask, T> action, dev.jvmd.boot.cold.stage2.ProcessorPath snapshot) throws InterruptedException {
         Worker worker;
         lock.lockInterruptibly();
         try {
@@ -290,7 +315,7 @@ public final class Pool implements AutoCloseable {
             if (closed) throw new IllegalStateException("Compiler pool is closed");
             worker = idle.removeFirst(); active++;
         } finally { lock.unlock(); }
-        try { return worker.run(source, diagnostics, action); }
+        try { worker.bind(compilerCopies(snapshot)); return worker.run(source, diagnostics, action); }
         finally {
             lock.lock();
             try { active--; if (!closed) idle.addLast(worker); available.signalAll(); }
@@ -312,12 +337,15 @@ public final class Pool implements AutoCloseable {
     /** Completion is the point that changes an own stub into reusable compiler state. */
     private static final class OwnReads extends com.sun.tools.javac.jvm.ClassReader {
         private final java.util.function.Consumer<Symbol.ClassSymbol> read;
-        static void install(Context context, java.util.function.Consumer<Symbol.ClassSymbol> read) {
-            context.put(classReaderKey, (Context.Factory<com.sun.tools.javac.jvm.ClassReader>) c -> new OwnReads(c, read));
+        private final java.util.function.Consumer<Symbol.ClassSymbol> decoded;
+        static void install(Context context, java.util.function.Consumer<Symbol.ClassSymbol> read,
+                            java.util.function.Consumer<Symbol.ClassSymbol> decoded) {
+            context.put(classReaderKey, (Context.Factory<com.sun.tools.javac.jvm.ClassReader>) c -> new OwnReads(c, read, decoded));
         }
-        OwnReads(Context context, java.util.function.Consumer<Symbol.ClassSymbol> read) { super(context); this.read=read; }
+        OwnReads(Context context, java.util.function.Consumer<Symbol.ClassSymbol> read,
+                 java.util.function.Consumer<Symbol.ClassSymbol> decoded) { super(context); this.read=read; this.decoded=decoded; }
         @Override public void readClassFile(Symbol.ClassSymbol symbol) {
-            try { super.readClassFile(symbol); } finally { read.accept(symbol); }
+            try { super.readClassFile(symbol); } finally { read.accept(symbol); decoded.accept(symbol); }
         }
         @Override protected Symbol.ClassSymbol enterClass(com.sun.tools.javac.util.Name name) {
             var symbol=super.enterClass(name);if(read!=null)read.accept(symbol);return symbol;
@@ -359,6 +387,17 @@ public final class Pool implements AutoCloseable {
         private final java.util.Set<String> touchedOwn = new java.util.TreeSet<>();
         private volatile long contexts, tasks;
         private volatile long evictionProbes, stubLookups;
+        private boolean metadataSupported = true;
+        private Map<Path,Path> fixedInputs = Map.of();
+
+        void bind(Map<Path,Path> inputs) {
+            if (inputs.equals(fixedInputs)) return;
+            var path = new ArrayList<Path>(); path.add(configuration.ownStubs());
+            for (var entry : configuration.route()) path.add(inputs.getOrDefault(entry.toAbsolutePath().normalize(), entry));
+            try { files.classPath(path); }
+            catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+            fixedInputs = inputs; tasksPool = new JavacTaskPool(1); previous = null;
+        }
 
         Worker() throws IOException {
             var manager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(null, Locale.ROOT, configuration.charset());
@@ -404,7 +443,8 @@ public final class Pool implements AutoCloseable {
                     });
                     if (context != previous) {
                         contexts++; previous = context; evicted.clear(); HierarchyReads.install(context);
-                        InternalReads.install(context); EmissionReads.install(context); OwnReads.install(context, this::touch);
+                        metadataSupported = true;
+                        InternalReads.install(context); EmissionReads.install(context); OwnReads.install(context, this::touch, this::decoded);
                     }
                     task.addTaskListener(new com.sun.source.util.TaskListener() {
                         @Override public void finished(com.sun.source.util.TaskEvent event) {
@@ -428,8 +468,41 @@ public final class Pool implements AutoCloseable {
                 });
                 var bytes = new TreeMap<String, byte[]>();
                 files.outputs.forEach((name, output) -> bytes.put(name, output.toByteArray()));
-                return new Completed<>(result.value(), Map.copyOf(bytes),result.reads());
-            } finally { files.outputs.clear(); }
+                return new Completed<>(result.value(), Map.copyOf(bytes),result.reads(), metadataSupported);
+            } finally {
+                files.outputs.clear();
+                // Annotation deproxy diagnostics are emitted on completion. An unsupported binary must be decoded
+                // again in the next task, rather than silently suppressing its diagnostics through cached symbols.
+                if (!metadataSupported) { tasksPool = new JavacTaskPool(1); previous = null; }
+            }
+        }
+
+        private void decoded(Symbol.ClassSymbol symbol) {
+            var file = symbol.classfile;
+            if (file == null || file.getKind() != JavaFileObject.Kind.CLASS) return;
+            var uri = file.toUri();
+            // The compiler's fixed platform and resolution-only generated stubs are the existing supported inputs.
+            // Every other binary can gain retained annotations (including on private members) without changing T.
+            // Even annotation-free reads must therefore reject reuse until an exact metadata/absence proof exists.
+            if ("jrt".equals(uri.getScheme())) return;
+            if ("jar".equals(uri.getScheme())) {
+                String archive = uri.getRawSchemeSpecificPart(); int end = archive.indexOf("!/");
+                if (end >= 0) {
+                    var location = URI.create(archive.substring(0, end));
+                    if ("file".equals(location.getScheme())) {
+                        var path = Path.of(location).toAbsolutePath().normalize();
+                        if (path.equals(configuration.ownStubs().toAbsolutePath().normalize())) return;
+                        if (fixedInputs.containsValue(path)) return; // already an exact processor-context input, never an added jar hash
+                        for (var stub : configuration.siblingStubs()) if (path.equals(stub.toAbsolutePath().normalize())) return;
+                    }
+                }
+            }
+            if ("file".equals(uri.getScheme())) {
+                var path = Path.of(uri).toAbsolutePath().normalize();
+                if (path.startsWith(configuration.ownStubs().toAbsolutePath().normalize())) return;
+                for (var stub : configuration.siblingStubs()) if (path.startsWith(stub.toAbsolutePath().normalize())) return;
+            }
+            metadataSupported = false;
         }
 
         private void clearProcessors(Context context) {
@@ -516,6 +589,7 @@ public final class Pool implements AutoCloseable {
         private final java.util.Set<java.io.Closeable> loaders = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         MemoryFiles(StandardJavaFileManager delegate) { super(delegate); }
         BaseFileManager decoder() { return (BaseFileManager) fileManager; }
+        void classPath(List<Path> path) throws IOException { fileManager.setLocationFromPaths(StandardLocation.CLASS_PATH, path); }
 
         @Override public ClassLoader getClassLoader(Location location) {
             var loader = super.getClassLoader(location);

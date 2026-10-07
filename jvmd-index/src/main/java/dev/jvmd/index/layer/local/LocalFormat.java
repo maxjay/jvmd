@@ -7,8 +7,8 @@ import dev.jvmd.index.layer.machine.Format;
  * in it because {@code Φ_src} depends on how javac resolves declarations; a different FORMAT is a cold boot, never a migration.
  */
 public final class LocalFormat {
-    /** Bumped when any byte layout in appendix B of stage 2 changes. */
-    public static final int LAYOUT = 21;
+    /** Bumped when a LOCAL layout or persisted header-result meaning changes. */
+    public static final int LAYOUT = 22;
 
     private LocalFormat() { }
 

@@ -98,6 +98,36 @@ class BodyCollectorTest {
     private static Proof.Range n(String type,String name) { return new Proof.Range(Proof.N,type,Keys.TYPE,name); }
 
     @ParameterizedTest @MethodSource("digests")
+    void aSkippedDefaultInterfaceStillNeedsOnlyTheQueriedMethodName(Digest digest) throws Exception {
+        String source="package p; public class App { public Object value(){return q.Lib.pick(null);} }";
+        String lib="package q; public class Lib implements I { public static Object pick(Object value){return value;} }";
+        String initial="package q; public interface I {}";
+        String unrelated="package q; public interface I { default int unrelated(){return 1;} }";
+        String changed="package q; public interface I { default String pick(String value){return value;} }";
+        fixture(source,Map.of("q/Lib",lib,"q/I",initial));
+        var before=boot(digest);var compiled=compile(before);assertThat(compiled.errors()).isEmpty();
+        assertThat(compiled.reads().ranges()).contains(t("q/I",Keys.METHOD,"pick"))
+                .doesNotContain(t("q/I",Keys.METHOD,""),t("q/I",Keys.METHOD,"unrelated"));
+        fixture(source,Map.of("q/Lib",lib,"q/I",unrelated));
+        assertThat(boot(digest).valid(compiled.proof())).as("a different default name is irrelevant").isTrue();
+        fixture(source,Map.of("q/Lib",lib,"q/I",changed));
+        assertThat(boot(digest).valid(compiled.proof())).as("a skipped queried name can become a default candidate").isFalse();
+        // Independently compile the dependency once, then replace only I.class, as separate library upgrades can do.
+        var nativeRoot=dir.resolve("native-default");
+        Stage2Support.compile(nativeRoot,Map.of("q/Lib.java",lib,"q/I.java",initial),List.of(),List.of());
+        var compiler=javax.tools.ToolProvider.getSystemJavaCompiler();
+        var client=dir.resolve("app/src/main/java/p/App.java");var classes=nativeRoot.resolve("classes");
+        var errors=new java.io.ByteArrayOutputStream();
+        assertThat(compiler.run(null,null,errors,"-proc:none","-classpath",classes.toString(),"-d",dir.resolve("client-before").toString(),client.toString())).isZero();
+        Stage2Support.compile(nativeRoot,Map.of("q/I.java",unrelated),List.of(),List.of());
+        assertThat(compiler.run(null,null,errors,"-proc:none","-classpath",classes.toString(),"-d",dir.resolve("client-unrelated").toString(),client.toString())).isZero();
+        Stage2Support.compile(nativeRoot,Map.of("q/I.java",changed),List.of(),List.of());
+        errors.reset();
+        assertThat(compiler.run(null,null,errors,"-proc:none","-classpath",classes.toString(),"-d",dir.resolve("client-changed").toString(),client.toString()))
+                .as(errors.toString()).isNotZero();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void capturedVariablesReadFieldsOnlyAcrossInterveningClasses(Digest digest) throws Exception {
         String source = """
                 package p;

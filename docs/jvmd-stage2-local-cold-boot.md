@@ -203,7 +203,7 @@ E/EA targets seed implicit declaration dependencies but are not a complete looku
 | `F\|project\|path` | Source row with header proof and absences |
 | `DD\|leafSetExt`, `DS\|leafSetSib`, `DC\|routeHash` | Definer roots used by this project, including the shared JDK base when derived |
 | `DF\|leafSet` | Persisted all-definer, multiple-definer and disjoint roots |
-| `X\|H5\|...` | Current empty dependency/project/path reverse records |
+| `X\|H22\|...` | Current empty dependency/project/path reverse records |
 | `LROOT\|project` | Current commitment; prior commitments retained under numbered keys |
 | `C\|...`, `RS\|...` | Legacy reserved codecs; no records written by Stage 2 |
 
@@ -284,7 +284,7 @@ publish route states, ordered route root and dc
 for row in files:
     write F|project|path
     for dependency in distinct(row.T reads + row.D/N absences):
-        add logical X|H5|dependency|project|path = empty to LOCAL entries
+        add logical X|H22|dependency|project|path = empty to LOCAL entries
 build LOCAL over all used records; flush; sync
 atomically: keep previous LROOT in history
             delete removed X keys and insert added X keys from Diff(oldLOCAL,newLOCAL)
@@ -298,7 +298,7 @@ candidates(deltaT, deltaN, effectivePresence, exactDefiners):
     // no LROOT, LOCAL membership or F reads
 ```
 
-Current raw X keys are a secondary index maintained only by LROOT publication; ordinary put rejects them. Historical LOCAL nodes already preserve their empty values, so historical raw keys are unnecessary. X|H5| isolates earlier raw history. Lookup work is current prefix fan-out, independent of the number of obsolete consumer paths. The publication diff may read the previous root; candidate queries never do. No scan of unrelated files or reverse prefixes is permitted.
+Current raw X keys are a secondary index maintained only by LROOT publication; ordinary put rejects them. Historical LOCAL nodes already preserve their empty values, so historical raw keys are unnecessary. X|H22| isolates earlier raw history. Lookup work is current prefix fan-out, independent of the number of obsolete consumer paths. The publication diff may read the previous root; candidate queries never do. No scan of unrelated files or reverse prefixes is permitted.
 
 ### 5.7 Boot decision
 
@@ -368,9 +368,9 @@ Kotlin/Scala/Groovy contribute through compiled class files, not SourceFacts. Bu
 
 ## 9. Persistence
 
-One RocksDB per MACHINE generation contains shared nodes/leaves and project-prefixed LOCAL records. One atomic write retains the previous LROOT, updates current X inserts/deletes, and swaps LROOT. Historical empty X values live in immutable LOCAL nodes. Garbage collection of other unreachable records and the history retention policy are deferred.
+One RocksDB per MACHINE generation contains shared nodes/leaves and project-prefixed LOCAL records. One atomic write retains the previous LROOT, advances its LSEQ counter, updates current bindings/X inserts/deletes, and swaps LROOT. Rooted values are prepared as immutable BV|Digest(value) records before this publication; retained roots resolve by entry hash. CF already has its own content address and X has an empty value. Historical empty X values live in immutable LOCAL nodes. Garbage collection of other unreachable records and the history retention policy are deferred.
 
-Current representation is `layout=4;parser=5;local=5`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA; parser 5 preserves exact Java String code units in constants and annotation values/defaults. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
+Current combined representation is `layout=4;parser=6;local=22`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA; parser 5 preserves exact Java String code units in constants and annotation values/defaults. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
 
 ## 10. Implementation and completion rules
 
@@ -469,14 +469,15 @@ Existing `C|κ|leafSetExt` and `RS|κ|leafSetExt` APIs are unused placeholders. 
 LROOT|project = str FORMAT || id local.hash || id local.sum || u32 count || u8 level
               || id machineRoot || id modelHash || id commitment
 commitment = Digest(all preceding value bytes)
-history key = LROOT|project|u32 n, counting from 1
+history key = LROOT|project|22|u32 n, counting from 1
+sequence key = LSEQ|22|project, updated atomically with root/index publication
 ```
 
 ### B.8 FORMAT
 
 ```text
-machine = layout=4;digest=<name>;jdk=<feature>;parser=5
-local   = <machine>;local=5;javac=<full runtime version>;locale=root
+machine = layout=4;digest=<name>;jdk=<feature>;parser=6
+local   = <machine>;local=22;javac=<full runtime version>;locale=root
 ```
 
 Parser changes when identical class bytes would yield different retained facts/projections. LOCAL changes when its record layout or persisted proof meaning changes. Incompatible commitments cannot take a current-format skip.
@@ -484,7 +485,7 @@ Parser changes when identical class bytes would yield different retained facts/p
 ### B.9 Header reverse keys
 
 ```text
-key = ASCII "X|H5|" || u8 form || zstr type || u8 kind || zstr name || id project || zstr path
+key = ASCII "X|H22|" || u8 form || zstr type || u8 kind || zstr name || id project || zstr module || u8 scope || zstr path
 value = empty
 form 0: T(type, kind, name)
 form 1: N(owner, TYPE, name)
@@ -548,7 +549,7 @@ Emit this_class, flags, superclass/interfaces, signatures, permitted classes, ne
 
 API diff is Diff(T/O); metadata diff is equality of a then Diff(A/EA). Declaration upgrade impact is changed T/N/D prefixes → X → candidate F validation, including lookup absences. Stage 3 adds equivalent body-level proofs and executable results. Behavioral changes behind an equal API still require body/test analysis.
 
-Negative lookups are persisted observations with reverse reachability. Kept roots support content-history comparison; raw mutable K/V records are not themselves immutable historical snapshots. Shared semantic nodes/leaves/definer/stub records can be transported and digest-verified by a future cache. Each application uses existing projections instead of adding broad identities.
+Negative lookups are persisted observations with reverse reachability. Kept roots support content-history comparison; historical values are resolved by their immutable BV entry hashes, never by current raw mutable bindings. Shared semantic nodes/leaves/definer/stub records can be transported and digest-verified by a future cache. Each application uses existing projections instead of adding broad identities.
 
 ## Appendix E. Reconciliation record
 
@@ -559,6 +560,6 @@ Earlier statements that source k may differ because tail is inside T, source typ
 Current completion evidence belongs in the associated progress/measurement notes. Remaining Stage 3 processor replay, body attribution/results/driver and the thirty Stage 3 invariants are not claimed complete by this reconciliation.
 ### PR62 source-model and publication amendment (2026-10-07)
 
-Current LOCAL layout is 21. Header reverse keys use X|H21| and the SourceUnit suffix (module, scope, path). Rooted record values are immutable BV|Digest(value) blobs; current raw keys remain bindings and cannot resolve historical snapshots. LROOT history uses a versioned LSEQ counter updated atomically with the root/current reverse index, without a history scan.
+Current LOCAL layout is 22. Header reverse keys use X|H22| and the SourceUnit suffix (module, scope, path). Rooted record values are immutable BV|Digest(value) blobs; current raw keys remain bindings and cannot resolve historical snapshots. LROOT history uses a versioned LSEQ counter updated atomically with the root/current reverse index, without a history scan.
 
 Source metadata uses PM trees of exact type/package keys to path plus PE declaration identity. PE nodes contain one declaration and ordered child IDs; nested declarations are shared, with lazy memoized reads. PB per scope indexes package presence/first metadata origin. Existing own/DD/DS/DC indexes select type definers, with the first occurrence of that k in the exact ordered origin binding selecting the source PM view. Equal T identities never identify source metadata globally. PB/PE roots are lookup/storage state and are not widened processor proof or ACI inputs.

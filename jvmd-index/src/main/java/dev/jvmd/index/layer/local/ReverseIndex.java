@@ -19,7 +19,7 @@ public final class ReverseIndex {
     private ReverseIndex() { }
     public static final int T = 0, N = 1, D = 2;
     private static final byte[] HEADER = ("X|H" + LocalFormat.LAYOUT + "|").getBytes(java.nio.charset.StandardCharsets.US_ASCII);
-    private static final byte[] BODY = ("X|B9L" + LocalFormat.LAYOUT + "|").getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+    private static final byte[] BODY = ("X|B" + BodiesRoot.VERSION + "L" + LocalFormat.LAYOUT + "|").getBytes(java.nio.charset.StandardCharsets.US_ASCII);
 
     public static boolean isBodyKey(byte[] key) {
         return key.length >= BODY.length && Arrays.equals(key, 0, BODY.length, BODY, 0, BODY.length);

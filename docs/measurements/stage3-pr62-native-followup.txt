@@ -1,0 +1,77 @@
+PR62 native output and query follow-up, 2026-10-07
+Production HEAD: 3e0f18388dca9096e70301d31797ba0e0f660b19
+Test-source additions are included in the following Java-source manifest identity.
+Sorted path/NUL/SHA256/LF manifest SHA256: 0d06508c1c4fb714c04b5d87aead7b5a38ae070bc5938e50e06809df1fdf3a4d
+Tracked Java files: 589
+No Java edits during the two-digest frozen native gate.
+
+44 native/module/pool tests passed, zero failures/errors/skips.
+digest: SHA-256
+project: C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566
+workers: 4
+stage3 wall ms: 37333
+jvmd-analyzer/main files=33 classes=125 equal=true
+jvmd-analyzer/test files=0 classes=0 equal=true
+jvmd-boot/main files=45 classes=161 equal=true
+jvmd-boot/test files=0 classes=0 equal=true
+jvmd-core/main files=49 classes=131 equal=true
+jvmd-core/test files=0 classes=0 equal=true
+jvmd-dist/main files=9 classes=39 equal=true
+jvmd-dist/test files=0 classes=0 equal=true
+jvmd-index-rocks/main files=21 classes=52 equal=true
+jvmd-index-rocks/test files=12 classes=13 equal=true
+jvmd-index/main files=97 classes=344 equal=true
+jvmd-index/test files=0 classes=0 equal=true
+jvmd-lsp/main files=2 classes=3 equal=true
+jvmd-lsp/test files=0 classes=0 equal=true
+jvmd-mcp/main files=2 classes=2 equal=true
+jvmd-mcp/test files=0 classes=0 equal=true
+jvmd-resolver/main files=7 classes=19 equal=true
+jvmd-resolver/maven3/main files=8 classes=20 equal=true
+jvmd-resolver/maven3/test files=0 classes=0 equal=true
+jvmd-resolver/maven4/main files=10 classes=22 equal=true
+jvmd-resolver/maven4/test files=0 classes=0 equal=true
+jvmd-resolver/test files=0 classes=0 equal=true
+jvmd-runtime/main files=17 classes=41 equal=true
+jvmd-runtime/test files=0 classes=0 equal=true
+jvmd-tests/main files=0 classes=0 equal=true
+jvmd-tests/test files=272 classes=408 equal=true
+classpath equality: 26/26 scopes; files=584 classes=1380
+module descriptors included in byte oracle: 10; emitted=10
+
+digest: SHA3-256
+project: C:\Users\Max\.codex\worktrees\jvmd-stage-3\jvmd-stage-2-cold-boot-eb9566
+workers: 4
+stage3 wall ms: 37146
+jvmd-analyzer/main files=33 classes=125 equal=true
+jvmd-analyzer/test files=0 classes=0 equal=true
+jvmd-boot/main files=45 classes=161 equal=true
+jvmd-boot/test files=0 classes=0 equal=true
+jvmd-core/main files=49 classes=131 equal=true
+jvmd-core/test files=0 classes=0 equal=true
+jvmd-dist/main files=9 classes=39 equal=true
+jvmd-dist/test files=0 classes=0 equal=true
+jvmd-index-rocks/main files=21 classes=52 equal=true
+jvmd-index-rocks/test files=12 classes=13 equal=true
+jvmd-index/main files=97 classes=344 equal=true
+jvmd-index/test files=0 classes=0 equal=true
+jvmd-lsp/main files=2 classes=3 equal=true
+jvmd-lsp/test files=0 classes=0 equal=true
+jvmd-mcp/main files=2 classes=2 equal=true
+jvmd-mcp/test files=0 classes=0 equal=true
+jvmd-resolver/main files=7 classes=19 equal=true
+jvmd-resolver/maven3/main files=8 classes=20 equal=true
+jvmd-resolver/maven3/test files=0 classes=0 equal=true
+jvmd-resolver/maven4/main files=10 classes=22 equal=true
+jvmd-resolver/maven4/test files=0 classes=0 equal=true
+jvmd-resolver/test files=0 classes=0 equal=true
+jvmd-runtime/main files=17 classes=41 equal=true
+jvmd-runtime/test files=0 classes=0 equal=true
+jvmd-tests/main files=0 classes=0 equal=true
+jvmd-tests/test files=272 classes=408 equal=true
+classpath equality: 26/26 scopes; files=584 classes=1380
+module descriptors included in byte oracle: 10; emitted=10
+
+Independent query instrumentation/checker and collector mutation fixtures: 62 tests passed with reporting failure disabled for the collector inventory. This is not a passing strict coverage gate.
+Native-only tests separately verify successful/failed named queries, all-method scans including empty scopes and generation, exact intrinsic array symbol identity, and no-default guard closure at the requested method name.
+The default mutation recompiles I.class without rebuilding its existing implementor: adding unrelated() preserves client success and the proof; adding pick(String) changes native client success and invalidates the old named proof.

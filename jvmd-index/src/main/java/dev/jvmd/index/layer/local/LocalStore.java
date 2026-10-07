@@ -80,9 +80,9 @@ public interface LocalStore extends MachineStore {
     static byte[] bodiesRootKey(Identity projectKey) { return join("BROOT|", projectKey.view()); }
     static byte[] bodySelectionKey(Identity projectKey) { return join("BM|", projectKey.view()); }
     static byte[] bodiesRootHistoryKey(Identity projectKey, int n) {
-        return join("BROOT|", projectKey.view(), "|9|", new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes());
+        return join("BROOT|", projectKey.view(), "|" + BodiesRoot.VERSION + "|", new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes());
     }
-    static byte[] bodiesSequenceKey(Identity projectKey) { return join("BSEQ|9|", projectKey.view()); }
+    static byte[] bodiesSequenceKey(Identity projectKey) { return join("BSEQ|" + BodiesRoot.VERSION + "|", projectKey.view()); }
     static byte[] definerStateKey(Identity leafSet) { return join("DF|", leafSet.view()); }
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }
     static byte[] stubTypeKey(Identity stKey) { return join("ST|", stKey.view()); }

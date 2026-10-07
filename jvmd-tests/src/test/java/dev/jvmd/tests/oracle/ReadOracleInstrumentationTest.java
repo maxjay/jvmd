@@ -15,6 +15,54 @@ public class ReadOracleInstrumentationTest {
     @TempDir Path directory;
     public record Row(String path, List<String> typeKeys) { }
 
+    @Test void nativeDefaultGuardJustifiesOnlyTheRequestedMethodProjection() throws Exception {
+        var compiler=ToolProvider.getSystemJavaCompiler();
+        var contract=directory.resolve("I.java");var library=directory.resolve("Lib.java");
+        Files.writeString(contract,"package q; public interface I {}");
+        Files.writeString(library,"package q; public class Lib implements I { public static Object pick(Object value){return value;} }");
+        var dependencies=Files.createDirectories(directory.resolve("dependencies"));
+        assertThat(compiler.run(null,null,null,"-proc:none","-d",dependencies.toString(),contract.toString(),library.toString())).isZero();
+        var source=directory.resolve("App.java");Files.writeString(source,"package p; class App { Object value(){return q.Lib.pick(null);} }");
+        for(int version=0;version<3;version++) {
+            if(version>0) {
+                Files.writeString(contract,version==1?"package q; public interface I { default int unrelated(){return 1;} }"
+                        :"package q; public interface I { default String pick(String value){return value;} }");
+                assertThat(compiler.run(null,null,null,"-proc:none","-d",dependencies.toString(),contract.toString())).isZero();
+            }
+            ReadOracleTrace.begin(new Row("p/App.java",List.of("p/App")));
+            var errors=new java.io.ByteArrayOutputStream();
+            int result=compiler.run(null,null,errors,"-proc:none","-d",directory.toString(),"-classpath",dependencies.toString(),source.toString());
+            var trace=ReadOracleTrace.finish();
+            var query=new ReadOracleTrace.Missing("METHOD","q/I","pick");
+            if(version==0) {
+                assertThat(trace.queries()).doesNotContain(query);
+                assertThat(trace.closure()).contains(query).doesNotContain(new ReadOracleTrace.Missing("METHOD","q/I",""),
+                        new ReadOracleTrace.Missing("METHOD","q/I","unrelated"));
+            } else assertThat(trace.queries()).contains(query);
+            assertThat(result).as(errors.toString()).isEqualTo(version==2?1:0);
+        }
+    }
+
+    @Test void fullMethodQueriesAndIntrinsicArrayIdentityAreObservedIndependently() throws Exception {
+        var compiler=ToolProvider.getSystemJavaCompiler();
+        var array=directory.resolve("Array.java");
+        var empty=directory.resolve("Empty.java");
+        Files.writeString(array,"package q; public class Array { public static int length=3; }");
+        Files.writeString(empty,"package q; public interface Empty {}");
+        var dependencies=Files.createDirectories(directory.resolve("dependencies"));
+        assertThat(compiler.run(null,null,null,"-proc:none","-d",dependencies.toString(),array.toString(),empty.toString())).isZero();
+        var source=directory.resolve("App.java");
+        Files.writeString(source,"package p; class App implements q.Empty { int size(int[] input) { return input.length+q.Array.length; } }");
+        ReadOracleTrace.begin(new Row("p/App.java",List.of("p/App")));
+        assertThat(compiler.run(null,null,null,"-proc:none","-d",directory.toString(),"-classpath",dependencies.toString(),source.toString())).isZero();
+        var trace=ReadOracleTrace.finish();
+        assertThat(trace.predefined()).contains(new ReadOracleTrace.Missing("FIELD","Array","length"));
+        assertThat(trace.queries()).contains(new ReadOracleTrace.Missing("FIELD","q/Array","length"),
+                new ReadOracleTrace.Missing("METHOD","q/Empty",""),new ReadOracleTrace.Missing("METHOD","java/lang/Object",""))
+                .doesNotContain(new ReadOracleTrace.Missing("FIELD","Array","length"));
+        assertThat(trace.scans()).anyMatch(s->s.contains("TransTypes.addBridges"));
+    }
+
     @Test void nativeCompilerProducesBothTracesWithoutACollector() throws Exception {
         assertThat(System.getProperty("jvmd.readOracle.active")).isEqualTo("true");
         var compiler = ToolProvider.getSystemJavaCompiler();

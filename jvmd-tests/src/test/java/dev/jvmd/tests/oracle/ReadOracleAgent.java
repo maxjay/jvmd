@@ -84,7 +84,9 @@ public final class ReadOracleAgent {
                     boolean read = name.endsWith("/ClassReader") && methodName.equals("readClassFile");
                     boolean complete = name.endsWith("/Symbol") && methodName.equals("complete");
                     boolean methodScope = name.endsWith("/Resolve") && methodName.equals("findMethodInScope");
+                    boolean methodLookup=name.endsWith("/Resolve") && methodName.equals("findMethod");
                     boolean globalType = name.endsWith("/Resolve") && methodName.equals("findGlobalType");
+                    boolean memberScope = name.endsWith("/Scope$ScopeImpl") && methodName.equals("getSymbols");
                     boolean namedScope = name.endsWith("/Scope$ScopeImpl") && methodName.equals("getSymbolsByName");
                     int owner = -1, key = -1;
                     if (name.endsWith("/Resolve")) {
@@ -96,7 +98,7 @@ public final class ReadOracleAgent {
                         }
                     }
                     int ownerSlot = owner, nameSlot = key;
-                    if (!(attribute || pool || arrange || collector || read || complete || methodScope || globalType || namedScope || hierarchy || header || key >= 0)) { builder.with(code); return; }
+                    if (!(attribute || pool || arrange || collector || read || complete || methodScope || globalType || namedScope || memberScope || hierarchy || header || key >= 0)) { builder.with(code); return; }
                     hooks.merge(methodName, 1, Integer::sum);
                     if (key >= 0 && !descriptor.returnType().descriptorString().equals("Lcom/sun/tools/javac/code/Symbol;"))
                         throw new IllegalStateException("Unexpected javac lookup descriptor: " + methodName + descriptor);
@@ -104,10 +106,12 @@ public final class ReadOracleAgent {
                         java.lang.classfile.Label start;
                         @Override public void atStart(java.lang.classfile.CodeBuilder out) {
                             if (attribute) out.aload(1).invokestatic(TAP, "begin", OBJECT);
+                            if(name.endsWith("/Resolve"))out.aload(0).getfield(RESOLVE,"syms",SYMTAB).invokestatic(TAP,"nativeSymbols",OBJECT);
                             if (pool) out.aload(1).invokestatic(TAP, "beginPool", OBJECT);
                             if (globalType) out.invokestatic(TAP, "beginGlobalType", NONE);
+                            if (methodLookup) out.aload(3).invokestatic(TAP,"beginMethod",OBJECT);
                             if (collector) out.invokestatic(TAP, "suspend", NONE);
-                            if (attribute || pool || globalType || collector) { start = out.newLabel(); out.labelBinding(start); }
+                            if (attribute || pool || globalType || collector || methodLookup) { start = out.newLabel(); out.labelBinding(start); }
                             if (read || complete) out.aload(read ? 1 : 0).invokestatic(TAP, "loaded", OBJECT);
                         }
                         @Override public void accept(java.lang.classfile.CodeBuilder out, java.lang.classfile.CodeElement instruction) {
@@ -127,6 +131,7 @@ public final class ReadOracleAgent {
                                 if (arrange) out.dup().invokestatic(TAP, "arranged", OBJECT);
                                 if (globalType) out.invokestatic(TAP, "endGlobalType", NONE);
                                 if (namedScope) out.aload(0).aload(1).invokestatic(TAP, "names", NAMES);
+                                if (memberScope) out.aload(0).aload(1).invokestatic(TAP, "members", NAMES);
                                 if (collector) out.invokestatic(TAP, "resume", NONE);
                                 if (nameSlot >= 0 && result.opcode() == Opcode.ARETURN) {
                                     out.dup().ldc(methodName);
@@ -135,13 +140,14 @@ public final class ReadOracleAgent {
                                     predefined(out).invokestatic(TAP, "lookup", LOOKUP);
                                 }
                             }
+                            if(methodLookup && instruction instanceof ReturnInstruction)out.invokestatic(TAP,"endMethod",NONE);
                             out.with(instruction);
                         }
                         @Override public void atEnd(java.lang.classfile.CodeBuilder out) {
                             if (start != null) {
                                 var end = out.newLabel(); var handler = out.newLabel();
                                 out.labelBinding(end).exceptionCatchAll(start, end, handler).labelBinding(handler)
-                                        .invokestatic(TAP, collector ? "resume" : globalType ? "endGlobalType" : "abort", NONE).athrow();
+                                        .invokestatic(TAP, collector ? "resume" : globalType ? "endGlobalType" : methodLookup ? "endMethod" : "abort", NONE).athrow();
                             }
                         }
                     });
@@ -153,7 +159,7 @@ public final class ReadOracleAgent {
                     case "dev/jvmd/index/layer/local/ProofCollector" -> Map.of("bodies", 1);
                     case "com/sun/tools/javac/jvm/ClassReader" -> Map.of("readClassFile", 1);
                     case "com/sun/tools/javac/code/Symbol" -> Map.of("complete", 1);
-                    case "com/sun/tools/javac/code/Scope$ScopeImpl" -> Map.of("getSymbolsByName", 1);
+                    case "com/sun/tools/javac/code/Scope$ScopeImpl" -> Map.of("getSymbolsByName", 1, "getSymbols", 1);
                     case "com/sun/tools/javac/code/Types" -> Map.of("supertype",1,"interfaces",1);
                     case "com/sun/tools/javac/code/Symbol$ClassSymbol" -> Map.of("flags",1);
                     case "dev/jvmd/boot/cold/stage3/Pool$HierarchyReads" -> Map.of("read",2,"functional",1);

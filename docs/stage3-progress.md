@@ -1,17 +1,14 @@
 # Stage 3 implementation and evidence
 
-Specification snapshot: [jvmd-stage3-bodies.md](jvmd-stage3-bodies.md), authoritative **revision 123 with the 2026-10-06 PR 60 review amendment**. Max re-supplied revision 123 from `Downloads/jvmd-stage3-bodies.md` on 2026-10-05 at 22:50 BST; his subsequent review supplied the amendment. The authoritative Downloads document and this snapshot were updated together. The authoritative document and Max's explicit conversation clarifications take precedence; this copy is not independently maintained.
-Base: `617dbfd8`, Stage 2 (#58). Working branch: `feat/jvmd-stage-3`.
-The objective is the entire specification. None of the gates below is complete until its evidence is recorded.
+Specification: [jvmd-stage3-bodies.md](jvmd-stage3-bodies.md), revision 123 with Max's processor/descriptor clarifications and the 2026-10-07 PR62 reconciliation. The normative sections now state the current formats and publication/read contracts; the dated evidence below is historical. Working branch: feat/jvmd-stage-3. Stage 2 PR61 is merged; Stage 3 remains [draft PR62](https://github.com/maxjay/jvmd/pull/62).
 
+## Current status, 2026-10-07
 
-## Current status, 2026-10-06
+The complete specification and PR62 acceptance are **not finished**. [The consolidated review register](pr62-review-reconciliation.md) records each F01–F18 finding, independent reproductions, repairs, work counters and contract corrections. F01–F03 correctness failures are repaired. Current-only reverse publication, streamed immutable output, persistent changed-unit selection, indexed source binding, shared declaration nodes, bounded tree queries and setup/resource bounds have regression evidence. MACHINE remains layout 4 / parser 6; LOCAL is 22 and bodies 9.
 
-The full specification is **not complete**. Module annotations preserve the existing T/A/EA projections and zero-body descriptor results consume only the exact T/A module-info entries and emission format. Native module declaration lint now preserves warning ordering and SOURCE-only suppression without changing successful descriptor results. Body-discovered processor violations persist across boots and revoke earlier scope results; global admission history is outside immutable project roots. The cold project entry point completes Stage 2 and Stage 3, with separate LROOT/BROOT publication and restart handling. The latest full regression gate passes **713 tests, zero failures/errors/skips**, in 5m19s, with all 574 Java files frozen and verified, both digests and the Stage 2 repository oracle. PR #61 remains the separate reconciliation; [draft Stage 3 PR #62](https://github.com/maxjay/jvmd/pull/62) is stacked on it. MACHINE parser 6 is unchanged. LOCAL 18 fences the corrected module declaration diagnostics. Bodies 7 fences a captured-variable shadowing gap discovered by independent native tracing. The strict read oracle remains red and its lookup coverage is still incomplete. The full goal is unfinished.
+F04 remains the acceptance blocker: independent query-level completeness and minimality, complete descriptor header validation, and the remaining processor admission/model/verification boundaries. The checker now observes successful named queries, whole-method native scans and generation-time reads as well as failures, with collector execution excluded. It checks both directions. A skipped no-default interface can still require the requested method-name projection: independent native mutation tests show a new matching default changes success, while an unrelated default preserves proof validity. Diagnostic inventories with failure disabled are not passing strict gates.
 
-Implemented components include body proofs/results/uses and reverse indexes, the reusable one-unit compiler pool, body collection and processor-aware attribution, generated-output ContentTrees, persisted source declaration/package views, and now the initial dependency-ordered driver with rooted reads, generation buffering, BROOT/history publication and output materialisation.
-
-Outstanding completion gates include full source/module/file processor views and capability admission, persisted query verification, complete descriptor header validation, own-project Stage 3 diagnostic equality and the independent two-sided read oracle. The 2,000-file processor reuse measurement now passes both digests. Existing fixture coverage does not close the other full-spec obligations. The implementation still attributes every ordinary file on a rerun; unchanged descriptor derivations reuse their rooted RS/CF. Warm remains untouched.
+The production entry point is still a complete cold Stage2/Stage3 driver. The two-digest 2,000-file processor reuse measurement exercises changed-unit selection and Output.apply, but still walks all proofs in its test-only orchestration. It is not a production warm/LIVE implementation. The W-manager budget is global across concurrent module scopes. The frozen two-digest repository oracle matches all 1,380 class files and ordered diagnostics in 26/26 scopes (584 files, 10 descriptors); the combined native/module/pool gate passes 44 tests. Detailed runs are in the review register; old counts below must not be cited as current-head evidence.
 
 ## Ordered delivery
 
@@ -34,7 +31,7 @@ Outstanding completion gates include full source/module/file processor views and
 | 21–24 | Two digests; shuffled input/worker determinism; per-file faults; error-result dependency repair |
 | 25–26 | Key/value permutations invalidate; locale/charset independence |
 | 27–29 | 2,000-file processor reuse; aggregating domains; unsupported processors named and never reused |
-| 30 | Independently instrumented javac loaded-state and absent-lookup traces; focused exclusions only |
+| 30 | Independent successful/failed native query traces, generation/warm-context closure and two-sided projection coverage |
 
 Each PR must include the input-coverage audit from §2.2, sum semantics with permutation/insertion/removal/replacement/reordering counterexamples, independent computation read traces, measurements, and any explicit deviations. Completion also requires LAYOUT 4 on main, all thirty invariants with both digests, cold Stage 3 of this project with a proof/result for every file, unchanged warm package, and published PR measurements.
 

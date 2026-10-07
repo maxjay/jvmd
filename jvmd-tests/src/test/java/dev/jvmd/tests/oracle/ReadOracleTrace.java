@@ -23,7 +23,7 @@ public final class ReadOracleTrace {
         @Override public int compareTo(Missing other) { return toString().compareTo(other.toString()); }
     }
     public record Snapshot(String file, List<String> loaded, List<String> modules, List<Missing> absent, List<Missing> predefined,
-                           List<Missing> queries) { }
+                           List<Missing> queries, List<String> sites, List<String> scans, List<Missing> closure) { }
     private static final class Trace {
         final String file;
         final Set<String> own;
@@ -33,6 +33,15 @@ public final class ReadOracleTrace {
         final Set<Missing> absent = new TreeSet<>();
         final Set<Missing> predefined = new TreeSet<>();
         final Set<Missing> queries = new TreeSet<>();
+        final Set<String> sites = new TreeSet<>();
+        final Set<String> scans = new TreeSet<>();
+        final Set<Missing> closure = new TreeSet<>();
+        final java.util.Deque<String> methods = new java.util.ArrayDeque<>();
+        void query(Missing query) {
+            queries.add(query);
+            if (Boolean.getBoolean("jvmd.readOracle.sites")) sites.add(query+" via "+nativeStack());
+        }
+        final Set<Object> intrinsic = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         final Set<Object> nonemptyIterators = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         int suspended;
         int globalTypes;
@@ -60,11 +69,19 @@ public final class ReadOracleTrace {
         if (trace == null) throw new AssertionError("Read oracle did not start");
         if (trace.suspended != 0) throw new AssertionError("Unbalanced collector exclusion");
         if (trace.globalTypes != 0) throw new AssertionError("Unbalanced global type lookup");
+        if (!trace.methods.isEmpty()) throw new AssertionError("Unbalanced native method lookup");
         return new Snapshot(trace.file, List.copyOf(trace.loaded), List.copyOf(trace.modules), List.copyOf(trace.absent), List.copyOf(trace.predefined),
-                List.copyOf(trace.queries));
+                List.copyOf(trace.queries), List.copyOf(trace.sites), List.copyOf(trace.scans), List.copyOf(trace.closure));
     }
     public static void suspend() { var trace = CURRENT.get(); if (trace != null) trace.suspended++; }
     public static void resume() { var trace = CURRENT.get(); if (trace != null) trace.suspended--; }
+    /** Exact compiler-created symbols, never names or package-prefix exclusions. */
+    public static void nativeSymbols(Object syms) {
+        var trace=CURRENT.get();
+        if(trace!=null) { trace.intrinsic.add(field(syms,"predefClass"));trace.intrinsic.add(field(syms,"arrayClass")); }
+    }
+    public static void beginMethod(Object name) { var t=CURRENT.get();if(t!=null && t.suspended==0)t.methods.push(name.toString()); }
+    public static void endMethod() { var t=CURRENT.get();if(t!=null && t.suspended==0)t.methods.pop(); }
     public static void beginGlobalType() { var trace = CURRENT.get(); if (trace != null && trace.suspended == 0) trace.globalTypes++; }
     public static void endGlobalType() { var trace = CURRENT.get(); if (trace != null && trace.suspended == 0) trace.globalTypes--; }
 
@@ -109,12 +126,54 @@ public final class ReadOracleTrace {
                 if(CURRENT.get()==trace && trace.suspended==0) {
                     String kind=field(value,"kind").toString();
                     String form=switch(kind){case "VAR"->"FIELD";case "MTH"->"METHOD";case "TYP"->"N";default->null;};
-                    if(form!=null && !binary(owner).isEmpty())trace.queries.add(new Missing(form,binary(owner),name.toString()));
+                    if(form!=null) {
+                        var query=new Missing(form,binary(owner),name.toString());
+                        if(trace.intrinsic.contains(owner))trace.predefined.add(query);
+                        else if(!binary(owner).isEmpty())trace.query(query);
+                    }
                 }
                 return value;
             }
             @Override public void remove(){iterator.remove();}
         };
+    }
+
+    /** Inventory whole-scope iteration separately until its native caller/filter has been audited. */
+    public static Iterable<?> members(Iterable<?> original, Object scope, Object filter) {
+        var trace=CURRENT.get();
+        if(trace==null || trace.suspended!=0)return original;
+        var owner=field(scope,"owner");
+        if(owner==null || !owner.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol")
+                || trace.own(binary(owner)) || !fileKind(field(owner,"classfile")).equals("CLASS"))return original;
+        var stack=nativeStack();
+        // These native loops inspect exactly the method contract domain, even for empty scopes.
+        // Their filters and generation-time bridge predicate are independently audited in the JDK source.
+        boolean namedFilter=filter!=null && filter.getClass().getName().equals("com.sun.tools.javac.code.Types$MethodFilter");
+        boolean methods=!namedFilter && (stack.contains("com.sun.tools.javac.comp.Check.checkDefaultMethodClashes:")
+                || stack.contains("com.sun.tools.javac.comp.TransTypes.addBridges:")
+                || stack.contains("com.sun.tools.javac.code.Types$DescriptorCache.findDescriptorInternal:")
+                || stack.contains("com.sun.tools.javac.code.Types.firstUnimplementedAbstractImpl:")
+                || stack.contains("com.sun.tools.javac.comp.Check.checkImplementations:")
+                || stack.contains("com.sun.tools.javac.comp.Annotate$AnnotationTypeMetadata.getAnnotationElements:"));
+        var description=binary(owner)+" projection="+(methods?"METHOD":"UNCLASSIFIED")
+                +" filter="+(filter==null?"null":filter.getClass().getName())+" via "+stack;
+        return ()->new java.util.Iterator<Object>() {
+            final java.util.Iterator<?> iterator=original.iterator();
+            private void observed() { if(CURRENT.get()==trace && trace.suspended==0) {
+                trace.scans.add(description);
+                if(methods)trace.query(new Missing("METHOD",binary(owner),""));
+            } }
+            @Override public boolean hasNext(){observed();return iterator.hasNext();}
+            @Override public Object next(){observed();return iterator.next();}
+            @Override public void remove(){iterator.remove();}
+        };
+    }
+
+    private static String nativeStack() {
+        return StackWalker.getInstance().walk(frames->frames
+                .filter(f->f.getClassName().startsWith("com.sun.tools.javac."))
+                .limit(12).map(f->f.getClassName()+"."+f.getMethodName()+":"+f.getLineNumber())
+                .collect(java.util.stream.Collectors.joining(" <- ")));
     }
 
     public static void hierarchy(Object type) {
@@ -124,8 +183,19 @@ public final class ReadOracleTrace {
         var trace=CURRENT.get();
         if(trace==null || trace.suspended!=0 || symbol==null
                 || !symbol.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol"))return;
-        if(!trace.own(binary(symbol)) && fileKind(field(symbol,"classfile")).equals("CLASS"))
-            trace.queries.add(new Missing("TYPE",binary(symbol),""));
+        if(!trace.own(binary(symbol)) && fileKind(field(symbol,"classfile")).equals("CLASS")) {
+            trace.query(new Missing("TYPE",binary(symbol),""));
+            // Resolve.findMethod's DEFAULT_OK branch skips an interface with no defaults.
+            // Its answer implies this requested name has no default candidates; a new default
+            // of that name can change resolution. It does not justify every method of the interface.
+            if(!trace.methods.isEmpty() && ((Long)field(symbol,"flags_field") & ((1L<<43)|0x200))==0x200) {
+                boolean guard=StackWalker.getInstance().walk(frames->frames
+                        .filter(f->f.getClassName().startsWith("com.sun.tools.javac."))
+                        .skip(1).findFirst().map(f->f.getClassName().equals("com.sun.tools.javac.comp.Resolve")
+                                && f.getMethodName().equals("findMethod")).orElse(false));
+                if(guard)trace.closure.add(new Missing("METHOD",binary(symbol),trace.methods.peek()));
+            }
+        }
     }
 
     public static void loaded(Object symbol) {
@@ -156,7 +226,7 @@ public final class ReadOracleTrace {
             owner = name.toString().replace('.', '/');
             if (!trace.own(owner)) {
                 if(absent)trace.absent.add(new Missing("D",owner,""));
-                else if(kind.equals("TYP"))trace.queries.add(new Missing("TYPE",owner,""));
+                else if(kind.equals("TYP"))trace.query(new Missing("TYPE",owner,""));
             }
             return;
         }
@@ -167,9 +237,9 @@ public final class ReadOracleTrace {
         if (trace.own(owner) || fileKind(field(site, "classfile")).equals("SOURCE")) return;
         String form = switch (operation) { case "findField" -> "FIELD"; case "findMethod" -> "METHOD"; default -> "N"; };
         var observation = new Missing(form, owner, name.toString());
-        if(site==predefined)trace.predefined.add(observation);
+        if(site==predefined || trace.intrinsic.contains(site))trace.predefined.add(observation);
         else {
-            trace.queries.add(observation);
+            trace.query(observation);
             if(absent)trace.absent.add(observation);
         }
     }
@@ -183,12 +253,12 @@ public final class ReadOracleTrace {
             var owner = field(scope, "owner");
             if (owner != null && owner.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol")
                     && !trace.own(binary(owner)) && !fileKind(field(owner, "classfile")).equals("SOURCE"))
-                (owner == predefined ? trace.predefined : trace.absent).add(new Missing("METHOD", binary(owner), name.toString()));
+                (owner == predefined || trace.intrinsic.contains(owner) ? trace.predefined : trace.absent).add(new Missing("METHOD", binary(owner), name.toString()));
         }
         var owner=field(scope,"owner");
-        if(owner!=null && owner!=predefined && owner.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol")
+        if(owner!=null && owner!=predefined && !trace.intrinsic.contains(owner) && owner.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol")
                 && !trace.own(binary(owner)) && !fileKind(field(owner,"classfile")).equals("SOURCE"))
-            trace.queries.add(new Missing("METHOD",binary(owner),name.toString()));
+            trace.query(new Missing("METHOD",binary(owner),name.toString()));
         return hasNext;
     }
 
@@ -198,8 +268,9 @@ public final class ReadOracleTrace {
 
     private static void report(Snapshot trace, Object proof) {
         var uncovered = uncovered(proof, trace.loaded(), trace.modules(), trace.absent());
-        var missingQueries=missingQueries(proof,trace.queries(),trace.absent());
-        var unjustified=unjustified(proof,trace.queries(),trace.absent());
+        var semantic=new ArrayList<>(trace.queries());semantic.addAll(trace.closure());
+        var missingQueries=missingQueries(proof,semantic,trace.absent());
+        var unjustified=unjustified(proof,semantic,trace.absent());
         var lines = new ArrayList<String>();
         lines.add("FILE " + trace.file() + " loaded=" + trace.loaded().size() + " modules=" + trace.modules().size() + " absent=" + trace.absent().size()
                 + " predefined=" + trace.predefined().size() + " uncovered=" + uncovered.size()
@@ -210,6 +281,9 @@ public final class ReadOracleTrace {
         trace.predefined().forEach(value -> lines.add("PREDEFINED " + value));
         uncovered.forEach(value -> lines.add("UNCOVERED " + value));
         trace.queries().forEach(value->lines.add("QUERY "+value));
+        trace.sites().forEach(value->lines.add("QUERY_SITE "+value));
+        trace.scans().forEach(value->lines.add("SCOPE_SCAN "+value));
+        trace.closure().forEach(value->lines.add("DEFAULT_GUARD_CLOSURE "+value));
         missingQueries.forEach(value->lines.add("MISSING_QUERY "+value));
         unjustified.forEach(value->lines.add("UNJUSTIFIED "+value));
         synchronized (REPORT_LOCK) {

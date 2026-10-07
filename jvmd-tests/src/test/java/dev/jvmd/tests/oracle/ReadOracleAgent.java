@@ -75,7 +75,7 @@ public final class ReadOracleAgent {
                     var descriptor = method.methodTypeSymbol();
                     boolean attribute = name.endsWith("/Attribute") && methodName.equals("run");
                     boolean pool = name.endsWith("/Pool") && methodName.equals("withTask")
-                            && descriptor.parameterType(0).descriptorString().equals("Ljavax/tools/JavaFileObject;");
+                            && descriptor.descriptorString().equals("(Ljavax/tools/JavaFileObject;Ljavax/tools/DiagnosticListener;Ljava/util/function/Function;Ldev/jvmd/boot/cold/stage2/ProcessorPath;)Ldev/jvmd/boot/cold/stage3/Pool$Completed;");
                     boolean arrange = name.endsWith("/Arrange") && methodName.equals("body");
                     boolean collector = name.endsWith("/ProofCollector") && methodName.equals("bodies")
                             || name.endsWith("/Pool$HierarchyReads") && Set.of("read","functional","method").contains(methodName);

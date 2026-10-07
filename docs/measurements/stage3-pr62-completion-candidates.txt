@@ -1,0 +1,146 @@
+PR62 completion-brief candidate and native metadata checkpoint, 2026-10-07
+
+Frozen production/test head: 2690ef5a43438fc99ade699198c88a72511044d5
+Base main: 33a9032d0a22f87f2ee306f5e2d935190db6b691
+JDK: Temurin 25.0.4.1+1; Maven 3.9.16; Windows; SHA-256 and SHA3-256.
+Source manifest: sorted SHA256(file bytes) + two spaces + relative POSIX path + LF.
+601 Java files; docs experiments excluded; manifest verified unchanged after the gate.
+Manifest SHA256: dfc45e3519f639a766d772f7a99015f06e56ab0e6c867c6f53663c2abf58bcff
+
+Command (JAVA_HOME set to the JDK above):
+mvn -B -pl jvmd-tests -am test -Dtest=BodyValidationTest,BodyValidationNativeTest,ProofIndexTest,RetainedAnnotationDiagnosticTest,OutputRecoveryTest,FixedCompilerInputsTest,FixedMetadataTest,BodyOutputTest,BinaryMetadataAdmissionTest,BodyAttributeTest,BodyPoolTest,BodyProofTest,BodyRecordsTest,Stage3Test,ProcessedAttributeTest,BodyProcessorTest,BodyCollectorTest,ColdProjectBootTest,BodyGenerationTest,ModuleArchitectureTest,ForbiddenIdentifiersTest,Stage3ClasspathMeasurement,ProcessorReuseMeasurement -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+
+Result: 316 tests, 314 pass, 2 fail, zero errors/skips; 8m01s.
+The only failures are the original two-digest 2,000-file Lombok initial-admission assertions.
+They remain intact. No passing Lombok edit-loop or full acceptance claim is made.
+Both digests: 1,415 native-equal class files, 596 compilations, all 26 ordered diagnostic scopes,
+10 descriptors. Metadata guard rejects reuse for 336 files per digest.
+
+Candidate counters include accepted/current binding lookup and root/sequence checks, transition setup,
+current-X seeks/hits/key bytes, selected rooted CI decode and indexed proof checks. Validation writes zero.
+The fixture grows unrelated live files AND retired rooted history; setup excludes constructing the initial
+cold fixture and publication churn. Node bytes are logical encoded reads, not RocksDB/JNI/WAL/disk traffic.
+Allocation is one cumulative ThreadMXBean delta, not a retained-heap or wall-time result. Point-read
+tree height can grow with the selected inventory. Actual Rocks reopen is a separate two-digest test.
+The direct-event set is explicit; arbitrary processor/metadata/non-reusable candidate planning is not inferred.
+Native selective fixture: cold -> X/CI -> only changed attributions -> Output.apply -> commitUnitsDelta;
+all three source outputs equal independent javac after unrelated constant, consumed constant and body edits.
+Public annotation order is preserved by A; private annotation order and private enum lookup are the new
+confirmed equal-T/A diagnostic counterexamples. No metadata guard or strict assertion was weakened.
+
+Measured rows:
+F05-CANDIDATES SHA-256 affected=false files=65 retired=64 prefixes=2 hits=0 keyBytes=0 receipts=0 receiptBytes=0 setupReads=26 setupBytes=2594 setupNodes=4 prepareReads=16 prepareBytes=2726 proofNodes=0 allocated=58288 writes=0
+F05-CANDIDATES SHA-256 affected=false files=513 retired=512 prefixes=2 hits=0 keyBytes=0 receipts=0 receiptBytes=0 setupReads=26 setupBytes=2594 setupNodes=4 prepareReads=16 prepareBytes=2726 proofNodes=0 allocated=58144 writes=0
+F05-CANDIDATES SHA-256 affected=false files=4097 retired=4096 prefixes=2 hits=0 keyBytes=0 receipts=0 receiptBytes=0 setupReads=26 setupBytes=2594 setupNodes=4 prepareReads=16 prepareBytes=2726 proofNodes=0 allocated=58096 writes=0
+F05-CANDIDATES SHA-256 affected=true files=65 retired=64 prefixes=2 hits=1 keyBytes=73 receipts=1 receiptBytes=320 setupReads=39 setupBytes=11278 setupNodes=6 prepareReads=16 prepareBytes=2726 proofNodes=2 allocated=78104 writes=0
+F05-CANDIDATES SHA-256 affected=true files=513 retired=512 prefixes=2 hits=1 keyBytes=73 receipts=1 receiptBytes=320 setupReads=40 setupBytes=8946 setupNodes=7 prepareReads=16 prepareBytes=2726 proofNodes=2 allocated=79952 writes=0
+F05-CANDIDATES SHA-256 affected=true files=4097 retired=4096 prefixes=2 hits=1 keyBytes=73 receipts=1 receiptBytes=320 setupReads=40 setupBytes=12954 setupNodes=7 prepareReads=16 prepareBytes=2726 proofNodes=2 allocated=82896 writes=0
+F05-CANDIDATES SHA3-256 affected=false files=65 retired=64 prefixes=2 hits=0 keyBytes=0 receipts=0 receiptBytes=0 setupReads=26 setupBytes=2594 setupNodes=4 prepareReads=16 prepareBytes=2726 proofNodes=0 allocated=59416 writes=0
+F05-CANDIDATES SHA3-256 affected=false files=513 retired=512 prefixes=2 hits=0 keyBytes=0 receipts=0 receiptBytes=0 setupReads=26 setupBytes=2594 setupNodes=4 prepareReads=16 prepareBytes=2726 proofNodes=0 allocated=59416 writes=0
+F05-CANDIDATES SHA3-256 affected=false files=4097 retired=4096 prefixes=2 hits=0 keyBytes=0 receipts=0 receiptBytes=0 setupReads=26 setupBytes=2594 setupNodes=4 prepareReads=16 prepareBytes=2726 proofNodes=0 allocated=59416 writes=0
+F05-CANDIDATES SHA3-256 affected=true files=65 retired=64 prefixes=2 hits=1 keyBytes=73 receipts=1 receiptBytes=320 setupReads=39 setupBytes=8760 setupNodes=6 prepareReads=16 prepareBytes=2726 proofNodes=2 allocated=77544 writes=0
+F05-CANDIDATES SHA3-256 affected=true files=513 retired=512 prefixes=2 hits=1 keyBytes=73 receipts=1 receiptBytes=320 setupReads=40 setupBytes=16941 setupNodes=7 prepareReads=16 prepareBytes=2726 proofNodes=2 allocated=87472 writes=0
+F05-CANDIDATES SHA3-256 affected=true files=4097 retired=4096 prefixes=2 hits=1 keyBytes=73 receipts=1 receiptBytes=320 setupReads=40 setupBytes=9702 setupNodes=7 prepareReads=16 prepareBytes=2726 proofNodes=2 allocated=82448 writes=0
+F05 Sha256 external=false referenced=false proof=257 receipt=320 prepareReads=29 prepareBytes=40051 proofNodes=4 proofBytes=22834 matched=0 allocated=187088
+F05 Sha256 external=false referenced=false proof=2049 receipt=320 prepareReads=39 prepareBytes=53149 proofNodes=8 proofBytes=14930 matched=0 allocated=193568
+F05 Sha256 external=false referenced=false proof=16385 receipt=320 prepareReads=47 prepareBytes=21861 proofNodes=6 proofBytes=25658 matched=0 allocated=155264
+F05 Sha256 external=true referenced=false proof=257 receipt=320 prepareReads=41 prepareBytes=41428 proofNodes=4 proofBytes=22834 matched=0 allocated=139624
+F05 Sha256 external=true referenced=false proof=2049 receipt=320 prepareReads=47 prepareBytes=55436 proofNodes=8 proofBytes=14930 matched=0 allocated=205368
+F05 Sha256 external=true referenced=false proof=16385 receipt=320 prepareReads=56 prepareBytes=25978 proofNodes=6 proofBytes=25658 matched=0 allocated=171448
+F05 Sha256 external=false referenced=true proof=257 receipt=320 prepareReads=29 prepareBytes=40051 proofNodes=4 proofBytes=22836 matched=1 allocated=124160
+F05 Sha256 external=false referenced=true proof=2049 receipt=320 prepareReads=39 prepareBytes=53149 proofNodes=6 proofBytes=14754 matched=1 allocated=191184
+F05 Sha256 external=false referenced=true proof=16385 receipt=320 prepareReads=47 prepareBytes=21861 proofNodes=6 proofBytes=25660 matched=1 allocated=155376
+F05 Sha256 external=true referenced=true proof=257 receipt=320 prepareReads=41 prepareBytes=41428 proofNodes=4 proofBytes=22836 matched=1 allocated=139736
+F05 Sha256 external=true referenced=true proof=2049 receipt=320 prepareReads=47 prepareBytes=55436 proofNodes=6 proofBytes=14754 matched=1 allocated=203016
+F05 Sha256 external=true referenced=true proof=16385 receipt=320 prepareReads=56 prepareBytes=25978 proofNodes=6 proofBytes=25660 matched=1 allocated=171560
+F05 Sha3 external=false referenced=false proof=257 receipt=320 prepareReads=29 prepareBytes=40051 proofNodes=4 proofBytes=22834 matched=0 allocated=124048
+F05 Sha3 external=false referenced=false proof=2049 receipt=320 prepareReads=31 prepareBytes=57281 proofNodes=8 proofBytes=16680 matched=0 allocated=200704
+F05 Sha3 external=false referenced=false proof=16385 receipt=320 prepareReads=39 prepareBytes=47327 proofNodes=8 proofBytes=22210 matched=0 allocated=206688
+F05 Sha3 external=true referenced=false proof=257 receipt=320 prepareReads=40 prepareBytes=41342 proofNodes=4 proofBytes=22834 matched=0 allocated=149512
+F05 Sha3 external=true referenced=false proof=2049 receipt=320 prepareReads=42 prepareBytes=59340 proofNodes=8 proofBytes=16680 matched=0 allocated=215048
+F05 Sha3 external=true referenced=false proof=16385 receipt=320 prepareReads=52 prepareBytes=40286 proofNodes=8 proofBytes=22210 matched=0 allocated=199984
+F05 Sha3 external=false referenced=true proof=257 receipt=320 prepareReads=29 prepareBytes=40051 proofNodes=4 proofBytes=22836 matched=1 allocated=124160
+F05 Sha3 external=false referenced=true proof=2049 receipt=320 prepareReads=31 prepareBytes=57281 proofNodes=6 proofBytes=16504 matched=1 allocated=198352
+F05 Sha3 external=false referenced=true proof=16385 receipt=320 prepareReads=39 prepareBytes=47327 proofNodes=8 proofBytes=22212 matched=1 allocated=206800
+F05 Sha3 external=true referenced=true proof=257 receipt=320 prepareReads=40 prepareBytes=41342 proofNodes=4 proofBytes=22836 matched=1 allocated=149640
+F05 Sha3 external=true referenced=true proof=2049 receipt=320 prepareReads=42 prepareBytes=59340 proofNodes=6 proofBytes=16504 matched=1 allocated=212696
+F05 Sha3 external=true referenced=true proof=16385 receipt=320 prepareReads=52 prepareBytes=40286 proofNodes=8 proofBytes=22212 matched=1 allocated=200096
+digest: SHA-256
+classpath equality: 26/26 scopes; files=596 classes=1415
+module descriptors included in byte oracle: 10; emitted=10
+temporary metadata non-reuse boundary: 336 files; fresh native equality is independent of reuse admission
+digest: SHA3-256
+classpath equality: 26/26 scopes; files=596 classes=1415
+module descriptors included in byte oracle: 10; emitted=10
+temporary metadata non-reuse boundary: 336 files; fresh native equality is independent of reuse admission
+F19 SHA-256 totalMiB=16 priorLiveMiB=0 staged=16
+F19 SHA-256 totalMiB=64 priorLiveMiB=0 staged=64
+F19 SHA3-256 totalMiB=16 priorLiveMiB=0 staged=16
+F19 SHA3-256 totalMiB=64 priorLiveMiB=0 staged=64
+
+Full local log SHA256: 68ca3449a6244756b6cfca99a0e3bb1afa8df4076e673c4833ecfc4fbccdebb7
+
+Strict oracle follow-up (same production bytes, test-only exact Pool hook repair):
+The first strict attempt at 2690ef5a aborted before tests with hook drift Pool {withTask=2}.
+Frozen compiler-input work had added a delegating overload. The test agent now selects the complete
+descriptor of the four-argument implementation, retaining the assertion of exactly one hook.
+No production collector, native query classification, strict assertion or admission rule changed.
+
+Command:
+mvn -B -pl jvmd-tests -am test -Pread-oracle -Dtest=ReadOracleInstrumentationTest,ReadOracleCoverageTest,BodyCollectorTest -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,benchmark -Djvmd.readOracle.report=target/completion-strict-native.txt
+
+Strict result: 87 tests, 74 failures, zero errors/skips, 27.957 seconds.
+8 native-only instrumentation and 5 checker tests pass; all 74 BodyCollector cases fail strict coverage.
+This is an actual failing strict run, not observer/reporting mode and not a full-project read census.
+Trace FILE rows: 74
+Missing query occurrences/distinct: 1480/37
+Unjustified occurrences/distinct: 12/5
+Post-repair 601-source manifest SHA256: 33aaff4e196bb83d24134218b21f73d73eb44acdaa477ebce1e6a98c000067eb
+Trace SHA256: ac02df093170f717bed91ce78b33a4444d62a62508d914dd965a7adaa26375b7
+Strict log SHA256: 69720b962506f04d79f0727dfa157929ff7842ee874ecae89bb0d57aa9c81075
+Hosted Tests/checkpoints and benchmarks separately succeeded at production head 2690ef5a on 2026-10-07.
+They do not make the failing required acceptance or strict gates green.
+
+Distinct missing/unjustified query inventory (unclassified; do not blindly add these to production):
+MISSING_QUERY Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=ANNOTATION_TYPE]
+MISSING_QUERY Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=CONSTRUCTOR]
+MISSING_QUERY Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=FIELD]
+MISSING_QUERY Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=LOCAL_VARIABLE]
+MISSING_QUERY Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=METHOD]
+MISSING_QUERY Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=MODULE]
+MISSING_QUERY Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=PACKAGE]
+MISSING_QUERY Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=PARAMETER]
+MISSING_QUERY Missing[kind=FIELD, owner=java/lang/annotation/ElementType, name=TYPE]
+MISSING_QUERY Missing[kind=FIELD, owner=java/lang/annotation/RetentionPolicy, name=RUNTIME]
+MISSING_QUERY Missing[kind=FIELD, owner=p/App$1, name=$SwitchMap$q$E]
+MISSING_QUERY Missing[kind=METHOD, owner=, name=get]
+MISSING_QUERY Missing[kind=METHOD, owner=java/lang/Deprecated, name=forRemoval]
+MISSING_QUERY Missing[kind=METHOD, owner=java/lang/Deprecated, name=since]
+MISSING_QUERY Missing[kind=METHOD, owner=java/lang/annotation/Annotation, name=value]
+MISSING_QUERY Missing[kind=METHOD, owner=java/lang/annotation/Retention, name=value]
+MISSING_QUERY Missing[kind=METHOD, owner=java/lang/annotation/Target, name=value]
+MISSING_QUERY Missing[kind=METHOD, owner=p/App$, name=apply]
+MISSING_QUERY Missing[kind=METHOD, owner=q/First, name=]
+MISSING_QUERY Missing[kind=METHOD, owner=q/Second, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/Deprecated, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/Error, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/NoSuchFieldError, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/String, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/Throwable, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/annotation/ElementType, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/annotation/Retention, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/annotation/RetentionPolicy, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/annotation/Target, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/invoke/CallSite, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/invoke/MethodHandle, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/invoke/MethodHandles$Lookup, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/invoke/MethodHandles, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/lang/invoke/MethodType, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=java/util/function/Supplier, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=q/First$Value, name=]
+MISSING_QUERY Missing[kind=TYPE, owner=q/Second$Value, name=]
+UNJUSTIFIED Missing[kind=D, owner=java/lang/Value, name=]
+UNJUSTIFIED Missing[kind=D, owner=java/lang/java, name=]
+UNJUSTIFIED Missing[kind=D, owner=p/Value, name=]
+UNJUSTIFIED Missing[kind=D, owner=p/java, name=]
+UNJUSTIFIED Missing[kind=N, owner=java/lang/Object, name=java]

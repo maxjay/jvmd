@@ -102,6 +102,23 @@ public final class Pool implements AutoCloseable {
     private final List<java.io.Closeable> resources=new ArrayList<>();
     private record CompilerInputs(Identity identity, java.util.Set<Path> originals) { }
     private final Map<CompilerInputs,Map<Path,Path>> compilerInputs = new java.util.HashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<URI,Boolean> fixedMetadata = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.LongAdder metadataFiles = new java.util.concurrent.atomic.LongAdder();
+    private final java.util.concurrent.atomic.LongAdder metadataBytes = new java.util.concurrent.atomic.LongAdder();
+
+    public record MetadataStatistics(long files, long bytes) { }
+    public MetadataStatistics metadataStatistics() { return new MetadataStatistics(metadataFiles.sum(), metadataBytes.sum()); }
+
+    private boolean fixedMetadataSupported(JavaFileObject file) {
+        // The URI names an immutable private processor copy. Class files are checked once per pool,
+        // even if non-admission forces a new compiler context on each task or workers run concurrently.
+        return fixedMetadata.computeIfAbsent(file.toUri(), uri -> {
+            try (var input = file.openInputStream()) {
+                var bytes = input.readAllBytes(); metadataFiles.increment(); metadataBytes.add(bytes.length);
+                return FixedMetadata.platformOnly(bytes);
+            } catch (IOException | RuntimeException unsupported) { return false; }
+        });
+    }
 
     private synchronized Map<Path,Path> compilerCopies(dev.jvmd.boot.cold.stage2.ProcessorPath snapshot) {
         if (snapshot == null) return Map.of();
@@ -492,7 +509,12 @@ public final class Pool implements AutoCloseable {
                     if ("file".equals(location.getScheme())) {
                         var path = Path.of(location).toAbsolutePath().normalize();
                         if (path.equals(configuration.ownStubs().toAbsolutePath().normalize())) return;
-                        if (fixedInputs.containsValue(path)) return; // already an exact processor-context input, never an added jar hash
+                        if (fixedInputs.containsValue(path)) {
+                            // Exact bytes bind the payload, but not custom annotation/enum/class-literal
+                            // declarations outside that input. Reject those pending exact query proofs.
+                            if (!fixedMetadataSupported(file)) metadataSupported = false;
+                            return;
+                        }
                         for (var stub : configuration.siblingStubs()) if (path.equals(stub.toAbsolutePath().normalize())) return;
                     }
                 }

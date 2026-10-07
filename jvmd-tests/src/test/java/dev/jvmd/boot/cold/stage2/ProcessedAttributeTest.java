@@ -127,6 +127,9 @@ class ProcessedAttributeTest {
         assertThat(computed.proof().processorBody().reusable()).isTrue();
     }
     private void allFiles(State state, boolean reusable, boolean binaryMetadata) throws Exception {
+        allFiles(state,reusable,binaryMetadata ? state.rows().keySet() : java.util.Set.of());
+    }
+    private void allFiles(State state, boolean reusable, java.util.Set<String> binaryMetadataPaths) throws Exception {
         var expected = oracle(state); var actual = new TreeMap<String,byte[]>(); var messages = new ArrayList<ResultRecord.Diagnostic>();
         var local = state.store().get(LocalStore.localRootKey(state.project()));
         var declarations = ProcessorSources.load(state.tree(), LocalRoot.decode(state.tree().digest(), local), state.project(), "app", 0, state.store()::get);
@@ -136,7 +139,11 @@ class ProcessedAttributeTest {
         }
         try (var pool = new Pool(state.pool(), 1)) {
             var attribute = attribute(state, pool);
+            long expectedContexts = 1;
+            boolean previousRejected = false;
             for (var path : state.rows().keySet()) {
+                boolean binaryMetadata = binaryMetadataPaths.contains(path);
+                if (previousRejected) expectedContexts++;
                 var computed = run(state, attribute, path); actual.putAll(state.classes(computed)); messages.addAll(computed.result().diagnostics());
                 assertThat(computed.reusable()).as(path + ": " + computed.faults()).isEqualTo(reusable && !binaryMetadata);
                 if(binaryMetadata)rejectsBinaryMetadata(computed);
@@ -151,17 +158,101 @@ class ProcessedAttributeTest {
                             computed.proof().processorBody(), key -> { throw new AssertionError("Rejected proof read storage"); })).isFalse();
                 }
                 long writes = state.store().recordWriteCount();
+                if (binaryMetadata) expectedContexts++;
                 var again = run(state, attribute, path); assertThat(again).isEqualTo(computed);
                 assertThat(state.store().recordWriteCount()).isEqualTo(writes);
+                previousRejected = binaryMetadata;
             }
-            assertThat(pool.statistics().contexts()).isEqualTo(binaryMetadata ? 2 * state.rows().size() : 1);
+            assertThat(pool.statistics().contexts()).isEqualTo(expectedContexts);
             assertThat(pool.statistics().tasks()).isEqualTo(2 * state.rows().size());
         }
         sameBytes(actual, expected.classes()); assertThat(messages).isEqualTo(expected.messages());
         assertThat(state.store().get(LocalStore.localRootKey(state.project()))).isEqualTo(local);
         assertThat(state.store().get(LocalStore.bodiesRootKey(state.project()))).isNull();
         assertThat(dir.resolve(".jvmd/body-capture")).doesNotExist();
-        if (!reusable || binaryMetadata) { assertThat(state.store().withPrefix("RS")).isEmpty(); assertThat(state.store().withPrefix("U")).isEmpty(); }
+        if (!reusable || binaryMetadataPaths.containsAll(state.rows().keySet())) {
+            assertThat(state.store().withPrefix("RS")).isEmpty(); assertThat(state.store().withPrefix("U")).isEmpty();
+        }
+    }
+
+
+    @ParameterizedTest @MethodSource("digests")
+    void frozenMetadataStillNeedsProofOfCrossInputEnumQueries(Digest digest) throws Exception {
+        for (String retention : List.of("RUNTIME", "CLASS")) for (boolean hidden : List.of(false,true)) {
+        var binaries = new TreeMap<>(Stage2Support.compile(dir.resolve("frozen-metadata-" + retention + hidden), Map.of(
+                "q/Mode.java", "package q; public enum Mode { X,Y }",
+                "q/Ann.java", "package q; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy." + retention + ") public @interface Ann { Mode value(); }",
+                "q/Lib.java", hidden ? "package q; public class Lib { @Ann(Mode.X) private int unused; public static int call(){return 1;} }"
+                        : "package q; @Ann(Mode.X) public class Lib { public static int call(){return 1;} }",
+                "fixture/Noop.java", """
+                package fixture;
+                @javax.annotation.processing.SupportedAnnotationTypes("*")
+                public class Noop extends javax.annotation.processing.AbstractProcessor {
+                    public javax.lang.model.SourceVersion getSupportedSourceVersion(){return javax.lang.model.SourceVersion.latestSupported();}
+                    public boolean process(java.util.Set<? extends javax.lang.model.element.TypeElement> a,
+                            javax.annotation.processing.RoundEnvironment r){return false;}
+                }
+                """), List.of("-proc:none"), List.of()));
+        binaries.remove("q/Mode.class"); // Its declaration belongs to the project, outside the frozen processor input.
+        binaries.put("META-INF/services/javax.annotation.processing.Processor", Stage2Support.text("fixture.Noop\n"));
+        binaries.put("META-INF/gradle/incremental.annotation.processors", Stage2Support.text("fixture.Noop,isolating\n"));
+        var jar = Stage2Support.pack(dir.resolve("frozen-metadata.jar"), binaries);
+        var path = "app/src/main/java/p/App.java";
+        for (boolean reverse : List.of(false,true)) for (boolean cached : List.of(false,true)) {
+        Attribute.Computed prior = null; FileRow oldRow = null;
+        for (int phase = 0; phase < 2; phase++) {
+            boolean missing = (phase == 0) == reverse;
+            var state = boot(digest, Map.of(
+                    "q/Mode.java", "package q; public enum Mode { " + (missing ? "Y" : "X,Y") + " }",
+                    "p/App.java", "package p; public class App { public int value(){return q.Lib.call();} }"),
+                    List.of(jar), List.of(jar));
+            var nativeResult = oracle(state);
+            assertThat(nativeResult.messages().stream().map(ResultRecord.Diagnostic::code).toList())
+                    .containsExactlyElementsOf(missing ? List.of("compiler.warn.unknown.enum.constant") : List.of());
+            byte[] oldKey = null, oldResult = null;
+            if (prior != null) {
+                var p = prior.proof();
+                var unsafe = new Proof(p.header(),p.types(),p.absent(),p.processorBody());
+                oldKey = LocalStore.resultKey(unsafe.aci(digest,"App.java",oldRow.kappa(),state.options().hash()));
+                oldResult = prior.result().encode();
+                if (cached) { state.store().put(oldKey,oldResult); state.store().flush(); }
+            }
+            try (var pool = new Pool(state.pool(),1)) {
+                var attribute = attribute(state,pool);
+                for (int task = 0; task < 2; task++) {
+                var computed = run(state, attribute, path);
+                assertThat(computed.result().diagnostics()).isEqualTo(nativeResult.messages());
+                assertThat(state.classes(computed).get("p/App")).isEqualTo(nativeResult.classes().get("p/App"));
+                rejectsBinaryMetadata(computed);
+                assertThat(computed.aci()).isNull();
+                assertThat(Proof.decode(computed.proof().encode(),digest.width())).isEqualTo(computed.proof());
+                if (oldKey != null) assertThat(state.store().get(oldKey)).isEqualTo(cached ? oldResult : null);
+                assertThat(state.store().withPrefix("RS")).hasSize(oldKey != null && cached ? 1 : 0);
+                assertThat(state.store().withPrefix("U")).isEmpty();
+                if (prior != null) {
+                    assertThat(computed.proof().header().processor()).isEqualTo(prior.proof().header().processor());
+                    assertThat(prior.proof().valid(state.tree(),state.own(),state.route(),computed.proof().header().processor(),
+                            computed.proof().processorBody(),state.store()::get))
+                            .as("changing a cross-input enum answer must invalidate or reject the old result").isFalse();
+                    var p = prior.proof();
+                    assertThat(new Proof(p.header(),p.types(),p.absent(),p.processorBody())
+                            .valid(state.tree(),state.own(),state.route(),computed.proof().header().processor(),
+                                    computed.proof().processorBody(),state.store()::get)).isTrue();
+                }
+                var work = pool.metadataStatistics();
+                assertThat(work.files()).isPositive();
+                if (task == 0) {
+                    var again = run(state, attribute, path);
+                    assertThat(again).isEqualTo(computed);
+                    assertThat(pool.metadataStatistics()).isEqualTo(work);
+                }
+                prior = computed; oldRow = state.rows().get(path);
+                }
+                assertThat(pool.statistics().contexts()).isEqualTo(3);
+            }
+        }
+        }
+        }
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -190,7 +281,8 @@ class ProcessedAttributeTest {
                 }
                 """, "p/Use.java", "package p; public class Use { public String value(){ return Bean.builder().name(\"value\").build().getName(); } }"),
                 List.of(lombok), List.of(lombok));
-        assertThat(state.faults()).isEmpty(); allFiles(state, true);
+        assertThat(state.faults()).isEmpty();
+        allFiles(state, true, java.util.Set.of("app/src/main/java/p/Bean.java"));
     }
 
     private Path processor(String body, String declaration) throws Exception {
@@ -374,7 +466,7 @@ class ProcessedAttributeTest {
                 "p/Middle.java", "package p; @fixture.Tag(\"override\") public class Middle extends Metadata {}",
                 "p/Metadata.java", "package p; @fixture.Tag(\"first\") @fixture.Tag(value=\"second\",type=int[].class) public class Metadata {}"),
                 List.of(processor), List.of(processor));
-        assertThat(state.faults()).isEmpty(); allFiles(state, true);
+        assertThat(state.faults()).isEmpty(); allFiles(state, true, true);
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -533,7 +625,7 @@ class ProcessedAttributeTest {
                     record Data(@Use("component") String @Use("component-array") [] component) {}
                 }
                 """),List.of(processor),List.of(processor));
-        assertThat(state.faults()).isEmpty();allFiles(state,true);
+        assertThat(state.faults()).isEmpty();allFiles(state,true,true);
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -610,7 +702,7 @@ class ProcessedAttributeTest {
                 List.of(lombok),List.of(lombok));
         try(var pool=new Pool(state.pool(),2)) {
             var attribute=attribute(state,pool);
-            for(int i=0;i<8;i++)assertThat(run(state,attribute,"app/src/main/java/p/Bean.java").reusable()).isTrue();
+            for(int i=0;i<8;i++)rejectsBinaryMetadata(run(state,attribute,"app/src/main/java/p/Bean.java"));
             assertThat(attribute.processorStatistics()).isEqualTo(new ProcessorPath.Statistics(Files.size(lombok),1,1));
             assertThat(attribute.configurationStatistics().filesRead()).isEqualTo(1);
             assertThat(attribute.configurationStatistics().bytesHashed()).isEqualTo(Files.size(dir.resolve("lombok.config")));
@@ -855,10 +947,10 @@ class ProcessedAttributeTest {
         var expected=oracle(state);
         try(var pool=new Pool(state.pool(),1)) {
             var first=run(state,attribute(state,pool),"app/src/main/java/p/Input.java");
-            assertThat(first.reusable()).as(first.faults().toString()).isTrue();
+            rejectsBinaryMetadata(first);
             assertThat(first.result().diagnostics()).isEqualTo(expected.messages());
         }
-        allFiles(state,true);
+        allFiles(state,true,java.util.Set.of("app/src/main/java/p/Input.java","app/src/main/java/p/package-info.java"));
     }
 
     @ParameterizedTest @MethodSource("digests")

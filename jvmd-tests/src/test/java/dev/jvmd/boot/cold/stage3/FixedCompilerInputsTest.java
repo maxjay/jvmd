@@ -51,11 +51,48 @@ class FixedCompilerInputsTest {
         }
     }
     private Pool.Completed<Void> run(Pool pool,ProcessorPath snapshot,String source) throws Exception {
+        return run(pool,snapshot,source,new java.util.ArrayList<>());
+    }
+    private Pool.Completed<Void> run(Pool pool,ProcessorPath snapshot,String source,List<String> diagnostics) throws Exception {
         return pool.withTask(directory.resolve("App.java").toUri(),source.getBytes(StandardCharsets.UTF_8),d -> {
+            diagnostics.add(d.getCode());
             assertThat(d.getKind()).isNotEqualTo(javax.tools.Diagnostic.Kind.ERROR);
         },task -> {
             try {task.parse();task.analyze();task.generate();return null;}catch(IOException e){throw new UncheckedIOException(e);}
         },snapshot);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void invalidPlatformEnumMetadataCannotLoseItsWarningThroughContextReuse(Digest digest) throws Exception {
+        var classes = compile("future-platform","Lib", """
+                package q;
+                @javax.annotation.processing.SupportedSourceVersion(javax.lang.model.SourceVersion.RELEASE_25)
+                public class Lib {public static final String VALUE="OLD";}
+                """,List.of());
+        var bytes = classes.get("q/Lib.class").clone();
+        var from = "RELEASE_25".getBytes(StandardCharsets.UTF_8); var to = "RELEASE_99".getBytes(StandardCharsets.UTF_8);
+        int replacements = 0;
+        for (int i=0;i<=bytes.length-from.length;i++) if(Arrays.equals(bytes,i,i+from.length,from,0,from.length)) {
+            System.arraycopy(to,0,bytes,i,to.length);replacements++;
+        }
+        assertThat(replacements).isEqualTo(1);
+        var jar = directory.resolve("future.jar");pack(jar,Map.of("q/Lib.class",bytes));
+        String source="public class App {public String value(){return q.Lib.VALUE;}}";
+        var expected=compile("future-native","App",source,List.of(jar)).get("App.class");
+        var identity=digest.hash(digest.hash(Files.readAllBytes(jar)).view());
+        var config=new Pool.Configuration(new Pool.Key(identity,identity),Files.createDirectories(directory.resolve("future-own")),List.of(jar),
+                StandardCharsets.UTF_8,List.of("-proc:none","-implicit:none"),List.of());
+        try(var snapshot=new ProcessorPath(List.of(jar),digest,identity);var pool=new Pool(config,1)) {
+            for(int i=0;i<2;i++) {
+                var diagnostics=new java.util.ArrayList<String>();var result=run(pool,snapshot,source,diagnostics);
+                assertThat(result.metadataSupported()).isFalse();
+                assertThat(result.classes().get("App")).isEqualTo(expected);
+                assertThat(diagnostics).containsExactly("compiler.warn.unknown.enum.constant");
+            }
+            assertThat(pool.statistics().contexts()).isEqualTo(2);
+            assertThat(pool.metadataStatistics().files()).isEqualTo(1);
+            assertThat(pool.metadataStatistics().bytes()).isEqualTo(bytes.length);
+        }
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -77,6 +114,12 @@ class FixedCompilerInputsTest {
             try(var pool=new Pool(config,1)) {
                 var fixed=run(pool,snapshot,source);assertThat(fixed.classes().get("App")).isEqualTo(expected);
                 assertThat(fixed.metadataSupported()).isTrue();
+                var metadata = pool.metadataStatistics();
+                assertThat(metadata.files()).isEqualTo(1);
+                assertThat(metadata.bytes()).isEqualTo(old.get("q/Lib.class").length);
+                assertThat(run(pool,snapshot,source).classes().get("App")).isEqualTo(expected);
+                assertThat(pool.metadataStatistics()).isEqualTo(metadata);
+                assertThat(pool.statistics().contexts()).isEqualTo(1);
                 // Removing the exact fixed input resets the context and cannot retain its admission or old classes.
                 var ordinary=run(pool,null,source);assertThat(ordinary.classes().get("App")).isEqualTo(current);
                 assertThat(ordinary.metadataSupported()).isFalse();

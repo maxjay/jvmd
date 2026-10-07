@@ -5,7 +5,7 @@ import dev.jvmd.core.tree.Codec;
 
 /** Stage 3 B.7: a bodies generation names, but never replaces, the committed LOCAL tree it extended. */
 public record BodiesRoot(String format, Identity bodiesRoot, Identity localRoot, Identity machineRoot, Identity modelHash) {
-    public static final int VERSION = 10;
+    public static final int VERSION = 11;
     public static String format(String localFormat) { return localFormat + ";bodies=" + VERSION; }
     public boolean current(LocalRoot local) {
         return format.equals(format(local.format())) && localRoot.equals(local.local().hash())

@@ -98,6 +98,77 @@ class BodyCollectorTest {
     private static Proof.Range n(String type,String name) { return new Proof.Range(Proof.N,type,Keys.TYPE,name); }
 
     @ParameterizedTest @MethodSource("digests")
+    void generatedExceptionConstructorIsRetainedOnColdAndWarmContexts(Digest digest) throws Exception {
+        fixture("package p; public class App { int f(q.E value){return switch(value){case A -> 1;};} }",Map.of("q/E","package q; public enum E {A}"));
+        var state=boot(digest);
+        try(var pool=new Pool(state.configuration(),1)) {
+            for(int i=0;i<2;i++) {
+                var compiled=compile(state,pool);assertThat(compiled.errors()).isEmpty();
+                assertThat(compiled.reads().ranges()).contains(t("java/lang/MatchException",Keys.METHOD,"<init>"),t("java/lang/MatchException",Keys.TYPE,""));
+            }
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void arrayLengthDoesNotReadUnconsumedMarkerInterfaces(Digest digest) throws Exception {
+        fixture("package p; public class App { int size(int[] value){return value.length;} }",Map.of("q/Unused","package q; public class Unused {}"));
+        var first=compile(boot(digest));assertThat(first.errors()).isEmpty();
+        assertThat(first.reads().ranges()).doesNotContain(t("java/lang/Cloneable",Keys.TYPE,""));
+        Files.writeString(dir.resolve("app/src/main/java/p/App.java"),"package p; public class App { Cloneable marker(int[] value){return value;} }");
+        var observed=compile(boot(digest));assertThat(observed.errors()).isEmpty();
+        assertThat(observed.reads().ranges()).contains(t("java/lang/Cloneable",Keys.TYPE,""));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void baseClauseDoesNotObserveTheNewInheritedMemberScope(Digest digest) throws Exception {
+        String source="package p; import q.Util; public class App extends q.Base { Object f(){return Util.run();} }";
+        String base="package q; public class Base {}";
+        String util="package q; public class Util { public static Object run(){return null;} }";
+        fixture(source,Map.of("q/Base",base,"q/Util",util));var before=compile(boot(digest));assertThat(before.errors()).isEmpty();
+        String changedBase="package q; public class Base { public static class q {} }";
+        Files.writeString(dir.resolve("dep/src/main/java/q/Base.java"),changedBase);
+        var changed=boot(digest);var after=compile(changed);assertThat(after.errors()).isEmpty();
+        var nativeBefore=Stage2Support.compile(dir.resolve("base-native-before"),Map.of("p/App.java",source,"q/Base.java",base,"q/Util.java",util),List.of("-g","-parameters"),List.of());
+        var nativeAfter=Stage2Support.compile(dir.resolve("base-native-after"),Map.of("p/App.java",source,"q/Base.java",changedBase,"q/Util.java",util),List.of("-g","-parameters"),List.of());
+        assertThat(nativeAfter.get("p/App.class")).isEqualTo(nativeBefore.get("p/App.class"));
+        assertThat(changed.valid(before.proof())).isTrue();
+        assertThat(before.reads().ranges()).doesNotContain(n("q/Base","q"));
+        assertThat(before.reads().typeLookups()).doesNotContain("q");
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void expressionPackageHeadsRetainInheritedMemberTypeAbsences(Digest digest) throws Exception {
+        fixture("package p; public class App extends q.Base { Object f(){return q.Util.run();} }",
+                Map.of("q/Base","package q; public class Base {}","q/Util","package q; public class Util { public static Object run(){return null;} }"));
+        var before=compile(boot(digest));assertThat(before.errors()).isEmpty();
+        assertThat(before.reads().ranges()).contains(n("q/Base","q"));
+        Files.writeString(dir.resolve("dep/src/main/java/q/Base.java"),"package q; public class Base { public static class q {} }");
+        var changed=boot(digest);assertThat(changed.valid(before.proof())).isFalse();
+        var broken=compile(changed);assertThat(broken.errors()).isNotEmpty();
+        Files.writeString(dir.resolve("dep/src/main/java/q/Base.java"),
+                "package q; public class Base { public static class q { public static class Util { public static Object run(){return null;} } } }");
+        var repaired=boot(digest);assertThat(compile(repaired).errors()).isEmpty();
+        assertThat(repaired.valid(broken.proof())).isFalse();
+        assertThat(broken.reads().ranges()).contains(n("q/Base$q","Util"));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void enumCaseLabelsDoNotReadUnrelatedLexicalFields(Digest digest) throws Exception {
+        String source="package p; public class App extends q.Base { int f(q.E value){return switch(value){case A -> 1; case B -> 2;};} }";
+        String base="package q; public class Base {}",enumeration="package q; public enum E {A,B}";
+        fixture(source,Map.of("q/Base",base,"q/E",enumeration));var before=compile(boot(digest));assertThat(before.errors()).isEmpty();
+        String changedBase="package q; public class Base { public int A,B; }";
+        Files.writeString(dir.resolve("dep/src/main/java/q/Base.java"),changedBase);
+        var changed=boot(digest);assertThat(compile(changed).errors()).isEmpty();
+        var nativeBefore=Stage2Support.compile(dir.resolve("enum-native-before"),Map.of("p/App.java",source,"q/Base.java",base,"q/E.java",enumeration),List.of("-g","-parameters"),List.of());
+        var nativeAfter=Stage2Support.compile(dir.resolve("enum-native-after"),Map.of("p/App.java",source,"q/Base.java",changedBase,"q/E.java",enumeration),List.of("-g","-parameters"),List.of());
+        assertThat(nativeAfter.get("p/App.class")).isEqualTo(nativeBefore.get("p/App.class"));
+        assertThat(changed.valid(before.proof())).isTrue();
+        assertThat(before.reads().ranges()).contains(t("q/E",Keys.FIELD,""))
+                .doesNotContain(t("q/Base",Keys.FIELD,"A"),t("q/Base",Keys.FIELD,"B"),t("java/lang/Object",Keys.FIELD,"A"));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void failedNativeSupertypeSearchReadsTheTargetHeaderOnWarmContexts(Digest digest) throws Exception {
         fixture("package p; public class App {}",Map.of("q/Unused","package q; public class Unused {}"));
         var state=boot(digest);

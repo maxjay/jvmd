@@ -118,16 +118,33 @@ public final class ReadOracleTrace {
     /** Retain only symbols from the native iterator; observing must never force a new lookup or iteration. */
     private static Iterable<?> memberNames(Iterable<?> original,Object owner,Object name,Trace trace) {
         if(trace.own(binary(owner)) || fileKind(field(owner,"classfile")).equals("SOURCE"))return original;
+        // Import scopes ask kind-filtered questions without calling findMethodInScope/findImmediateMemberType.
+        // Identify the native caller across Scope's lazy adapters; observe only iterators actually consumed.
+        String form=StackWalker.getInstance().walk(frames->frames
+                .filter(f->f.getClassName().startsWith("com.sun.tools.javac."))
+                .filter(f->!f.getClassName().startsWith("com.sun.tools.javac.code.Scope")
+                        && !f.getClassName().startsWith("com.sun.tools.javac.util.Iterators"))
+                .findFirst().map(f->f.getClassName().equals("com.sun.tools.javac.comp.Resolve")?switch(f.getMethodName()) {
+                    case "findGlobalType", "findImmediateMemberType" -> "N";
+                    case "findFun", "findMethodInScope" -> "METHOD";
+                    case "findField" -> "FIELD";
+                    default -> null;
+                }:null).orElse(null));
         return ()->new java.util.Iterator<Object>() {
             final java.util.Iterator<?> iterator=original.iterator();
-            @Override public boolean hasNext(){return iterator.hasNext();}
+            private void observed() { if(form!=null && CURRENT.get()==trace && trace.suspended==0) {
+                var query=new Missing(form,binary(owner),name.toString());
+                if(trace.intrinsic.contains(owner))trace.predefined.add(query);
+                else if(!binary(owner).isEmpty())trace.query(query);
+            } }
+            @Override public boolean hasNext(){observed();return iterator.hasNext();}
             @Override public Object next(){
-                var value=iterator.next();
-                if(CURRENT.get()==trace && trace.suspended==0) {
+                observed();var value=iterator.next();
+                if(form==null && CURRENT.get()==trace && trace.suspended==0) {
                     String kind=field(value,"kind").toString();
-                    String form=switch(kind){case "VAR"->"FIELD";case "MTH"->"METHOD";case "TYP"->"N";default->null;};
-                    if(form!=null) {
-                        var query=new Missing(form,binary(owner),name.toString());
+                    String actual=switch(kind){case "VAR"->"FIELD";case "MTH"->"METHOD";case "TYP"->"N";default->null;};
+                    if(actual!=null) {
+                        var query=new Missing(actual,binary(owner),name.toString());
                         if(trace.intrinsic.contains(owner))trace.predefined.add(query);
                         else if(!binary(owner).isEmpty())trace.query(query);
                     }
@@ -155,13 +172,15 @@ public final class ReadOracleTrace {
                 || stack.contains("com.sun.tools.javac.code.Types.firstUnimplementedAbstractImpl:")
                 || stack.contains("com.sun.tools.javac.comp.Check.checkImplementations:")
                 || stack.contains("com.sun.tools.javac.comp.Annotate$AnnotationTypeMetadata.getAnnotationElements:"));
-        var description=binary(owner)+" projection="+(methods?"METHOD":"UNCLASSIFIED")
+        // Flow's exhaustiveness loop filters VAR && isEnum; its exact public proof domain is FIELD.
+        boolean fields=!namedFilter && stack.contains("com.sun.tools.javac.comp.Flow$AliveAnalyzer.exhausts:");
+        var description=binary(owner)+" projection="+(methods?"METHOD":fields?"FIELD":"UNCLASSIFIED")
                 +" filter="+(filter==null?"null":filter.getClass().getName())+" via "+stack;
         return ()->new java.util.Iterator<Object>() {
             final java.util.Iterator<?> iterator=original.iterator();
             private void observed() { if(CURRENT.get()==trace && trace.suspended==0) {
                 trace.scans.add(description);
-                if(methods)trace.query(new Missing("METHOD",binary(owner),""));
+                if(methods || fields)trace.query(new Missing(methods?"METHOD":"FIELD",binary(owner),""));
             } }
             @Override public boolean hasNext(){observed();return iterator.hasNext();}
             @Override public Object next(){observed();return iterator.next();}

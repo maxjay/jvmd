@@ -191,6 +191,12 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
         String name = node.getName().toString();
         if (name.equals("this") || name.equals("super") || methodSelect(getCurrentPath())) return null;
         var symbol = trees.getElement(getCurrentPath());
+        if (symbol instanceof VariableElement variable && variable.getKind() == ElementKind.ENUM_CONSTANT
+                && getCurrentPath().getParentPath().getLeaf() instanceof ConstantCaseLabelTree) {
+            // Enum labels resolve in the selector's type, not in the enclosing class's field scope.
+            t((TypeElement)variable.getEnclosingElement(),Keys.FIELD,name,node);
+            return null;
+        }
         if (symbol instanceof VariableElement variable && !(variable.getEnclosingElement() instanceof TypeElement))
             capturedFields(variable, name, node);
         var parent = getCurrentPath().getParentPath();
@@ -230,7 +236,10 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
 
     private void qualified(TreePath path) {
         var selected = trees.getElement(path);
-        if (selected instanceof PackageElement pkg) d(pkg.getQualifiedName().toString().replace('.', '/'),path.getLeaf());
+        // The first package identifier uses lexical/import lookup, not an unnamed-package type lookup.
+        // Later selections may instead denote a type within the already resolved package.
+        if (selected instanceof PackageElement pkg && path.getLeaf() instanceof MemberSelectTree)
+            d(pkg.getQualifiedName().toString().replace('.', '/'),path.getLeaf());
         if (!(path.getLeaf() instanceof MemberSelectTree selection) || selection.getIdentifier().contentEquals("*")) return;
         var qualifier = trees.getElement(new TreePath(path, selection.getExpression()));
         String name = selection.getIdentifier().toString();
@@ -238,7 +247,11 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
         if (!(qualifier instanceof TypeElement owner) || isError(owner)) return;
         t(owner,Keys.TYPE,"",selection);
         if (methodSelect(path)) return;
-        if (selected instanceof TypeElement && (!isError(selected) || typePosition(path)) || selected == null && members.has(owner,name,NamedMembers.TYPE))
+        var parent=path.getParentPath();
+        boolean expressionHead=parent!=null && (parent.getLeaf() instanceof MemberSelectTree next && next.getExpression()==selection
+                || parent.getLeaf() instanceof MemberReferenceTree reference && reference.getQualifierExpression()==selection);
+        if (selected instanceof TypeElement && (!isError(selected) || typePosition(path) || expressionHead)
+                || selected == null && members.has(owner,name,NamedMembers.TYPE))
             memberReads(owner.asType(),name,selection,new HashSet<>());
     }
 
@@ -279,8 +292,15 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
 
     private List<TypeElement> enclosing() {
         var out = new ArrayList<TypeElement>();
-        for (var path = getCurrentPath(); path != null; path = path.getParentPath())
-            if (path.getLeaf() instanceof ClassTree && trees.getElement(path) instanceof TypeElement type) out.add(type);
+        Tree child=null;
+        for (var path = getCurrentPath(); path != null; child=path.getLeaf(),path = path.getParentPath()) {
+            if (!(path.getLeaf() instanceof ClassTree declaration)) continue;
+            // The class's base-clause environment contains its type variables, but not its own/inherited members.
+            if (child == declaration.getExtendsClause() || declaration.getImplementsClause().contains(child)
+                    || declaration.getPermitsClause().contains(child) || declaration.getTypeParameters().contains(child)
+                    || child == declaration.getModifiers()) continue;
+            if (trees.getElement(path) instanceof TypeElement type) out.add(type);
+        }
         return out;
     }
 
@@ -330,7 +350,7 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
             case ARRAY -> {
                 var array = (ArrayType)mirror;
                 noteType(array.getComponentType(),node,seen);
-                for (var parent : types.directSupertypes(array)) noteType(parent,node,seen);
+                // Array marker interfaces are observed only if native conversion actually asks about them.
             }
             case TYPEVAR -> { var variable = (TypeVariable)mirror;noteType(variable.getUpperBound(),node,seen);noteType(variable.getLowerBound(),node,seen); }
             case WILDCARD -> { var wildcard = (WildcardType)mirror;noteType(wildcard.getExtendsBound(),node,seen);noteType(wildcard.getSuperBound(),node,seen); }

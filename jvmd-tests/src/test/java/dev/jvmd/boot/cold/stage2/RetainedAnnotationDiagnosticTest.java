@@ -1,0 +1,73 @@
+package dev.jvmd.boot.cold.stage2;
+
+import dev.jvmd.core.hash.Digest;
+import dev.jvmd.core.hash.digests.Sha256;
+import dev.jvmd.index.layer.machine.ClassFacts;
+import dev.jvmd.index.layer.machine.Fact;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Locale;
+import java.util.stream.Stream;
+import javax.tools.DiagnosticCollector;
+import javax.tools.JavaFileObject;
+import javax.tools.ToolProvider;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** Independent native evidence for the still-open retained-annotation diagnostic projection. */
+@Tag("phase-3")
+class RetainedAnnotationDiagnosticTest {
+    @TempDir Path directory;
+    static Stream<Digest> digests() { return Stream.of(Sha256.INSTANCE,new Digests.Sha3()); }
+
+    @ParameterizedTest @MethodSource("digests")
+    void changingOnlyRetainedMetadataChangesClientDiagnosticsWithEqualResolutionFacts(Digest digest) throws Exception {
+        var dependencies=Files.createDirectories(directory.resolve("dependencies"));
+        var output=Files.createDirectories(directory.resolve("output"));
+        var mode=directory.resolve("Mode.java");var annotation=directory.resolve("Ann.java");
+        var library=directory.resolve("Lib.java");var app=directory.resolve("App.java");
+        Files.writeString(mode,"package q; public enum Mode { X,Y }");
+        Files.writeString(annotation,"package q; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME) public @interface Ann { Mode value(); }");
+        String lib="package q; @Ann(Mode.X) public class Lib { public static int call(){return 1;} }";
+        Files.writeString(library,lib);
+        Files.writeString(app,"package p; public class App { int value(){return q.Lib.call();} }");
+        assertThat(compile(dependencies,dependencies,List.of(mode,annotation,library))).isEmpty();
+        var before=ClassFacts.of(digest,Files.readAllBytes(dependencies.resolve("q/Lib.class")),"q/Lib");
+        assertThat(compile(output,dependencies,List.of(app))).isEmpty();
+
+        // Keep Lib.class and Ann.class untouched. Only the enum's API loses a constant.
+        Files.writeString(mode,"package q; public enum Mode { Y }");
+        assertThat(compile(dependencies,dependencies,List.of(mode))).isEmpty();
+        var warnings=compile(output,dependencies,List.of(app));
+        assertThat(warnings).containsExactly("compiler.warn.unknown.enum.constant");
+        var client=Files.readAllBytes(output.resolve("p/App.class"));
+        var enumBytes=Files.readAllBytes(dependencies.resolve("q/Mode.class"));
+        var annotationBytes=Files.readAllBytes(dependencies.resolve("q/Ann.class"));
+
+        // Now change only Lib's annotation value; no source/options or resolution facts of the client change.
+        Files.writeString(library,lib.replace("Mode.X","Mode.Y"));
+        assertThat(compile(dependencies,dependencies,List.of(library))).isEmpty();
+        var after=ClassFacts.of(digest,Files.readAllBytes(dependencies.resolve("q/Lib.class")),"q/Lib");
+        assertThat(after.facts().stream().map(Fact::h).toList()).isEqualTo(before.facts().stream().map(Fact::h).toList());
+        assertThat(after.facts().stream().map(f->f.aEntry(digest)).filter(java.util.Objects::nonNull).map(e->e.h()).toList())
+                .isNotEqualTo(before.facts().stream().map(f->f.aEntry(digest)).filter(java.util.Objects::nonNull).map(e->e.h()).toList());
+        assertThat(Files.readAllBytes(dependencies.resolve("q/Mode.class"))).isEqualTo(enumBytes);
+        assertThat(Files.readAllBytes(dependencies.resolve("q/Ann.class"))).isEqualTo(annotationBytes);
+        assertThat(compile(output,dependencies,List.of(app))).isEmpty();
+        assertThat(Files.readAllBytes(output.resolve("p/App.class"))).isEqualTo(client);
+    }
+
+    private List<String> compile(Path output,Path dependencies,List<Path> sources) throws Exception {
+        var compiler=ToolProvider.getSystemJavaCompiler();var diagnostics=new DiagnosticCollector<JavaFileObject>();
+        try(var files=compiler.getStandardFileManager(diagnostics,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8)) {
+            var task=compiler.getTask(null,files,diagnostics,List.of("-proc:none","-implicit:none","-classpath",dependencies.toString(),"-d",output.toString()),
+                    null,files.getJavaFileObjectsFromPaths(sources));
+            assertThat(task.call()).as(diagnostics.getDiagnostics().toString()).isTrue();
+        }
+        return diagnostics.getDiagnostics().stream().map(d->d.getCode()).toList();
+    }
+}

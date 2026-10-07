@@ -263,6 +263,23 @@ public final class Pool implements AutoCloseable {
         }
     }
 
+    /** Lower and TransPatterns introduce constructors after the source-tree proof has been collected. */
+    private static final class EmissionReads extends com.sun.tools.javac.jvm.Gen {
+        private final Context context;
+        static void install(Context context) { context.put(genKey,(Context.Factory<com.sun.tools.javac.jvm.Gen>)EmissionReads::new); }
+        EmissionReads(Context context) { super(context);this.context=context; }
+        @Override public void visitNewClass(com.sun.tools.javac.tree.JCTree.JCNewClass node) {
+            var observations=(HierarchyReads)Types.instance(context);
+            if (observations.recording && node.constructor != null && node.constructor.owner instanceof Symbol.ClassSymbol symbol
+                    && symbol.classfile != null && symbol.classfile.getKind() == JavaFileObject.Kind.CLASS) {
+                observations.read(symbol.type);
+                // A constructor is a named query of this class, never an inherited method query.
+                observations.reads.add(new Proof.Range(Proof.T,symbol.flatName().toString().replace('.', '/'),Keys.METHOD,"<init>"));
+            }
+            super.visitNewClass(node);
+        }
+    }
+
     /** One explicitly supplied source; callers collect observations after analyze and before generate mutates trees. */
     public <T> Completed<T> withTask(JavaFileObject source, DiagnosticListener<? super JavaFileObject> diagnostics,
                                      Function<JavacTask, T> action) throws InterruptedException {
@@ -387,7 +404,7 @@ public final class Pool implements AutoCloseable {
                     });
                     if (context != previous) {
                         contexts++; previous = context; evicted.clear(); HierarchyReads.install(context);
-                        InternalReads.install(context); OwnReads.install(context, this::touch);
+                        InternalReads.install(context); EmissionReads.install(context); OwnReads.install(context, this::touch);
                     }
                     task.addTaskListener(new com.sun.source.util.TaskListener() {
                         @Override public void finished(com.sun.source.util.TaskEvent event) {

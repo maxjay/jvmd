@@ -40,6 +40,54 @@ public class ReadOracleInstrumentationTest {
         }
     }
 
+    @Test void emptyStaticImportScopesAreObservedAtTheirRequestedKindAndName() throws Exception {
+        var compiler=ToolProvider.getSystemJavaCompiler();var dependencies=Files.createDirectories(directory.resolve("dependencies"));
+        var first=directory.resolve("First.java");var second=directory.resolve("Second.java");
+        Files.writeString(first,"package q; public class First { public static Object pick(Object value){return value;} }");
+        Files.writeString(second,"package q; public class Second {}");
+        assertThat(compiler.run(null,null,null,"-proc:none","-d",dependencies.toString(),first.toString(),second.toString())).isZero();
+        var source=directory.resolve("App.java");
+        Files.writeString(source,"package p; import static q.First.*; import static q.Second.*; class App { Object value(){return pick(null);} }");
+        ReadOracleTrace.begin(new Row("p/App.java",List.of("p/App")));
+        assertThat(compiler.run(null,null,null,"-proc:none","-classpath",dependencies.toString(),"-d",directory.toString(),source.toString())).isZero();
+        var trace=ReadOracleTrace.finish();
+        assertThat(trace.queries()).contains(new ReadOracleTrace.Missing("N","q/First","Object"),
+                new ReadOracleTrace.Missing("N","q/Second","Object"),new ReadOracleTrace.Missing("METHOD","q/Second","pick"));
+        var previous=Files.readAllBytes(directory.resolve("p/App.class"));
+        Files.writeString(second,"package q; public class Second { public static String pick(String value){return value;} }");
+        assertThat(compiler.run(null,null,null,"-proc:none","-d",dependencies.toString(),second.toString())).isZero();
+        assertThat(compiler.run(null,null,null,"-proc:none","-classpath",dependencies.toString(),"-d",directory.toString(),source.toString())).isZero();
+        assertThat(Files.readAllBytes(directory.resolve("p/App.class"))).isNotEqualTo(previous);
+    }
+
+    @Test void nativeLexicalAndEnumQueriesDistinguishTheirActualScopes() throws Exception {
+        var compiler=ToolProvider.getSystemJavaCompiler();var dependencies=Files.createDirectories(directory.resolve("dependencies"));
+        var base=directory.resolve("Base.java");var lib=directory.resolve("Lib.java");var enumeration=directory.resolve("E.java");
+        Files.writeString(base,"package q; public class Base {}");
+        Files.writeString(lib,"package q; public class Lib { public static int call(){return 1;} }");
+        Files.writeString(enumeration,"package q; public enum E {A,B}");
+        assertThat(compiler.run(null,null,null,"-proc:none","-d",dependencies.toString(),base.toString(),lib.toString(),enumeration.toString())).isZero();
+        var source=directory.resolve("App.java");
+        for(int version=0;version<3;version++) {
+            Files.writeString(source,switch(version) {
+                case 0 -> "package p; import q.Lib; class App extends q.Base { int value(){return Lib.call();} }";
+                case 1 -> "package p; class App extends q.Base { int value(){return q.Lib.call();} }";
+                default -> "package p; class App extends q.Base { int value(q.E e){return switch(e){case A -> 1; case B -> 2;};} }";
+            });
+            ReadOracleTrace.begin(new Row("p/App.java",List.of("p/App")));
+            assertThat(compiler.run(null,null,null,"-proc:none","-classpath",dependencies.toString(),"-d",directory.toString(),source.toString())).isZero();
+            var trace=ReadOracleTrace.finish();
+            var inherited=new ReadOracleTrace.Missing("N","q/Base","q");
+            if(version>0)assertThat(trace.queries()).contains(inherited);
+            else assertThat(trace.queries()).doesNotContain(inherited);
+            assertThat(trace.absent()).doesNotContain(new ReadOracleTrace.Missing("D","q",""));
+            if(version==2) {
+                assertThat(trace.queries()).contains(new ReadOracleTrace.Missing("FIELD","q/E",""))
+                        .doesNotContain(new ReadOracleTrace.Missing("FIELD","q/Base","A"),new ReadOracleTrace.Missing("FIELD","java/lang/Object","A"));
+            }
+        }
+    }
+
     @Test void changingOnlyTheImplicitBoxingFactoryChangesNativeBytes() throws Exception {
         byte[] original;
         try(var input=Integer.class.getResourceAsStream("Integer.class")) { original=input.readAllBytes(); }

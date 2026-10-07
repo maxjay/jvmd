@@ -15,6 +15,7 @@ import javax.lang.model.element.TypeElement;
 final class SourceDeclarations {
     private final Boot boot;
     private final ProcessorElementProjection projection;
+    private final ProcessorElementProjection.Graph graph;
     private final javax.lang.model.util.Elements elements;
     private final TreeMap<byte[], Entry> entries = new TreeMap<>(Arrays::compareUnsigned);
 
@@ -22,6 +23,7 @@ final class SourceDeclarations {
         this.boot = boot;
         elements = compiled.elements;
         projection = new ProcessorElementProjection(compiled.elements, compiled.types);
+        graph=projection.graph(boot.digest,(id,bytes)->boot.store.put(LocalStore.processorDeclarationKey(id),bytes));
     }
 
     void add(String path, List<TypeElement> declared, javax.lang.model.element.PackageElement pkg, List<FileRow.Fault> faults) {
@@ -38,7 +40,7 @@ final class SourceDeclarations {
             var previous = entries.get(key);
             if (previous != null && previous.value()[0] != 2) return;
             Entry entry;
-            try { entry = ProcessorSources.available(boot.tree, key, projection.packageHeader(pkg, path)); }
+            try { entry = ProcessorSources.available(boot.tree, key, path, graph.node(pkg)); }
             catch (RuntimeException incomplete) {
                 String reason = incomplete.getClass().getSimpleName() + ": " + incomplete.getMessage();
                 entry = ProcessorSources.unavailable(boot.tree, key, path, reason);
@@ -78,7 +80,7 @@ final class SourceDeclarations {
         var key = projection.key(type);
         if (entries.containsKey(key)) return; // the header compiler already reports duplicate source declarations
         Entry entry;
-        try { entry = ProcessorSources.available(boot.tree, key, projection.of(type, path)); }
+        try { entry = ProcessorSources.available(boot.tree, key, path, graph.node(type)); }
         catch (RuntimeException incomplete) {
             String reason = incomplete.getClass().getSimpleName() + ": " + incomplete.getMessage();
             entry = ProcessorSources.unavailable(boot.tree, key, path, reason);

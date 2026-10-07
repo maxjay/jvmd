@@ -149,6 +149,15 @@ public final class Stage2 {
                 for (var diagnostics : new java.util.TreeMap<>(boot.headerDiagnostics).entrySet())
                     put(store, records, LocalStore.headerDiagnosticsKey(projectKey, diagnostics.getKey()), diagnostics.getValue().encode());
                 store.flush();
+                var packages=new java.util.HashMap<Identity,List<Entry>>();
+                java.util.function.Function<byte[],byte[]> bindingRecords=key->{
+                    var value=records.get(key);return value==null?store.get(key):value;
+                };
+                for(var module:model.modules())for(int scope:new int[]{LocalStore.MAIN,LocalStore.TEST}) {
+                    var root=dev.jvmd.index.layer.local.ProcessorSources.packageIndex(tree,projectKey,module.name(),scope,bindingRecords,boot.sink,packages);
+                    put(store,records,LocalStore.processorBindingKey(projectKey,module.name(),scope),
+                            dev.jvmd.index.layer.local.DefinerIndex.encodeRoot(root));
+                }
                 var entries = new ArrayList<Entry>(records.size());
                 var values=new java.util.HashSet<Identity>();
                 for (var e : records.entrySet()) {

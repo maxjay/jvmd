@@ -82,12 +82,13 @@ public final class Stage3 {
         }
         // A later module may revoke admission for processor bytes used by an earlier scope. Check after every worker finished.
         scopes.replaceAll((name, scope) -> admit(scope, generation));
-        var records=new TreeMap<byte[],Entry>(Arrays::compareUnsigned);var faults=new java.util.TreeSet<String>();int count=0;
+        var selections=new TreeMap<SourceUnit,List<Entry>>();var faults=new java.util.TreeSet<String>();int count=0;
         for(var module:model.modules())for(int scope:new int[]{LocalStore.MAIN,LocalStore.TEST}) {
             var result=scopes.get(module.name()+(scope==0?"/main":"/test"));
             var outputKey=LocalStore.outputKey(project,module.name(),scope);
-            records.put(outputKey,generation.record(outputKey,DefinerIndex.encodeRoot(result.output())));
+            selections.put(new SourceUnit(module.name(),scope,""),List.of(generation.record(outputKey,DefinerIndex.encodeRoot(result.output()))));
             for(var file:result.files()) {
+                var records=new TreeMap<byte[],Entry>(Arrays::compareUnsigned);
                 count++;var computed=file.computed();
                 if(computed.proof()!=null) {
                     var proofKey=LocalStore.proofKey(project,module.name(),scope,file.path());
@@ -107,9 +108,10 @@ public final class Stage3 {
                     }
                 }
                 for(var fault:computed.faults())faults.add(module.name()+"/"+scope+": "+file.path()+": "+fault);
+                selections.put(new SourceUnit(module.name(),scope,file.path()),List.copyOf(records.values()));
             }
         }
-        var bodies=generation.commitReferences(records);
+        var bodies=generation.commitUnitsFull(selections);
         return new Result(project,bodies,scopes,count,new ArrayList<>(faults),(System.nanoTime()-started)/1_000_000);
     }
 

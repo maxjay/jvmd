@@ -17,6 +17,7 @@ public final class ProcessorPlan {
     private final Function<byte[], byte[]> records;
     private final ProcessorRecords.Scope invocation;
     private final LocalRoot committed;
+    private ProcessorSources.Binding sources;
 
     private ProcessorPlan(ContentTree tree, LocalRoot local, Identity project, String module, int scope,
                           Function<byte[], byte[]> records) {
@@ -45,8 +46,9 @@ public final class ProcessorPlan {
     }
 
     /** Bind source metadata by its committed module/scope origins, independently of the invocation plan. */
-    public ProcessorSources.Binding sources() {
-        return ProcessorSources.bind(tree, committed, project, module, scope, records);
+    public synchronized ProcessorSources.Binding sources() {
+        if(sources==null)sources=ProcessorSources.bind(tree, committed, project, module, scope, records);
+        return sources;
     }
 
     /** Only an observed question has an answer. Never substitute a post-processing or whole-module snapshot. */

@@ -135,8 +135,8 @@ class ProcessorReuseMeasurement {
         var observations = ProcessorHost.overlayObservations(plan.currentInvocation()).orElseThrow();
         var module = ModuleRecord.decode(generation.local(LocalStore.moduleKey(project, "app")));
         var options = Attribute.Options.processed(digest, module, Stage2Support.JDK, plan.invocation());
-        var selected = new TreeMap<byte[], byte[]>(Arrays::compareUnsigned);
-        var results = new ArrayList<ResultRecord>();
+        var selected = new TreeMap<SourceUnit,List<Entry>>();
+        var oldResults = new ArrayList<ResultRecord>();var results = new ArrayList<ResultRecord>();
         var attributed = new TreeSet<String>(); var served = new TreeSet<String>();
         long validationNanos = 0, attributeNanos = 0;
         try (var stubs = new StubDirectories(tree, generation, k -> MachineLeaf.decode(generation.get(MachineStore.leafKey(k)), digest.width()))) {
@@ -153,35 +153,38 @@ class ProcessorReuseMeasurement {
                     validationNanos += System.nanoTime() - started;
                     Attribute.Computed computed;
                     if (valid) {
-                        var aci = proof.aci(digest, row.path().substring(row.path().lastIndexOf('/') + 1), row.kappa(), options.hash());
-                        var bytes = generation.get(LocalStore.resultKey(aci));
-                        assertThat(bytes).as("reusable RS " + row.path()).isNotNull();
-                        computed = new Attribute.Computed(aci, ResultRecord.decode(bytes, digest.width()), proof,
-                                UsesRecord.decode(generation.get(LocalStore.usesKey(aci))), List.of());
                         served.add(row.path());
+                        continue; // already selected by its unchanged rooted unit manifest
                     } else {
+                        var oldAci=proof.aci(digest,row.path().substring(row.path().lastIndexOf('/')+1),
+                                previous.rows().get(row.path()).kappa(),previous.options());
+                        oldResults.add(ResultRecord.decode(generation.get(LocalStore.resultKey(oldAci)),digest.width()));
                         started = System.nanoTime();
                         computed = attribute.run(row, dir.resolve(row.path()).toUri(), Files.readAllBytes(dir.resolve(row.path())));
                         attributeNanos += System.nanoTime() - started; attributed.add(row.path());
                     }
                     assertThat(computed.reusable()).as(row.path() + ": " + computed.faults()).isTrue();
                     assertThat(computed.result().attributed()).as(row.path() + ": " + computed.result().diagnostics()).isTrue();
-                    selected.put(LocalStore.proofKey(project, "app", 0, row.path()), computed.proof().encode());
-                    selected.put(LocalStore.resultKey(computed.aci()), computed.result().encode());
-                    selected.put(LocalStore.usesKey(computed.aci()), computed.uses().encode());
+                    var entries=new ArrayList<Entry>();
+                    entries.add(generation.record(LocalStore.proofKey(project, "app", 0, row.path()), computed.proof().encode()));
+                    entries.add(generation.record(LocalStore.resultKey(computed.aci()), computed.result().encode()));
+                    entries.add(generation.record(LocalStore.usesKey(computed.aci()), computed.uses().encode()));
                     results.add(computed.result());
                     for (var dependency : ReverseIndex.dependencies(computed.proof()))
-                        selected.put(ReverseIndex.bodyKey(dependency, project, "app", 0, row.path()), Entry.NONE);
+                        entries.add(generation.record(ReverseIndex.bodyKey(dependency, project, "app", 0, row.path()), Entry.NONE));
                     for (var c : computed.result().classFiles()) {
-                        selected.put(LocalStore.classFileKey(c.contentHash()), generation.get(LocalStore.classFileKey(c.contentHash())));
+                        entries.add(java.util.Objects.requireNonNull(generation.reference(LocalStore.classFileKey(c.contentHash()))));
                     }
+                    selected.put(new SourceUnit("app",0,row.path()),List.copyOf(entries));
                 }
                 assertThat(pool.statistics().tasks()).isEqualTo(attributed.size());
             }
         }
-        selected.put(LocalStore.outputKey(project, "app", 0), DefinerIndex.encodeRoot(Output.build(tree, generation, results)));
-        selected.put(LocalStore.outputKey(project, "app", 1), DefinerIndex.encodeRoot(Output.build(tree, generation, List.of())));
-        generation.commit(selected);
+        var outputKey=LocalStore.outputKey(project,"app",0);
+        var oldOutput=DefinerIndex.decodeRoot(generation.get(outputKey),digest.width());
+        var nextOutput=Output.apply(tree,generation,oldOutput,oldResults,results);
+        selected.put(new SourceUnit("app",0,""),List.of(generation.record(outputKey,DefinerIndex.encodeRoot(nextOutput))));
+        generation.commitUnitsDelta(selected,Set.of());
         return new Reused(current, attributed, served, validationNanos, attributeNanos);
     }
 

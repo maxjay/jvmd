@@ -303,18 +303,46 @@ class ProcessorSourcesTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void f10QueryWorkIsIndependentOfIrrelevantRouteLength(Digest digest) throws Exception {
+        var state=initial(digest);var tree=state.tree();var store=state.store();
+        var key=LocalStore.routeKey(state.project(),"app",0);
+        var route=Route.decode(store.get(key),digest.width());Long baseline=null;
+        for(int size:new int[]{0,128,4096}) {
+            var entries=new java.util.ArrayList<>(route.entries());
+            for(int i=0;i<size;i++)entries.add(route.entries().getFirst());
+            var bytes=new Route(entries,route.routeHash(),route.r(),route.leafSetExt(),route.leafSetSib()).encode();
+            var hash=digest.hash(bytes);store.put(LocalStore.bodyValueKey(hash),bytes);store.flush();
+            var changed=tree.apply(state.local().local(),List.of(key),List.of(new dev.jvmd.core.tree.Entry(key,new byte[0],hash)),
+                    id->store.get(dev.jvmd.index.layer.machine.MachineStore.nodeKey(id)),store);store.flush();
+            var local=LocalRoot.decode(digest,LocalRoot.encode(digest,state.local().format(),changed,state.local().machineRoot(),state.local().modelHash()));
+            var bound=ProcessorSources.bind(tree,local,state.project(),"app",0,store::get);
+            int before=store.events().size();
+            for(int i=0;i<100;i++) {
+                assertThat(bound.apply("missing/T"+i)).isNull();
+                assertThat(bound.packageHeader("missing.p"+i)).isNull();
+                assertThat(bound.packageExists("missing.p"+i)).isFalse();
+            }
+            long reads=store.events().subList(before,store.events().size()).stream().filter(e->e.equals("read:N")).count();
+            if(baseline==null)baseline=reads;else assertThat(reads).isEqualTo(baseline);
+            System.out.println("F10 "+digest.getClass().getSimpleName()+" extra route origins="+size+" node reads="+reads);
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void packageBindingUsesPackageInfoOriginsEvenWhenTypeLeavesAreEqual(Digest digest) throws Exception {
-        Stage2Support.write(dir,Map.of("a/src/main/java/p/A.java","package p; public class A {}",
+        Stage2Support.write(dir,Map.of("a/src/main/java/p/A.java","package p; /** first type */ public class A {}",
                 "a/src/main/java/p/package-info.java","/** first */ package p;",
-                "b/src/main/java/p/A.java","package p; public class A {}",
+                "b/src/main/java/p/A.java","package p; /** second type */ public class A {}",
                 "b/src/main/java/p/package-info.java","/** second */ package p;",PATH,"package p; public class Input {}"));
         var a=new Stage2Support.Mod("a","g:a:1",List.of());var b=new Stage2Support.Mod("b","g:b:1",List.of());
         var app=new Stage2Support.Mod("app","g:app:1",List.of(Stage2Support.Dep.module("g:a:1","a"),Stage2Support.Dep.module("g:b:1","b")));
         var first=boot(digest,ProjectModel.parse(Stage2Support.model(dir,a,b,app)),Stage2Support.jdkOnly(digest).copy(),2);
         assertThat(first.result().leaves().get("a/main")).isEqualTo(first.result().leaves().get("b/main"));
+        assertThat(ProcessorSources.bind(first.tree(),first.local(),first.project(),"app",0,first.store()::get).apply("p/A").declaration().docComment()).isEqualTo("first type ");
         assertThat(ProcessorSources.bind(first.tree(),first.local(),first.project(),"app",0,first.store()::get).packageHeader("p").declaration().docComment()).isEqualTo("first ");
         var reversed=new Stage2Support.Mod("app","g:app:1",List.of(Stage2Support.Dep.module("g:b:1","b"),Stage2Support.Dep.module("g:a:1","a")));
         var second=boot(digest,ProjectModel.parse(Stage2Support.model(dir,a,b,reversed)),first.store().copy(),2);
+        assertThat(ProcessorSources.bind(second.tree(),second.local(),second.project(),"app",0,second.store()::get).apply("p/A").declaration().docComment()).isEqualTo("second type ");
         assertThat(ProcessorSources.bind(second.tree(),second.local(),second.project(),"app",0,second.store()::get).packageHeader("p").declaration().docComment()).isEqualTo("second ");
         var jar=Stage2Support.pack(dir.resolve("package.jar"),Stage2Support.compile(dir.resolve("binary-package"),
                 Map.of("p/package-info.java","@Deprecated package p;"),List.of(),List.of()));
@@ -346,10 +374,48 @@ class ProcessorSourcesTest {
         assertThatThrownBy(() -> ProcessorDeclaration.decode(bytes)).isInstanceOf(IllegalArgumentException.class);
         var key = dev.jvmd.index.layer.machine.Keys.typeKey("p/Input");
         var entry = state.tree().get(state.sources("app", 0).root().hash(), h -> state.store().get(dev.jvmd.index.layer.machine.MachineStore.nodeKey(h)), key);
-        var projection = java.util.Arrays.copyOfRange(entry.value(), 1, entry.value().length);
-        assertThatThrownBy(() -> ProcessorDeclaration.decode(java.util.Arrays.copyOf(projection, projection.length - 1)))
+        var reference=new dev.jvmd.core.tree.Codec.Reader(entry.value());
+        assertThat(reference.u8()).isEqualTo(3);reference.zstr();var id=reference.id(digest.width());
+        var projection=state.store().get(LocalStore.processorDeclarationKey(id));
+        var truncated=java.util.Arrays.copyOf(projection,projection.length-1);
+        var trailing=java.util.Arrays.copyOf(projection,projection.length+1);
+        assertThatThrownBy(() -> new ProcessorDeclaration.Graph(digest,ignored->truncated).get(digest.hash(truncated)))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> ProcessorDeclaration.decode(java.util.Arrays.copyOf(projection, projection.length + 1)))
-                .hasMessage("Trailing processor declaration bytes");
+        assertThatThrownBy(() -> new ProcessorDeclaration.Graph(digest,ignored->trailing).get(digest.hash(trailing)))
+                .hasMessage("Trailing processor declaration node bytes");
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void f13NestedDeclarationsUseSharedNodesAndLazyDirectReads(Digest digest) throws Exception {
+        for(int depth:new int[]{4,16,64}) {
+            var source=new StringBuilder("package p; public class Input {");
+            for(int i=0;i<depth;i++)source.append("static class N").append(Integer.toString(i,36)).append(" {");
+            source.append("/** ").append("metadata ".repeat(1024)).append("*/ int value;");
+            source.append("}".repeat(depth+1));
+            Stage2Support.write(dir,Map.of(PATH,source.toString()));
+            var state=boot(digest,model(),Stage2Support.jdkOnly(digest).copy(),1);
+            assertThat(state.result().faults()).isEmpty();
+            var sources=state.sources("app",0);
+            state.tree().forEach(sources.root().hash(),id->state.store().get(dev.jvmd.index.layer.machine.MachineStore.nodeKey(id)),entry->{
+                if(entry.value()[0]==3)assertThat(entry.value()).hasSizeLessThan(128);
+            });
+            var watched=new java.util.ArrayList<java.util.concurrent.atomic.AtomicInteger>();
+            state.store().withPrefix("PE").keySet().forEach(key->watched.add(state.store().watchReads(key)));
+            var declaration=sources.type("p/Input").declaration();
+            assertThat(watched.stream().mapToInt(java.util.concurrent.atomic.AtomicInteger::get).sum()).isOne();
+            String name="p/Input";
+            for(int i=0;i<depth;i++) {
+                name+="$N"+Integer.toString(i,36);
+                var direct=sources.type(name).declaration();
+                assertThat(member(declaration,"N"+Integer.toString(i,36))).isSameAs(direct);
+                declaration=direct;
+            }
+            assertThat(member(declaration,"value").docComment()).contains("metadata");
+            assertThat(watched).allSatisfy(count->assertThat(count.get()).isLessThanOrEqualTo(1));
+            var leaf=declaration;
+            assertThatThrownBy(()->type(leaf).enclosed().clear()).isInstanceOf(UnsupportedOperationException.class);
+            long bytes=state.store().withPrefix("PE").values().stream().mapToLong(value->value.length).sum();
+            System.out.println("F13 "+digest.getClass().getSimpleName()+" nesting="+depth+" declarations="+watched.size()+" bytes="+bytes);
+        }
     }
 }

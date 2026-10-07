@@ -29,20 +29,20 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
                                   List<Type> interfaces, List<Type> permitted, List<ProcessorDeclaration> components,
                                   List<ProcessorDeclaration> enclosed) implements Detail {
         public TypeDeclaration {
-            parameters = List.copyOf(parameters); interfaces = List.copyOf(interfaces); permitted = List.copyOf(permitted);
-            components = List.copyOf(components); enclosed = List.copyOf(enclosed);
+            parameters = immutable(parameters); interfaces = List.copyOf(interfaces); permitted = List.copyOf(permitted);
+            components = immutable(components); enclosed = immutable(enclosed);
         }
     }
     public record Executable(List<ProcessorDeclaration> typeParameters, Type returns, Type receiver,
                              List<ProcessorDeclaration> parameters, List<Type> thrown, boolean varargs, boolean defaultMethod,
                              boolean bridge, boolean compactConstructor, boolean canonicalConstructor,
                              Ann.Val explicitDefault, Ann.Val effectiveDefault) implements Detail {
-        public Executable { typeParameters = List.copyOf(typeParameters); parameters = List.copyOf(parameters); thrown = List.copyOf(thrown); }
+        public Executable { typeParameters = immutable(typeParameters); parameters = immutable(parameters); thrown = List.copyOf(thrown); }
     }
     public record Variable(Type type, Ann.Val constant) implements Detail { }
     public record Parameter(List<Type> bounds) implements Detail { public Parameter { bounds = List.copyOf(bounds); } }
     public record Package(String qualifiedName, List<ProcessorDeclaration> enclosed) implements Detail {
-        public Package { enclosed = List.copyOf(enclosed); }
+        public Package { enclosed = immutable(enclosed); }
     }
     /** Package metadata only; membership remains a separate query over native package scopes. */
     public record PackageHeader(String qualifiedName) implements Detail { }
@@ -74,6 +74,37 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
         var result = new Source(in.zstr(), declaration(in));
         if (in.remaining() != 0) throw new IllegalArgumentException("Trailing processor declaration bytes");
         return result;
+    }
+
+    /** Decodes an accessed declaration once. Child nodes remain lazy until that exact child is requested. */
+    public static final class Graph {
+        private final dev.jvmd.core.hash.Digest digest;
+        private final java.util.function.Function<dev.jvmd.core.hash.Identity,byte[]> nodes;
+        private final java.util.Map<dev.jvmd.core.hash.Identity,ProcessorDeclaration> decoded=new java.util.concurrent.ConcurrentHashMap<>();
+        public Graph(dev.jvmd.core.hash.Digest digest,java.util.function.Function<dev.jvmd.core.hash.Identity,byte[]> nodes) {
+            this.digest=digest;this.nodes=nodes;
+        }
+        public ProcessorDeclaration get(dev.jvmd.core.hash.Identity id) {
+            return decoded.computeIfAbsent(id,key->{
+                var bytes=nodes.apply(key);
+                if(bytes==null || !digest.hash(bytes).equals(key))throw new IllegalStateException("Processor declaration node digest mismatch");
+                var in=new Reader(bytes);in.graph=this;in.width=digest.width();
+                if(in.u8()!=1)throw new IllegalArgumentException("Unknown processor declaration node format");
+                var result=declaration(in);
+                if(in.remaining()!=0)throw new IllegalArgumentException("Trailing processor declaration node bytes");
+                return result;
+            });
+        }
+    }
+    private static List<ProcessorDeclaration> immutable(List<ProcessorDeclaration> values) {
+        return values instanceof References?values:List.copyOf(values);
+    }
+    private static final class References extends java.util.AbstractList<ProcessorDeclaration> implements java.util.RandomAccess {
+        private final List<dev.jvmd.core.hash.Identity> ids;
+        private final Graph graph;
+        References(List<dev.jvmd.core.hash.Identity> ids,Graph graph) {this.ids=List.copyOf(ids);this.graph=graph;}
+        @Override public ProcessorDeclaration get(int index) {return graph.get(ids.get(index));}
+        @Override public int size() {return ids.size();}
     }
 
     private static ProcessorDeclaration declaration(Reader in) {
@@ -123,7 +154,14 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
 
     private static Type optionalType(Reader in) { return flag(in) ? type(in) : null; }
     private static List<Type> types(Reader in) { return list(in, () -> type(in)); }
-    private static List<ProcessorDeclaration> declarations(Reader in) { return list(in, () -> declaration(in)); }
+    private static List<ProcessorDeclaration> declarations(Reader in) {
+        if(in.graph==null)return list(in,()->declaration(in));
+        int count=in.count();
+        if(count>in.remaining()/in.width)throw new IllegalArgumentException("Truncated declaration references");
+        var ids=new ArrayList<dev.jvmd.core.hash.Identity>();
+        for(int i=0;i<count;i++)ids.add(in.in.id(in.width));
+        return new References(ids,in.graph);
+    }
     private static List<Annotation> annotations(Reader in) {
         return list(in, () -> new Annotation(annotation(in), annotation(in), Elements.Origin.valueOf(in.str())));
     }
@@ -160,6 +198,8 @@ public record ProcessorDeclaration(ElementKind kind, String name, Key key, Strin
     /** Check lengths before allocating: a malformed declaration must not turn a corrupt length into a large allocation. */
     private static final class Reader {
         private final Codec.Reader in;
+        private Graph graph;
+        private int width;
         Reader(byte[] bytes) { in = new Codec.Reader(bytes); }
         int remaining() { return in.remaining(); }
         void require(int count) {

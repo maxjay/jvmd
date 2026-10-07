@@ -41,12 +41,23 @@ public final class GeneratedOutputs {
     }
 
     public static Root persist(Digest digest, ContentTree tree, LocalStore store, NodeSink sink, Identity derivation, List<Output> outputs) {
+        return persist(digest,tree,store,sink,derivation,outputs,null);
+    }
+    /** A caller with known derivation ancestry can edit its prior manifest. A cold caller supplies no invented parent. */
+    public static Root persist(Digest digest,ContentTree tree,LocalStore store,NodeSink sink,Identity derivation,List<Output> outputs,Root parent) {
         // Store puts are thread-local batches. Serialize publication and flush before unlocking so another module cannot
         // miss an in-flight GEN value (or write the same GS/blob twice). This lock spans only generated-manifest storage.
-        synchronized (store) { return persistLocked(digest, tree, store, sink, derivation, outputs); }
+        synchronized (store) { return persistLocked(digest, tree, store, sink, derivation, outputs,parent); }
     }
 
-    private static Root persistLocked(Digest digest, ContentTree tree, LocalStore store, NodeSink sink, Identity derivation, List<Output> outputs) {
+    private static Root persistLocked(Digest digest, ContentTree tree, LocalStore store, NodeSink sink, Identity derivation, List<Output> outputs,Root parent) {
+        var derivationKey=LocalStore.generatedKey(derivation);
+        var previous=store.get(derivationKey);
+        if(previous!=null) {
+            var root=DefinerIndex.decodeRoot(previous,digest.width());
+            if(!matches(tree,root,id->store.get(MachineStore.nodeKey(id)),outputs))throw new Inconsistent();
+            return root;
+        }
         var entries = new TreeMap<byte[], Entry>(Arrays::compareUnsigned);
         var seen = new HashSet<Identity>();
         for (var output : outputs) {
@@ -57,21 +68,18 @@ public final class GeneratedOutputs {
             if (seen.add(content) && store.get(LocalStore.generatedSourceKey(content)) == null)
                 store.put(LocalStore.generatedSourceKey(content), output.bytes());
         }
-        var nodes = new HashSet<Identity>();
-        var root = tree.build(new ArrayList<>(entries.values()), new NodeSink() {
-            @Override public void write(dev.jvmd.core.tree.Node node) {
-                if (nodes.add(node.hash()) && store.get(MachineStore.nodeKey(node.hash())) == null) sink.write(node);
-            }
-            @Override public void flush() { sink.flush(); }
-        });
-        var key = LocalStore.generatedKey(derivation);
-        var previous = store.get(key);
-        if (previous != null) {
-            if (!DefinerIndex.decodeRoot(previous, digest.width()).hash().equals(root.hash())) throw new Inconsistent();
-        } else {
-            sink.flush(); // make all referenced nodes and blobs visible before publishing their derivation
-            store.put(key, DefinerIndex.encodeRoot(root));
+        Root root;
+        if(parent==null)root=tree.build(entries.values(),sink);
+        else {
+            var removed=new ArrayList<byte[]>();
+            tree.forEach(parent.hash(),id->store.get(MachineStore.nodeKey(id)),entry->{
+                var next=entries.get(entry.key());
+                if(next==null || !next.h().equals(entry.h()))removed.add(entry.key());else entries.remove(entry.key());
+            });
+            root=tree.apply(parent,removed,new ArrayList<>(entries.values()),id->store.get(MachineStore.nodeKey(id)),sink);
         }
+        sink.flush(); // nodes/blobs are visible before publishing their derivation
+        store.put(derivationKey, DefinerIndex.encodeRoot(root));
         store.flush();
         return root;
     }

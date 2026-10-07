@@ -78,10 +78,11 @@ public interface LocalStore extends MachineStore {
         return join("MAT|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope}, "|", directory.view());
     }
     static byte[] bodiesRootKey(Identity projectKey) { return join("BROOT|", projectKey.view()); }
+    static byte[] bodySelectionKey(Identity projectKey) { return join("BM|", projectKey.view()); }
     static byte[] bodiesRootHistoryKey(Identity projectKey, int n) {
-        return join("BROOT|", projectKey.view(), "|8|", new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes());
+        return join("BROOT|", projectKey.view(), "|9|", new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes());
     }
-    static byte[] bodiesSequenceKey(Identity projectKey) { return join("BSEQ|8|", projectKey.view()); }
+    static byte[] bodiesSequenceKey(Identity projectKey) { return join("BSEQ|9|", projectKey.view()); }
     static byte[] definerStateKey(Identity leafSet) { return join("DF|", leafSet.view()); }
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }
     static byte[] stubTypeKey(Identity stKey) { return join("ST|", stKey.view()); }
@@ -101,6 +102,11 @@ public interface LocalStore extends MachineStore {
     static byte[] processorSourcesKey(Identity projectKey, String module, int scope) {
         return join("PM|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
     }
+    /** Origin-aware package metadata/presence binding; T definitions use the existing DD/DS/DC indexes. */
+    static byte[] processorBindingKey(Identity projectKey, String module, int scope) {
+        return join("PB|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
+    }
+    static byte[] processorDeclarationKey(Identity node) { return join("PE|",node.view()); }
     /** An actual native module package query, separated from the source declaration and descriptor projections. */
     static byte[] processorModuleQueryKey(Identity projectKey, String module, int scope, ProcessorModuleQuery query) {
         return join("PQ|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope},

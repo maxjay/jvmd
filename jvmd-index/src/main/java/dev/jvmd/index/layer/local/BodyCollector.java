@@ -30,6 +30,7 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
     private final Set<String> own = new HashSet<>();
     private final Map<Tree, TreePath> paths = new IdentityHashMap<>();
     private final Map<String, List<TypeElement>> closures = new HashMap<>();
+    private final NamedMembers members = new NamedMembers();
     private final Map<Proof.Range, Set<UsesRecord.Span>> ranges = new TreeMap<>();
     private final Map<String, Set<UsesRecord.Span>> absent = new TreeMap<>();
     private final Set<String> packages = new LinkedHashSet<>();
@@ -237,8 +238,7 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
         if (!(qualifier instanceof TypeElement owner) || isError(owner)) return;
         t(owner,Keys.TYPE,"",selection);
         if (methodSelect(path)) return;
-        if (selected instanceof TypeElement && (!isError(selected) || typePosition(path)) || selected == null && owner.getEnclosedElements().stream()
-                .anyMatch(e -> e instanceof TypeElement && e.getSimpleName().contentEquals(name)))
+        if (selected instanceof TypeElement && (!isError(selected) || typePosition(path)) || selected == null && members.has(owner,name,NamedMembers.TYPE))
             memberReads(owner.asType(),name,selection,new HashSet<>());
     }
 
@@ -286,7 +286,7 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
         for (var type : roots(receiver)) {
             if (!seen.add(binary(type))) continue;
             t(type,Keys.TYPE,"",node);t(type,Keys.FIELD,name,node);
-            if (type.getEnclosedElements().stream().anyMatch(e -> e instanceof VariableElement && e.getSimpleName().contentEquals(name))) found = true;
+            if (members.has(type,name,NamedMembers.FIELD)) found = true;
             else for (var parent : types.directSupertypes(type.asType())) found |= fieldReads(parent,name,node,seen);
         }
         return found;
@@ -297,7 +297,7 @@ final class BodyCollector extends TreePathScanner<Void, Void> {
             if (!seen.add(binary(type))) continue;
             t(type,Keys.TYPE,"",node);
             n(type,name,node);
-            if (type.getEnclosedElements().stream().anyMatch(e -> e instanceof TypeElement && e.getSimpleName().contentEquals(name))) continue;
+            if (members.has(type,name,NamedMembers.TYPE)) continue;
             for (var parent : types.directSupertypes(type.asType())) memberReads(parent,name,node,seen);
         }
     }

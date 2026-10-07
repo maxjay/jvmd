@@ -30,11 +30,12 @@ class GeneratedOutputsTest {
         var firstId = digest.hash(Stage2Support.text("first"));
         var secondId = digest.hash(Stage2Support.text("second"));
         var bytes = List.of(output("A.java", "shared"));
+        var sink=new dev.jvmd.boot.cold.stage1.Written().throughShared(store);
         try (var workers = java.util.concurrent.Executors.newFixedThreadPool(2)) {
             var start = new java.util.concurrent.CyclicBarrier(2);
             var tasks = List.<java.util.concurrent.Callable<dev.jvmd.core.tree.Root>>of(
-                    () -> { start.await(); return GeneratedOutputs.persist(digest, tree, store, store, firstId, bytes); },
-                    () -> { start.await(); return GeneratedOutputs.persist(digest, tree, store, store, secondId, bytes); });
+                    () -> { start.await(); return GeneratedOutputs.persist(digest, tree, store, sink, firstId, bytes); },
+                    () -> { start.await(); return GeneratedOutputs.persist(digest, tree, store, sink, secondId, bytes); });
             var results = workers.invokeAll(tasks);
             assertThat(results.get(0).get().hash()).isEqualTo(results.get(1).get().hash());
         }
@@ -103,7 +104,7 @@ class GeneratedOutputsTest {
         store.flush();
         var editedStore = store.copy();
         outputs.set(1000, output("p/Generated1000.java", "changed"));
-        var after = GeneratedOutputs.persist(digest, tree, editedStore, editedStore, digest.hash(Stage2Support.text("after")), outputs);
+        var after = GeneratedOutputs.persist(digest, tree, editedStore, editedStore, digest.hash(Stage2Support.text("after")), outputs,before);
         editedStore.flush();
         assertThat(Diff.trees(digest, before, after, h -> editedStore.get(MachineStore.nodeKey(h))).added()).hasSize(1);
         assertThat(editedStore.recordWriteCount()).isEqualTo(2); // one GS blob and one GEN derivation

@@ -261,7 +261,7 @@ public final class DefinerIndex {
         private final Function<byte[], byte[]> records;
         private final Function<Identity, byte[]> nodes;
         private final Root dd, ds, dc;
-        private final Map<Identity, MachineLeaf> leaves = new HashMap<>();
+        private final Map<Identity, MachineLeaf> leaves = new java.util.concurrent.ConcurrentHashMap<>();
 
         public Reader(ContentTree tree, MachineLeaf own, Route route, Function<byte[], byte[]> records) {
             this.tree = tree;

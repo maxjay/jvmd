@@ -54,11 +54,25 @@ public final class BodyGeneration implements LocalStore {
     }
     public Entry record(byte[] key,byte[] value) { put(key,value);return pending.get(key); }
 
+    /** Previous references for one changed unit; callers need not scan the bodies inventory or fetch class bytes. */
+    public List<Entry> previousUnit(SourceUnit unit) {
+        open();
+        if(previous==null)return List.of();
+        var value=BodyRecords.read(tree,store,previous.bodiesRoot(),LocalStore.bodySelectionKey(project));
+        if(value==null)return List.of();
+        var state=BodySelection.State.decode(value,tree.digest().width());
+        var entry=tree.get(state.units().hash(),this::node,unit.encode());
+        if(entry==null)return List.of();
+        var manifest=DefinerIndex.decodeRoot(entry.value(),tree.digest().width());
+        var entries=new ArrayList<Entry>();tree.forEach(manifest.hash(),this::node,entries::add);
+        return List.copyOf(entries);
+    }
+
     @Override public byte[] get(byte[] key) {
         open();
         var entry=pending.get(key);
         if(entry!=null)return BodyRecords.value(tree,store,entry);
-        if(machine(key) || tag(key,"S") || tag(key,"ST") || tag(key,"PROC") || tag(key,"BV"))return store.get(key);
+        if(machine(key) || tag(key,"S") || tag(key,"ST") || tag(key,"PROC") || tag(key,"BV") || tag(key,"PE"))return store.get(key);
         if(!body(key) && !tag(key,"U"))return local(key);
         if(previous==null)return null;
         if(tag(key,"U")) {
@@ -116,47 +130,55 @@ public final class BodyGeneration implements LocalStore {
         selected.forEach((key,value)->references.put(key,record(key,value)));
         return commitReferences(references);
     }
-    /** Complete cold selection. Incremental callers need changed selections rather than reconstructing this map. */
+    /** Compatibility complete selection, represented as one explicit compilation selection. */
     public synchronized BodiesRoot commitReferences(Map<byte[],Entry> selected) {
+        selected.forEach((key,entry)->{if(!Arrays.equals(key,entry.key()))throw new IllegalArgumentException("Invalid body selection");});
+        return commitUnitsFull(selected.isEmpty()?Map.of():Map.of(new SourceUnit("",0,""),selected.values()));
+    }
+    /** Cold callers select every unit; only this entry point enumerates prior unit names to detect removed units. */
+    public synchronized BodiesRoot commitUnitsFull(Map<SourceUnit,? extends Collection<Entry>> selected) {
+        return commitUnits(selected,Set.of(),true);
+    }
+    /** Delta callers supply changed and retired units only. An empty path is reserved for a scope's OUT selection. */
+    public synchronized BodiesRoot commitUnitsDelta(Map<SourceUnit,? extends Collection<Entry>> changed,Set<SourceUnit> retired) {
+        return commitUnits(changed,retired,false);
+    }
+    private BodiesRoot commitUnits(Map<SourceUnit,? extends Collection<Entry>> changed,Set<SourceUnit> retired,boolean complete) {
         open();
-        var current=new TreeMap<byte[],Entry>(Arrays::compareUnsigned);
-        selected.forEach((key,entry)->{
-            if((!body(key) && !tag(key,"U")) || !Arrays.equals(key,entry.key()))throw new IllegalArgumentException("Invalid body selection");
-            var available=reference(key);
+        checkRoots();
+        for(var entries:changed.values())for(var entry:entries) {
+            if((!body(entry.key()) && !tag(entry.key(),"U")) || tag(entry.key(),"BM"))throw new IllegalArgumentException("Invalid body selection");
+            var available=reference(entry.key());
             if(available==null || !available.h().equals(entry.h()))throw new IllegalArgumentException("Unverified body reference");
-            current.put(key,entry);
-        });
+        }
+        var selectionKey=LocalStore.bodySelectionKey(project);
+        var oldSelection=previous==null?null:tree.get(previous.bodiesRoot(),this::node,selectionKey);
+        var state=oldSelection==null?null:BodySelection.State.decode(BodyRecords.value(tree,store,oldSelection),tree.digest().width());
+        var delta=BodySelection.apply(tree,this::node,this,state,changed,retired,complete);
+        var removed=new ArrayList<>(delta.removed());var added=new ArrayList<>(delta.added());
+        Entry selection=null;
+        if(delta.state().units().count()!=0)selection=record(selectionKey,delta.state().encode());
+        if(oldSelection==null?selection!=null:selection==null || !oldSelection.h().equals(selection.h())) {
+            if(oldSelection!=null)removed.add(oldSelection);
+            if(selection!=null)added.add(selection);
+        }
         synchronized(store) {
-            if(!Arrays.equals(localBytes,store.get(LocalStore.localRootKey(project)))
-                    || !Arrays.equals(previousBytes,store.get(LocalStore.bodiesRootKey(project)))
-                    || !Arrays.equals(machineBytes,store.get(MachineStore.ROOT_KEY)))
-                throw new IllegalStateException("Committed roots changed during body attribution");
-            Root base=local.local();var old=new TreeMap<byte[],Entry>(Arrays::compareUnsigned);
+            checkRoots();
+            Root base=local.local();
             if(previous!=null) {
                 var beforeLocal=tree.root(previous.localRoot(),this::node);var beforeBodies=tree.root(previous.bodiesRoot(),this::node);
                 var stage2=Diff.trees(tree.digest(),beforeLocal,local.local(),this::node);
                 base=apply(beforeBodies,stage2.removed(),stage2.added());
-                var bodyRecords=Diff.trees(tree.digest(),beforeLocal,beforeBodies,this::node);
-                if(!bodyRecords.removed().isEmpty())throw new IllegalStateException("Previous BROOT replaced LOCAL entries");
-                for(var entry:bodyRecords.added()) {
-                    if(!body(entry.key()))throw new IllegalStateException("Unexpected previous bodies entry");
-                    old.put(entry.key(),entry);
-                }
-            }
-            var removed=new ArrayList<Entry>();var added=new ArrayList<Entry>();
-            for(var entry:old.values())if(!current.containsKey(entry.key()))removed.add(entry);
-            for(var entry:current.values())if(!tag(entry.key(),"U")) {
-                var before=old.get(entry.key());
-                if(before==null || !before.h().equals(entry.h())) { if(before!=null)removed.add(before);added.add(entry); }
             }
             var finished=apply(base,removed,added);
             var result=new BodiesRoot(BodiesRoot.format(local.format()),finished.hash(),local.local().hash(),local.machineRoot(),local.modelHash());
-            var bindings=new ArrayList<byte[][]>();
-            for(var entry:removed)if((tag(entry.key(),"C") || tag(entry.key(),"OUT")) && !current.containsKey(entry.key()))
+            var bindings=new ArrayList<byte[][]>();var addedKeys=new TreeSet<byte[]>(Arrays::compareUnsigned);
+            for(var entry:added)addedKeys.add(entry.key());
+            for(var entry:removed)if((tag(entry.key(),"C") || tag(entry.key(),"OUT") || tag(entry.key(),"BM")) && !addedKeys.contains(entry.key()))
                 bindings.add(new byte[][]{entry.key(),null});
             for(var entry:added)if(!tag(entry.key(),"CF") && !ReverseIndex.isBodyKey(entry.key()))
                 bindings.add(new byte[][]{entry.key(),BodyRecords.value(tree,store,entry)});
-            for(var entry:current.values())if(tag(entry.key(),"U")) {
+            for(var entry:delta.uses()) {
                 var value=BodyRecords.value(tree,store,entry);
                 var existing=getPreviousUses(entry.key());
                 if(existing!=null && !Arrays.equals(existing,value))throw new IllegalStateException("Conflicting content-addressed uses record");
@@ -168,6 +190,12 @@ public final class BodyGeneration implements LocalStore {
             }
             root=finished;committed=true;pending.clear();return result;
         }
+    }
+    private void checkRoots() {
+        if(!Arrays.equals(localBytes,store.get(LocalStore.localRootKey(project)))
+                || !Arrays.equals(previousBytes,store.get(LocalStore.bodiesRootKey(project)))
+                || !Arrays.equals(machineBytes,store.get(MachineStore.ROOT_KEY)))
+            throw new IllegalStateException("Committed roots changed during body attribution");
     }
     private byte[] getPreviousUses(byte[] key) {
         if(previous==null)return null;

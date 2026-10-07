@@ -36,6 +36,35 @@ public final class Output {
 
     /** Failed units contribute no entries, even if javac emitted a partial class before reporting an error. */
     public static Root build(ContentTree tree, NodeSink sink, Collection<ResultRecord> results) {
+        return tree.build(entries(results).values(), sink);
+    }
+
+    /**
+     * Apply results of changed/retired units only. Before-results must come from those units' admitted previous selections.
+     * Unchanged class names are probed only when needed to reject an output collision; no unchanged CF payload is read.
+     */
+    public static Root apply(ContentTree tree, LocalStore store, Root previous,
+                             Collection<ResultRecord> before, Collection<ResultRecord> after) {
+        var old = entries(before); var next = entries(after);
+        var removed = new ArrayList<byte[]>(); var added = new ArrayList<Entry>();
+        for (var entry : old.values()) {
+            var actual = tree.get(previous.hash(), h -> store.get(MachineStore.nodeKey(h)), entry.key());
+            if (actual == null || !actual.h().equals(entry.h()))
+                throw new IllegalArgumentException("Previous output differs from the selected unit");
+            var replacement = next.get(entry.key());
+            if (replacement == null || !replacement.h().equals(entry.h())) removed.add(entry.key());
+        }
+        for (var entry : next.values()) {
+            var prior = old.get(entry.key());
+            if (prior != null && prior.h().equals(entry.h())) continue;
+            if (prior == null && tree.get(previous.hash(), h -> store.get(MachineStore.nodeKey(h)), entry.key()) != null)
+                throw new IllegalArgumentException("Two clean units emitted " + name(entry));
+            added.add(entry);
+        }
+        return tree.apply(previous, removed, added, h -> store.get(MachineStore.nodeKey(h)), store);
+    }
+
+    private static TreeMap<byte[],Entry> entries(Collection<ResultRecord> results) {
         var entries = new TreeMap<byte[], Entry>(Arrays::compareUnsigned);
         for (var result : results) if (result.attributed()) for (var file : result.classFiles()) {
             validateName(file.internalName());
@@ -43,7 +72,7 @@ public final class Output {
             if (entries.putIfAbsent(key, new Entry(key, file.contentHash().bytes(), file.contentHash())) != null)
                 throw new IllegalArgumentException("Two clean units emitted " + file.internalName());
         }
-        return tree.build(entries.values(), sink);
+        return entries;
     }
 
     /**

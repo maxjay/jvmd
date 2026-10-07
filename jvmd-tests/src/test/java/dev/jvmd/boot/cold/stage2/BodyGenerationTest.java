@@ -40,6 +40,8 @@ class BodyGenerationTest {
     }
     private void sameTree(State state,Root actual,Map<byte[],byte[]> values) {
         var sorted=records();sorted.putAll(values);
+        var selection=state.tree().get(actual.hash(),h->state.store().get(MachineStore.nodeKey(h)),LocalStore.bodySelectionKey(state.project()));
+        if(selection!=null)sorted.put(selection.key(),BodyRecords.value(state.tree(),state.store(),selection));
         var expected=state.tree().build(sorted.entrySet().stream().map(e->new Entry(e.getKey(),Entry.NONE,state.tree().digest().hash(e.getValue()))).toList(),state.store());
         state.store().flush();assertThat(actual).isEqualTo(expected);
         state.tree().verify(actual,h->state.store().get(MachineStore.nodeKey(h)));

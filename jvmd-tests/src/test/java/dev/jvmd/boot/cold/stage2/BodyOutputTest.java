@@ -44,6 +44,25 @@ class BodyOutputTest {
     private static byte[] bytes(String text) { return text.getBytes(StandardCharsets.UTF_8); }
 
     @ParameterizedTest @MethodSource("digests")
+    void f15OutputDeltaMatchesFullBuildAndRejectsStaleOwnersAndCollisions(Digest digest) {
+        var tree=new ContentTree(digest);var store=new InMemoryLocalStore();
+        var old=result(digest,store,true,Map.of("p/A",bytes("old"),"p/A$Nested",bytes("nested")));
+        var next=result(digest,store,true,Map.of("p/A",bytes("new"),"p/A$Renamed",bytes("renamed")));
+        var other=result(digest,store,true,Map.of("p/B",bytes("unchanged")));
+        var previous=root(tree,store,old,other);
+        var cf=store.watchReads(LocalStore.classFileKey(other.classFiles().getFirst().contentHash()));
+        var applied=Output.apply(tree,store,previous,List.of(old),List.of(next));store.flush();
+        assertThat(applied).isEqualTo(root(tree,store,next,other));
+        assertThat(cf.get()).isZero();
+        assertThat(Output.apply(tree,store,applied,List.of(next),List.of())).isEqualTo(root(tree,store,other));
+        assertThatThrownBy(()->Output.apply(tree,store,previous,List.of(),List.of(other)))
+                .hasMessageContaining("Two clean units");
+        assertThatThrownBy(()->Output.apply(tree,store,previous,List.of(next),List.of()))
+                .hasMessageContaining("Previous output");
+        assertThat(Output.apply(tree,store,applied,List.of(),List.of())).isEqualTo(applied);
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void materialisationTouchesExactlyTheDeltaAndKeepsUntrackedFiles(Digest digest) throws Exception {
         var tree=new ContentTree(digest);var store=new InMemoryLocalStore();var project=digest.hash(bytes("project"));
         var original=root(tree,store,result(digest,store,true,Map.of("p/A",bytes("old"),"p/B",bytes("removed"),"p/C",bytes("same"))));

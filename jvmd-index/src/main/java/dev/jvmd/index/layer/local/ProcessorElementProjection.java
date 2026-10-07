@@ -33,8 +33,35 @@ import javax.lang.model.util.Types;
 public final class ProcessorElementProjection {
     private final Elements elements;
     private final Types types;
+    private java.util.function.Function<Element,dev.jvmd.core.hash.Identity> references;
 
     public ProcessorElementProjection(Elements elements, Types types) { this.elements = elements; this.types = types; }
+
+    /** One declaration per content-addressed node; only ordered child identities are embedded in a parent. */
+    public Graph graph(dev.jvmd.core.hash.Digest digest,java.util.function.BiConsumer<dev.jvmd.core.hash.Identity,byte[]> write) {
+        return new Graph(elements,types,digest,write);
+    }
+    public static final class Graph {
+        private final ProcessorElementProjection projection;
+        private final dev.jvmd.core.hash.Digest digest;
+        private final java.util.function.BiConsumer<dev.jvmd.core.hash.Identity,byte[]> write;
+        private final java.util.Map<Element,dev.jvmd.core.hash.Identity> nodes=new java.util.IdentityHashMap<>();
+        private final java.util.Set<dev.jvmd.core.hash.Identity> emitted=new java.util.HashSet<>();
+        private Graph(Elements elements,Types types,dev.jvmd.core.hash.Digest digest,
+                      java.util.function.BiConsumer<dev.jvmd.core.hash.Identity,byte[]> write) {
+            this.projection=new ProcessorElementProjection(elements,types);this.digest=digest;this.write=write;
+            projection.references=this::node;
+        }
+        public dev.jvmd.core.hash.Identity node(Element element) {
+            var previous=nodes.get(element);if(previous!=null)return previous;
+            var out=new Codec.Writer().u8(1);
+            projection.declaration(out,element,!(element instanceof PackageElement));
+            var bytes=out.toBytes();var id=digest.hash(bytes);
+            if(emitted.add(id))write.accept(id,bytes);
+            nodes.put(element,id);return id;
+        }
+        public int declarations() {return nodes.size();}
+    }
 
     /** Stable declaration identity, including parameter/type-parameter ownership when those carry a supported annotation. */
     public byte[] key(Element element) {
@@ -130,7 +157,9 @@ public final class ProcessorElementProjection {
 
     private void declarations(Codec.Writer out, List<? extends Element> declarations) {
         out.u32(declarations.size());
-        for (var declaration : declarations) declaration(out, declaration);
+        for (var declaration : declarations) {
+            if(references==null)declaration(out,declaration);else out.id(references.apply(declaration));
+        }
     }
 
     private void typeList(Codec.Writer out, List<? extends TypeMirror> values) {

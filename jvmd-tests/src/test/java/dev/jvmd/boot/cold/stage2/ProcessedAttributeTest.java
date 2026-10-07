@@ -663,8 +663,13 @@ class ProcessedAttributeTest {
         assertThatThrownBy(() -> first.plan().modulePackages(forged)).hasMessageContaining("not in the committed LOCAL tree");
         assertThat(reads.get()).isZero();
         var observedKey = LocalStore.processorModuleQueryKey(first.project(), "app", 0, question);
+        var expected=first.plan().modulePackages(question);
         first.store().put(observedKey, ProcessorModuleQuery.encode(List.of("forged"))); first.store().flush();
-        assertThatThrownBy(() -> first.plan().modulePackages(question)).hasMessageContaining("differs from the committed LOCAL tree");
+        assertThat(first.plan().modulePackages(question)).isEqualTo(expected);
+        var local=LocalRoot.decode(digest,first.store().get(LocalStore.localRootKey(first.project())));
+        var entry=first.tree().get(local.local().hash(),id->first.store().get(MachineStore.nodeKey(id)),observedKey);
+        first.store().put(LocalStore.bodyValueKey(entry.h()),new byte[]{42});first.store().flush();
+        assertThatThrownBy(() -> first.plan().modulePackages(question)).hasMessageContaining("Rooted record digest mismatch");
     }
 
     @ParameterizedTest @MethodSource("digests")

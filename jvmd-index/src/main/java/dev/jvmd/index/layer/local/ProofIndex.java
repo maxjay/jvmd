@@ -100,10 +100,15 @@ public final class ProofIndex {
         return new ProofIndex(binding,inputs,queries,aci,processor,body);
     }
 
+    /** Cheap eligibility, shared with candidate validation before preparing a receipt's historical transition. */
+    public boolean eligible(Inputs current) {
+        return inputs.equals(current) && current.compiler().equals(Runtime.version().toString());
+    }
+
     /** Null means invalid. A returned receipt may be persisted at the new binding without rewriting its query tree or ACI. */
     public ProofIndex advance(Transition transition, Inputs current, ProcessorRecords.Context context, ProcessorRecords.Body observations) {
         if(!binding.equals(transition.before))throw new IllegalArgumentException("Transition does not start at the proof's validated binding");
-        if(!inputs.equals(current) || !current.compiler().equals(Runtime.version().toString())
+        if(!eligible(current)
                 || !Proof.processorValid(processor,body,context,observations,transition.records))return null;
         // Missing providers invalidate even expected-zero T/N questions whose spelling has no fact in either delta.
         for(var owner:transition.removedTypes)for(int form:new int[]{Proof.T,Proof.N}) {

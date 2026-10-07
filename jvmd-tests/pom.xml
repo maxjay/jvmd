@@ -19,7 +19,7 @@
       <groupId>org.apache.maven.plugins</groupId><artifactId>maven-jar-plugin</artifactId>
       <executions><execution><id>native-read-oracle-agent</id><phase>process-test-classes</phase><goals><goal>test-jar</goal></goals>
         <configuration><classifier>read-oracle</classifier>
-          <includes><include>dev/jvmd/tests/oracle/ReadOracleAgent*.class</include><include>dev/jvmd/tests/oracle/ReadOracleTrace*.class</include></includes>
+          <includes><include>dev/jvmd/tests/oracle/ReadOracleAgent*.class</include><include>dev/jvmd/tests/oracle/ReadOracleTrace*.class</include><include>dev/jvmd/tests/oracle/NativeReaderTrace*.class</include></includes>
           <archive><manifestEntries><Premain-Class>dev.jvmd.tests.oracle.ReadOracleAgent</Premain-Class></manifestEntries></archive>
         </configuration>
       </execution></executions>

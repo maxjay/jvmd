@@ -124,6 +124,36 @@ class RetainedAnnotationDiagnosticTest {
         assertThat(limited.get(0)).isNotEqualTo(limited.get(1));
     }
 
+    @ParameterizedTest @MethodSource("digests")
+    void resolutionStubDropsPrivateReaderEffectsEvenWithIdenticalT(Digest digest) throws Exception {
+        var dependencies=Files.createDirectories(directory.resolve("dependencies"));var output=Files.createDirectories(directory.resolve("output"));
+        var mode=directory.resolve("Mode.java");var ann=directory.resolve("Ann.java");var library=directory.resolve("Lib.java");var app=directory.resolve("App.java");
+        Files.writeString(mode,"package q; public enum Mode { X,Y }");
+        Files.writeString(ann,"package q; public @interface Ann { Mode value(); }");
+        Files.writeString(library,"package q; public class Lib { @Ann(Mode.X) private int hidden; public static int call(){return 1;} }");
+        Files.writeString(app,"package p; public class App { int value(){return q.Lib.call();} }");
+        assertThat(compile(dependencies,dependencies,List.of(mode,ann,library))).isEmpty();
+        var real=Files.readAllBytes(dependencies.resolve("q/Lib.class"));
+        var facts=ClassFacts.of(digest,real,"q/Lib");
+        Files.writeString(mode,"package q; public enum Mode { Y }");
+        assertThat(compile(dependencies,dependencies,List.of(mode))).isEmpty();
+        assertThat(compile(output,dependencies,List.of(app))).containsExactly("compiler.warn.unknown.enum.constant");
+        var nativeBytes=Files.readAllBytes(output.resolve("p/App.class"));
+        var f=new ProofIndexTest.Fixture(digest);
+        var leaf=f.leaf(facts.facts().stream().map(Fact::entry).toList());
+        var stubs=dev.jvmd.index.layer.machine.Stubs.stubs(digest,f.tree,leaf,
+                id->f.store.get(dev.jvmd.index.layer.machine.MachineStore.nodeKey(id)),dev.jvmd.index.layer.machine.Stubs.Cache.NONE);
+        assertThat(stubs).hasSize(1);var stub=stubs.getFirst().bytes();
+        assertThat(ClassFacts.of(digest,stub,"q/Lib").facts().stream().map(Fact::h).toList())
+                .isEqualTo(facts.facts().stream().map(Fact::h).toList());
+        Files.write(dependencies.resolve("q/Lib.class"),stub);
+        assertThat(compile(output,dependencies,List.of(app))).isEmpty();
+        assertThat(Files.readAllBytes(output.resolve("p/App.class"))).isEqualTo(nativeBytes);
+        // Restoring the actual compiler view restores the effect; no cache or source edit is involved.
+        Files.write(dependencies.resolve("q/Lib.class"),real);
+        assertThat(compile(output,dependencies,List.of(app))).containsExactly("compiler.warn.unknown.enum.constant");
+    }
+
     private List<String> compile(Path output,Path dependencies,List<Path> sources) throws Exception {
         return messages(output,dependencies,sources,List.of()).stream().map(d->d.getCode()).toList();
     }

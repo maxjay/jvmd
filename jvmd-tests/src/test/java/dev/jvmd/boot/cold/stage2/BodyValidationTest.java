@@ -125,6 +125,49 @@ class BodyValidationTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void fixedInputChangesRejectRetainedReceiptsBeforeHistoricalPreparation(Digest digest) {
+        var f=new Fixture(digest);var a=f.state(1,1);var b=f.state(1,2);var c=f.state(1,3);
+        var local=f.publish(a);var gen=BodyGeneration.begin(f.tree,f.store,f.project,local);
+        var cold=gen.commitUnitsFull(Map.of(USE,f.select(gen,USE,a,"VALUE")));
+        var original=BodyRecords.read(f.tree,f.store,cold.bodiesRoot(),LocalStore.proofIndexKey(f.project,USE));
+        local=f.publish(b);
+        BodyGeneration.begin(f.tree,f.store,f.project,local).commitUnitsDelta(Map.of(),Set.of());
+        f.publish(c);
+        var changed=digest.hash(new byte[]{97});
+        for(var inputs:List.of(
+                new ProofIndex.Inputs("Renamed.java",f.inputs.source(),f.inputs.options()),
+                new ProofIndex.Inputs(f.inputs.basename(),changed,f.inputs.options()),
+                new ProofIndex.Inputs(f.inputs.basename(),f.inputs.source(),changed),
+                new ProofIndex.Inputs(f.inputs.basename(),f.inputs.source(),f.inputs.options(),"other compiler"))) {
+            var work=new BodyValidation.Work();var plan=f.plan(f.store,List.of(USE),work);
+            long reads=work.proofs.recordReads,writes=f.store.recordWriteCount(),nodes=f.store.nodeWriteCount();
+            long setupReads=work.setupReads,setupBytes=work.setupBytes;
+            var bean=(com.sun.management.ThreadMXBean)java.lang.management.ManagementFactory.getThreadMXBean();
+            long allocated=bean.getCurrentThreadAllocatedBytes();
+            var checked=plan.check(USE,inputs,null,null);
+            allocated=bean.getCurrentThreadAllocatedBytes()-allocated;
+            assertThat(checked.reusable()).isFalse();
+            assertThat(checked.previous().binding()).isEqualTo(f.binding(a));
+            assertThat(checked.previous().encode()).isEqualTo(original);
+            assertThat(work.transitions).isOne(); // B->C discovery only, no A->C preparation
+            assertThat(work.fixedInputRejections).isOne();
+            assertThat(work.proofs.recordReads).isEqualTo(reads);
+            assertThat(work.proofs.proofNodeReads).isZero();
+            assertThat(f.store.recordWriteCount()).isEqualTo(writes);
+            assertThat(f.store.nodeWriteCount()).isEqualTo(nodes);
+            System.out.printf(Locale.ROOT,"Q15 %s basenameChanged=%s sourceChanged=%s optionsChanged=%s compilerChanged=%s transitions=%d historicalReads=%d proofNodes=%d selectedReads=%d selectedBytes=%d receiptBytes=%d allocated=%d writes=0%n",
+                    digest.name(),!inputs.basename().equals(f.inputs.basename()),!inputs.source().equals(f.inputs.source()),
+                    !inputs.options().equals(f.inputs.options()),!inputs.compiler().equals(f.inputs.compiler()),work.transitions,
+                    work.proofs.recordReads-reads,work.proofs.proofNodeReads,work.setupReads-setupReads,work.setupBytes-setupBytes,work.receiptBytes,allocated);
+        }
+        // Matching inputs still require A->C, despite the later accepted B baseline.
+        var work=new BodyValidation.Work();var plan=f.plan(f.store,List.of(USE),work);
+        assertThat(plan.check(USE,f.inputs,null,null).reusable()).isTrue();
+        assertThat(work.transitions).isEqualTo(2);
+        assertThat(work.fixedInputRejections).isZero();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void pureProviderOrderChangeReachesPositiveAndMemberAbsenceConsumers(Digest digest) {
         var f=new Fixture(digest);var empty=f.leaf(List.of());
         var first=f.leaf(List.of(f.fact("q/Base",Keys.TYPE,"",1),f.fact("q/Base",Keys.FIELD,"VALUE",1)));

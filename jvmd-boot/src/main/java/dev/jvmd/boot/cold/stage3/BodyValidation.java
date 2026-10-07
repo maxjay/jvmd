@@ -16,7 +16,7 @@ public final class BodyValidation {
     public static final class Work {
         public final ProofIndex.Work proofs=new ProofIndex.Work();
         public final ReverseIndex.Work reverse=new ReverseIndex.Work();
-        public long setupReads, setupBytes, setupNodeReads, receipts, receiptBytes, transitions, directUnits;
+        public long setupReads, setupBytes, setupNodeReads, receipts, receiptBytes, transitions, directUnits, fixedInputRejections;
     }
     public record Checked(ProofIndex previous, boolean reusable) { }
     private final ContentTree tree;
@@ -72,7 +72,11 @@ public final class BodyValidation {
         if(bytes==null)return new Checked(null,false);
         work.receiptBytes+=bytes.length;
         var index=ProofIndex.decode(bytes,tree.digest().width());
-        boolean valid=index.advance(transition(index.binding()),inputs,processor,observations)!=null;
+        // A changed fixed input already requires attribution. Preserve the old receipt for output
+        // bookkeeping, but do not open its historical binding or replay processor validation.
+        boolean eligible=index.eligible(inputs);
+        if(!eligible)work.fixedInputRejections++;
+        boolean valid=eligible && index.advance(transition(index.binding()),inputs,processor,observations)!=null;
         checkCurrent();
         return new Checked(index,valid);
     }

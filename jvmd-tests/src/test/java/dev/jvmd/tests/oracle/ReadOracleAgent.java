@@ -39,7 +39,8 @@ public final class ReadOracleAgent {
         var bootstrap = Files.createTempFile("jvmd-read-oracle-", ".jar");
         bootstrap.toFile().deleteOnExit();
         try (var input = new JarFile(jar.toFile()); var output = new JarOutputStream(Files.newOutputStream(bootstrap))) {
-            for (var entry : input.stream().filter(e -> e.getName().startsWith("dev/jvmd/tests/oracle/ReadOracleTrace")).toList()) {
+            for (var entry : input.stream().filter(e -> e.getName().startsWith("dev/jvmd/tests/oracle/ReadOracleTrace")
+                    || e.getName().startsWith("dev/jvmd/tests/oracle/NativeReaderTrace")).toList()) {
                 output.putNextEntry(new JarEntry(entry.getName()));
                 try (var bytes = input.getInputStream(entry)) { bytes.transferTo(output); }
                 output.closeEntry();
@@ -59,6 +60,10 @@ public final class ReadOracleAgent {
         public Transformer() { }
         @Override public byte[] transform(Module module, ClassLoader loader, String name, Class<?> redefining,
                                           ProtectionDomain domain, byte[] bytes) {
+            if ("com/sun/tools/javac/jvm/ClassReader$AnnotationDeproxy".equals(name)) {
+                try { return nativeReader(bytes); }
+                catch (Throwable failure) { failure.printStackTrace(); Runtime.getRuntime().halt(97); return null; }
+            }
             if (name == null || !Set.of("dev/jvmd/boot/cold/stage3/Attribute", "dev/jvmd/index/layer/local/ProofCollector",
                     "dev/jvmd/boot/cold/stage3/Pool", "dev/jvmd/boot/cold/stage3/Arrange",
                     "com/sun/tools/javac/jvm/ClassReader", "com/sun/tools/javac/code/Symbol",
@@ -173,6 +178,32 @@ public final class ReadOracleAgent {
                 // A transformer exception normally gets swallowed by the JVM. Fail the fork instead of silently losing coverage.
                 failure.printStackTrace(); Runtime.getRuntime().halt(97); return null;
             }
+        }
+        /** Feasibility probe only: observe native returns; never resolve, replace or iterate a lookup. */
+        private static byte[] nativeReader(byte[] bytes) {
+            var cf=ClassFile.of();var hooks=new java.util.TreeMap<String,Integer>();
+            var owner=ClassDesc.of("com.sun.tools.javac.jvm.ClassReader$AnnotationDeproxy");
+            var tap=ClassDesc.of("dev.jvmd.tests.oracle.NativeReaderTrace");
+            var callback=MethodTypeDesc.ofDescriptor("(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)V");
+            var expected=Map.of("findAccessMethod", "(Lcom/sun/tools/javac/code/Type;Lcom/sun/tools/javac/util/Name;)Lcom/sun/tools/javac/code/Symbol$MethodSymbol;",
+                    "visitEnumAttributeProxy", "(Lcom/sun/tools/javac/jvm/ClassReader$EnumAttributeProxy;)V");
+            var transformed=cf.transformClass(cf.parse(bytes),ClassTransform.transformingMethods((builder,element)->{
+                if(!(element instanceof java.lang.classfile.CodeModel code)) {builder.with(element);return;}
+                var method=code.parent().orElseThrow();String name=method.methodName().stringValue();
+                if(!expected.containsKey(name)) {builder.with(code);return;}
+                if(!method.methodType().equalsString(expected.get(name)))throw new AssertionError("Native reader descriptor drift: "+name);
+                hooks.merge(name,1,Integer::sum);
+                builder.transformCode(code,(out,instruction)->{
+                    if(instruction instanceof ReturnInstruction) {
+                        if(name.equals("findAccessMethod"))out.dup();
+                        else out.aload(0).getfield(owner,"result",ClassDesc.of("com.sun.tools.javac.code.Attribute"));
+                        out.aload(0).getfield(owner,"requestingOwner",CLASS_SYMBOL).ldc(name).invokestatic(tap,"answer",callback);
+                    }
+                    out.with(instruction);
+                });
+            }));
+            if(!hooks.equals(Map.of("findAccessMethod",1,"visitEnumAttributeProxy",1)))throw new AssertionError("Native reader hooks drift: "+hooks);
+            return transformed;
         }
         /** Exact native identity, rather than a binary-name, null-classfile or compiler-package heuristic. */
         private static java.lang.classfile.CodeBuilder predefined(java.lang.classfile.CodeBuilder out) {

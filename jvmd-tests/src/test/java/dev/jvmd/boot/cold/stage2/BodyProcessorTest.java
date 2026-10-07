@@ -85,7 +85,7 @@ class BodyProcessorTest {
     }
 
     record Run(Map<String, byte[]> classes, List<ProcessorHost.Output> generated, Map<String, ProcessorRecords.Capability> capabilities,
-               List<String> faults, List<String> diagnostics, ProcessorRecords.Body observations) { }
+               List<String> faults, List<String> diagnostics, ProcessorRecords.Body observations, boolean metadataSupported) { }
 
     private Run run(Digest digest, Fixture fixture, List<Path> processors, Pool pool, Path source) throws Exception {
         var diagnostics = new ArrayList<String>();
@@ -103,7 +103,7 @@ class BodyProcessorTest {
             });
             host.close(); // snapshot capability faults for unclosed outputs before asserting admission
             assertThat(dir.resolve("body-capture")).doesNotExist();
-            return new Run(result.classes(), host.outputs(), host.capabilities(), host.faults(), diagnostics, host.bodyObservations());
+            return new Run(result.classes(), host.outputs(), host.capabilities(), host.faults(), diagnostics, host.bodyObservations(), result.metadataSupported());
         }
     }
 
@@ -114,7 +114,7 @@ class BodyProcessorTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
-    void autoValueCapturesNativeSourceAndCompilesOnlyTheExplicitUnitAcrossReusedTasks(Digest digest) throws Exception {
+    void autoValueCapturesNativeSourceAndCompilesOnlyTheExplicitUnitAcrossRepeatedTasks(Digest digest) throws Exception {
         var processor = Path.of(com.google.auto.value.processor.AutoValueProcessor.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         var annotations = Path.of(com.google.auto.value.AutoValue.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         var processors = List.of(processor);
@@ -131,6 +131,7 @@ class BodyProcessorTest {
             for (int repeat = 0; repeat < 2; repeat++) {
                 var result = run(digest, fixture, processors, pool, fixture.input());
                 assertThat(result.observations().reusable()).isTrue();
+                assertThat(result.metadataSupported()).as("raw annotation jar is not a frozen compiler input").isFalse();
                 if (previous != null) assertThat(result.observations()).isEqualTo(previous);
                 previous = result.observations();
                 assertThat(result.diagnostics()).isEmpty(); assertThat(result.faults()).isEmpty();
@@ -139,12 +140,12 @@ class BodyProcessorTest {
                 assertThat(result.classes().get("p/Value")).isEqualTo(fixture.classes().get("p/Value.class"));
                 assertThat(result.generated().getFirst().origins()).containsExactly(fixture.input().toUri());
             }
-            assertThat(pool.statistics().contexts()).isEqualTo(1);
+            assertThat(pool.statistics().contexts()).isEqualTo(2);
         }
     }
 
     @ParameterizedTest @MethodSource("digests")
-    void lombokOverlayGeneratesNativeOriginalAndNestedClassBytesAcrossReusedTasks(Digest digest) throws Exception {
+    void lombokOverlayGeneratesNativeOriginalAndNestedClassBytesAcrossRepeatedTasks(Digest digest) throws Exception {
         var lombok = Path.of(lombok.Getter.class.getProtectionDomain().getCodeSource().getLocation().toURI());
         var processors = List.of(lombok);
         var fixture = fixture(digest, processors, processors, "p/Bean.java", """
@@ -159,6 +160,8 @@ class BodyProcessorTest {
             for (int repeat = 0; repeat < 2; repeat++) {
                 var result = run(digest, fixture, processors, pool, fixture.input());
                 assertThat(result.observations().reusable()).isTrue();
+                // This low-level call does not supply Attribute's immutable compiler-input snapshot.
+                assertThat(result.metadataSupported()).isFalse();
                 if (previous != null) assertThat(result.observations()).isEqualTo(previous);
                 previous = result.observations();
                 assertThat(result.diagnostics()).isEmpty(); assertThat(result.faults()).isEmpty();
@@ -166,7 +169,7 @@ class BodyProcessorTest {
                 assertThat(result.classes()).containsOnlyKeys("p/Bean", "p/Bean$BeanBuilder");
                 result.classes().forEach((name, bytes) -> assertThat(bytes).as(name).isEqualTo(fixture.classes().get(name + ".class")));
             }
-            assertThat(pool.statistics().contexts()).isEqualTo(1);
+            assertThat(pool.statistics().contexts()).isEqualTo(2);
         }
     }
 
@@ -205,6 +208,7 @@ class BodyProcessorTest {
         assertThat(fixture.generated()).hasSize(3);
         try (var pool = new Pool(fixture.configuration(), 1)) {
             var first = run(digest, fixture, path, pool, fixture.input());
+            assertThat(first.metadataSupported()).isFalse();
             assertThat(first.diagnostics()).isEmpty(); assertThat(first.faults()).isEmpty();
             sameOutputs(first.generated(), fixture.generated().stream().filter(o -> o.origins().equals(List.of(fixture.input().toUri()))).toList());
             assertThat(first.classes()).containsOnlyKeys("p/Input");
@@ -212,6 +216,7 @@ class BodyProcessorTest {
             for (String name : List.of("p/InputOne.java", "p/InputTwo.java")) {
                 var output = fixture.generated().stream().filter(o -> o.name().equals(name)).findFirst().orElseThrow();
                 var result = run(digest, fixture, path, pool, Path.of(output.uri()));
+                assertThat(result.metadataSupported()).isEqualTo(name.equals("p/InputTwo.java"));
                 assertThat(result.diagnostics()).isEmpty(); assertThat(result.faults()).isEmpty();
                 var expected = fixture.generated().stream().filter(o -> o.origins().equals(List.of(output.uri()))).toList();
                 sameOutputs(result.generated(), expected);
@@ -221,7 +226,8 @@ class BodyProcessorTest {
             }
             var again = run(digest, fixture, path, pool, fixture.input());
             sameOutputs(again.generated(), first.generated()); assertThat(again.faults()).isEmpty();
-            assertThat(pool.statistics().contexts()).isEqualTo(1);
+            assertThat(again.metadataSupported()).isFalse();
+            assertThat(pool.statistics().contexts()).isEqualTo(3);
         }
     }
 

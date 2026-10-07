@@ -92,6 +92,32 @@ final class HeaderCompiler {
             this.files = files;
         }
 
+        /** Native header serialization, before body attribution/lowering; HeaderView repairs hidden parameters. */
+        byte[] classHeader(TypeElement type) throws IOException {
+            var out=new java.io.ByteArrayOutputStream();
+            com.sun.tools.javac.jvm.ClassWriter.instance(task.getContext()).writeClassFile(out,
+                    (com.sun.tools.javac.code.Symbol.ClassSymbol)type);
+            return out.toByteArray();
+        }
+
+        int parameterFlags(javax.lang.model.element.VariableElement parameter) {
+            return (int)((com.sun.tools.javac.code.Symbol.VarSymbol)parameter).flags_field
+                    & (java.lang.classfile.ClassFile.ACC_FINAL|java.lang.classfile.ClassFile.ACC_SYNTHETIC|java.lang.classfile.ClassFile.ACC_MANDATED);
+        }
+
+        List<TypeElement> compilerTypes() {
+            var result=new ArrayList<TypeElement>();
+            for(var unit:units) {
+                result.addAll(unit.declared);
+                if(unit.packageClass && unit.packageDeclaration instanceof com.sun.tools.javac.code.Symbol.PackageSymbol pkg
+                        && pkg.package_info!=null)result.add(pkg.package_info);
+            }
+            return result;
+        }
+        boolean hasHeaderErrors() {
+            return task!=null && com.sun.tools.javac.util.Log.instance(task.getContext()).nerrors!=0;
+        }
+
         /** Closing the file manager alone leaves every classpath jar open (javac's compiler holds them); on Windows that locks the jar. */
         @Override public void close() { release(task, files); }
     }

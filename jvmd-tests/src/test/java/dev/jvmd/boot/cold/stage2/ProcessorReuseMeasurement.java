@@ -143,9 +143,9 @@ class ProcessorReuseMeasurement {
         var validation=new BodyValidation(tree,store,project,"app",0,direct.stream().map(p->new SourceUnit("app",0,p)).toList(),validationWork);
         long validationNanos = System.nanoTime()-startedPlan, attributeNanos = 0;
         try (var stubs = new StubDirectories(tree, generation, k -> MachineLeaf.decode(generation.get(MachineStore.leafKey(k)), digest.width()))) {
-            var directory = stubs.get(source.k());
+            var directory = stubs.view(source);
             var configuration = new Pool.Configuration(new Pool.Key(route.routeHash(), own.k()), directory.path(), List.of(lombok),
-                    options.charset(), options.javac(), directory.types(),List.of(),new Pool.ReaderInputs(tree,route.readerBinding(),generation::get));
+                    options.charset(), options.javac(), directory.types(),List.of(),new Pool.ReaderInputs(tree,route.readerBinding(),generation::get,true));
             try (var pool = new Pool(configuration, 1)) {
                 var attribute = Attribute.processed(tree, generation, own, route, pool, options, plan, List.of(lombok), dir);
                 for (var unit : validation.candidates()) {

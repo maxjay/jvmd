@@ -75,7 +75,11 @@ public final class Pool implements AutoCloseable {
     }
 
     public record ReaderInputs(dev.jvmd.core.tree.ContentTree tree, Identity binding,
-                               java.util.function.Function<byte[],byte[]> records) { }
+                               java.util.function.Function<byte[],byte[]> records, boolean sourceViews) {
+        public ReaderInputs(dev.jvmd.core.tree.ContentTree tree,Identity binding,java.util.function.Function<byte[],byte[]> records) {
+            this(tree,binding,records,false);
+        }
+    }
 
     /** No compiler tree or symbol may escape the callback; the caller returns its detached observations. */
     public record Completed<T>(T value, Map<String, byte[]> classes, List<Proof.Range> reads, boolean metadataSupported, List<Proof.ReaderRead> readerReads, List<String> readerFaults) { }
@@ -529,23 +533,24 @@ public final class Pool implements AutoCloseable {
                     var location = URI.create(archive.substring(0, end));
                     if ("file".equals(location.getScheme())) {
                         var path = Path.of(location).toAbsolutePath().normalize();
-                        if (path.equals(configuration.ownStubs().toAbsolutePath().normalize())) return true;
+                        if (path.equals(configuration.ownStubs().toAbsolutePath().normalize())) return resolutionOnly();
                         if (fixedInputs.containsValue(path)) {
                             // Exact bytes bind the payload, but not custom annotation/enum/class-literal
                             // declarations outside that input. Reject those pending exact query proofs.
                             return fixedMetadataSupported(file);
                         }
-                        for (var stub : configuration.siblingStubs()) if (path.equals(stub.toAbsolutePath().normalize())) return true;
+                        for (var stub : configuration.siblingStubs()) if (path.equals(stub.toAbsolutePath().normalize())) return resolutionOnly();
                     }
                 }
             }
             if ("file".equals(uri.getScheme())) {
                 var path = Path.of(uri).toAbsolutePath().normalize();
-                if (path.startsWith(configuration.ownStubs().toAbsolutePath().normalize())) return true;
-                for (var stub : configuration.siblingStubs()) if (path.startsWith(stub.toAbsolutePath().normalize())) return true;
+                if (path.startsWith(configuration.ownStubs().toAbsolutePath().normalize())) return resolutionOnly();
+                for (var stub : configuration.siblingStubs()) if (path.startsWith(stub.toAbsolutePath().normalize())) return resolutionOnly();
             }
             return false;
         }
+        private boolean resolutionOnly() {return configuration.readers()==null || !configuration.readers().sourceViews();}
 
         private void clearProcessors(Context context) {
             var processing = context.get(JavacProcessingEnvironment.class);

@@ -914,7 +914,7 @@ A separate root so that each stage owns its own commit: stage 2's warm path rewr
 ```
 task = pool.getTask(fileManager, diagnostics, options, null, [f])   // the context was created with Locale.ROOT; diagnostics are machine-independent
   options: -source <release> as stage 2 C.1; -Xlint:-options; -implicit:none; -encoding <model's, else UTF-8>;
-           --class-path <own stub dir> ++ <jars and sibling stub dirs in route order>; --system <jdkHome>;
+           --class-path <own compiler-view dir> ++ <jars and sibling compiler-view dirs in route order>; --system <jdkHome>;
            -proc:none when the module has no processor path, else --processor-path <bound processor leaves' locations>, -processor <the module's declared isolating processors, each wrapped (C.5)> and the module's -A options;
            -parameters, --enable-preview and the rest of module.javacOptions filtered as stage 2 C.1 (no -d, -s, -h, classpath, release, system)
   -g as the module passes it: debug attributes are part of the class bytes javac would produce, so they are part of the result
@@ -924,6 +924,12 @@ task.generate(unit)                                      // in-memory class file
 ```
 
 The in-memory file manager forwards every read to the standard one and captures class file writes. No file is written to disk by `Attribute`. Source input is an immutable byte snapshot, decoded with the task-bound javac BaseFileManager and its explicit charset. Decoding errors use the same task Log, preserving native diagnostic positions and messages and preventing output on an error. Reopening the path or decoding with replacement via new String(bytes, charset) would respectively permit a changed input or erase the encoding diagnostic. The pool owns the snapshot and releases its decoder binding at task exit. Attribute verifies the snapshot digest and source basename against the F row before compiling, and checks that the pool's route/own binding, charset and effective options match the identities used for arrangement and ACI.
+
+### C.1a Separate source compiler input
+
+For successful source header scopes, SL retains compilerViewRoot and readerImageRoot beside k/a. CV|Digest(bytes) stores each exact body-free compiler-input class. The owner→contentId ContentTree and the reader-image tree use existing tree codecs and node storage; no root is added to ACI. Javac ClassWriter serializes the completed header model, including private declarations and retained metadata, without analyzing bodies. A small classfile adaptation supplies enum/enclosing constructor parameters absent before native Lower and preserves native metadata ordering. Body-dependent <clinit> and executable Code are excluded. The resulting input is for javac declaration loading; executable output still comes exclusively from the ordinary native body task.
+
+Own and sibling Stage 3 inputs use these separate views. S/ST remain unchanged resolution derivations. Metadata reads of CV inputs go through M and the same origin binding/current X/CI logic as binary reads. A source-private annotation edit can therefore change the view and M answer while T/k/a and ST bytes stay equal. A body edit leaves the view unchanged; an unread class's metadata edit does not select this consumer. Historical LOCAL/BROOT reach the exact view and reader roots through SL/RT. Invalid header scopes and remaining unsupported reader operations retain their non-reuse guards; this does not establish complete source-view or processor-model acceptance.
 
 ### C.2 The pool
 

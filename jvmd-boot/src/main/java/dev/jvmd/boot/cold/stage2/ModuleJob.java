@@ -91,6 +91,7 @@ final class ModuleJob {
         try { compiled = HeaderCompiler.compile(toCompile, classpath, Path.of(boot.model.jdkHome()), release, options, digest, processorHost); }
         catch (RuntimeException | Error failed) { if (processorHost != null) processorHost.close(); throw failed; }
         boot.headerNanos.addAndGet(System.nanoTime() - headerStarted);
+        HeaderView.Roots compilerView=null;
         try (processorHost; compiled) {
             var extract = new SourceFacts(digest, compiled.elements, compiled.types, options.contains("-parameters"));
             var declarations = new SourceDeclarations(boot, compiled);
@@ -154,6 +155,9 @@ final class ModuleJob {
                         new ProofCollector.Observations(reads.ranges(), absences.stream().distinct().toList())));
             }
             declarations.finish(module.name(), scope);
+            // Invalid header scopes keep their explicit unsupported boundary; never manufacture a view from error types.
+            if(!compiled.hasHeaderErrors() && pending.stream().allMatch(p->p.faults().isEmpty()))
+                compilerView=new HeaderView(compiled,options.contains("-parameters")).persist(boot.tree,store,sink);
         }
 
         // 5. Sort the facts by m and stream them into the leaf's shape.
@@ -176,8 +180,8 @@ final class ModuleJob {
         sink.flush();
 
         // 6. Register the leaf for the modules that depend on this one.
-        boot.built.register(module.name(), module.coordinate(), scope, leaf, builder.a());
-        var readerBinding=dev.jvmd.index.layer.local.ReaderBinding.build(boot.tree,leaf,bound,store::get,sink);
+        boot.built.register(module.name(), module.coordinate(), scope, leaf, builder.a(),compilerView);
+        var readerBinding=dev.jvmd.index.layer.local.ReaderBinding.build(boot.tree,leaf,compilerView==null?null:compilerView.reader(),bound,store::get,sink);
         boot.routes.compute(Boot.routeKey(module.name(),scope),(key,value)->value.withReaderBinding(readerBinding));
 
         // 7. The definer indexes of this route, then the header proof of every file from what they resolve.

@@ -349,7 +349,8 @@ public final class ReadOracleTrace {
         // Actual jrt descriptors/types have the compiler-system witness. A physical metadata read is
         // inventoried through its own exact M operation; neither exemption discharges a logical T query.
         var uncovered = uncovered(proof, trace.loaded().stream().filter(t->!trace.platformTypes().contains(t) && !readerOwners.contains(t)).toList(),
-                trace.modules().stream().filter(m->!trace.platformModules().contains(m)).toList(), trace.absent());
+                trace.modules().stream().filter(m->!trace.platformModules().contains(m)).toList(),
+                trace.absent().stream().filter(q->!trace.platformTypes().contains(q.owner())).toList());
         var semantic=new ArrayList<>(trace.queries());semantic.addAll(trace.closure());
         semantic.addAll(trace.readers());
         var missingQueries=missingQueries(proof,semantic,trace.absent()).stream().filter(q->!trace.platformTypes().contains(q.owner())).toList();

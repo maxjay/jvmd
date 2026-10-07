@@ -97,6 +97,8 @@ public interface LocalStore extends MachineStore {
     static byte[] definerStateKey(Identity leafSet) { return join("DF|", leafSet.view()); }
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }
     static byte[] stubTypeKey(Identity stKey) { return join("ST|", stKey.view()); }
+    /** Exact bytes of the separate body-free compiler input, never stored under S/ST identities. */
+    static byte[] compilerViewKey(Identity content) { return join("CV|", content.view()); }
     static byte[] generatedKey(Identity derivation) { return join("GEN|", derivation.view()); }
     static byte[] generatedSourceKey(Identity content) { return join("GS|", content.view()); }
     static byte[] resourcesKey(Identity projectKey) { return join("RES|", projectKey.view()); }

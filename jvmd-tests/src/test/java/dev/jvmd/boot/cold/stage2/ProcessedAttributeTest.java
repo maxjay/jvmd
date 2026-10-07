@@ -1122,7 +1122,14 @@ class ProcessedAttributeTest {
             assertThat(pool.statistics().contexts()).isEqualTo(1);
         }
         assertThat(results).allSatisfy(r -> assertThat(r.reusable()).as(r.faults().toString()).isTrue());
-        assertThat(results.get(1)).isEqualTo(results.get(0));
+        // The exact reader binding may change while every consumed processor/compiler answer stays equal.
+        // A fresh CI records that new coordinate; it is deliberately not part of ACI or the query tree.
+        assertThat(results.get(1).aci()).isEqualTo(results.get(0).aci());
+        assertThat(results.get(1).result().encode()).isEqualTo(results.get(0).result().encode());
+        assertThat(results.get(1).proof().encode()).isEqualTo(results.get(0).proof().encode());
+        assertThat(results.get(1).uses().encode()).isEqualTo(results.get(0).uses().encode());
+        assertThat(results.get(1).faults()).isEqualTo(results.get(0).faults());
+        assertThat(results.get(1).indexed().queries()).isEqualTo(results.get(0).indexed().queries());
         assertThat(results.get(2).aci()).isNotEqualTo(results.get(0).aci());
         assertThat(results.get(0).result().diagnostics().getFirst().message()).isEqualTo("named");
         assertThat(results.get(2).result().diagnostics().getFirst().message()).isEqualTo("renamed");

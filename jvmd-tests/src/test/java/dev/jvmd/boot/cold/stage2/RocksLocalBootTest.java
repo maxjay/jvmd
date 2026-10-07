@@ -71,11 +71,11 @@ class RocksLocalBootTest {
             try (var store = Generation.of(indexDir, format).open()) {
                 var kinds = new TreeMap<String, Integer>();
                 for (var key : store.keys()) kinds.merge(kind(key), 1, Integer::sum);
-                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "BV", "BSEQ", "BM", "PB", "PE", "CF", "C", "CI", "RS", "U", "OUT");
+                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "BV", "BSEQ", "BM", "PB", "PE", "CF", "CV", "C", "CI", "RS", "U", "OUT");
                 assertThat(kinds.get("C")).as("one body proof per compiled source").isEqualTo(Fixtures.multi().size());
                 for (var key : store.keys()) if (kind(key).equals("X")) assertThat(ReverseIndex.isHeaderKey(key) || ReverseIndex.isBodyKey(key))
                         .as("versioned current header and body reverse namespaces").isTrue();
-                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "CF", "C", "CI", "RS", "U", "OUT");
+                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "CF", "CV", "C", "CI", "RS", "U", "OUT");
                 var tree = new ContentTree(digest);
                 var bodies = dev.jvmd.index.layer.local.BodiesRoot.decode(store.get(LocalStore.bodiesRootKey(projectKey)), digest.width());
                 int indexed = 0;
@@ -144,7 +144,7 @@ class RocksLocalBootTest {
     private static String kind(byte[] key) {
         if (new String(key, StandardCharsets.US_ASCII).equals("ROOT")) return "ROOT";
         var text = new String(key, StandardCharsets.ISO_8859_1);
-        for (var tag : List.of("BROOT|", "BV|", "BSEQ|", "BM|", "PB|", "PE|", "CF|", "CI|", "OUT|", "U|", "LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "DF|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
+        for (var tag : List.of("BROOT|", "BV|", "BSEQ|", "BM|", "PB|", "PE|", "CF|", "CV|", "CI|", "OUT|", "U|", "LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "DF|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
         if (key[0] == 'L' && key.length == 33) return "L";
         if (key[0] == 'N' && key.length == 33) return "N";
         if (key[0] == 'P') return "P";

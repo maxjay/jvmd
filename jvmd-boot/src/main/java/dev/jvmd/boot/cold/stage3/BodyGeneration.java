@@ -72,7 +72,7 @@ public final class BodyGeneration implements LocalStore {
         open();
         var entry=pending.get(key);
         if(entry!=null)return BodyRecords.value(tree,store,entry);
-        if(machine(key) || tag(key,"S") || tag(key,"ST") || tag(key,"PROC") || tag(key,"BV") || tag(key,"PE"))return store.get(key);
+        if(machine(key) || tag(key,"S") || tag(key,"ST") || tag(key,"CV") || tag(key,"PROC") || tag(key,"BV") || tag(key,"PE"))return store.get(key);
         if(!body(key) && !tag(key,"U"))return local(key);
         if(previous==null)return null;
         if(tag(key,"U")) {

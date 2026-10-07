@@ -11,19 +11,26 @@ public final class ReaderBinding {
     public static final int PRESENT=0, ABSENT_MEMBER=1, ABSENT_OWNER=2, FAILED=3, UNSUPPORTED=4;
     private ReaderBinding() { }
     public static Identity build(ContentTree tree,MachineLeaf own,Bound bound,Function<byte[],byte[]> records,NodeSink sink) {
+        return build(tree,own,null,bound,records,sink);
+    }
+    public static Identity build(ContentTree tree,MachineLeaf own,Identity ownReader,Bound bound,Function<byte[],byte[]> records,NodeSink sink) {
         Function<Identity,byte[]> nodes=id->records.apply(MachineStore.nodeKey(id));
         var entries=new TreeMap<byte[],Entry>(Arrays::compareUnsigned);
-        unknown(tree,own,nodes,entries);
+        if(ownReader==null)unknown(tree,own,nodes,entries);
+        else known(tree,ownReader,nodes,entries);
         for(var origin:bound.bindings()) {
             // The platform image is independently fixed by the compiler task's system input.
             if(origin.entry() instanceof RouteEntry.Jrt)continue;
             if(origin.reader()==null)unknown(tree,MachineLeaf.decode(records.apply(MachineStore.leafKey(origin.k())),tree.digest().width()),nodes,entries);
-            else tree.forEach(origin.reader(),nodes,e->{
-                byte[] value=new Codec.Writer().u8(1).raw(e.value()).toBytes();
-                entries.putIfAbsent(e.key(),new Entry(e.key(),value,tree.digest().hash(e.key(),value)));
-            });
+            else known(tree,origin.reader(),nodes,entries);
         }
         var root=tree.build(entries.values(),sink);sink.flush();return root.hash();
+    }
+    private static void known(ContentTree tree,Identity root,Function<Identity,byte[]> nodes,Map<byte[],Entry> entries) {
+        tree.forEach(root,nodes,e->{
+            byte[] value=new Codec.Writer().u8(1).raw(e.value()).toBytes();
+            entries.putIfAbsent(e.key(),new Entry(e.key(),value,tree.digest().hash(e.key(),value)));
+        });
     }
     private static void unknown(ContentTree tree,MachineLeaf leaf,Function<Identity,byte[]> nodes,Map<byte[],Entry> entries) {
         tree.forEach(leaf.oHash(),nodes,e->{

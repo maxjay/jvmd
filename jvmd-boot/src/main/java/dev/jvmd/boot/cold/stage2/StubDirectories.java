@@ -22,6 +22,7 @@ public final class StubDirectories implements AutoCloseable {
     private final LocalStore store;
     private final Function<Identity,MachineLeaf> leaves;
     private final ConcurrentHashMap<Identity,Directory> directories=new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Identity,Directory> views=new ConcurrentHashMap<>();
     private volatile Path root;
 
     public StubDirectories(ContentTree tree,LocalStore store,Function<Identity,MachineLeaf> leaves) {
@@ -42,6 +43,28 @@ public final class StubDirectories implements AutoCloseable {
                     var file=directory.resolve(stub.internalName()+".class");Files.createDirectories(file.getParent());Files.write(file,stub.bytes());
                     names.add(stub.internalName());
                 }
+                return new Directory(directory,names);
+            } catch(IOException failure) {throw new UncheckedIOException(failure);}
+        });
+    }
+    /** Separately content-addressed compiler inputs; S/ST remain resolution-only derivations. */
+    public Directory view(dev.jvmd.index.layer.local.SourceLeaf source) {
+        if(source.compilerView()==null)return get(source.k());
+        return views.computeIfAbsent(source.compilerView(),key->{
+            try {
+                if(root==null)synchronized(this) {if(root==null)root=Files.createTempDirectory("jvmd-stubs-");}
+                var directory=Files.createTempDirectory(root,"cv");var names=new java.util.ArrayList<String>();
+                tree.forEach(key,id->store.get(MachineStore.nodeKey(id)),entry->{
+                    var in=new dev.jvmd.core.tree.Codec.Reader(entry.key());String owner=in.utf16();
+                    if(in.remaining()!=0 || owner.startsWith("/") || owner.contains("..") || owner.contains("\\"))
+                        throw new IllegalStateException("Invalid compiler-view path");
+                    var content=Identity.of(entry.value());var bytes=store.get(LocalStore.compilerViewKey(content));
+                    if(bytes==null || !tree.digest().hash(bytes).equals(content))throw new IllegalStateException("Missing or corrupt compiler view");
+                    try {
+                        var file=directory.resolve(owner+".class");Files.createDirectories(file.getParent());Files.write(file,bytes);
+                    } catch(IOException failure) {throw new UncheckedIOException(failure);}
+                    names.add(owner);
+                });
                 return new Directory(directory,names);
             } catch(IOException failure) {throw new UncheckedIOException(failure);}
         });

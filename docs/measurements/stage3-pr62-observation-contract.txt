@@ -131,3 +131,64 @@ READER-POOL SHA3-256 warnings=0 first=ReaderStatistics[events=369, physicalReads
 READER-SLICE SHA3-256 metadataChange prefixes=2 hits=1 receipts=1 proofNodes=1 frontierNodes=25
 
 Basic startup option probe only: both javaagent+AOTCacheOutput and javaagent+AOTCache/AOTMode=on exit 0; generated cache 14,745,600 bytes. This is not the packaged distribution acceptance test.
+
+
+Native-reader proof and admission checkpoint, 7 October 2026
+Parent implementation: 11b90f1784977782cdd0df47b548ad65b95052f9; decision remains 1c8800ad.
+Formats unchanged from approved amendment; no production tree change. PR62 draft/unmerged.
+
+Actual ClassReader.readMethod -> Symbol.isInterface now contributes the exact T TYPE read.
+It is not inferred from a loaded class. Pooled task capture retains that actual dependency.
+Independent oracle tracks M facets and actual native completion closure by Symbol identity;
+it reads no production proof or capture graph. T cannot discharge M, nor a different M context.
+
+Strict slice and independent controls: 20 PASS.
+mvn -B -pl jvmd-tests -am test -Pread-oracle -Dtest=NativeReaderOperationTest,ReadOracleInstrumentationTest,ReadOracleCoverageTest,NativeReaderSliceTest -Djvmd.readOracle.sites=true -Djvmd.readOracle.report=target/native-reader-facets-v3.txt -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,benchmark
+Full strict collector: 88 tests, 20 PASS, 68 FAIL. Gate remains OPEN, no suppression.
+mvn -B -pl jvmd-tests -am test -Pread-oracle -Dtest=ReadOracleInstrumentationTest,ReadOracleCoverageTest,BodyCollectorTest -Djvmd.readOracle.report=target/native-reader-full-strict.txt -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,benchmark
+The legacy collector fixtures lack typed reader binding; real T/absence over/underproofs also remain. Neither category is waived.
+
+Original 2,000-file Lombok gate restored: 2 PASS (both digests), repeated in preservation run.
+Only its recompile helper was supplied the production ReaderInputs binding. Original admission, native bytes, and selective-reuse assertions remain.
+Field edit: 2 attributed / 1,998 retained. Body edit: 1 / 1,999. Config edit and deletion: 1,000 / 1,000 each.
+mvn -B -pl jvmd-tests -am test -Dtest=ProcessorReuseMeasurement -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+The first unbound helper run failed both admission assertions; review62-reader-lombok-2000.log is retained.
+
+Header-writer boundary: 9 PASS. Plain header model restores private reader effects in Q16, but raw ClassWriter has malformed inner constructor MethodParameters and an enum recipe mismatch before Lower. No raw writer output was adopted as a production compiler view.
+mvn -B -pl jvmd-tests -am test -Dtest=HeaderWriterProbeTest,RetainedAnnotationDiagnosticTest -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+
+Broad preservation: 356 tests, 354 PASS, 2 FAIL (only Stage3ClasspathMeasurement's exact one-message-per-rejected-file assertion). Production now supplies a specific bridge fault alongside its guard. The assertion was updated to require exact equality of all qualified computed faults with published faults, plus the existing nonreuse/ACI rejection. Native equality assertions were unchanged.
+mvn -B -pl jvmd-tests -am test -Dtest=HeaderWriterProbeTest,ReaderImageTest,NativeReaderSliceTest,NativeBridgeContractTest,ProofIndexTest,OutputRecoveryTest,FixedCompilerInputsTest,FixedMetadataTest,BodyOutputTest,BinaryMetadataAdmissionTest,BodyAttributeTest,BodyPoolTest,BodyProofTest,BodyRecordsTest,Stage3Test,ProcessedAttributeTest,BodyProcessorTest,BodyCollectorTest,ColdProjectBootTest,BodyGenerationTest,ModuleArchitectureTest,ForbiddenIdentifiersTest,Stage3ClasspathMeasurement,ProcessorReuseMeasurement,ModuleDerivationTest,ModuleAnnotationProjectionTest,ModuleDescriptorTest,BodyValidationTest,BodyValidationNativeTest,RetainedAnnotationDiagnosticTest -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+Native rerun after that accounting correction: 2 PASS; SHA-256 and SHA3-256 each compare 26/26 ordered diagnostic scopes, 607 files, 1,447 class files, 10 module descriptors. Temporary nonreuse guards remain on 276 files. No Java edits during this final native rerun.
+mvn -B -pl jvmd-tests -am test -Dtest=Stage3ClasspathMeasurement -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+
+OPEN: full strict completeness/minimality; sufficient richer source/sibling input; remaining metadata operations/failures and pooling; persisted processor/admission selection; historical reader reachability; complete extraction/read/write/byte/allocation costs; separate F09 decision.
+Logical work rows below do not measure full physical Rocks/WAL or cold image-extraction costs.
+Java source files: 589
+Working content manifest SHA256: 0b435f7a0bf114392b5912b2721be3e6c662fd091fad1a437eef9280689a1a47
+Normalized Git blob-ID manifest SHA256: 16e6e3493299d6366452a1b18ba8177ccd2defdc942ed9965c16f1fff38ced3d
+review62-reader-facets-v3.log sha256=2731335e8fc8ebda48ef2ed24c22e4b0c5758e7b2cc54f2dfd26a364138cd5be
+review62-reader-full-strict.log sha256=53ad5ec14f961129c332e8c5e59fc0b98c36138777b94b18efe432e278727fbe
+review62-reader-lombok-2000.log sha256=854a1c88e0770079ac7361e91c494384f69bd50d6a1ffb9370b62d510476f715
+review62-reader-lombok-bound.log sha256=f7c78950a61e2753adf6bbbcdf24e128f3ba44ed351ffcf6c5234e37efb76b30
+review62-header-reader-final.log sha256=ab4a5052b5ab78df6d59ef50ee7f4c20553f16c25f8ca6a71aed4522632165f4
+review62-reader-frozen.log sha256=a9184d55220dbd96fbdd02e3307d75efe50d162f92e7fa5abbc07263d1aa0772
+review62-reader-native-final.log sha256=c71812ea5e97e85b813f41b1d54c603ba0a65fecdad37b337f436f8ab9c9d8dc
+Q15 SHA-256 basenameChanged=true sourceChanged=false optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=7032 writes=0
+Q15 SHA-256 basenameChanged=false sourceChanged=true optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6360 writes=0
+Q15 SHA-256 basenameChanged=false sourceChanged=false optionsChanged=true compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6360 writes=0
+Q15 SHA-256 basenameChanged=false sourceChanged=false optionsChanged=false compilerChanged=true transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6360 writes=0
+Q15 SHA3-256 basenameChanged=true sourceChanged=false optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=7296 writes=0
+Q15 SHA3-256 basenameChanged=false sourceChanged=true optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6624 writes=0
+Q15 SHA3-256 basenameChanged=false sourceChanged=false optionsChanged=true compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6624 writes=0
+Q15 SHA3-256 basenameChanged=false sourceChanged=false optionsChanged=false compilerChanged=true transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1473 receiptBytes=321 allocated=6624 writes=0
+READER-POOL SHA-256 warnings=0 first=ReaderStatistics[events=405, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913] second=ReaderStatistics[events=593, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913]
+READER-POOL SHA-256 warnings=0 first=ReaderStatistics[events=405, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913] second=ReaderStatistics[events=593, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913]
+READER-POOL SHA-256 warnings=1 first=ReaderStatistics[events=405, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913] second=ReaderStatistics[events=810, physicalReads=6, queries=10, nodeReads=13, nodeBytes=3913]
+READER-POOL SHA-256 warnings=0 first=ReaderStatistics[events=405, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3981] second=ReaderStatistics[events=593, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3981]
+READER-SLICE SHA-256 metadataChange prefixes=2 hits=1 receipts=1 proofNodes=1 frontierNodes=22
+READER-POOL SHA3-256 warnings=0 first=ReaderStatistics[events=405, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913] second=ReaderStatistics[events=593, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913]
+READER-POOL SHA3-256 warnings=0 first=ReaderStatistics[events=405, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913] second=ReaderStatistics[events=593, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3913]
+READER-POOL SHA3-256 warnings=1 first=ReaderStatistics[events=405, physicalReads=3, queries=5, nodeReads=18, nodeBytes=4368] second=ReaderStatistics[events=810, physicalReads=6, queries=10, nodeReads=18, nodeBytes=4368]
+READER-POOL SHA3-256 warnings=0 first=ReaderStatistics[events=405, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3981] second=ReaderStatistics[events=593, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3981]
+READER-SLICE SHA3-256 metadataChange prefixes=2 hits=1 receipts=1 proofNodes=1 frontierNodes=25

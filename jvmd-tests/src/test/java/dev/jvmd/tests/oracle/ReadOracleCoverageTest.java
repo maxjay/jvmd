@@ -70,4 +70,18 @@ class ReadOracleCoverageTest {
                 new ReadOracleTrace.Missing("METHOD", "q/Other", "run"),
                 new ReadOracleTrace.Missing("N", "p/Lib", "Other")))) .hasSize(3);
     }
+
+    @Test void readerOperationsAndContextsAreExactAndCannotBeCoveredByResolutionOrAnEmptyArgument() {
+        var recipe=new dev.jvmd.index.layer.local.ReverseIndex.Dependency(3,"p/Lib",0,"");
+        var proof=proof(List.of(entry(Proof.T,2,"run",NONZERO)),List.of())
+                .withReaderReads(List.of(new Proof.ReaderRead(recipe,NONZERO)));
+        var ordinary=new ReadOracleTrace.Missing("M:0:0:","p/Lib","");
+        var parameters=new ReadOracleTrace.Missing("M:0:0:","p/Lib","parameters");
+        var method=new ReadOracleTrace.Missing("M:0:1:","p/Lib","run");
+        var otherContext=new ReadOracleTrace.Missing("M:1:0:","p/Lib","");
+        assertThat(ReadOracleTrace.missingQueries(proof,List.of(ordinary,parameters,method,otherContext),List.of()))
+                .containsExactlyInAnyOrder(parameters,method,otherContext);
+        assertThat(ReadOracleTrace.unjustified(proof,List.of(parameters,new ReadOracleTrace.Missing("METHOD","p/Lib","run")),List.of()))
+                .containsExactly(ordinary);
+    }
 }

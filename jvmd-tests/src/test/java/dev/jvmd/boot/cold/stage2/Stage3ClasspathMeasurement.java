@@ -71,6 +71,7 @@ class Stage3ClasspathMeasurement {
         var failures=new ArrayList<String>();var report=new StringBuilder("digest: "+digest.name()+"\n");
         report.append("project: ").append(root).append("\nworkers: ").append(workers).append("\nstage3 wall ms: ").append(actual.wallMillis()).append('\n');
         int equal=0,descriptors=0,files=0,classCount=0,rejected=0;
+        var admissionFaults=new java.util.TreeSet<String>();
         for(var scope:actual.scopes().entrySet()) {
             int slash=scope.getKey().lastIndexOf('/');String module=scope.getKey().substring(0,slash);int kind=scope.getKey().endsWith("/main")?0:1;
             var expected=nativeScopes.get(scope.getKey());var classes=new TreeMap<String,byte[]>();var messages=new ArrayList<Message>();
@@ -89,7 +90,8 @@ class Stage3ClasspathMeasurement {
                     assertThat(tree.get(actual.bodies().bodiesRoot(),id->store.get(MachineStore.nodeKey(id)),LocalStore.resultKey(computed.aci()))).isNotNull();
                 } else {
                     rejected++;
-                    assertThat(computed.faults()).containsExactly("unsupported for reuse: retained binary metadata reads have no exact proof projection");
+                    assertThat(computed.faults()).contains("unsupported for reuse: retained binary metadata reads have no exact proof projection");
+                    for(var fault:computed.faults())admissionFaults.add(module+"/"+kind+": "+file.path()+": "+fault);
                     assertThat(computed.proof().reusable()).isFalse();assertThat(computed.aci()).isNull();
                 }
                 files++;
@@ -122,7 +124,9 @@ class Stage3ClasspathMeasurement {
         for(var failure:failures)report.append(failure).append('\n');
         Files.writeString(Path.of("target/stage3-classpath-"+digest.name()+".txt"),report);
         System.out.println(report);
-        assertThat(actual.faults()).hasSize(rejected).allMatch(f -> f.endsWith("unsupported for reuse: retained binary metadata reads have no exact proof projection"));
+        // The bridge now supplies actual admission reasons in addition to the retained guard.
+        // Every reported fault must still belong to an explicitly non-reusable unit above.
+        assertThat(actual.faults()).containsExactlyInAnyOrderElementsOf(admissionFaults);
         assertThat(failures).isEmpty();
         assertThat(actual.bodies().current(LocalRoot.decode(digest,store.get(LocalStore.localRootKey(project))))).isTrue();
     }

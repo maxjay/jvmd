@@ -129,6 +129,7 @@ public final class ReadOracleAgent {
                                 return;
                             }
                             if (instruction instanceof ReturnInstruction result) {
+                                if(read)out.aload(1).aload(0).invokestatic(TAP,"readerCompleted",MethodTypeDesc.ofDescriptor("(Ljava/lang/Object;Ljava/lang/Object;)V"));
                                 if(hierarchy)out.aload(1).invokestatic(TAP,"hierarchy",OBJECT);
                                 if(header)out.aload(0).invokestatic(TAP,"header",OBJECT);
                                 if (attribute) out.dup().invokestatic(TAP, "end", OBJECT);

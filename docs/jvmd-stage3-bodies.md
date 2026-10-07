@@ -807,7 +807,8 @@ Primitives as stage 2 appendix B: `u8`, `u16`, `u32`, `u64`, `i64`, `str`, `zstr
 ### B.1 Proof
 
 ```
-C|projectKey|module|scope|path     = u8 reusable || header || opt<bodyObservations> || list<type> || list<zstr absentTypeKey>   // the last proof of this file in this project
+C|projectKey|module|scope|path     = u8 reusable || header || opt<bodyObservations> || list<type> || list<zstr absentTypeKey> || list<readerRead>   // the last proof of this file in this project
+readerRead            = M question (B.6a) || id answer
 header                = id routeHash || id ddSum || id dsSum || id dcSum || id ownR || opt<proc>
 proc                  = id processorPathHash || id optionsHash || list<(zstr path || id sum)>   // only with a processor path; the list is configProof(f): one entry per directory on f's chain, sum zero where no file exists
 bodyObservations      = u8 rejected || list<(str processorClass || opt<bytes modelAnswers> || u8 declared || u8 observed)> || list<str configuredProcessor> // invocation order and detached actual answers; configured names are admission metadata
@@ -933,6 +934,8 @@ The in-memory file manager forwards every read to the standard one and captures 
 The Stage 3 launcher installs a small startup javaagent before javac is loaded. Exact native class hashes pin its hooks and local-slot assumptions. The production transformer is confined to ClassReader/AnnotationDeproxy and ClassSymbol access in the compiler adapter. A bootstrap callback records only inside an active task; hook drift, missing installation and callback failure reject reuse without replacing native exceptions or diagnostic execution. The independent test oracle uses separate hooks and expected traces.
 
 Actual read returns record recipe observations, including absence of metadata. Native named answers and their caught failure slots are captured after execution. Pool contexts retain operation dependencies associated with requesting classes; actual native accesses import their retained closure on subsequent tasks. The initial slice resets an effectful context after native recovered warnings, preserving warning execution on the next task. Generic, class-literal (including defaults and nested values), record, parameter-annotation and unproved completion-failure paths retain admission guards. These guards are open completion work, not the final Stage 3 solution.
+
+ClassReader.readMethod's actual isInterface operation also consumes the declaring type's T header. The bridge records this operation through the established T range and retains it with the completion dependency. Physical class loading alone does not create that T observation. The independent checker separately records the native flag read and checks both fresh and cached-completion use.
 
 ### C.3 Own-minus-f
 

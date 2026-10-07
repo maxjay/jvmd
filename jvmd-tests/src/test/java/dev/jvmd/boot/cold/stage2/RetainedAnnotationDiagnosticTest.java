@@ -135,6 +135,25 @@ class RetainedAnnotationDiagnosticTest {
         assertThat(compile(dependencies,dependencies,List.of(mode,ann,library))).isEmpty();
         var real=Files.readAllBytes(dependencies.resolve("q/Lib.class"));
         var facts=ClassFacts.of(digest,real,"q/Lib");
+        byte[] headerView;
+        try(var headers=HeaderCompiler.compile(List.of(new HeaderCompiler.Source("Lib.java",library)),List.of(dependencies),
+                Path.of(System.getProperty("java.home")),Runtime.version().feature(),List.of(),digest)) {
+            assertThat(headers.units.getFirst().faults).isEmpty();
+            var taskField=HeaderCompiler.Compiled.class.getDeclaredField("task");taskField.setAccessible(true);
+            var task=taskField.get(headers);
+            var context=task.getClass().getMethod("getContext").invoke(task);
+            var loader=ModuleLayer.boot().findLoader("jdk.compiler");
+            var contextType=Class.forName("com.sun.tools.javac.util.Context",false,loader);
+            var symbolType=Class.forName("com.sun.tools.javac.code.Symbol$ClassSymbol",false,loader);
+            var writerType=Class.forName("com.sun.tools.javac.jvm.ClassWriter",false,loader);
+            var writer=writerType.getMethod("instance",contextType).invoke(null,context);
+            var bytes=new java.io.ByteArrayOutputStream();
+            writerType.getMethod("writeClassFile",java.io.OutputStream.class,symbolType)
+                    .invoke(writer,bytes,headers.units.getFirst().declared.getFirst());
+            headerView=bytes.toByteArray();
+        }
+        assertThat(ClassFacts.of(digest,headerView,"q/Lib").reader().recipe())
+                .usingRecursiveComparison().isEqualTo(facts.reader().recipe());
         Files.writeString(mode,"package q; public enum Mode { Y }");
         assertThat(compile(dependencies,dependencies,List.of(mode))).isEmpty();
         assertThat(compile(output,dependencies,List.of(app))).containsExactly("compiler.warn.unknown.enum.constant");
@@ -152,6 +171,11 @@ class RetainedAnnotationDiagnosticTest {
         // Restoring the actual compiler view restores the effect; no cache or source edit is involved.
         Files.write(dependencies.resolve("q/Lib.class"),real);
         assertThat(compile(output,dependencies,List.of(app))).containsExactly("compiler.warn.unknown.enum.constant");
+        // A separately keyed compiler view can preserve this effect using javac's own header model.
+        // This probe deliberately does not change ST or install a production view.
+        Files.write(dependencies.resolve("q/Lib.class"),headerView);
+        assertThat(compile(output,dependencies,List.of(app))).containsExactly("compiler.warn.unknown.enum.constant");
+        assertThat(Files.readAllBytes(output.resolve("p/App.class"))).isEqualTo(nativeBytes);
     }
 
     private List<String> compile(Path output,Path dependencies,List<Path> sources) throws Exception {

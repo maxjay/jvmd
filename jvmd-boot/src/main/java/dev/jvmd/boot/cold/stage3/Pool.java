@@ -500,7 +500,8 @@ public final class Pool implements AutoCloseable {
                 });
                 var bytes = new TreeMap<String, byte[]>();
                 files.outputs.forEach((name, output) -> bytes.put(name, output.toByteArray()));
-                return new Completed<>(result.value(), Map.copyOf(bytes),result.reads(), metadataSupported && (configuration.readers()==null || reader.supported()),readerProof.get(),reader.faults());
+                var allReads=new ArrayList<>(result.reads());allReads.addAll(reader.resolutionReads());
+                return new Completed<>(result.value(), Map.copyOf(bytes),List.copyOf(allReads), metadataSupported && (configuration.readers()==null || reader.supported()),readerProof.get(),reader.faults());
             } finally {
                 files.outputs.clear();
                 // Annotation deproxy diagnostics are emitted on completion. An unsupported binary must be decoded

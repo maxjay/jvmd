@@ -16,6 +16,20 @@ Open work remains: supported operation/failure coverage, source/sibling richer c
 
 ## Findings
 
+### Native reader proof follow-up, 2026-10-07
+
+The first production slice was pushed at `11b90f17`. Follow-up independent tracing found a real missing T observation: ClassReader.readMethod calls isInterface on its declaring type. The pinned bridge now captures that exact native call and retains its dependency with the native completion; it does not add a T dependency for every loaded class. This repairs the q/Ann and q/Mode omissions demonstrated by the independent checker.
+
+The checker now has a separate M channel for native recipe/method/VAR operations, exact universe/module/operation/argument comparisons, and actual jrt system-input witnesses. It retains prior native observations by compiler-symbol identity and imports them on a successful native Resolve lookup of a cached completion. It never obtains expected queries or closure from production capture, C or CI. Existing exact-width/absence controls remain; a new control rejects M/T substitution, cross-context substitution and treating an empty M argument as a wildcard. The combined native reader slice and independent controls pass 20 tests with strict assertions enabled, including repeated pooled tasks under both digests.
+
+The **full strict gate is still open**. Its current run has 88 tests, 68 failures in the 74-case collector suite. Missing M recipes and remaining T/absence completeness/minimality discrepancies are retained, not suppressed. The passing slice does not replace this gate.
+
+The original **2,000-file Lombok gate passes both digests** after its explicit recompilation helper receives the production reader binding. No admission, byte-oracle or selective-reuse assertion changed: API addition attributes 2/retains 1,998; body edit attributes 1/retains 1,999; configuration edit and deletion each attribute 1,000/retain 1,000. The earlier unbound-helper run remains recorded as two failures.
+
+A bounded source compiler-view probe used javac's own ClassWriter on the completed header model. It preserves the private-annotation warning that ST loses, and matches the tested ordinary/generic/record metadata. It is **not adopted as a general emitter**: before Lower, an inner constructor has an external parameter count without populated extraParams, producing malformed MethodParameters; enum hidden-parameter metadata also differs. The new regression records both limits. Richer source/sibling compiler inputs remain an implementation obligation, with separate keys and unchanged ST.
+
+F09 remains an open separate decision; PR62 remains draft/unmerged. This checkpoint is implementation evidence, not Stage 3 acceptance.
+
 ### Observation addendum: checkpoint 0/1 and Q15, 2026-10-07
 
 **Decision scope.** The supplied `JVMD_PR62_OBSERVATION_FACET_AND_REUSE_ADDENDUM.md` is adopted as the bounded implementation direction: an operation-addressed native-reader view feeding the existing proof/CI/current-X/publication engine. It refines the earlier three-operation proposal below; those names are not a completeness claim. This checkpoint returns the concrete amendment and interception evidence required by its §15 before production representation expansion. The original completion brief §4.2 keeps Q_M abstract until its representation is agreed, and §1.3 requires a decision for a specification/physical-format change. The addendum §6.4 also calls for an explicit pinned compiler bridge decision. No tree experiment, production agent, persistence-format change or reuse-guard removal is inferred.

@@ -16,6 +16,8 @@ final class NativeReaderCapture {
     private final java.util.function.Predicate<Symbol.ClassSymbol> fixed;
     private final Map<Symbol.ClassSymbol,Map<ReverseIndex.Dependency,Identity>> retained=new IdentityHashMap<>();
     private final Map<Symbol.ClassSymbol,Set<Symbol.ClassSymbol>> dependencies=new IdentityHashMap<>();
+    private final Map<Symbol.ClassSymbol,Set<Proof.Range>> retainedResolution=new IdentityHashMap<>();
+    private final Set<Proof.Range> resolution=new LinkedHashSet<>();
     private final Set<Symbol.ClassSymbol> imported=Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<ReverseIndex.Dependency,byte[]> answers=new HashMap<>();
     long events,physicalReads,queries,nodeReads,nodeBytes;
@@ -41,9 +43,9 @@ final class NativeReaderCapture {
         try {return (String)STATUS.invoke(null);}
         catch(ReflectiveOperationException failure) {return "Cannot verify compiler reader bridge: "+failure;}
     }
-    void clear() {retained.clear();dependencies.clear();decoded.clear();}
+    void clear() {retained.clear();retainedResolution.clear();dependencies.clear();decoded.clear();}
     void begin() {
-        current.clear();faults.clear();imported.clear();effects=false;
+        current.clear();resolution.clear();faults.clear();imported.clear();effects=false;
         if(inputs==null || BEGIN==null)return;
         try {active=true;if(!(boolean)BEGIN.invoke(null,(java.util.function.Consumer<Object[]>)this::event))faults.add("Compiler bridge drift");}
         catch(ReflectiveOperationException ex) {active=false;faults.add("Cannot enter compiler reader bridge: "+ex);}
@@ -58,6 +60,7 @@ final class NativeReaderCapture {
     boolean admitted(Symbol.ClassSymbol symbol) {return active && decoded.contains(symbol) && faults.isEmpty();}
     boolean effects() {return effects;}
     List<String> faults() {return List.copyOf(faults);}
+    List<Proof.Range> resolutionReads() {return List.copyOf(resolution);}
     private static String name(Symbol.ClassSymbol symbol) {return symbol.flatname.toString().replace('.','/');}
     private static boolean platform(Symbol.ClassSymbol symbol) {
         return symbol.classfile!=null && "jrt".equals(symbol.classfile.toUri().getScheme());
@@ -76,6 +79,12 @@ final class NativeReaderCapture {
             return;
         }
         if(platform(requesting))return;
+        if(operation.equals("resolution-type")) {
+            if(fixed.test(requesting))return;
+            var read=new Proof.Range(Proof.T,name(requesting),Keys.TYPE,"");
+            resolution.add(read);retainedResolution.computeIfAbsent(requesting,k->new LinkedHashSet<>()).add(read);
+            return;
+        }
         if(operation.equals("read")) {
             physicalReads++;if(fixed.test(requesting))return;
             var local=query(requesting,ReaderImage.RECIPE,((com.sun.tools.javac.jvm.ClassReader)event[3]).saveParameterNames?"parameters":"",requesting);
@@ -124,6 +133,7 @@ final class NativeReaderCapture {
     private void reuse(Symbol.ClassSymbol owner) {
         if(!imported.add(owner))return;
         var answers=retained.get(owner);if(answers!=null)current.putAll(answers);
+        resolution.addAll(retainedResolution.getOrDefault(owner,Set.of()));
         for(var dependency:dependencies.getOrDefault(owner,Set.of()))reuse(dependency);
     }
     private static String descriptor(Type type) {

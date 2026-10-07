@@ -56,11 +56,12 @@ public final class NativeReaderAgent {
                     if(!(element instanceof CodeModel code)){builder.with(element);return;}
                     var method=code.parent().orElseThrow();String methodName=method.methodName().stringValue();
                     boolean read=name.endsWith("/ClassReader") && methodName.equals("readClassFile");
+                    boolean methodHeader=name.endsWith("/ClassReader") && methodName.equals("readMethod");
                     boolean methodQuery=name.endsWith("$AnnotationDeproxy") && methodName.equals("findAccessMethod");
                     boolean enumQuery=name.endsWith("$AnnotationDeproxy") && methodName.equals("visitEnumAttributeProxy");
                     boolean unsupported=name.endsWith("$AnnotationDeproxy") && methodName.equals("visitClassAttributeProxy");
                     boolean touch=name.endsWith("$ClassSymbol") && Set.of("flags","members","getRawAttributes","getRawTypeAttributes").contains(methodName);
-                    if(!(read || methodQuery || enumQuery || unsupported || touch)){builder.with(code);return;}
+                    if(!(read || methodHeader || methodQuery || enumQuery || unsupported || touch)){builder.with(code);return;}
                     hooks.merge(methodName,1,Integer::sum);
                     builder.transformCode(code,new CodeTransform() {
                         Label start;
@@ -70,6 +71,15 @@ public final class NativeReaderAgent {
                             if(unsupported)event(out,"unsupported",-1,0,1,-1);
                         }
                         @Override public void accept(CodeBuilder out,CodeElement instruction) {
+                            if(methodHeader && instruction instanceof java.lang.classfile.instruction.InvokeInstruction invoke
+                                    && invoke.name().equalsString("isInterface")) {
+                                // This exact decoder branch consumes the type header. A class merely loaded
+                                // without this operation does not acquire a blanket T dependency.
+                                out.dup();int owner=out.allocateLocal(TypeKind.REFERENCE);out.astore(owner);
+                                out.with(instruction);
+                                event(out,"resolution-type",owner,owner,-1,-1);
+                                return;
+                            }
                             if(instruction instanceof ReturnInstruction) {
                                 if(read)event(out,"read",1,1,0,-1);
                                 else if(methodQuery) {
@@ -86,7 +96,7 @@ public final class NativeReaderAgent {
                             out.with(instruction);
                         }
                         @Override public void atEnd(CodeBuilder out) {
-                            if(touch || unsupported)return;
+                            if(touch || unsupported || methodHeader)return;
                             var end=out.newLabel();var handler=out.newLabel();
                             out.labelBinding(end).exceptionCatchAll(start,end,handler).labelBinding(handler);
                             out.dup();int failure=out.allocateLocal(TypeKind.REFERENCE);out.astore(failure);
@@ -100,7 +110,7 @@ public final class NativeReaderAgent {
                         }
                     });
                 }));
-                var expected=name.endsWith("/ClassReader")?Map.of("readClassFile",1)
+                var expected=name.endsWith("/ClassReader")?Map.of("readClassFile",1,"readMethod",1)
                     :name.endsWith("$ClassSymbol")?Map.of("flags",1,"members",1,"getRawAttributes",1,"getRawTypeAttributes",1)
                     :Map.of("findAccessMethod",1,"visitEnumAttributeProxy",1,"visitClassAttributeProxy",1);
                 if(!hooks.equals(expected))throw new IllegalStateException("Reader bridge hook drift: "+hooks);

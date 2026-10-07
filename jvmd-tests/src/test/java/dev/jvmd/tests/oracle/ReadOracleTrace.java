@@ -17,13 +17,19 @@ public final class ReadOracleTrace {
     private static final ThreadLocal<Snapshot> PENDING = new ThreadLocal<>();
     private static final Object REPORT_LOCK = new Object();
     private static final Set<String> INSTALLED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final java.util.Map<Object,ReaderMemory> READER_MEMORY=java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+    private static final class ReaderMemory {
+        final Set<Missing> observations=new TreeSet<>();
+        final List<java.lang.ref.WeakReference<Object>> inputs=new ArrayList<>();
+    }
     public static void installed(String name) { INSTALLED.add(name); }
     public static Set<String> hooks() { return Set.copyOf(INSTALLED); }
     public record Missing(String kind, String owner, String name) implements Comparable<Missing> {
         @Override public int compareTo(Missing other) { return toString().compareTo(other.toString()); }
     }
     public record Snapshot(String file, List<String> loaded, List<String> modules, List<Missing> absent, List<Missing> predefined,
-                           List<Missing> queries, List<String> sites, List<String> scans, List<Missing> closure) { }
+                           List<Missing> queries, List<String> sites, List<String> scans, List<Missing> closure,
+                           List<Missing> readers,List<String> platformTypes,List<String> platformModules) { }
     private static final class Trace {
         final String file;
         final Set<String> own;
@@ -36,6 +42,8 @@ public final class ReadOracleTrace {
         final Set<String> sites = new TreeSet<>();
         final Set<String> scans = new TreeSet<>();
         final Set<Missing> closure = new TreeSet<>();
+        final Set<Missing> readers = new TreeSet<>();
+        final Set<String> platformTypes = new TreeSet<>(), platformModules = new TreeSet<>();
         final java.util.Deque<String> methods = new java.util.ArrayDeque<>();
         void query(Missing query) {
             queries.add(query);
@@ -71,7 +79,8 @@ public final class ReadOracleTrace {
         if (trace.globalTypes != 0) throw new AssertionError("Unbalanced global type lookup");
         if (!trace.methods.isEmpty()) throw new AssertionError("Unbalanced native method lookup");
         return new Snapshot(trace.file, List.copyOf(trace.loaded), List.copyOf(trace.modules), List.copyOf(trace.absent), List.copyOf(trace.predefined),
-                List.copyOf(trace.queries), List.copyOf(trace.sites), List.copyOf(trace.scans), List.copyOf(trace.closure));
+                List.copyOf(trace.queries), List.copyOf(trace.sites), List.copyOf(trace.scans), List.copyOf(trace.closure),
+                List.copyOf(trace.readers),List.copyOf(trace.platformTypes),List.copyOf(trace.platformModules));
     }
     public static void suspend() { var trace = CURRENT.get(); if (trace != null) trace.suspended++; }
     public static void resume() { var trace = CURRENT.get(); if (trace != null) trace.suspended--; }
@@ -129,10 +138,11 @@ public final class ReadOracleTrace {
                     case "findFun", "findMethodInScope" -> "METHOD";
                     case "findField" -> "FIELD";
                     default -> null;
-                }:null).orElse(null));
+                }:f.getClassName().equals("com.sun.tools.javac.jvm.ClassReader$AnnotationDeproxy")
+                        && Set.of("findAccessMethod","visitEnumAttributeProxy").contains(f.getMethodName())?"READER":null).orElse(null));
         return ()->new java.util.Iterator<Object>() {
             final java.util.Iterator<?> iterator=original.iterator();
-            private void observed() { if(form!=null && CURRENT.get()==trace && trace.suspended==0) {
+            private void observed() { if(form!=null && !form.equals("READER") && CURRENT.get()==trace && trace.suspended==0) {
                 var query=new Missing(form,binary(owner),name.toString());
                 if(trace.intrinsic.contains(owner))trace.predefined.add(query);
                 else if(!binary(owner).isEmpty())trace.query(query);
@@ -203,7 +213,8 @@ public final class ReadOracleTrace {
         if(trace==null || trace.suspended!=0 || symbol==null
                 || !symbol.getClass().getName().equals("com.sun.tools.javac.code.Symbol$ClassSymbol"))return;
         if(!trace.own(binary(symbol)) && fileKind(field(symbol,"classfile")).equals("CLASS")) {
-            trace.query(new Missing("TYPE",binary(symbol),""));
+            var query=new Missing("TYPE",binary(symbol),"");trace.query(query);
+            if(nativeStack().contains("com.sun.tools.javac.jvm.ClassReader.readMethod:"))remember(symbol,query);
             // Resolve.findMethod's DEFAULT_OK branch skips an interface with no defaults.
             // Its answer implies this requested name has no default candidates; a new default
             // of that name can change resolution. It does not justify every method of the interface.
@@ -228,11 +239,59 @@ public final class ReadOracleTrace {
                 // This is the actual descriptor symbol, not an ordinary class whose flatname happens to contain module-info.
                 // Keep the qualified module read visible; an unqualified body type proof cannot discharge it.
                 trace.modules.add(field(owner, "name").toString());
+                if(platform(symbol))trace.platformModules.add(field(owner,"name").toString());
                 return;
             }
             String name = binary(symbol);
             if (!trace.own(name)) trace.loaded.add(name);
+            if(platform(symbol))trace.platformTypes.add(name);
         }
+    }
+
+    /** Separate native operation channel: no resolution query, projected image or production capture is consulted. */
+    public static void readerCompleted(Object symbol,Object reader) {
+        var trace=CURRENT.get();
+        if(trace==null || trace.suspended!=0 || platform(symbol) || trace.own(binary(symbol)))return;
+        var query=new Missing("M:0:0:",binary(symbol),(Boolean)field(reader,"saveParameterNames")?"parameters":"");
+        trace.readers.add(query);remember(symbol,query);
+    }
+    public static void readerAnswer(Object value,Object requester,String operation) {
+        var trace=CURRENT.get();if(trace==null || trace.suspended!=0)return;
+        Object symbol=value.getClass().getName().equals("com.sun.tools.javac.code.Attribute$Enum")?field(value,"value"):value;
+        var owner=field(symbol,"owner");if(platform(owner))return;
+        var query=new Missing(operation.equals("findAccessMethod")?"M:0:1:":"M:0:2:",binary(owner),field(symbol,"name").toString());
+        trace.readers.add(query);remember(requester,query);
+        synchronized(READER_MEMORY) {
+            READER_MEMORY.computeIfAbsent(requester,k->new ReaderMemory()).inputs.add(new java.lang.ref.WeakReference<>(owner));
+        }
+    }
+    private static void remember(Object symbol,Missing query) {
+        synchronized(READER_MEMORY){READER_MEMORY.computeIfAbsent(symbol,k->new ReaderMemory()).observations.add(query);}
+    }
+    /** An actual successful Resolve lookup may consume completion already cached in this native symbol.
+     * The oracle independently retains prior native reads by symbol identity; it never reads a C/CI proof
+     * or the production bridge's closure. A new task context has different symbol identities. */
+    private static void completedValue(Object symbol,Trace trace) {
+        synchronized(READER_MEMORY) {
+            var visited=java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Object,Boolean>());
+            var todo=new java.util.ArrayDeque<Object>();todo.add(symbol);
+            while(!todo.isEmpty()) {
+                var value=todo.removeFirst();if(!visited.add(value))continue;
+                var memory=READER_MEMORY.get(value);if(memory==null)continue;
+                for(var query:memory.observations) {
+                    if(query.kind().startsWith("M:"))trace.readers.add(query);
+                    else trace.closure.add(query);
+                }
+                for(var weak:memory.inputs){var input=weak.get();if(input!=null)todo.add(input);}
+            }
+        }
+    }
+    private static boolean platform(Object symbol) {
+        var file=field(symbol,"classfile");if(file==null)return false;
+        try {
+            var uri=(java.net.URI)Class.forName("javax.tools.FileObject",false,ClassLoader.getPlatformClassLoader()).getMethod("toUri").invoke(file);
+            return uri.getScheme().equals("jrt");
+        }catch(ReflectiveOperationException failure){throw new AssertionError("Oracle platform witness",failure);}
     }
 
     public static void lookup(Object result, String operation, Object site, Object name, Object predefined) {
@@ -245,7 +304,7 @@ public final class ReadOracleTrace {
             owner = name.toString().replace('.', '/');
             if (!trace.own(owner)) {
                 if(absent)trace.absent.add(new Missing("D",owner,""));
-                else if(kind.equals("TYP"))trace.query(new Missing("TYPE",owner,""));
+                else if(kind.equals("TYP")) {trace.query(new Missing("TYPE",owner,""));completedValue(result,trace);}
             }
             return;
         }
@@ -286,9 +345,14 @@ public final class ReadOracleTrace {
     }
 
     private static void report(Snapshot trace, Object proof) {
-        var uncovered = uncovered(proof, trace.loaded(), trace.modules(), trace.absent());
+        var readerOwners=trace.readers().stream().filter(q->q.kind().equals("M:0:0:")).map(Missing::owner).collect(java.util.stream.Collectors.toSet());
+        // Actual jrt descriptors/types have the compiler-system witness. A physical metadata read is
+        // inventoried through its own exact M operation; neither exemption discharges a logical T query.
+        var uncovered = uncovered(proof, trace.loaded().stream().filter(t->!trace.platformTypes().contains(t) && !readerOwners.contains(t)).toList(),
+                trace.modules().stream().filter(m->!trace.platformModules().contains(m)).toList(), trace.absent());
         var semantic=new ArrayList<>(trace.queries());semantic.addAll(trace.closure());
-        var missingQueries=missingQueries(proof,semantic,trace.absent());
+        semantic.addAll(trace.readers());
+        var missingQueries=missingQueries(proof,semantic,trace.absent()).stream().filter(q->!trace.platformTypes().contains(q.owner())).toList();
         var unjustified=unjustified(proof,semantic,trace.absent());
         var lines = new ArrayList<String>();
         lines.add("FILE " + trace.file() + " loaded=" + trace.loaded().size() + " modules=" + trace.modules().size() + " absent=" + trace.absent().size()
@@ -303,6 +367,9 @@ public final class ReadOracleTrace {
         trace.sites().forEach(value->lines.add("QUERY_SITE "+value));
         trace.scans().forEach(value->lines.add("SCOPE_SCAN "+value));
         trace.closure().forEach(value->lines.add("DEFAULT_GUARD_CLOSURE "+value));
+        trace.readers().forEach(value->lines.add("READER_QUERY "+value));
+        trace.platformTypes().forEach(value->lines.add("SYSTEM_TYPE "+value));
+        trace.platformModules().forEach(value->lines.add("SYSTEM_MODULE "+value));
         missingQueries.forEach(value->lines.add("MISSING_QUERY "+value));
         unjustified.forEach(value->lines.add("UNJUSTIFIED "+value));
         synchronized (REPORT_LOCK) {
@@ -321,12 +388,12 @@ public final class ReadOracleTrace {
     /** Query coverage is at the exact T kind/name, N name, or D type projection; a mere owner hit never suffices. */
     public static List<Missing> missingQueries(Object proof,Collection<Missing> queries,Collection<Missing> absent) {
         var ranges=ranges(proof);var reads=new TreeSet<>(queries);reads.addAll(absent);
-        return reads.stream().filter(q->!ranges.contains(q) && !ranges.contains(new Missing(q.kind(),q.owner(),""))).toList();
+        return reads.stream().filter(q->!ranges.contains(q) && (q.kind().startsWith("M:") || !ranges.contains(new Missing(q.kind(),q.owner(),"")))).toList();
     }
     /** Each persisted range needs an independently observed query at least as wide as that range. */
     public static List<Missing> unjustified(Object proof,Collection<Missing> queries,Collection<Missing> absent) {
         var reads=new TreeSet<>(queries);reads.addAll(absent);
-        return ranges(proof).stream().filter(q->!reads.contains(q) && !reads.contains(new Missing(q.kind(),q.owner(),""))).toList();
+        return ranges(proof).stream().filter(q->!reads.contains(q) && (q.kind().startsWith("M:") || !reads.contains(new Missing(q.kind(),q.owner(),"")))).toList();
     }
     private static Set<Missing> ranges(Object proof) {
         var ranges=new TreeSet<Missing>();
@@ -336,6 +403,11 @@ public final class ReadOracleTrace {
                     call(type,"key").toString(),call(range,"name").toString()));
         }
         for(var type:strings(call(proof,"absent")))ranges.add(new Missing("D",type,""));
+        for(var read:values(call(proof,"readerReads"))) {
+            var q=call(read,"query");
+            ranges.add(new Missing("M:"+call(q,"universe")+":"+call(q,"kind")+":"+call(q,"module"),
+                    call(q,"type").toString(),call(q,"name").toString()));
+        }
         return ranges;
     }
 

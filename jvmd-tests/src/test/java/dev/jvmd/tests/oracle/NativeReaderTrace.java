@@ -10,6 +10,7 @@ public final class NativeReaderTrace {
     public static void begin() {if(ACTIVE.get()!=null)throw new IllegalStateException("Nested reader trace");ACTIVE.set(new ArrayList<>());}
     public static List<Answer> finish() {var result=ACTIVE.get();ACTIVE.remove();return List.copyOf(result);}
     public static void answer(Object value,Object requesting,String operation) {
+        ReadOracleTrace.readerAnswer(value,requesting,operation);
         var trace=ACTIVE.get();if(trace==null)return;
         try {
             Object symbol=value.getClass().getName().equals("com.sun.tools.javac.code.Attribute$Enum")?field(value,"value"):value;

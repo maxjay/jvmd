@@ -21,6 +21,8 @@ T, N and D keep distinct namespaces. The query-tree Merkle root addresses the ex
 
 A processed receipt still requires independently current processor observations and the existing capability-history checks. Those observations can have their own size-dependent work. The 320-byte unprocessed receipt measurement is not a constant-size claim for arbitrary processor models.
 
+The observation addendum's Q15 is implemented: `ProofIndex.eligible` is shared by direct advancement and `BodyValidation.check`. After opening selected rooted CI, the latter rejects a source/basename/options/compiler mismatch before evaluating the receipt-specific transition argument. It retains the previous receipt and all root/sequence checks. Discovery's accepted-to-current transition is still necessary; rejection avoids only additional historical preparation and processor validation inside `advance`. The retained A→accepted B→current C regression covers all four input axes under both digests. Changed inputs require one transition, zero historical reads, zero query-node reads and zero writes; the matching-input control still prepares the second A→C transition. `fixedInputRejections` exposes this work boundary. Caller-owned processor preparation and complete direct-input discovery remain separate obligations.
+
 ## Deriving a sufficient frontier
 
 A Transition is derived internally from the exact old/new stored binding roots. The API does not accept an unchecked list of changes which could accidentally omit a domain.

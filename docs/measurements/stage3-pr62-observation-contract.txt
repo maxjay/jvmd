@@ -1,0 +1,76 @@
+PR62 observation addendum checkpoint, 7 October 2026
+Code/evidence head: c83453b0985b9537f409bc0a1d132dc4cfdbf11d
+Starting head: 98f9b656938f884705ac7945dcc14533d6e73ff1
+Fetched main: 33a9032d0a22f87f2ee306f5e2d935190db6b691
+No Java edits occurred between the preservation gate and final native gate below.
+Both used the production/test sources committed at the code head; documentation follows separately.
+
+Runtime: Eclipse Adoptium Temurin 25.0.4.1+1-LTS, source 520406d87195
+Maven: 3.9.16; Windows; both SHA-256 and SHA3-256 in digest-parameterized tests.
+Installed ClassReader.java from src.zip equals vendor commit and OpenJDK jdk-25+36:
+sha256 2a85f2aa0e8a13c946812b537189df994ef6659a16fbc0c389fc71eafe5fc9dc
+Native runtime class resources are separately recorded below (not transformed bytes).
+
+603 Java files; docs/experiments excluded.
+Manifest encoding: sorted SHA256(content) + two spaces + POSIX path + LF.
+Working Windows bytes manifest sha256: 01011d6c4b6dc45d8a48945afc45745867e437a1cb461d8689175f7d8d645426
+Committed Git blob bytes manifest sha256: 59856324e056ff0422ffb4e68417d8a1ea98f121b4dcb97f0044e9838c2dd0c1
+Different CRLF/LF bytes explain differing manifests; Git blob manifest is independently reproducible.
+Test POM committed blob sha256: 9a777b7f662eac090bbd90383abe6172ce57ebfb1e438d0d2dbb5ae7fa444618
+
+Gate 1, 63 tests, zero failures/errors/skips:
+mvn -B -pl jvmd-tests -am test -Dtest=BodyValidationTest,BodyValidationNativeTest,ProofIndexTest,RetainedAnnotationDiagnosticTest,BodyGenerationTest,OutputRecoveryTest,BinaryMetadataAdmissionTest,FixedMetadataTest,ModuleArchitectureTest,ForbiddenIdentifiersTest -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+Gate 2, 17 tests, zero failures/errors/skips:
+mvn -B -pl jvmd-tests -am test -Pread-oracle -Dtest=NativeReaderOperationTest,ReadOracleInstrumentationTest,ReadOracleCoverageTest -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,benchmark
+The independent native instrumentation/checker controls are passing. This is NOT the full strict BodyCollector coverage gate; its previous 74 failures remain open.
+The original two 2,000-file Lombok admission failures are also open; no admission assertion or guard was weakened.
+
+Logical work boundary:
+Q15 rows time/count only selected check(), after required B->C discovery.
+SelectedReads/Bytes include rooted CI plus root/sequence validation reads, not physical Rocks/WAL traffic.
+HistoricalReads are additional ProofIndex transition record reads; proofNodes are CI query-node reads.
+Allocated is cumulative per-thread allocation, not live/retained heap; JVM/order noise is not a bound.
+All input-change variants retain the exact old A receipt with zero writes; unchanged-input control requires two transitions (B->C, A->C).
+These are in-memory work counters. The preservation gate separately exercises real Rocks reopen/publication/materialisation recovery.
+No production reader-image extraction/transition/runtime cost is claimed: that amendment is not installed.
+
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 11.95 s -- in dev.jvmd.boot.cold.stage2.BinaryMetadataAdmissionTest
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.096 s -- in dev.jvmd.boot.cold.stage2.BodyGenerationTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.455 s -- in dev.jvmd.boot.cold.stage2.BodyValidationNativeTest
+Q15 SHA-256 basenameChanged=true sourceChanged=false optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1472 receiptBytes=320 allocated=7024 writes=0
+Q15 SHA-256 basenameChanged=false sourceChanged=true optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1472 receiptBytes=320 allocated=6352 writes=0
+Q15 SHA-256 basenameChanged=false sourceChanged=false optionsChanged=true compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1472 receiptBytes=320 allocated=6352 writes=0
+Q15 SHA-256 basenameChanged=false sourceChanged=false optionsChanged=false compilerChanged=true transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1472 receiptBytes=320 allocated=6352 writes=0
+Q15 SHA3-256 basenameChanged=true sourceChanged=false optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1472 receiptBytes=320 allocated=7288 writes=0
+Q15 SHA3-256 basenameChanged=false sourceChanged=true optionsChanged=false compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1472 receiptBytes=320 allocated=6616 writes=0
+Q15 SHA3-256 basenameChanged=false sourceChanged=false optionsChanged=true compilerChanged=false transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1472 receiptBytes=320 allocated=6616 writes=0
+Q15 SHA3-256 basenameChanged=false sourceChanged=false optionsChanged=false compilerChanged=true transitions=1 historicalReads=0 proofNodes=0 selectedReads=12 selectedBytes=1472 receiptBytes=320 allocated=6616 writes=0
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.770 s -- in dev.jvmd.boot.cold.stage2.BodyValidationTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.661 s -- in dev.jvmd.boot.cold.stage2.ProofIndexTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.738 s -- in dev.jvmd.boot.cold.stage2.RetainedAnnotationDiagnosticTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.228 s -- in dev.jvmd.boot.cold.stage3.FixedMetadataTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 22.08 s -- in dev.jvmd.boot.cold.stage3.OutputRecoveryTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.383 s -- in dev.jvmd.tests.ForbiddenIdentifiersTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.614 s -- in dev.jvmd.tests.ModuleArchitectureTest
+[INFO] Tests run: 63, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Total time:  56.751 s
+Q04 native METHOD order=[()I, ()Ljava/lang/String;] answer=Answer[operation=findAccessMethod, requester=q.Lib, owner=q.Ann, name=number, type=Ljava/lang/String;, flags=1025]
+Q04 native METHOD order=[()Ljava/lang/String;, ()I] answer=Answer[operation=findAccessMethod, requester=q.Lib, owner=q.Ann, name=number, type=INT, flags=1025]
+NATIVE-READER runtime=25.0.4.1+1-LTS vendor=Eclipse Adoptium
+NATIVE-READER jvm/ClassReader sha256=1a609e6ae45b997a6cbbf44380adcd04deae78a2f53a61925817dbac5623bdef
+NATIVE-READER jvm/ClassReader$AnnotationDeproxy sha256=517dea796c4259395354bae40c519baa67a310456256838e3311aead1ab54ba7
+NATIVE-READER code/Scope$ScopeImpl sha256=26bdeafabb8cedfa10f072084dedc8e88ed20aef366e0556fa18687ce27d6f93
+Q03 absent member=[compiler.warn.unknown.enum.constant: unknown enum constant q.Mode.X] absent owner=[compiler.warn.unknown.enum.constant.reason: unknown enum constant q.Mode.X
+Q04 native VAR order=[I, Lq/Mode;] answer=Answer[operation=visitEnumAttributeProxy, requester=q.Lib, owner=q.Mode, name=X, type=Lq/Mode;, flags=10]
+Q04 native VAR order=[Lq/Mode;, I] answer=Answer[operation=visitEnumAttributeProxy, requester=q.Lib, owner=q.Mode, name=X, type=INT, flags=10]
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.105 s -- in dev.jvmd.tests.oracle.NativeReaderOperationTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.021 s -- in dev.jvmd.tests.oracle.ReadOracleCoverageTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.514 s -- in dev.jvmd.tests.oracle.ReadOracleInstrumentationTest
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0
+[INFO] Total time:  14.776 s
+
+Native Q03 continuation: absent-owner warning includes "class file for q.Mode not found". Both recovery VAR snapshots are equal; return-only observation is insufficient.
+review62-observation-preservation.log sha256=0b38541ee53f770b093a4ea558d203e379123ebd1092a9578dd88da2c9ed52e3
+review62-native-reader-final.log sha256=09450755fb055b725a45184b5562bb2f7a78b47b7c9cc064bcbab69230bcc9bb
+
+New Q16: resolutionStubDropsPrivateReaderEffectsEvenWithIdenticalT passes both digests. Real Lib -> resolution stub removes private-annotation warning; restore real Lib restores warning; T and App.class stay equal. A compiler-view issue is reproduced, not repaired.

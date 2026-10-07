@@ -47,3 +47,8 @@ Sorted SHA256 source-manifest hash: 4321dec45217210f6219f2679b044cc61f2e9d19f4ac
 d31fdb9f3110d2dea1f3e28be39122577268fe76ef9c9c1e8a36069af89e80fc  docs/experiments/CurrentTreeDomains.java
 79e99c737ca06e447429a2c77f87ee5eb696e6cf9a8a88f7115a499930889f0c  docs/measurements/pr62-current-domain-profile.csv
 4d9ff582c806bacf1636b0cc4569cd79e5763e0d846a4ca028a471c72a78c806  docs/measurements/pr62-current-domain-costs.csv
+
+The two CSV hashes above cover original Windows CRLF run output. Git normalises
+text to LF. The following hashes cover the committed LF CSV bytes:
+e4cda963bed0ac4d66a7d6b41b31fb56660c0573fe02885cfbe7094ac7f66f50  docs/measurements/pr62-current-domain-profile.csv
+eaee21745532d3cbee160cf85ee2d32143c73473e18414abd0d0b2bcb7c7c67d  docs/measurements/pr62-current-domain-costs.csv

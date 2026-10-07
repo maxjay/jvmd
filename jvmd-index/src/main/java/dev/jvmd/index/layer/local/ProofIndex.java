@@ -195,7 +195,7 @@ public final class ProofIndex {
                 var old=oldView.answer(q);var next=newView.answer(q);
                 if(!Objects.equals(old,next)) {changed.add(q);answers.put(q,next);}
             }
-            work.changedQueries=changed.size();
+            work.changedQueries+=changed.size();
         }
         public static Transition between(ContentTree tree,Binding before,Binding after,Function<byte[],byte[]> records,Work work) {
             return new Transition(tree,before,after,records,Objects.requireNonNull(work));
@@ -203,6 +203,7 @@ public final class ProofIndex {
         public Binding before() {return before;}
         public Binding after() {return after;}
         public Set<ReverseIndex.Dependency> changed() {return Collections.unmodifiableSet(changed);}
+        public Set<String> removedTypes() {return Collections.unmodifiableSet(removedTypes);}
         private byte[] record(byte[] key) {
             var bytes=records.apply(key);
             if(bytes==null)throw new IllegalStateException("Missing immutable binding record");

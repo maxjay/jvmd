@@ -2,6 +2,7 @@ package dev.jvmd.boot.cold.stage2;
 
 import dev.jvmd.boot.cold.stage3.Attribute;
 import dev.jvmd.boot.cold.stage3.BodyGeneration;
+import dev.jvmd.boot.cold.stage3.BodyValidation;
 import dev.jvmd.boot.cold.stage3.Output;
 import dev.jvmd.boot.cold.stage3.Pool;
 import dev.jvmd.boot.cold.stage3.Stage3;
@@ -72,14 +73,14 @@ class ProcessorReuseMeasurement {
         String bean = SOURCE + "p/left/Bean0.java", caller = SOURCE + "p/left/Use0.java";
         Files.writeString(dir.resolve(bean), Files.readString(dir.resolve(bean)).replace("private String name;", "private String name; private int extra;"));
         assertThat(stage2.run(store, model).faults()).isEmpty();
-        var api = reuse(digest, tree, store, model, lombok, previous);
+        var api = reuse(digest, tree, store, model, lombok, previous, Set.of(bean));
         assertThat(api.attributed()).containsExactlyInAnyOrder(bean, caller);
         assertThat(api.served()).hasSize(1998);
         nativeBytes(digest, tree, store, model, lombok, "field");
         report(report, "field addition", api); previous = api.snapshot();
         Files.writeString(dir.resolve(bean), Files.readString(dir.resolve(bean)).replace("return 1;", "return 2;"));
         assertThat(stage2.run(store, model).faults()).isEmpty();
-        var body = reuse(digest, tree, store, model, lombok, previous);
+        var body = reuse(digest, tree, store, model, lombok, previous, Set.of(bean));
         assertThat(body.attributed()).containsExactly(bean); assertThat(body.served()).hasSize(1999);
         assertThat(body.snapshot().ownR()).isEqualTo(previous.ownR());
         nativeBytes(digest, tree, store, model, lombok, "body");
@@ -90,7 +91,7 @@ class ProcessorReuseMeasurement {
         for (boolean remove : List.of(false, true)) {
             if (remove) Files.delete(config); else Files.writeString(config, "lombok.addLombokGeneratedAnnotation = true\n");
             assertThat(stage2.run(store, model).faults()).isEmpty();
-            var changed = reuse(digest, tree, store, model, lombok, previous);
+            var changed = reuse(digest, tree, store, model, lombok, previous, subtree);
             assertThat(changed.attributed()).isEqualTo(subtree); assertThat(changed.served()).hasSize(1000);
             assertThat(changed.snapshot().ownR()).isEqualTo(previous.ownR());
             assertThat(changed.snapshot().route()).isEqualTo(previous.route());
@@ -123,7 +124,7 @@ class ProcessorReuseMeasurement {
         return new Snapshot(Map.copyOf(rows), plan.invocation().optionsHash(), own.r(), route.routeHash());
     }
 
-    private Reused reuse(Digest digest, ContentTree tree, InMemoryLocalStore store, ProjectModel model, Path lombok, Snapshot previous) throws Exception {
+    private Reused reuse(Digest digest, ContentTree tree, InMemoryLocalStore store, ProjectModel model, Path lombok, Snapshot previous, Set<String> direct) throws Exception {
         var current = snapshot(digest, tree, store, model); var project = Stage2.projectKey(digest, model);
         var local = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(project)));
         var generation = BodyGeneration.begin(tree, store, project, local);
@@ -137,30 +138,27 @@ class ProcessorReuseMeasurement {
         var selected = new TreeMap<SourceUnit,List<Entry>>();
         var oldResults = new ArrayList<ResultRecord>();var results = new ArrayList<ResultRecord>();
         var attributed = new TreeSet<String>(); var served = new TreeSet<String>();
-        var binding=ProofIndex.Binding.capture(tree,own,route,generation::get);
-        var transitions=new java.util.HashMap<ProofIndex.Binding,ProofIndex.Transition>();
-        var validationWork=new ProofIndex.Work();
-        long validationNanos = 0, attributeNanos = 0;
+        var validationWork=new BodyValidation.Work();
+        long startedPlan=System.nanoTime();
+        var validation=new BodyValidation(tree,store,project,"app",0,direct.stream().map(p->new SourceUnit("app",0,p)).toList(),validationWork);
+        long validationNanos = System.nanoTime()-startedPlan, attributeNanos = 0;
         try (var stubs = new StubDirectories(tree, generation, k -> MachineLeaf.decode(generation.get(MachineStore.leafKey(k)), digest.width()))) {
             var directory = stubs.get(source.k());
             var configuration = new Pool.Configuration(new Pool.Key(route.routeHash(), own.k()), directory.path(), List.of(lombok),
                     options.charset(), options.javac(), directory.types());
             try (var pool = new Pool(configuration, 1)) {
                 var attribute = Attribute.processed(tree, generation, own, route, pool, options, plan, List.of(lombok), dir);
-                for (var row : new TreeMap<>(current.rows()).values()) {
+                for (var unit : validation.candidates()) {
+                    var row=current.rows().get(unit.path());
                     long started = System.nanoTime();
-                    var indexed=ProofIndex.decode(generation.get(LocalStore.proofIndexKey(project,new SourceUnit("app",0,row.path()))),digest.width());
-                    var transition=transitions.computeIfAbsent(indexed.binding(),prior->
-                            ProofIndex.Transition.between(tree,prior,binding,generation::get,validationWork));
                     var inputs=new ProofIndex.Inputs(row.path().substring(row.path().lastIndexOf('/')+1),row.kappa(),options.hash());
-                    boolean valid=indexed.advance(transition,inputs,row.processor(),observations)!=null;
+                    var checked=validation.check(unit,inputs,row.processor(),observations);
                     validationNanos += System.nanoTime() - started;
                     Attribute.Computed computed;
-                    if (valid) {
-                        served.add(row.path());
+                    if (checked.reusable()) {
                         continue; // already selected by its unchanged rooted unit manifest
                     } else {
-                        var oldAci=indexed.aci();
+                        var oldAci=java.util.Objects.requireNonNull(checked.previous(),"Initial admission gate requires every receipt").aci();
                         oldResults.add(ResultRecord.decode(generation.get(LocalStore.resultKey(oldAci)),digest.width()));
                         started = System.nanoTime();
                         computed = attribute.run(row, dir.resolve(row.path()).toUri(), Files.readAllBytes(dir.resolve(row.path())));
@@ -188,7 +186,12 @@ class ProcessorReuseMeasurement {
         var oldOutput=DefinerIndex.decodeRoot(generation.get(outputKey),digest.width());
         var nextOutput=Output.apply(tree,generation,oldOutput,oldResults,results);
         selected.put(new SourceUnit("app",0,""),List.of(generation.record(outputKey,DefinerIndex.encodeRoot(nextOutput))));
+        validation.checkCurrent();
         generation.commitUnitsDelta(selected,Set.of());
+        // Reporting/native-oracle inventory is outside candidate discovery: no proof or result is read here.
+        served.addAll(previous.rows().keySet());served.removeAll(attributed);
+        System.out.printf("F05-LOMBOK candidates=%d receipts=%d prefixes=%d hits=%d transitions=%d%n",validation.candidates().size(),
+                validationWork.receipts,validationWork.reverse.prefixes,validationWork.reverse.hits,validationWork.transitions);
         return new Reused(current, attributed, served, validationNanos, attributeNanos);
     }
 

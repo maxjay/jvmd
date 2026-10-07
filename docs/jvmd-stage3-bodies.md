@@ -400,7 +400,7 @@ ProofIndex.Transition derives its frontier from exact old/new own and ordered-ro
 
 ProofIndex.advance first checks that the receipt was validated at the transition start, fixed inputs are unchanged, and current processor observations/admission still match. It probes only changed query keys or removed-owner prefixes. A successful receipt preserves query root and ACI and may advance its validated binding without rewriting the query tree. Keeping an older receipt instead requires the next transition to begin at that older binding. No caller-supplied incomplete delta or unanchored empty transition is accepted.
 
-The [algorithm, costs and tests](pr62-indexed-proof-validation.md) distinguish the implemented primitive from production LIVE scheduling and F04 semantic coverage. The test reuse harness reads indexed receipts but still enumerates files; its Lombok admission gate remains failing.
+The [algorithm, costs and tests](pr62-indexed-proof-validation.md) distinguish the implemented primitive from production LIVE scheduling and F04 semantic coverage. BodyValidation joins the accepted-to-current binding frontier with current X, deduplicates units, and opens only selected CI receipts. Selected retained receipts validate from their actual original binding. The caller supplies other-input candidates and previously non-reusable units; deriving those domains completely remains an obligation. The test harness uses this join with explicit fixture mutation/configuration events; its original Lombok admission gate remains failing.
 
 ### 5.4 Arrange: entries into the descent shape
 

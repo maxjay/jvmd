@@ -61,13 +61,80 @@ class RetainedAnnotationDiagnosticTest {
         assertThat(Files.readAllBytes(output.resolve("p/App.class"))).isEqualTo(client);
     }
 
+    @ParameterizedTest @MethodSource("digests")
+    void nativeEnumDeproxyCanObserveAPrivateNonEnumFieldMissingFromT(Digest digest) throws Exception {
+        var dependencies=Files.createDirectories(directory.resolve("dependencies"));var output=Files.createDirectories(directory.resolve("output"));
+        var mode=directory.resolve("Mode.java");var annotation=directory.resolve("Ann.java");var library=directory.resolve("Lib.java");var app=directory.resolve("App.java");
+        Files.writeString(mode,"package q; public enum Mode { X,Y }");
+        Files.writeString(annotation,"package q; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME) public @interface Ann { Mode value(); }");
+        Files.writeString(library,"package q; @Ann(Mode.X) public class Lib { public static int call(){return 1;} }");
+        Files.writeString(app,"package p; public class App { int value(){return q.Lib.call();} }");
+        assertThat(compile(dependencies,dependencies,List.of(mode,annotation,library))).isEmpty();
+        byte[] fixed=Files.readAllBytes(dependencies.resolve("q/Lib.class"));
+        var facts=new java.util.ArrayList<ClassFacts>();var warnings=new java.util.ArrayList<List<String>>();
+        for(var declaration:List.of("Y", "Y; private static final Mode X=Y;")) {
+            Files.writeString(mode,"package q; public enum Mode { "+declaration+" }");
+            assertThat(compile(dependencies,dependencies,List.of(mode))).isEmpty();
+            facts.add(ClassFacts.of(digest,Files.readAllBytes(dependencies.resolve("q/Mode.class")),"q/Mode"));
+            warnings.add(compile(output,dependencies,List.of(app)));
+            assertThat(Files.readAllBytes(dependencies.resolve("q/Lib.class"))).isEqualTo(fixed);
+        }
+        assertThat(facts.get(0).facts().stream().map(Fact::h).toList()).isEqualTo(facts.get(1).facts().stream().map(Fact::h).toList());
+        assertThat(facts.get(0).facts().stream().map(f->f.aEntry(digest)).filter(java.util.Objects::nonNull).map(e->e.h()).toList())
+                .isEqualTo(facts.get(1).facts().stream().map(f->f.aEntry(digest)).filter(java.util.Objects::nonNull).map(e->e.h()).toList());
+        assertThat(warnings.get(0)).containsExactly("compiler.warn.unknown.enum.constant");assertThat(warnings.get(1)).isEmpty();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void privateAnnotationOrderChangesDiagnosticsAndWarningBudgetDespiteEqualFacts(Digest digest) throws Exception {
+        var dependencies=Files.createDirectories(directory.resolve("dependencies"));
+        var output=Files.createDirectories(directory.resolve("output"));
+        var mode=directory.resolve("Mode.java");var ann=directory.resolve("Ann.java");var other=directory.resolve("Other.java");
+        var library=directory.resolve("Lib.java");var app=directory.resolve("App.java");
+        Files.writeString(mode,"package q; public enum Mode { X,Y,Z }");
+        Files.writeString(ann,"package q; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME) public @interface Ann { Mode value(); }");
+        Files.writeString(other,"package q; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME) public @interface Other { Mode value(); }");
+        Files.writeString(app,"package p; public class App { int value(){return q.Lib.call();} }");
+        var binaries=new java.util.ArrayList<byte[]>();
+        for(var annotations:List.of("@Ann(Mode.X) @Other(Mode.Z)","@Other(Mode.Z) @Ann(Mode.X)")) {
+            Files.writeString(library,"package q; public class Lib { "+annotations+" private int hidden; public static int call(){return 1;} }");
+            assertThat(compile(dependencies,dependencies,List.of(mode,ann,other,library))).isEmpty();
+            binaries.add(Files.readAllBytes(dependencies.resolve("q/Lib.class")));
+        }
+        var a=ClassFacts.of(digest,binaries.get(0),"q/Lib");var b=ClassFacts.of(digest,binaries.get(1),"q/Lib");
+        assertThat(a.facts().stream().map(Fact::h).toList()).isEqualTo(b.facts().stream().map(Fact::h).toList());
+        assertThat(a.facts().stream().map(f->f.aEntry(digest)).filter(java.util.Objects::nonNull).map(e->e.h()).toList())
+                .isEqualTo(b.facts().stream().map(f->f.aEntry(digest)).filter(java.util.Objects::nonNull).map(e->e.h()).toList());
+        Files.writeString(mode,"package q; public enum Mode { Y }");
+        assertThat(compile(dependencies,dependencies,List.of(mode))).isEmpty();
+        var ordered=new java.util.ArrayList<List<String>>();var limited=new java.util.ArrayList<List<String>>();
+        byte[] client=null;
+        for(var bytes:binaries) {
+            Files.write(dependencies.resolve("q/Lib.class"),bytes);
+            ordered.add(messages(output,dependencies,List.of(app),List.of()).stream()
+                    .filter(d->d.getCode().equals("compiler.warn.unknown.enum.constant")).map(d->d.getMessage(Locale.ROOT)).toList());
+            limited.add(messages(output,dependencies,List.of(app),List.of("-Xmaxwarns","1")).stream()
+                    .filter(d->d.getCode().equals("compiler.warn.unknown.enum.constant")).map(d->d.getMessage(Locale.ROOT)).toList());
+            byte[] current=Files.readAllBytes(output.resolve("p/App.class"));
+            if(client!=null)assertThat(current).isEqualTo(client);client=current;
+        }
+        assertThat(ordered.get(0)).hasSize(2);assertThat(ordered.get(1)).containsExactlyElementsOf(ordered.get(0).reversed());
+        assertThat(limited.get(0)).containsExactly(ordered.get(0).getFirst());
+        assertThat(limited.get(1)).containsExactly(ordered.get(1).getFirst());
+        assertThat(limited.get(0)).isNotEqualTo(limited.get(1));
+    }
+
     private List<String> compile(Path output,Path dependencies,List<Path> sources) throws Exception {
+        return messages(output,dependencies,sources,List.of()).stream().map(d->d.getCode()).toList();
+    }
+    private List<javax.tools.Diagnostic<? extends JavaFileObject>> messages(Path output,Path dependencies,List<Path> sources,List<String> extra) throws Exception {
         var compiler=ToolProvider.getSystemJavaCompiler();var diagnostics=new DiagnosticCollector<JavaFileObject>();
         try(var files=compiler.getStandardFileManager(diagnostics,Locale.ROOT,java.nio.charset.StandardCharsets.UTF_8)) {
-            var task=compiler.getTask(null,files,diagnostics,List.of("-proc:none","-implicit:none","-classpath",dependencies.toString(),"-d",output.toString()),
+            var options=new java.util.ArrayList<>(List.of("-proc:none","-implicit:none","-classpath",dependencies.toString(),"-d",output.toString()));options.addAll(extra);
+            var task=compiler.getTask(null,files,diagnostics,options,
                     null,files.getJavaFileObjectsFromPaths(sources));
             assertThat(task.call()).as(diagnostics.getDiagnostics().toString()).isTrue();
         }
-        return diagnostics.getDiagnostics().stream().map(d->d.getCode()).toList();
+        return diagnostics.getDiagnostics();
     }
 }

@@ -4,6 +4,10 @@ Specification: [jvmd-stage3-bodies.md](jvmd-stage3-bodies.md), revision 123 with
 
 ## Current status, 2026-10-07
 
+The completion brief has been reconciled against fetched head `e1f5ce40` and main `33a9032d`. Hosted tests/benchmarks passed that starting head; required full acceptance remains incomplete. The new current-X join selects units before opening CI, and a native selective pipeline covers unrelated/consumed constants and direct body edits through Output.apply and changed-unit publication. Rocks reopen, old receipt ancestry, provider-order/disappearance and irrelevant live/history growth have focused tests. The 2,000-file harness now uses candidate selection but retains its original failing admission assertion. [Current identity ledger and boundaries](pr62-review-reconciliation.md#completion-brief-reconciliation-2026-10-07).
+
+A new native metadata test confirms private annotation order can change both ordered diagnostics and the warning surviving `-Xmaxwarns 1` while T/A stay equal. The metadata guard remains intact. No Q_M encoding or new tree prototype has been adopted; K/P are analytical proposals only. Earlier measurement paragraphs below are historical.
+
 The user requested a bounded F09 feasibility comparison before another prototype. The [report](pr62-locality-feasibility.md) now analyses one locally parsed ordered Merkle map, separates collision-conditional structural bounds from byte costs, checks model/lower-bound limits, and reports measurements of actual JVMD domains using the unchanged current tree. No candidate parser has been implemented. Its substantial packing overhead and concrete editor/Diff obligations are returned for an explicit decision. F09 remains open.
 
 The hosted Tests failure at `5d12ba95` was an unrecognised CI namespace in the Rocks checkpoint. `ff8554ff` repairs the test inventory and verifies reopened receipts, query roots and selected results. The targeted gate passes 19 tests; hosted checks are separate. The frozen 300-test evidence below still has two unresolved Lombok admission failures.

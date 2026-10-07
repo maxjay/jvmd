@@ -205,6 +205,36 @@ public final class ReverseIndex {
         return new Reader(digest, store, BODY.length).read(List.of(bodyPrefix(dependency)));
     }
 
+    public static final class Work {
+        public long prefixes, hits, keyBytes;
+    }
+
+    /** Join one exact binding frontier with current X, without opening any per-file receipt. */
+    public static Set<SourceUnit> bodyCandidates(LocalStore store, ProofIndex.Transition transition,
+                                                Identity project, String module, int scope, Work work) {
+        // Exact questions can seek through project/scope too. A disappeared provider also invalidates
+        // expected-zero questions with no changed fact: those require the shorter owner prefix.
+        new SourceUnit(module,scope,"");
+        var prefixes=new TreeSet<byte[]>(Arrays::compareUnsigned);
+        for(var query:transition.changed())prefixes.add(new Codec.Writer().raw(bodyPrefix(query))
+                .id(project).zstr(module).u8(scope).toBytes());
+        for(var owner:transition.removedTypes())for(int form:new int[]{T,N})
+            prefixes.add(new Codec.Writer().raw(BODY).u8(form).zstr(owner).toBytes());
+        var result=new TreeSet<SourceUnit>();byte[] previous=null;
+        for(var prefix:prefixes) {
+            if(previous!=null && prefix.length>=previous.length && Arrays.equals(prefix,0,previous.length,previous,0,previous.length))continue;
+            previous=prefix;work.prefixes++;
+            store.forEachKey(prefix,key->{
+                work.hits++;work.keyBytes+=key.length;
+                var in=new Codec.Reader(key);in.raw(BODY.length);in.u8();in.zstr();in.u8();in.zstr();
+                var consumer=in.id(project.width());var unit=SourceUnit.decode(in);
+                if(in.remaining()!=0)throw new IllegalStateException("Trailing reverse consumer bytes");
+                if(consumer.equals(project) && unit.module().equals(module) && unit.scope()==scope)result.add(unit);
+            });
+        }
+        return java.util.Collections.unmodifiableSet(result);
+    }
+
     /** Body N stores actual sums, unlike header N's zero predicates: same-key h changes are observable here. */
     public static Set<Consumer> bodyCandidates(Digest digest, LocalStore store, Delta delta) {
         var prefixes = new TreeSet<byte[]>(Arrays::compareUnsigned);

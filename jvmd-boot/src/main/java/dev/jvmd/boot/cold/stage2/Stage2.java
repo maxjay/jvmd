@@ -150,7 +150,13 @@ public final class Stage2 {
                     put(store, records, LocalStore.headerDiagnosticsKey(projectKey, diagnostics.getKey()), diagnostics.getValue().encode());
                 store.flush();
                 var entries = new ArrayList<Entry>(records.size());
-                for (var e : records.entrySet()) entries.add(new Entry(e.getKey(), Entry.NONE, digest.hash(e.getValue())));
+                var values=new java.util.HashSet<Identity>();
+                for (var e : records.entrySet()) {
+                    var hash=digest.hash(e.getValue());
+                    entries.add(new Entry(e.getKey(), Entry.NONE, hash));
+                    if(values.add(hash))store.put(LocalStore.bodyValueKey(hash),e.getValue());
+                }
+                store.flush();
                 var local = tree.build(entries, boot.sink);
                 boot.sink.flush();
 

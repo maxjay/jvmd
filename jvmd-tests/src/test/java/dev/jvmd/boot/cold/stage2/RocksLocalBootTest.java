@@ -11,6 +11,7 @@ import dev.jvmd.index.layer.local.LocalFormat;
 import dev.jvmd.index.layer.local.LocalRoot;
 import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
+import dev.jvmd.index.layer.local.ReverseIndex;
 import dev.jvmd.index.layer.machine.Format;
 import dev.jvmd.index.layer.machine.MachineStore;
 import dev.jvmd.index.rocks.layer.Generation;
@@ -70,9 +71,10 @@ class RocksLocalBootTest {
             try (var store = Generation.of(indexDir, format).open()) {
                 var kinds = new TreeMap<String, Integer>();
                 for (var key : store.keys()) kinds.merge(kind(key), 1, Integer::sum);
-                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "CF", "C", "RS", "U", "OUT");
+                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "BV", "BSEQ", "CF", "C", "RS", "U", "OUT");
                 assertThat(kinds.get("C")).as("one body proof per compiled source").isEqualTo(Fixtures.multi().size());
-                for (var key : store.keys()) if (kind(key).equals("X")) assertThat(key[2]).as("header and body reverse namespaces").isIn((byte) 'H', (byte) 'G', (byte) 'D');
+                for (var key : store.keys()) if (kind(key).equals("X")) assertThat(ReverseIndex.isHeaderKey(key) || ReverseIndex.isBodyKey(key))
+                        .as("versioned current header and body reverse namespaces").isTrue();
                 assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "CF", "C", "RS", "U", "OUT");
                 assertThat(kinds.get("MOD")).isEqualTo(4);
                 assertThat(kinds.get("RT")).isEqualTo(8);
@@ -106,7 +108,7 @@ class RocksLocalBootTest {
                 }
             }
             // No previous LOCAL layout may take the current-format skip branch, even with identical runtime and locale.
-            for (int legacy : List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)) {
+            for (int legacy : List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)) {
                 try (var store = Generation.of(indexDir, format).openLocal()) {
                     var root = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(projectKey)));
                     store.putLocalRoot(digest, projectKey, LocalRoot.encode(digest,
@@ -127,7 +129,7 @@ class RocksLocalBootTest {
     private static String kind(byte[] key) {
         if (new String(key, StandardCharsets.US_ASCII).equals("ROOT")) return "ROOT";
         var text = new String(key, StandardCharsets.ISO_8859_1);
-        for (var tag : List.of("BROOT|", "CF|", "OUT|", "U|", "LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "DF|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
+        for (var tag : List.of("BROOT|", "BV|", "BSEQ|", "CF|", "OUT|", "U|", "LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "DF|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
         if (key[0] == 'L' && key.length == 33) return "L";
         if (key[0] == 'N' && key.length == 33) return "N";
         if (key[0] == 'P') return "P";

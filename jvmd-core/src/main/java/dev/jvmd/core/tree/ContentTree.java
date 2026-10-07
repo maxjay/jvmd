@@ -38,6 +38,18 @@ public final class ContentTree {
     public Digest digest() { return digest; }
     public Sum sums() { return sums; }
 
+    /** Recover a root's stored summary from its one node; no descendant traversal. */
+    public Root root(Identity hash, Function<Identity, byte[]> reader) {
+        var bytes = reader.apply(hash);
+        int level = Node.level(bytes), count = 0; var sum = sums.zero();
+        if (level == 0) {
+            var entries = new java.util.ArrayList<Entry>();
+            Node.entries(bytes, digest.width(), null, null, false, entries::add);
+            for (var entry : entries) { count++; sum = sums.add(sum, entry.h()); }
+        } else for (var child : Node.children(bytes, digest.width())) { count = Math.addExact(count, child.count()); sum = sums.add(sum, child.sum()); }
+        return new Root(hash, sum, count, level);
+    }
+
     /** A streaming builder over this tree's shape; add entries in key order, then call {@link Chunker#finish()}. */
     public Chunker chunker(NodeSink sink) { return new Chunker(digest, b, cap, sink, 0); }
 

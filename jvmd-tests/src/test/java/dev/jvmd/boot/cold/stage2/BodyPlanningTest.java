@@ -33,6 +33,7 @@ class BodyPlanningTest {
             var row = new FileRow(path, project, 1, 0, project, List.of("A"), List.of(), List.of(), project, List.of());
             var fileKey = LocalStore.fileKey(project, "app", 0, path);
             store.put(fileKey, row.encode());
+            store.put(LocalStore.bodyValueKey(digest.hash(row.encode())), row.encode());
             entries.put(fileKey, new Entry(fileKey, Entry.NONE, digest.hash(row.encode())));
             for (int i = 0; i < unrelated; i++) {
                 var key = new Codec.Writer().str("Z-unrelated").u32(i).toBytes();
@@ -48,9 +49,11 @@ class BodyPlanningTest {
             var events = store.events().subList(before, store.events().size());
             long nodes = events.stream().filter(e -> e.equals("read:N")).count();
             assertThat(nodes).isLessThanOrEqualTo(2L * root.level() + 1);
-            assertThat(events.stream().filter(e -> e.equals("read:F")).count()).isEqualTo(1);
+            assertThat(events.stream().filter(e -> e.equals("read:BV")).count()).isEqualTo(1);
             System.out.println("F12 " + digest.getClass().getSimpleName() + " unrelated=" + unrelated + " node reads=" + nodes);
             store.put(fileKey, new byte[]{42}); store.flush();
+            assertThat((Map<?, ?>) planner.invoke(driver, model, project, local, generation)).isEqualTo(result);
+            store.put(LocalStore.bodyValueKey(digest.hash(row.encode())), new byte[]{42}); store.flush();
             assertThatThrownBy(() -> planner.invoke(driver, model, project, local, generation))
                     .hasRootCauseInstanceOf(IllegalStateException.class);
         }

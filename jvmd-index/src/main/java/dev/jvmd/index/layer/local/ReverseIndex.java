@@ -18,7 +18,12 @@ import java.util.TreeSet;
 public final class ReverseIndex {
     private ReverseIndex() { }
     public static final int T = 0, N = 1, D = 2;
-    private static final byte[] HEADER = {'X', '|', 'H', '1', '9', '|'};
+    private static final byte[] HEADER = ("X|H" + LocalFormat.LAYOUT + "|").getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+    private static final byte[] BODY = ("X|B8L" + LocalFormat.LAYOUT + "|").getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+
+    public static boolean isBodyKey(byte[] key) {
+        return key.length >= BODY.length && Arrays.equals(key, 0, BODY.length, BODY, 0, BODY.length);
+    }
 
     /** Versioned current index: earlier raw X history is never searched by this reader. */
     public static boolean isHeaderKey(byte[] key) {
@@ -152,7 +157,9 @@ public final class ReverseIndex {
     private static final class Reader {
         private final Digest digest;
         private final LocalStore store;
-        Reader(Digest digest, LocalStore store) { this.digest = digest; this.store = store; }
+        private final int namespace;
+        Reader(Digest digest, LocalStore store) { this(digest, store, HEADER.length); }
+        Reader(Digest digest, LocalStore store, int namespace) { this.digest = digest; this.store = store; this.namespace = namespace; }
 
         Set<Consumer> read(java.util.Collection<byte[]> prefixes) {
             var consumers = new TreeSet<Consumer>();
@@ -163,7 +170,7 @@ public final class ReverseIndex {
                 previous = prefix;
                 store.forEachKey(prefix, key -> {
                     var in = new Codec.Reader(key);
-                    in.raw(HEADER.length); in.u8(); in.zstr(); in.u8(); in.zstr();
+                    in.raw(namespace); in.u8(); in.zstr(); in.u8(); in.zstr();
                     var project = in.id(digest.width());
                     var unit = SourceUnit.decode(in);
                     if (in.remaining() != 0) throw new IllegalStateException("Trailing reverse consumer bytes");
@@ -174,9 +181,7 @@ public final class ReverseIndex {
         }
     }
     public static byte[] bodyPrefix(Dependency dependency) {
-        var out = new Codec.Writer();
-        return dependency.form() == D ? out.raw(new byte[] {'X', '|', 'D', '|'}).zstr(dependency.type()).toBytes()
-                : out.raw(new byte[] {'X', '|', 'G', '|'}).u8(dependency.form()).zstr(dependency.type()).u8(dependency.kind()).zstr(dependency.name()).toBytes();
+        return new Codec.Writer().raw(BODY).u8(dependency.form()).zstr(dependency.type()).u8(dependency.kind()).zstr(dependency.name()).toBytes();
     }
 
     public static byte[] bodyKey(Dependency dependency, Identity project, SourceUnit unit) {
@@ -197,7 +202,7 @@ public final class ReverseIndex {
     }
 
     public static Set<Consumer> bodyConsumers(Digest digest, LocalStore store, Dependency dependency) {
-        return new BodyReader(digest, store).read(List.of(bodyPrefix(dependency)));
+        return new Reader(digest, store, BODY.length).read(List.of(bodyPrefix(dependency)));
     }
 
     /** Body N stores actual sums, unlike header N's zero predicates: same-key h changes are observable here. */
@@ -205,8 +210,8 @@ public final class ReverseIndex {
         var prefixes = new TreeSet<byte[]>(Arrays::compareUnsigned);
         for (var dependency : changes(delta.types(), delta.memberTypes(), delta.presence())) prefixes.add(bodyPrefix(dependency));
         for (var entry : definerChanges(digest, delta.definers())) for (int form : new int[]{T, N})
-            prefixes.add(new Codec.Writer().raw(new byte[]{'X', '|', 'G', '|'}).u8(form).zstr(Keys.ownerOf(entry.key())).toBytes());
-        return new BodyReader(digest, store).read(prefixes);
+            prefixes.add(new Codec.Writer().raw(BODY).u8(form).zstr(Keys.ownerOf(entry.key())).toBytes());
+        return new Reader(digest, store, BODY.length).read(prefixes);
     }
 
     private static Set<Dependency> changes(Diff.Result t, Diff.Result n, Diff.Result d) {
@@ -229,46 +234,20 @@ public final class ReverseIndex {
         return changed;
     }
 
-    private static final class BodyReader {
-        private final Digest digest;
-        private final LocalStore store;
-        private final ContentTree tree;
-        private final java.util.Map<Identity, Identity> roots = new HashMap<>();
-        BodyReader(Digest digest, LocalStore store) {
-            this.digest = digest; this.store = store; this.tree = new ContentTree(digest);
+    /** Current body X changes follow exact rooted membership, independent of retained historical keys. */
+    public static List<byte[][]> bodyPublication(Digest digest, LocalStore store, byte[] previous, byte[] next) {
+        var tree = new ContentTree(digest);
+        java.util.function.Function<Identity, byte[]> nodes = h -> store.get(MachineStore.nodeKey(h));
+        var current = BodiesRoot.decode(next, digest.width());
+        var mutations = new ArrayList<byte[][]>();
+        if (previous == null || !LocalRoot.formatOf(previous).equals(current.format())) {
+            tree.forEach(current.bodiesRoot(), nodes, BODY, e -> mutations.add(new byte[][]{e.key(), new byte[0]}));
+        } else {
+            var before = BodiesRoot.decode(previous, digest.width());
+            var diff = Diff.trees(digest, tree.root(before.bodiesRoot(), nodes), tree.root(current.bodiesRoot(), nodes), nodes);
+            for (var entry : diff.removed()) if (isBodyKey(entry.key())) mutations.add(new byte[][]{entry.key(), null});
+            for (var entry : diff.added()) if (isBodyKey(entry.key())) mutations.add(new byte[][]{entry.key(), new byte[0]});
         }
-
-        private Identity root(Identity project) {
-            if (!roots.containsKey(project)) {
-                var value = store.get(LocalStore.bodiesRootKey(project));
-                boolean compatible = value != null && LocalRoot.formatOf(value).contains(";local=" + LocalFormat.LAYOUT + ";");
-                roots.put(project, !compatible ? null : BodiesRoot.decode(value, digest.width()).bodiesRoot());
-            }
-            return roots.get(project);
-        }
-
-        Set<Consumer> read(java.util.Collection<byte[]> prefixes) {
-            var consumers = new TreeSet<Consumer>();
-            byte[] previous = null;
-            for (var prefix : prefixes) {
-                if (previous != null && prefix.length >= previous.length
-                        && Arrays.equals(prefix, 0, previous.length, previous, 0, previous.length)) continue;
-                previous = prefix;
-                store.forEachKey(prefix, key -> {
-                    var in = new Codec.Reader(key);
-                    in.raw(4);
-                    if (key[2] == 'D') in.zstr();
-                    else { in.u8(); in.zstr(); in.u8(); in.zstr(); }
-                    var project = in.id(digest.width());
-                    var root = root(project);
-                    // Old formats and unreachable raw keys can have a different consumer suffix. Never decode those as current units.
-                    if (root == null || tree.get(root, h -> store.get(MachineStore.nodeKey(h)), key) == null) return;
-                    var unit = SourceUnit.decode(in);
-                    if (in.remaining() != 0) throw new IllegalStateException("Trailing reverse consumer bytes");
-                    consumers.add(new Consumer(project, unit));
-                });
-            }
-            return consumers;
-        }
+        return mutations;
     }
 }

@@ -24,9 +24,7 @@ public final class ProcessorSources {
         var key = LocalStore.processorSourcesKey(project, module, scope);
         var entry = tree.get(local.local().hash(), id -> records.apply(MachineStore.nodeKey(id)), key);
         if (entry == null) throw new IllegalStateException("Processor sources are not in the committed LOCAL tree");
-        var value = records.apply(key);
-        if (value == null || !tree.digest().hash(value).equals(entry.h()))
-            throw new IllegalStateException("Processor sources differ from the committed LOCAL tree");
+        var value = RootedRecords.value(tree,records,entry);
         return new ProcessorSources(tree, DefinerIndex.decodeRoot(value, tree.digest().width()), records);
     }
 
@@ -36,10 +34,7 @@ public final class ProcessorSources {
         Function<byte[], byte[]> required = key -> {
             var entry = tree.get(committed.local().hash(), id -> records.apply(MachineStore.nodeKey(id)), key);
             if (entry == null) throw new IllegalStateException("Source binding record is not in the committed LOCAL tree");
-            var value = records.apply(key);
-            if (value == null || !tree.digest().hash(value).equals(entry.h()))
-                throw new IllegalStateException("Source binding record differs from the committed LOCAL tree");
-            return value;
+            return RootedRecords.value(tree,records,entry);
         };
         var origins = new java.util.ArrayList<Origin>();
         var own = SourceLeaf.decode(required.apply(LocalStore.sourceLeafKey(project, module, scope)), tree.digest().width());

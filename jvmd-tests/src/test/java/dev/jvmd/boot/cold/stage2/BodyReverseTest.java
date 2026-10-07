@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** B.3 fan-out from actual ContentTree deltas; no scan of stored proofs or source rows. */
 @Tag("phase-3")
@@ -39,14 +40,16 @@ class BodyReverseTest {
         byte[] named = ReverseIndex.bodyKey(nested, b, Stage2Support.source("src/N.java")), absent = ReverseIndex.bodyKey(missing, b, Stage2Support.source("src/D.java"));
         publish(digest, tree, store, a, List.of(first, second, overriding, unrelated));
         publish(digest, tree, store, b, List.of(named, absent));
-        // A raw stale key and a header key with the same spelling are not body consumers.
-        store.put(ReverseIndex.bodyKey(method, a, Stage2Support.source("stale/Old.java")), Entry.NONE);
+        // Current keys can only be changed by root publication; legacy raw history is in a different namespace.
+        assertThatThrownBy(() -> store.put(ReverseIndex.bodyKey(method, a, Stage2Support.source("stale/Old.java")), Entry.NONE))
+                .isInstanceOf(IllegalArgumentException.class);
         var header = method.key(a, Stage2Support.source("header/Only.java"));
         var headerRoot = tree.build(List.of(new Entry(header, Entry.NONE, digest.hash(Entry.NONE))), store);
         store.flush();
         store.putLocalRoot(digest, a, LocalRoot.encode(digest,
                 LocalFormat.of(dev.jvmd.index.layer.machine.Format.of(digest, Runtime.version().feature())), headerRoot, a, a));
-        store.put(new Codec.Writer().raw(ReverseIndex.bodyPrefix(method)).id(a).zstr("legacy/Old.java").toBytes(), Entry.NONE);
+        store.put(new Codec.Writer().raw(new byte[]{'X','|','G','|'}).u8(method.form()).zstr(method.type())
+                .u8(method.kind()).zstr(method.name()).id(a).zstr("legacy/Old.java").toBytes(), Entry.NONE);
         store.flush();
         var t = delta(digest, tree, store, Keys.memberKey("q/Base", Keys.METHOD, "get", "()Ljava/lang/Number;"), true);
         var n = delta(digest, tree, store, new Codec.Writer().zstr("Foo").u8(Keys.TYPE).zstr("q/Base").raw(Keys.typeKey("q/Base$Foo")).toBytes(), false);
@@ -59,14 +62,14 @@ class BodyReverseTest {
                 new ReverseIndex.Consumer(a, Stage2Support.source("src/A.java")), new ReverseIndex.Consumer(a, Stage2Support.source("test/A.java")), new ReverseIndex.Consumer(a, Stage2Support.source("src/Override.java")),
                 new ReverseIndex.Consumer(b, Stage2Support.source("src/N.java")), new ReverseIndex.Consumer(b, Stage2Support.source("src/D.java")));
         assertThat(store.events().subList(start, store.events().size())).doesNotContain("read:F", "read:C", "prefix:F", "prefix:C", "read:LROOT");
-        assertThat(rootReadsA.get()).isEqualTo(1);
-        assertThat(rootReadsB.get()).isEqualTo(1);
+        assertThat(rootReadsA.get()).isZero();
+        assertThat(rootReadsB.get()).isZero();
         assertThat(store.get(first)).isEmpty();
         assertThat(first).startsWith(ReverseIndex.bodyPrefix(method));
 
-        // Publishing a new body set removes consumers through tree membership, without deleting unrelated raw storage.
+        // Publication removes current keys atomically; the old tree still retains their empty values.
         publish(digest, tree, store, a, List.of(second, overriding, unrelated));
-        assertThat(store.get(first)).isEmpty();
+        assertThat(store.get(first)).isNull();
         assertThat(ReverseIndex.bodyConsumers(digest, store, method)).containsExactly(new ReverseIndex.Consumer(a, Stage2Support.source("test/A.java")));
     }
 
@@ -91,7 +94,8 @@ class BodyReverseTest {
                 .replace(";local="+LocalFormat.LAYOUT+";",";local=12;");
         byte[] header=new Codec.Writer().raw(new byte[]{'X','|','H','|'}).u8(dependency.form())
                 .zstr(dependency.type()).u8(dependency.kind()).zstr(dependency.name()).id(project).zstr("same/Source.java").toBytes();
-        byte[] body=new Codec.Writer().raw(ReverseIndex.bodyPrefix(dependency)).id(project).zstr("same/Source.java").toBytes();
+        byte[] body=new Codec.Writer().raw(new byte[]{'X','|','G','|'}).u8(dependency.form()).zstr(dependency.type())
+                .u8(dependency.kind()).zstr(dependency.name()).id(project).zstr("same/Source.java").toBytes();
         store.put(header,Entry.NONE);store.put(body,Entry.NONE);
         var local=tree.build(List.of(new Entry(header,Entry.NONE,digest.hash(Entry.NONE))),store);
         var bodies=tree.build(List.of(new Entry(body,Entry.NONE,digest.hash(Entry.NONE))),store);
@@ -102,14 +106,15 @@ class BodyReverseTest {
         assertThat(ReverseIndex.bodyConsumers(digest,store,dependency)).isEmpty();
     }
 
-    static void publish(Digest digest, ContentTree tree, InMemoryLocalStore store, Identity project, List<byte[]> keys) {
+    static void publish(Digest digest, ContentTree tree, LocalStore store, Identity project, List<byte[]> keys) {
         var entries = keys.stream().sorted(Arrays::compareUnsigned).map(key -> new Entry(key, Entry.NONE, digest.hash(Entry.NONE))).toList();
-        for (var key : keys) store.put(key, Entry.NONE);
         var root = tree.build(entries, store);
         var local = digest.hash(new byte[] {7});
         String format=LocalFormat.of(dev.jvmd.index.layer.machine.Format.of(digest,Runtime.version().feature()));
-        store.put(LocalStore.bodiesRootKey(project), new BodiesRoot(BodiesRoot.format(format), root.hash(), local, local, local).encode());
         store.flush();
+        var result=new BodiesRoot(BodiesRoot.format(format), root.hash(), local, local, local);
+        store.putBodiesRoot(digest,project,new LocalStore.BodyCommit(result.encode(),store.get(LocalStore.bodiesRootKey(project)),
+                store.get(LocalStore.localRootKey(project)),store.get(MachineStore.ROOT_KEY),List.of()));
     }
 
     private static Diff.Result delta(Digest digest, ContentTree tree, InMemoryLocalStore store, byte[] key, boolean existing) {

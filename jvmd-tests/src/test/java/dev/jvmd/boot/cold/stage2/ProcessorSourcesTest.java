@@ -52,7 +52,7 @@ class ProcessorSourcesTest {
         var result = new Stage2(digest, tree, Stage2Support.FEATURE, workers, dir, ClassFacts::of).run(store, model);
         var project = Stage2.projectKey(digest, model);
         var local = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(project)));
-        assertThat(local.format()).contains(";local=19;");
+        assertThat(local.format()).contains(";local=" + LocalFormat.LAYOUT + ";");
         return new State(tree, store, project, local, result);
     }
     private ProjectModel model() { return ProjectModel.parse(Stage2Support.model(dir, new Stage2Support.Mod("app", "g:app:1", List.of()))); }
@@ -168,7 +168,35 @@ class ProcessorSourcesTest {
         assertThat(reads.get()).isZero();
         var key = LocalStore.processorSourcesKey(current.project(), "app", 0);
         current.store().put(key, DefinerIndex.encodeRoot(old.root())); current.store().flush();
-        assertThatThrownBy(() -> current.sources("app", 0)).hasMessageContaining("differ from the committed LOCAL tree");
+        var expected = current.sources("app", 0).root();
+        assertThat(expected).isNotEqualTo(old.root());
+        var entry = current.tree().get(current.local().local().hash(),
+                id -> current.store().get(dev.jvmd.index.layer.machine.MachineStore.nodeKey(id)), key);
+        current.store().put(LocalStore.bodyValueKey(entry.h()), new byte[]{42}); current.store().flush();
+        assertThatThrownBy(() -> current.sources("app", 0)).hasMessageContaining("Rooted record digest mismatch");
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void f03HistoricalLocalAndInheritedBodyValuesSurviveCurrentBindingReplacement(Digest digest) throws Exception {
+        var before = initial(digest);
+        var values = new java.util.TreeMap<byte[], byte[]>(java.util.Arrays::compareUnsigned);
+        before.tree().forEach(before.local().local().hash(),
+                id -> before.store().get(dev.jvmd.index.layer.machine.MachineStore.nodeKey(id)),
+                entry -> values.put(entry.key(), RootedRecords.value(before.tree(), before.store()::get, entry)));
+        var body = dev.jvmd.boot.cold.stage3.BodyGeneration.begin(
+                before.tree(), before.store(), before.project(), before.local()).commit(Map.of());
+        Stage2Support.write(dir, Map.of(PATH, "package p; public class Input { public String changed; }"));
+        var after = boot(digest, model(), before.store(), 2);
+        assertThat(after.local().local()).isNotEqualTo(before.local().local());
+        assertThat(ProcessorSources.load(before.tree(), before.local(), before.project(), "app", 0,
+                after.store()::get).type("p/Input$Data")).isNotNull();
+        assertThat(after.sources("app", 0).type("p/Input$Data")).isNull();
+        before.tree().forEach(before.local().local().hash(),
+                id -> after.store().get(dev.jvmd.index.layer.machine.MachineStore.nodeKey(id)), entry -> {
+            assertThat(RootedRecords.value(before.tree(), after.store()::get, entry)).isEqualTo(values.get(entry.key()));
+            assertThat(BodyRecords.read(before.tree(), after.store(), body.bodiesRoot(), entry.key()))
+                    .isEqualTo(values.get(entry.key()));
+        });
     }
 
     @ParameterizedTest @MethodSource("digests")

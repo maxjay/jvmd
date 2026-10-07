@@ -82,27 +82,34 @@ public final class Stage3 {
         }
         // A later module may revoke admission for processor bytes used by an earlier scope. Check after every worker finished.
         scopes.replaceAll((name, scope) -> admit(scope, generation));
-        var records=new TreeMap<byte[],byte[]>(Arrays::compareUnsigned);var faults=new java.util.TreeSet<String>();int count=0;
+        var records=new TreeMap<byte[],Entry>(Arrays::compareUnsigned);var faults=new java.util.TreeSet<String>();int count=0;
         for(var module:model.modules())for(int scope:new int[]{LocalStore.MAIN,LocalStore.TEST}) {
             var result=scopes.get(module.name()+(scope==0?"/main":"/test"));
-            records.put(LocalStore.outputKey(project,module.name(),scope),DefinerIndex.encodeRoot(result.output()));
+            var outputKey=LocalStore.outputKey(project,module.name(),scope);
+            records.put(outputKey,generation.record(outputKey,DefinerIndex.encodeRoot(result.output())));
             for(var file:result.files()) {
                 count++;var computed=file.computed();
                 if(computed.proof()!=null) {
-                    records.put(LocalStore.proofKey(project,module.name(),scope,file.path()),computed.proof().encode());
-                    for(var dependency:ReverseIndex.dependencies(computed.proof()))records.put(ReverseIndex.bodyKey(dependency,project,module.name(),scope,file.path()),Entry.NONE);
+                    var proofKey=LocalStore.proofKey(project,module.name(),scope,file.path());
+                    records.put(proofKey,generation.record(proofKey,computed.proof().encode()));
+                    for(var dependency:ReverseIndex.dependencies(computed.proof())) {
+                        var key=ReverseIndex.bodyKey(dependency,project,module.name(),scope,file.path());
+                        records.put(key,generation.record(key,Entry.NONE));
+                    }
                 }
                 for(var c:computed.result().classFiles()) {
-                    var key=LocalStore.classFileKey(c.contentHash());records.put(key,required(generation.get(key)));
+                    var key=LocalStore.classFileKey(c.contentHash());records.put(key,java.util.Objects.requireNonNull(generation.reference(key)));
                 }
                 if(computed.reusable()) {
-                    records.put(LocalStore.resultKey(computed.aci()),computed.result().encode());
-                    if(computed.proof()!=null)records.put(LocalStore.usesKey(computed.aci()),computed.uses().encode());
+                    var key=LocalStore.resultKey(computed.aci());records.put(key,generation.record(key,computed.result().encode()));
+                    if(computed.proof()!=null) {
+                        var uses=LocalStore.usesKey(computed.aci());records.put(uses,generation.record(uses,computed.uses().encode()));
+                    }
                 }
                 for(var fault:computed.faults())faults.add(module.name()+"/"+scope+": "+file.path()+": "+fault);
             }
         }
-        var bodies=generation.commit(records);
+        var bodies=generation.commitReferences(records);
         return new Result(project,bodies,scopes,count,new ArrayList<>(faults),(System.nanoTime()-started)/1_000_000);
     }
 
@@ -226,8 +233,7 @@ public final class Stage3 {
         var bodies=BodiesRoot.decode(required(store.get(LocalStore.bodiesRootKey(project))),digest.width());
         if(!bodies.current(local))throw new IllegalStateException("Bodies root is stale");
         var key=LocalStore.outputKey(project,module,scope);var entry=tree.get(bodies.bodiesRoot(),id->store.get(MachineStore.nodeKey(id)),key);
-        if(entry==null)throw new IllegalStateException("Scope output is not in BROOT");var value=required(store.get(key));
-        if(!digest.hash(value).equals(entry.h()))throw new IllegalStateException("Output record digest mismatch");
+        if(entry==null)throw new IllegalStateException("Scope output is not in BROOT");var value=BodyRecords.value(tree,store,entry);
         return Output.materialise(tree,store,project,module,scope,DefinerIndex.decodeRoot(value,digest.width()),directory);
     }
 }

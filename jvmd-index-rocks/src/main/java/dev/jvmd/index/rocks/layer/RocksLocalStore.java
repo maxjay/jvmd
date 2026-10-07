@@ -28,8 +28,8 @@ public final class RocksLocalStore implements LocalStore, AutoCloseable {
 
     // ---- records ---------------------------------------------------------------------------------------------------------
     @Override public void put(byte[] key, byte[] value) {
-        if (dev.jvmd.index.layer.local.ReverseIndex.isHeaderKey(key))
-            throw new IllegalArgumentException("Current reverse keys are published with LROOT");
+        if (dev.jvmd.index.layer.local.ReverseIndex.isHeaderKey(key) || dev.jvmd.index.layer.local.ReverseIndex.isBodyKey(key))
+            throw new IllegalArgumentException("Current reverse keys are published with their root");
         machine.put(key, value);
     }
     @Override public byte[] get(byte[] key) { return machine.get(key); }
@@ -43,9 +43,11 @@ public final class RocksLocalStore implements LocalStore, AutoCloseable {
         var previous = machine.get(LocalStore.localRootKey(projectKey));
         records.addAll(dev.jvmd.index.layer.local.ReverseIndex.publication(digest, this, previous, value));
         if (previous != null) {
-            int n = 1;
-            while (machine.get(LocalStore.localRootHistoryKey(projectKey, n)) != null) n++;
+            var sequenceKey = LocalStore.localSequenceKey(projectKey);
+            var sequence = machine.get(sequenceKey);
+            int n = sequence == null ? 1 : Math.addExact(new dev.jvmd.core.tree.Codec.Reader(sequence).count(), 1);
             records.add(new byte[][] {LocalStore.localRootHistoryKey(projectKey, n), previous});
+            records.add(new byte[][] {sequenceKey, new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes()});
         }
         records.add(new byte[][] {LocalStore.localRootKey(projectKey), value});
         machine.commit(List.copyOf(records));
@@ -53,16 +55,25 @@ public final class RocksLocalStore implements LocalStore, AutoCloseable {
     }
 
 
-    @Override public void putBodiesRoot(Identity projectKey, byte[] value) {
-        var records = new ArrayList<byte[][]>(2);
+    @Override public void putBodiesRoot(dev.jvmd.core.hash.Digest digest, Identity projectKey, BodyCommit commit) {
+        synchronized (machine) {
         var previous = machine.get(LocalStore.bodiesRootKey(projectKey));
+        if (!java.util.Arrays.equals(previous, commit.previous())
+                || !java.util.Arrays.equals(machine.get(LocalStore.localRootKey(projectKey)), commit.local())
+                || !java.util.Arrays.equals(machine.get(MachineStore.ROOT_KEY), commit.machine()))
+            throw new IllegalStateException("Committed roots changed during body attribution");
+        var records = new ArrayList<byte[][]>(commit.bindings());
+        records.addAll(dev.jvmd.index.layer.local.ReverseIndex.bodyPublication(digest, this, previous, commit.value()));
         if (previous != null) {
-            int n = 1;
-            while (machine.get(LocalStore.bodiesRootHistoryKey(projectKey, n)) != null) n++;
+            var sequenceKey = LocalStore.bodiesSequenceKey(projectKey);
+            var sequence = machine.get(sequenceKey);
+            int n = sequence == null ? 1 : Math.addExact(new dev.jvmd.core.tree.Codec.Reader(sequence).count(), 1);
             records.add(new byte[][] {LocalStore.bodiesRootHistoryKey(projectKey, n), previous});
+            records.add(new byte[][] {sequenceKey, new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes()});
         }
-        records.add(new byte[][] {LocalStore.bodiesRootKey(projectKey), value});
+        records.add(new byte[][] {LocalStore.bodiesRootKey(projectKey), commit.value()});
         machine.commit(List.copyOf(records));
+        }
     }
 
     /** For tests: every key in the store, in order. */

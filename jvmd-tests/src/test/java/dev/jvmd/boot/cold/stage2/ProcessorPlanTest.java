@@ -94,7 +94,7 @@ class ProcessorPlanTest {
         assertThat(result.faults()).isEmpty();
         var project = Stage2.projectKey(digest,model);
         var local = LocalRoot.decode(digest,store.get(LocalStore.localRootKey(project)));
-        assertThat(local.format()).contains(";local=19;");
+        assertThat(local.format()).contains(";local=" + LocalFormat.LAYOUT + ";");
         return new State(tree,store,local,project,result);
     }
 
@@ -210,8 +210,11 @@ class ProcessorPlanTest {
         var reads=state.store().watchReads(forged);
         assertThat(plan.generation(PROCESSOR,"isolate/src/main/java/p/Mark.java")).isNull();assertThat(reads.get()).isZero();
         var key=LocalStore.generatedKey(input.derivation());state.store().put(key,DefinerIndex.encodeRoot(empty.outputs()));state.store().flush();
+        assertThat(plan.generation(PROCESSOR,"isolate/src/main/java/p/Input.java")).isEqualTo(input);
+        var entry=state.tree().get(state.local().local().hash(), id->state.store().get(MachineStore.nodeKey(id)), key);
+        state.store().put(LocalStore.bodyValueKey(entry.h()),new byte[]{42});state.store().flush();
         assertThatThrownBy(()->plan.generation(PROCESSOR,"isolate/src/main/java/p/Input.java"))
-                .hasMessage("Processor record differs from the committed LOCAL tree");
+                .hasMessage("Rooted record digest mismatch");
     }
 
     @ParameterizedTest @MethodSource("digests")

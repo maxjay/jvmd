@@ -84,9 +84,6 @@ public final class ProcessorPlan {
     private byte[] read(byte[] key) {
         var entry = tree.get(local, id -> records.apply(MachineStore.nodeKey(id)), key);
         if (entry == null) return null;
-        var value = records.apply(key);
-        if (value == null || !tree.digest().hash(value).equals(entry.h()))
-            throw new IllegalStateException("Processor record differs from the committed LOCAL tree");
-        return value;
+        return RootedRecords.value(tree, records, entry);
     }
 }

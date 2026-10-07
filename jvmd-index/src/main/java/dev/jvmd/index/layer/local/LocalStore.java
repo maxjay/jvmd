@@ -29,8 +29,10 @@ public interface LocalStore extends MachineStore {
     /** Atomically commits the current reverse delta and root, retaining the previous root under {@code LROOT|projectKey|n}. */
     void putLocalRoot(dev.jvmd.core.hash.Digest digest, Identity projectKey, byte[] value);
 
-    /** Commits BROOT and its previous-root history in one atomic write, after sync. Never changes LROOT. */
-    void putBodiesRoot(Identity projectKey, byte[] value);
+    /** Expected input roots and changed current bindings for one atomic body publication, after immutable content sync. */
+    record BodyCommit(byte[] value, byte[] previous, byte[] local, byte[] machine, java.util.List<byte[][]> bindings) { }
+    /** Compare input roots and commit bindings, current reverse delta, history sequence and BROOT under the store's shared lock. */
+    void putBodiesRoot(dev.jvmd.core.hash.Digest digest, Identity projectKey, BodyCommit commit);
 
     default boolean hasLocalRoot(Identity projectKey) { return get(localRootKey(projectKey)) != null; }
 
@@ -66,6 +68,8 @@ public interface LocalStore extends MachineStore {
     static byte[] proofKey(Identity projectKey, String module, int scope, String path) { return proofKey(projectKey, new SourceUnit(module, scope, path)); }
     static byte[] resultKey(Identity aci) { return join("RS|", aci.view()); }
     static byte[] classFileKey(Identity content) { return join("CF|", content.view()); }
+    /** Immutable LOCAL/BROOT values selected by entry hashes (CF already has an exact byte address). */
+    static byte[] bodyValueKey(Identity content) { return join("BV|", content.view()); }
     static byte[] usesKey(Identity aci) { return join("U|", aci.view()); }
     static byte[] outputKey(Identity projectKey, String module, int scope) {
         return join("OUT|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
@@ -75,8 +79,9 @@ public interface LocalStore extends MachineStore {
     }
     static byte[] bodiesRootKey(Identity projectKey) { return join("BROOT|", projectKey.view()); }
     static byte[] bodiesRootHistoryKey(Identity projectKey, int n) {
-        return join("BROOT|", projectKey.view(), "|", new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes());
+        return join("BROOT|", projectKey.view(), "|8|", new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes());
     }
+    static byte[] bodiesSequenceKey(Identity projectKey) { return join("BSEQ|8|", projectKey.view()); }
     static byte[] definerStateKey(Identity leafSet) { return join("DF|", leafSet.view()); }
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }
     static byte[] stubTypeKey(Identity stKey) { return join("ST|", stKey.view()); }
@@ -110,9 +115,10 @@ public interface LocalStore extends MachineStore {
         return join("PROC|", processorPathHash.view(), "|", processorClass.getBytes(StandardCharsets.UTF_8));
     }
     static byte[] localRootKey(Identity projectKey) { return join("LROOT|", projectKey.view()); }
-    /** A kept previous root; {@code n} counts from 1, oldest first. */
+    static byte[] localSequenceKey(Identity projectKey) { return join("LSEQ|" + LocalFormat.LAYOUT + "|", projectKey.view()); }
+    /** A kept previous root; n counts from 1 within this publication layout, oldest first. */
     static byte[] localRootHistoryKey(Identity projectKey, int n) {
-        return join("LROOT|", projectKey.view(), "|", new byte[] {(byte) (n >>> 24), (byte) (n >>> 16), (byte) (n >>> 8), (byte) n});
+        return join("LROOT|", projectKey.view(), "|" + LocalFormat.LAYOUT + "|", new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes());
     }
 
     /** Concatenates ASCII tags ({@link String}) and raw bytes ({@code byte[]}). */

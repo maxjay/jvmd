@@ -30,7 +30,9 @@ class BodyGenerationTest {
         return local(tree,store,project,Map.of(LocalStore.fileKey(project, Stage2Support.source("A.java")),new byte[]{2}));
     }
     private State local(ContentTree tree,InMemoryLocalStore store,Identity project,Map<byte[],byte[]> values) {
-        var sorted=records();sorted.putAll(values);sorted.forEach(store::put);store.flush();
+        var sorted=records();sorted.putAll(values);sorted.forEach((key,value)->{
+            store.put(key,value);store.put(LocalStore.bodyValueKey(tree.digest().hash(value)),value);
+        });store.flush();
         var root=tree.build(sorted.entrySet().stream().map(e->new Entry(e.getKey(),Entry.NONE,tree.digest().hash(e.getValue()))).toList(),store);
         store.flush();store.sync();
         store.putLocalRoot(tree.digest(),project,LocalRoot.encode(tree.digest(),"fixture;local=11",root,project,project));
@@ -41,6 +43,92 @@ class BodyGenerationTest {
         var expected=state.tree().build(sorted.entrySet().stream().map(e->new Entry(e.getKey(),Entry.NONE,state.tree().digest().hash(e.getValue()))).toList(),state.store());
         state.store().flush();assertThat(actual).isEqualTo(expected);
         state.tree().verify(actual,h->state.store().get(MachineStore.nodeKey(h)));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void f03EveryPublicationCutPreservesAnEntireOldOrNewSnapshot(Digest digest) {
+        var s=local(digest);var key=LocalStore.proofKey(s.project(),Stage2Support.source("A.java"));
+        var dep=new ReverseIndex.Dependency(ReverseIndex.T,"p/T",dev.jvmd.index.layer.machine.Keys.FIELD,"x");
+        var oldKey=ReverseIndex.bodyKey(dep,s.project(),Stage2Support.source("Old.java"));
+        var newKey=ReverseIndex.bodyKey(dep,s.project(),Stage2Support.source("New.java"));
+        var old=BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local()).commit(Map.of(key,new byte[]{1},oldKey,Entry.NONE));
+        var operations=new java.util.ArrayList<String>();
+        var baseline=s.store().copy();
+        var counted=faultView(baseline,(name,after)->{if(!after)operations.add(name);});
+        BodyGeneration.begin(s.tree(),counted,s.project(),s.local()).commit(Map.of(key,new byte[]{2},newKey,Entry.NONE));
+        assertThat(operations).contains("put","flush","write","sync","putBodiesRoot");
+        for(int cut=0;cut<operations.size();cut++)for(boolean after:new boolean[]{false,true}) {
+            var store=s.store().copy();int stop=cut;var at=new java.util.concurrent.atomic.AtomicInteger();
+            var fault=faultView(store,(name,finished)->{
+                if(finished==after && at.getAndIncrement()==stop)throw new IllegalStateException("cut "+name);
+            });
+            assertThatThrownBy(()->BodyGeneration.begin(s.tree(),fault,s.project(),s.local()).commit(Map.of(key,new byte[]{2},newKey,Entry.NONE)))
+                    .hasMessageStartingWith("cut ");
+            var reopened=store.copy(); // drop the unfinished thread-local batch, as restart would
+            var accepted=BodiesRoot.decode(reopened.get(LocalStore.bodiesRootKey(s.project())),digest.width());
+            boolean isOld=Arrays.equals(accepted.encode(),old.encode());
+            assertThat(BodyRecords.read(s.tree(),reopened,accepted.bodiesRoot(),key)).containsExactly(isOld?1:2);
+            assertThat(BodyRecords.read(s.tree(),reopened,old.bodiesRoot(),key)).containsExactly(1);
+            assertThat(reopened.get(key)).containsExactly(isOld?1:2);
+            assertThat(ReverseIndex.bodyConsumers(digest,reopened,dep)).extracting(ReverseIndex.Consumer::path)
+                    .containsExactly(isOld?"Old.java":"New.java");
+        }
+    }
+
+    private static LocalStore faultView(LocalStore delegate,java.util.function.BiConsumer<String,Boolean> boundary) {
+        return (LocalStore)java.lang.reflect.Proxy.newProxyInstance(LocalStore.class.getClassLoader(),new Class<?>[]{LocalStore.class},
+                (proxy,method,args)->{
+                    boolean mutation=List.of("put","write","flush","sync","putBodiesRoot").contains(method.getName());
+                    if(mutation)boundary.accept(method.getName(),false);
+                    Object result;
+                    try {result=method.invoke(delegate,args);}catch(java.lang.reflect.InvocationTargetException failure){throw failure.getCause();}
+                    if(mutation)boundary.accept(method.getName(),true);
+                    return result;
+                });
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void f03ConcurrentPublishersCompareRootsInsideTheAtomicTransition(Digest digest) throws Exception {
+        var s=local(digest);var key=LocalStore.proofKey(s.project(),Stage2Support.source("A.java"));
+        var old=BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local()).commit(Map.of(key,new byte[]{1}));
+        var barrier=new java.util.concurrent.CyclicBarrier(2);
+        var commits=new java.util.concurrent.atomic.AtomicInteger();var rejected=new java.util.concurrent.atomic.AtomicInteger();
+        try(var executor=java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            var tasks=new java.util.ArrayList<java.util.concurrent.Future<?>>();
+            for(int value:new int[]{2,3}) {
+                var view=faultView(s.store(),(name,after)->{
+                    if(name.equals("putBodiesRoot") && !after)try {barrier.await(10,java.util.concurrent.TimeUnit.SECONDS);}
+                    catch(Exception failure){throw new RuntimeException(failure);}
+                });
+                var generation=BodyGeneration.begin(s.tree(),view,s.project(),s.local());
+                tasks.add(executor.submit(()->{
+                    try {generation.commit(Map.of(key,new byte[]{(byte)value}));commits.incrementAndGet();}
+                    catch(IllegalStateException failure) {assertThat(failure).hasMessageContaining("changed");rejected.incrementAndGet();}
+                }));
+            }
+            for(var task:tasks)task.get(15,java.util.concurrent.TimeUnit.SECONDS);
+        }
+        assertThat(commits.get()).isOne();assertThat(rejected.get()).isOne();
+        assertThat(BodyRecords.read(s.tree(),s.store(),old.bodiesRoot(),key)).containsExactly(1);
+        var current=BodiesRoot.decode(s.store().get(LocalStore.bodiesRootKey(s.project())),digest.width());
+        assertThat(BodyRecords.read(s.tree(),s.store(),current.bodiesRoot(),key)).isEqualTo(s.store().get(key));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void f03InterruptedPublicationLeavesTheOldProofReadable(Digest digest) {
+        var s=local(digest);var key=LocalStore.proofKey(s.project(),Stage2Support.source("A.java"));
+        var old=BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local()).commit(Map.of(key,new byte[]{1}));
+        var fault=(LocalStore)java.lang.reflect.Proxy.newProxyInstance(LocalStore.class.getClassLoader(),new Class<?>[]{LocalStore.class},
+                (proxy,method,args)->{
+                    if(method.getName().equals("putBodiesRoot"))throw new IllegalStateException("injected publication cut");
+                    try {return method.invoke(s.store(),args);}
+                    catch(java.lang.reflect.InvocationTargetException failure) {throw failure.getCause();}
+                });
+        assertThatThrownBy(()->BodyGeneration.begin(s.tree(),fault,s.project(),s.local()).commit(Map.of(key,new byte[]{2})))
+                .hasMessageContaining("injected");
+        assertThat(s.store().get(LocalStore.bodiesRootKey(s.project()))).isEqualTo(old.encode());
+        assertThat(old.current(s.local())).isTrue();
+        assertThat(BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local()).get(key)).containsExactly(1);
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -95,9 +183,12 @@ class BodyGenerationTest {
         BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local()).commit(Map.of(key,new byte[]{3}));
         s.store().put(key,new byte[]{4});s.store().flush();
         var generation=BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local());
+        assertThat(generation.get(key)).containsExactly(3); // Mutable current bindings are not snapshot values.
+        var immutable=LocalStore.bodyValueKey(digest.hash(new byte[]{3}));
+        s.store().put(immutable,new byte[]{4});s.store().flush();
         assertThatThrownBy(()->generation.get(key)).isInstanceOf(IllegalStateException.class).hasMessageContaining("digest");
-        generation.commit(Map.of(key,new byte[]{3})); // A fresh result repairs a mutable record left by an interrupted publication.
-        assertThat(s.store().get(key)).containsExactly(3);
+        s.store().put(immutable,new byte[]{3});s.store().flush();
+        generation.commit(Map.of(key,new byte[]{3}));
         var localKey=LocalStore.fileKey(s.project(), Stage2Support.source("A.java"));
         var changed=local(s.tree(),s.store(),s.project(),Map.of(LocalStore.fileKey(s.project(), Stage2Support.source("B.java")),new byte[]{5}));
         assertThat(BodyGeneration.begin(s.tree(),s.store(),s.project(),changed.local()).get(localKey)).isNull();
@@ -120,12 +211,52 @@ class BodyGenerationTest {
         var next=BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local());long writes=s.store().recordWriteCount();
         var changes=records();changes.put(LocalStore.proofKey(s.project(), Stage2Support.source("new.java")),new byte[]{5});changes.put(key,new byte[]{6});
         assertThatThrownBy(()->next.commit(changes)).isInstanceOf(IllegalStateException.class).hasMessageContaining("Conflicting");
-        assertThat(s.store().recordWriteCount()).isEqualTo(writes);assertThat(s.store().get(LocalStore.bodiesRootKey(s.project()))).isEqualTo(first.encode());
+        // Unreachable immutable provisional bytes are permitted; no current binding or accepted root may move.
+        assertThat(s.store().get(LocalStore.proofKey(s.project(),Stage2Support.source("new.java")))).isNull();
+        assertThat(s.store().get(LocalStore.bodiesRootKey(s.project()))).isEqualTo(first.encode());
+        assertThat(BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local()).get(key)).containsExactly(4);
         var incompatible=new BodiesRoot("old;bodies=3",first.bodiesRoot(),first.localRoot(),first.machineRoot(),first.modelHash());
-        s.store().putBodiesRoot(s.project(),incompatible.encode());var watched=s.store().watchReads(key);
+        s.store().putBodiesRoot(digest,s.project(),new LocalStore.BodyCommit(incompatible.encode(),first.encode(),
+                s.store().get(LocalStore.localRootKey(s.project())),s.store().get(MachineStore.ROOT_KEY),List.of()));var watched=s.store().watchReads(key);
         var cold=BodyGeneration.begin(s.tree(),s.store(),s.project(),s.local());assertThat(cold.get(key)).isNull();
         cold.commit(Map.of());assertThat(watched.get()).isZero();assertThat(cold.root()).isEqualTo(s.local().local());
         assertThat(s.store().get(LocalStore.bodiesRootHistoryKey(s.project(),2))).isEqualTo(incompatible.encode());
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void f08FreshClassPayloadsAreStreamedAndSelectionNeverFetchesThemAgain(Digest digest) throws Exception {
+        var tree=new ContentTree(digest);var disk=dev.jvmd.index.rocks.layer.Generation.of(directory,
+                dev.jvmd.index.layer.machine.Format.of(digest,Runtime.version().feature()));
+        Root empty;
+        try(var machine=disk.create()) {empty=tree.build(List.of(),machine);machine.flush();machine.putRoot(new byte[]{1});}
+        var project=digest.hash(new byte[]{62});
+        var encoded=LocalRoot.encode(digest,"fixture;local="+LocalFormat.LAYOUT,empty,project,project);
+        try(var store=disk.openLocal()) {
+            store.putLocalRoot(digest,project,encoded);var local=LocalRoot.decode(digest,encoded);
+            var cfReads=new java.util.concurrent.atomic.AtomicInteger();
+            var counted=(LocalStore)java.lang.reflect.Proxy.newProxyInstance(LocalStore.class.getClassLoader(),new Class<?>[]{LocalStore.class},
+                    (proxy,method,args)->{
+                        if(method.getName().equals("get") && BodyRecords.tag((byte[])args[0],"CF"))cfReads.incrementAndGet();
+                        try {return method.invoke(store,args);}catch(java.lang.reflect.InvocationTargetException failure){throw failure.getCause();}
+                    });
+            for(int size:new int[]{16,64}) {
+                var generation=BodyGeneration.begin(tree,counted,project,local);
+                var selected=new TreeMap<byte[],Entry>(Arrays::compareUnsigned);
+                var payloads=new java.util.ArrayList<java.lang.ref.WeakReference<byte[]>>();
+                for(int i=0;i<size;i++)payloads.add(streamClass(digest,generation,selected,i+size*100));
+                // The store is RocksDB, so this tests generation retention independently of an in-memory byte store.
+                System.gc();
+                assertThat(payloads.stream().filter(ref->ref.get()==null).count()).isGreaterThanOrEqualTo(size-1L);
+                cfReads.set(0);generation.commitReferences(selected);assertThat(cfReads.get()).isZero();
+                System.out.println("F08 "+digest.getClass().getSimpleName()+" emitted MiB="+size+" commit CF reads="+cfReads.get());
+            }
+        }
+    }
+
+    private static java.lang.ref.WeakReference<byte[]> streamClass(Digest digest,BodyGeneration generation,Map<byte[],Entry> selected,int ordinal) {
+        var bytes=new byte[1_048_576];java.nio.ByteBuffer.wrap(bytes).putInt(ordinal);
+        var key=LocalStore.classFileKey(digest.hash(bytes));selected.put(key,generation.record(key,bytes));
+        return new java.lang.ref.WeakReference<>(bytes);
     }
 
     @ParameterizedTest @MethodSource("digests")
@@ -153,6 +284,8 @@ class BodyGenerationTest {
             assertThat(store.get(key)).containsExactly(3);
             var current=BodiesRoot.decode(store.get(LocalStore.bodiesRootKey(project)),digest.width());assertThat(current.current(local)).isTrue();
             assertThat(tree.get(current.bodiesRoot(),h->store.get(MachineStore.nodeKey(h)),key).h()).isEqualTo(digest.hash(new byte[]{3}));
+            assertThat(BodyRecords.read(tree,store,BodiesRoot.decode(first,digest.width()).bodiesRoot(),key)).containsExactly(2);
+            assertThat(BodyRecords.read(tree,store,current.bodiesRoot(),key)).containsExactly(3);
         }
     }
 }

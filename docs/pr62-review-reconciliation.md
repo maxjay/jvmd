@@ -8,12 +8,12 @@ The supplied `JVMD-PR62-consolidated-review.md` reviews `aefad3bda1d647100b56f11
 | --- | --- |
 | F01 | Reproduced under both digests using native class files. Fixed: equal definer sums discharge T/presence only; consumed N answers are checked after provider changes. Native success/failure, positive/zero N and T-only reuse controls pass. |
 | F02 | Independently reproduced after fixing F01. Fixed: body discovery accepts separate presence and exact definer deltas, queries type-wide T/N prefixes for a changed winner and deduplicates overlapping seeks. Body N carries actual sums, unlike header N zero predicates. More publication/churn coverage follows F06. |
-| F03 | Confirmed in publication code: mutable records precede BROOT. Immutable historical values and atomic current publication repair pending. |
+| F03 | Reproduced before repair. Fixed: immutable BV values for LOCAL/BROOT entries, streamed CF content, and atomic compare-and-publish of BROOT/current bindings/current reverse keys/history sequence. Retained roots resolve values by entry hash. Fault cuts, concurrent publishers, reopen and historical inherited LOCAL values are tested. |
 | F04 | Accepted open proof obligation. Existing owner-load coverage is insufficient for either direction of the required query-level theorem. Native diagnostics, query capture and strict two-sided coverage work remain open. |
 | F05 | Accepted work-bound correction. The called Valid fallback scans its grouped proof; its actual bound is now explicit in §7.2. No changed-only API or production LIVE scheduler is claimed. Frontier-based validation remains future work, not a hidden assumption of this cold driver. |
-| F06 | Confirmed: raw body history plus per-consumer BROOT checks, and sequential history-number search. Repair pending with F03. |
+| F06 | Fixed: versioned current-only body reverse index, committed atomically with BROOT. Queries do no root membership probes. BROOT and the adjacent LROOT history counters are read/incremented once in their atomic publication. Churn/reopen tests check one current hit and zero membership reads after 6,000 retired consumers. |
 | F07 | Confirmed processor jar/config rereads, whole-own eviction, node existence probes and duplicate validation work. Repair pending. |
-| F08 | Confirmed generation pending/selection maps retain complete class payloads. Streaming provisional content repair pending. |
+| F08 | Fixed: pending and selected maps retain Entry references, not class payloads. Immutable bytes are flushed before sharing references. Rocks tests with 16/64 one-MiB outputs show released source arrays and zero CF payload reads during selection/publication. F11 separately tracks full-selection metadata work. |
 | F09 | Reproduced independently. Contract correction: no deterministic local rewrite theorem for cap-only runs. Regression retains canonical root/conservation checks and measures the linear adversary. No change to tree encoding or canonical chunking. |
 | F10 | Confirmed source binding scans origin T trees on a first query and is recreated per task. Indexed origin-aware binding repair pending. |
 | F11 | Confirmed LOCAL-to-BROOT diff enumerates the body inventory and full selected values are rehashed. Changed-selection publication repair pending. |
@@ -40,3 +40,9 @@ Core/planning integration: `Review62TreeTest`, `ContentTreeTest`, `ContentTreeEd
 | F09 cap-only first deletion, 4,096 / 16,384 entries | SHA-256 emits 33 / 131 nodes; SHA3 emits 35 / 132. Linear work is explicitly retained in the contract. |
 
 Initial logs are local `review62-*.log` files. A frozen final-head validation report is still required after the remaining repairs. Earlier native byte/diagnostic and read-oracle results are historical evidence, not newly passing gates.
+
+## Publication repair evidence
+
+`review62-rooted-publication-gate.log`: **102 tests passed** across body generation/planning/reverse, current body churn, header reverse, processor plans/source declarations, production cold boot, Stage3 and Rocks reopen. The failing-before F03 case was reproduced with both digests. Fault injection stops before and after every put/node write/flush/sync/root-publication boundary; reopening always resolves a complete old or new snapshot, and the retained old snapshot remains readable. A competing-publisher test admits exactly one root transition. The inherited-LOCAL test reboots headers in the same store and resolves every old value through both retained LOCAL and BROOT.
+
+F06 churn retains 6,000 obsolete consumers across 24 publications: a live-prefix lookup returns one key with one prefix hit and zero point reads, in memory and RocksDB including reopen. The old 501-entry tree still verifies. F08 streams 16 and 64 MiB of synthetic output payloads to RocksDB; the original arrays are reclaimable and final selection performs zero CF reads. These isolate storage/publication work; they are not a native class-byte or complete LIVE benchmark.

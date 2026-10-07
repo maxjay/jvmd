@@ -56,6 +56,8 @@ Counters distinguish preparation record/node reads and bytes, proof-node reads a
 
 ## Validation
 
+Hosted Tests at `5d12ba95` found one integration-test inventory omission: CI was not recognised by the Rocks checkpoint. `ff8554ff` repairs the inventory and additionally verifies reopened, BROOT-selected receipts, their query trees and selected RS references. RocksLocalBootTest, ProofIndexTest and Stage3Test pass together: 19 tests, zero failures/errors/skips. This test-only correction does not change the production receipt or tree format.
+
 The focused integration gate passes 174 tests after adding value equality to the new receipt; native class/diagnostic assertions were retained. The subsequent frozen 598-source gate has 300 tests: 298 pass and the two unchanged Lombok admission cases fail. Both digests match 1,408 native class files and all 26 ordered diagnostic scopes (593 compilations, 10 descriptors). Exact commands, counters and limits are recorded in the measurement file.
 
 The semantic matrix compares indexed validation with independent full grouped-proof validation for 24 states (different own providers and empty/single/conflicting/reordered/duplicate routes): 576 full-proof transitions per digest, plus expected-zero-only T and N controls. Native provider-order regressions exercise the equal-T/different-N case. Production cold tests read CI through historical BROOT, retain serial/parallel deterministic roots and validate native constant/unrelated-edit behaviour without reading C/RS/CF during validation.

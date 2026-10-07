@@ -4,6 +4,8 @@
 
 **F09 remains open. This comparison changes neither production tree code nor the tree node format.** The user requested this comparison before a separate architectural decision. Neither retaining the current scheme nor deploying the prototype below is an accepted resolution.
 
+Subsequent direction: the user retained the stronger objective and requested one bounded feasibility comparison, with assumptions/lower bounds checked before another prototype. The [follow-up](pr62-locality-feasibility.md) now evaluates one locally parsed Merkle-map construction analytically and measures the current tree on actual JVMD domains. No further candidate has been implemented; the alternatives at the end of this earlier report are historical decision context.
+
 The current scheme has useful expected locality under explicit distribution assumptions, but no deterministic resynchronisation bound. A small ordered radix alternative removes rank-shifted CAP cascades and preserves the requested semantic properties. It substitutes a key-length bound for a population bound and has a serious long-prefix-chain counterexample. I do **not** recommend adopting it globally on this evidence.
 
 ## What the current code actually guarantees

@@ -102,7 +102,7 @@ class ProcessorReuseMeasurement {
     }
 
     private static void report(StringBuilder report, String edit, Reused result) {
-        String line = edit + ": attributed=" + result.attributed().size() + " served from rooted RS=" + result.served().size()
+        String line = edit + ": attributed=" + result.attributed().size() + " retained rooted selections=" + result.served().size()
                 + " validation ms=" + result.validationNanos() / 1_000_000 + " attribution ms=" + result.attributeNanos() / 1_000_000 + "\n";
         report.append(line); System.out.print(line);
     }
@@ -112,8 +112,7 @@ class ProcessorReuseMeasurement {
         var local = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(project)));
         var rows = new TreeMap<String, FileRow>();
         var prefix = LocalStore.filePrefix(project);
-        tree.forEach(local.local().hash(), id -> store.get(MachineStore.nodeKey(id)), e -> {
-            if (e.key().length < prefix.length || !Arrays.equals(prefix, Arrays.copyOf(e.key(), prefix.length))) return;
+        tree.forEach(local.local().hash(), id -> store.get(MachineStore.nodeKey(id)), prefix,e -> {
             var unit = SourceUnit.fromFileKey(e.key(), digest.width());
             if (unit.module().equals("app") && unit.scope() == 0) rows.put(unit.path(), FileRow.decode(unit.path(), store.get(e.key()), digest.width()));
         });

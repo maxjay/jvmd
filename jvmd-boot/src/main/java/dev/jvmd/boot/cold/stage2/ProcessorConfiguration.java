@@ -71,7 +71,7 @@ public final class ProcessorConfiguration {
         } catch (java.io.UncheckedIOException failure) { throw failure.getCause(); }
     }
 
-    private static List<ProcessorRecords.ConfigEntry> proof(Digest digest, Path project, String source, Function<Path, Entry> read) {
+    static List<ProcessorRecords.ConfigEntry> proof(Digest digest, Path project, String source, Function<Path, Entry> read) {
         var out = new ArrayList<ProcessorRecords.ConfigEntry>();
         // Lombok's default bubbling reaches the filesystem root, including ancestors outside the project unless stopped.
         for (var parent = project.resolve(source).normalize().getParent(); parent != null; parent = parent.getParent()) {
@@ -94,7 +94,7 @@ public final class ProcessorConfiguration {
         return List.copyOf(out);
     }
 
-    private static boolean imports(byte[] bytes) {
+    static boolean imports(byte[] bytes) {
         return new String(bytes, StandardCharsets.UTF_8).lines().anyMatch(l -> l.strip().startsWith("import "));
     }
 
@@ -107,7 +107,7 @@ public final class ProcessorConfiguration {
         return stop;
     }
 
-    private static String path(Path project, Path file) {
+    static String path(Path project, Path file) {
         return (file.startsWith(project) ? project.relativize(file) : file).toString().replace('\\', '/');
     }
 }

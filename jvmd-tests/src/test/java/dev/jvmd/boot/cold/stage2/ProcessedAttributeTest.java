@@ -594,6 +594,73 @@ class ProcessedAttributeTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void processorJarSetupIsOncePerScopeAndGenericLoadersRemainIsolated(Digest digest) throws Exception {
+        var lombok=Path.of(lombok.Getter.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        var state=boot(digest,Map.of("p/Bean.java","package p; @lombok.Getter public class Bean { int value; }"),
+                List.of(lombok),List.of(lombok));
+        try(var pool=new Pool(state.pool(),2)) {
+            var attribute=attribute(state,pool);
+            for(int i=0;i<8;i++)assertThat(run(state,attribute,"app/src/main/java/p/Bean.java").reusable()).isTrue();
+            assertThat(attribute.processorStatistics()).isEqualTo(new ProcessorPath.Statistics(Files.size(lombok),1,1));
+            assertThat(attribute.configurationStatistics().filesRead()).isEqualTo(1);
+            assertThat(attribute.configurationStatistics().bytesHashed()).isEqualTo(Files.size(dir.resolve("lombok.config")));
+        }
+        var jar=processor("","isolating");
+        var generic=boot(digest,Map.of("p/Input.java","package p; public class Input {}"),List.of(jar),List.of(lombok));
+        try(var pool=new Pool(generic.pool(),1)) {
+            var attribute=attribute(generic,pool);
+            for(int i=0;i<4;i++)run(generic,attribute,"app/src/main/java/p/Input.java");
+            assertThat(attribute.processorStatistics()).isEqualTo(new ProcessorPath.Statistics(Files.size(jar),1,4));
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void frozenConfigurationUsesAdmittedBytesEvenForSameMetadataReplacement(Digest digest) throws Exception {
+        var lombok=Path.of(lombok.Getter.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+        var config=dir.resolve("lombok.config");
+        String original="config.stopBubbling = true\nlombok.getter.noIsPrefix = false\n";
+        Files.writeString(config,original);
+        var state=boot(digest,Map.of("p/Bean.java","package p; @lombok.Getter public class Bean { boolean value; }"),List.of(lombok),List.of(lombok));
+        var expected=oracle(state);
+        try(var pool=new Pool(state.pool(),1)) {
+            var attribute=attribute(state,pool);var first=run(state,attribute,"app/src/main/java/p/Bean.java");
+            sameBytes(state.classes(first),expected.classes());
+            var stamp=Files.getLastModifiedTime(config);long size=Files.size(config);
+            Files.writeString(config,original.replace("false","true "));Files.setLastModifiedTime(config,stamp);
+            assertThat(Files.size(config)).isEqualTo(size);
+            assertThat(run(state,attribute,"app/src/main/java/p/Bean.java")).isEqualTo(first);
+            assertThat(attribute.configurationStatistics().filesRead()).isEqualTo(1);
+            Files.writeString(config,original+"# changed\n");
+            assertThatThrownBy(()->run(state,attribute,"app/src/main/java/p/Bean.java")).hasMessageContaining("configuration changed");
+        }
+        Files.writeString(config,original.replace("false","true "));
+        try(var pool=new Pool(state.pool(),1)) {
+            var attribute=attribute(state,pool);
+            assertThatThrownBy(()->run(state,attribute,"app/src/main/java/p/Bean.java")).hasMessageContaining("Processor context differs");
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void frozenProcessorJarKeepsOriginalResourceBytesAndRejectsOrdinaryReplacement(Digest digest) throws Exception {
+        var jar=Stage2Support.pack(dir.resolve("snapshot.jar"),Map.of("value.txt",Stage2Support.text("OLD")));
+        var other=Stage2Support.pack(dir.resolve("replacement.jar"),Map.of("value.txt",Stage2Support.text("NEW")));
+        var hash=digest.hash(digest.hash(Files.readAllBytes(jar)).view());
+        try(var snapshot=new ProcessorPath(List.of(jar),digest,hash)) {
+            var lease=snapshot.loader(false);
+            try(var loader=lease.value()) {
+                var stamp=Files.getLastModifiedTime(jar);long size=Files.size(jar);
+                Files.write(jar,Files.readAllBytes(other));Files.setLastModifiedTime(jar,stamp);
+                assertThat(Files.size(jar)).isEqualTo(size);snapshot.check();
+                try(var input=loader.getResourceAsStream("value.txt")) {
+                    assertThat(new String(input.readAllBytes(),java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("OLD");
+                }
+                Files.write(jar,new byte[]{1});
+                assertThatThrownBy(snapshot::check).hasMessageContaining("changed after snapshot");
+            }
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void modulePackageQueriesPreserveTheirNativeObservationPoint(Digest digest) throws Exception {
         var dependency = Stage2Support.pack(dir.resolve("late.jar"), Stage2Support.compile(dir.resolve("late"),
                 Map.of("late/Loaded.java", "package late; public class Loaded {}"), List.of(), List.of()));

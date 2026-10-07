@@ -159,6 +159,28 @@ class BodyPoolTest {
         }
     }
 
+    @Test void ownCleanupCountsOnlyCompletedOrEnteredNames() throws Exception {
+        Pool.OwnStatistics baseline=null;
+        for(int unrelated:List.of(0,128,1024)) {
+            var sources=new TreeMap<String,String>(Map.of("p/F",F,"p/G",G));
+            for(int i=0;i<unrelated;i++)sources.put("unrelated/U"+i,"package unrelated; public class U"+i+" {}");
+            var compiled=javac("own-"+unrelated,sources,List.of());
+            var own=stubs(compiled);var ownTypes=new ArrayList<>(bytes(compiled).keySet());
+            try(var pool=new Pool(configuration(own,List.of(),ownTypes),1)) {
+                assertThat(pool.ownStatistics()).isEqualTo(new Pool.OwnStatistics(0,0));
+                for(int i=0;i<3;i++) {
+                    pool.withTask(source("p/F",F),null,BodyPoolTest::phases);
+                    pool.withTask(source("p/G",G),null,BodyPoolTest::phases);
+                }
+                var work=pool.ownStatistics();
+                assertThat(work.evictionProbes()).isPositive();assertThat(work.stubLookups()).isBetween(1L,3L);
+                if(baseline!=null)assertThat(work).isEqualTo(baseline);
+                baseline=work;
+                System.out.println("F07 own types="+ownTypes.size()+" cleanup="+work);
+            }
+        }
+    }
+
     @Test void hierarchyQueryRecordsAClassWhoseInputIsDiscoveredDuringCompletion() throws Exception {
         var dep=stubs(javac("dependency",Map.of("q/Lib","package q; public class Lib { public r.Lazy value; }",
                 "r/Lazy","package r; public class Lazy {}"),List.of()));

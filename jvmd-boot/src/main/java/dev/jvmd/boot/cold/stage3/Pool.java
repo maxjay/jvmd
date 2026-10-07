@@ -68,22 +68,51 @@ public final class Pool implements AutoCloseable {
     public record Completed<T>(T value, Map<String, byte[]> classes, List<Proof.Range> reads) { }
     private record Observed<T>(T value, List<Proof.Range> reads) { }
     public record Statistics(int workers, long contexts, long tasks) { }
+    public record OwnStatistics(long evictionProbes, long stubLookups) { }
+    public record ManagerStatistics(int limit, int live, int peak, long opened) { }
+    /** A run-wide bound, counted at actual file-manager acquisition and release. */
+    public static final class Managers {
+        private final int limit;
+        private int live, peak;
+        private long opened;
+        public Managers(int limit) { if(limit<1)throw new IllegalArgumentException("Positive manager limit required");this.limit=limit; }
+        synchronized void open() {
+            if(live==limit)throw new IllegalStateException("Compiler manager budget exceeded");
+            live++;opened++;peak=Math.max(peak,live);
+        }
+        synchronized void close() { if(--live<0)throw new IllegalStateException("Unbalanced compiler manager close"); }
+        public synchronized ManagerStatistics statistics() { return new ManagerStatistics(limit,live,peak,opened); }
+    }
 
     private final Configuration configuration;
+    private final java.util.Set<String> ownNames;
+    private final Managers managers;
     private final List<Worker> workers = new ArrayList<>();
     private final ArrayDeque<Worker> idle = new ArrayDeque<>();
     private final ReentrantLock lock = new ReentrantLock();
     private final Condition available = lock.newCondition();
-    private boolean closed;
+    private volatile boolean closed;
     private int active;
+    private final List<java.io.Closeable> resources=new ArrayList<>();
+
+    synchronized <T extends java.io.Closeable> T own(T resource) {
+        if(closed)throw new IllegalStateException("Compiler pool is closed");
+        resources.add(resource);return resource;
+    }
 
     public Pool(Configuration configuration, int count) throws IOException {
+        this(configuration,count,new Managers(count));
+    }
+
+    public Pool(Configuration configuration, int count, Managers managers) throws IOException {
         if (count < 1) throw new IllegalArgumentException("A pool needs at least one worker");
         this.configuration = configuration;
+        this.managers = managers;
+        this.ownNames = configuration.ownTypes().stream().map(n -> n.replace('/', '.')).collect(java.util.stream.Collectors.toUnmodifiableSet());
         try {
             for (int i = 0; i < count; i++) { var worker = new Worker(); workers.add(worker); idle.add(worker); }
         } catch (IOException | RuntimeException | Error failure) {
-            for (var worker : workers) try { worker.files.close(); } catch (IOException close) { failure.addSuppressed(close); }
+            for (var worker : workers) try { worker.close(); } catch (IOException close) { failure.addSuppressed(close); }
             throw failure;
         }
     }
@@ -214,6 +243,23 @@ public final class Pool implements AutoCloseable {
         finally { lock.unlock(); }
     }
 
+    public OwnStatistics ownStatistics() {
+        return new OwnStatistics(workers.stream().mapToLong(w -> w.evictionProbes).sum(),
+                workers.stream().mapToLong(w -> w.stubLookups).sum());
+    }
+
+    /** Completion is the point that changes an own stub into reusable compiler state. */
+    private static final class OwnReads extends com.sun.tools.javac.jvm.ClassReader {
+        private final java.util.function.Consumer<Symbol.ClassSymbol> read;
+        static void install(Context context, java.util.function.Consumer<Symbol.ClassSymbol> read) {
+            context.put(classReaderKey, (Context.Factory<com.sun.tools.javac.jvm.ClassReader>) c -> new OwnReads(c, read));
+        }
+        OwnReads(Context context, java.util.function.Consumer<Symbol.ClassSymbol> read) { super(context); this.read=read; }
+        @Override public void readClassFile(Symbol.ClassSymbol symbol) {
+            try { super.readClassFile(symbol); } finally { read.accept(symbol); }
+        }
+    }
+
     /** Closing waits for borrowed workers and prevents both queued and subsequent tasks from borrowing them. */
     @Override public void close() throws IOException {
         lock.lock();
@@ -226,6 +272,12 @@ public final class Pool implements AutoCloseable {
                 if (failure == null) failure = ex; else failure.addSuppressed(ex);
             }
             idle.clear();
+            synchronized(this) {
+                for(var resource:resources)try {resource.close();}catch(IOException ex) {
+                    if(failure==null)failure=ex;else failure.addSuppressed(ex);
+                }
+                resources.clear();
+            }
             if (failure != null) throw failure;
         } finally { lock.unlock(); }
     }
@@ -237,7 +289,9 @@ public final class Pool implements AutoCloseable {
         private final Map<String, JavaFileObject> stubFiles = new TreeMap<>();
         private record OwnSymbol(Symbol.ModuleSymbol module, com.sun.tools.javac.util.Name name) { }
         private final List<OwnSymbol> evicted = new ArrayList<>();
+        private final java.util.Set<String> touchedOwn = new java.util.TreeSet<>();
         private volatile long contexts, tasks;
+        private volatile long evictionProbes, stubLookups;
 
         Worker() throws IOException {
             var manager = ToolProvider.getSystemJavaCompiler().getStandardFileManager(null, Locale.ROOT, configuration.charset());
@@ -247,8 +301,7 @@ public final class Pool implements AutoCloseable {
                 // Do not let javac find source files next to a stub/jar or in the working directory.
                 manager.setLocationFromPaths(StandardLocation.SOURCE_PATH, List.of());
                 files = new MemoryFiles(manager);
-                for (String type : configuration.ownTypes()) stubFiles.put(type.replace('/', '.'),
-                        manager.getJavaFileObjectsFromPaths(List.of(configuration.ownStubs().resolve(type + ".class"))).iterator().next());
+                managers.open();
             } catch (IOException | RuntimeException | Error failure) {
                 try { manager.close(); } catch (IOException close) { failure.addSuppressed(close); }
                 throw failure;
@@ -258,6 +311,7 @@ public final class Pool implements AutoCloseable {
         <T> Completed<T> run(JavaFileObject source, DiagnosticListener<? super JavaFileObject> diagnostics,
                              Function<JavacTask, T> action) {
             files.outputs.clear();
+            touchedOwn.clear();
             var formatter = new java.util.concurrent.atomic.AtomicReference<com.sun.tools.javac.util.BasicDiagnosticFormatter>();
             DiagnosticListener<JavaFileObject> report = diagnostic -> {
                 if (diagnostics == null) return;
@@ -281,7 +335,20 @@ public final class Pool implements AutoCloseable {
                             return super.formatArgument(diagnostic,argument,locale);
                         }
                     });
-                    if (context != previous) { contexts++; previous = context; evicted.clear(); HierarchyReads.install(context); }
+                    if (context != previous) {
+                        contexts++; previous = context; evicted.clear(); HierarchyReads.install(context);
+                        OwnReads.install(context, this::touch);
+                    }
+                    task.addTaskListener(new com.sun.source.util.TaskListener() {
+                        @Override public void finished(com.sun.source.util.TaskEvent event) {
+                            if (event.getKind()!=com.sun.source.util.TaskEvent.Kind.ENTER || event.getCompilationUnit()==null) return;
+                            new com.sun.tools.javac.tree.TreeScanner() {
+                                @Override public void visitClassDef(com.sun.tools.javac.tree.JCTree.JCClassDecl declaration) {
+                                    touch(declaration.sym); super.visitClassDef(declaration);
+                                }
+                            }.scan((com.sun.tools.javac.tree.JCTree)event.getCompilationUnit());
+                        }
+                    });
                     if (source instanceof ByteSource input) {
                         var manager=files.decoder();manager.setContext(context);input.manager=manager;
                     }
@@ -313,8 +380,9 @@ public final class Pool implements AutoCloseable {
         private void evict(Context context) {
             var symbols = Symtab.instance(context);
             var names = Names.instance(context);
-            for (String internalName : configuration.ownTypes()) {
-                var name = names.fromString(internalName.replace('/', '.'));
+            for (String binaryName : touchedOwn) {
+                evictionProbes++;
+                var name = names.fromString(binaryName);
                 var loaded = new ArrayList<com.sun.tools.javac.code.Symbol.ClassSymbol>();
                 symbols.getClassesForName(name).forEach(loaded::add);
                 for (var symbol : loaded) {
@@ -324,6 +392,23 @@ public final class Pool implements AutoCloseable {
                     evicted.add(new OwnSymbol(symbol.packge().modle, name));
                 }
             }
+            touchedOwn.clear();
+        }
+
+        private void touch(Symbol.ClassSymbol symbol) {
+            if (symbol==null) return;
+            var name=symbol.flatName().toString();
+            if (ownNames.contains(name)) touchedOwn.add(name);
+        }
+
+        private JavaFileObject stub(String name) {
+            if (stubFiles.containsKey(name)) return stubFiles.get(name);
+            try {
+                stubLookups++;
+                var file=files.getJavaFileForInput(StandardLocation.CLASS_PATH,name,JavaFileObject.Kind.CLASS);
+                stubFiles.put(name,file);
+                return file;
+            } catch(IOException failure) { throw new java.io.UncheckedIOException(failure); }
         }
 
         private void restore(Context context) {
@@ -333,7 +418,7 @@ public final class Pool implements AutoCloseable {
             // so this happens at the next borrow, before the new explicit source is entered.
             for (var old : evicted) {
                 var symbol = symbols.enterClass(old.module(), old.name());
-                symbol.classfile = stubFiles.get(old.name().toString());
+                symbol.classfile = stub(old.name().toString());
                 symbol.flags_field |= Flags.CLASS_SEEN;
                 var owner = symbol.packge();
                 if (symbol.name.contentEquals("package-info")) owner.package_info = symbol;
@@ -344,7 +429,7 @@ public final class Pool implements AutoCloseable {
 
         void close() throws IOException {
             tasksPool = null; previous = null; evicted.clear(); stubFiles.clear();
-            files.close();
+            try { files.close(); } finally { managers.close(); }
         }
     }
 

@@ -40,7 +40,8 @@ public final class Stage3 {
             var messages=new ArrayList<>(headerDiagnostics);messages.addAll(Diagnostics.assemble(files,aggregateDiagnostics));return List.copyOf(messages);
         }
     }
-    public record Result(Identity project,BodiesRoot bodies,Map<String,Scope> scopes,int files,List<String> faults,long wallMillis) {
+    public record Result(Identity project,BodiesRoot bodies,Map<String,Scope> scopes,int files,List<String> faults,long wallMillis,
+                         Pool.ManagerStatistics managers) {
         public Result {scopes=java.util.Collections.unmodifiableMap(new TreeMap<>(scopes));faults=List.copyOf(faults);}
     }
     private record ScopeKey(String module,int scope) { }
@@ -58,18 +59,22 @@ public final class Stage3 {
     public Result run(LocalStore store,ProjectModel model) throws IOException {
         long started=System.nanoTime();model.validate();var order=Order.of(model);var project=Stage2.projectKey(digest,model);
         var local=local(store,model,project);var generation=BodyGeneration.begin(tree,store,project,local);
+        // Fixed shares avoid worker starvation/deadlock between scopes that are waiting on the common file executor.
+        var moduleConcurrency=Math.min(workers,width(order));
+        var scopeWorkers=Math.max(1,workers/moduleConcurrency);
+        var managerBudget=new Pool.Managers(workers);
         var rows=rows(model,project,local,generation);var scopes=new ConcurrentHashMap<String,Scope>();
         var leaves=new ConcurrentHashMap<Identity,MachineLeaf>();
         java.util.function.Function<Identity,MachineLeaf> leaf=k->leaves.computeIfAbsent(k,id->MachineLeaf.decode(required(generation.get(MachineStore.leafKey(id))),digest.width()));
         try(var stubs=new StubDirectories(tree,generation,leaf);
             var files=Executors.newFixedThreadPool(workers,Thread.ofPlatform().name("jvmd-body-",0).daemon(true).factory());
-            var modules=Executors.newFixedThreadPool(workers,Thread.ofPlatform().name("jvmd-bodies-module-",0).daemon(true).factory())) {
+            var modules=Executors.newFixedThreadPool(moduleConcurrency,Thread.ofPlatform().name("jvmd-bodies-module-",0).daemon(true).factory())) {
             var futures=new LinkedHashMap<String,CompletableFuture<Void>>();
             for(var module:order.modules()) {
                 var dependencies=order.dependencies().get(module.name()).stream().map(futures::get).toArray(CompletableFuture[]::new);
                 futures.put(module.name(),CompletableFuture.allOf(dependencies).thenRunAsync(()->{
                     for(int scope:new int[]{LocalStore.MAIN,LocalStore.TEST}) {
-                        var result=scope(model,project,local,generation,module,scope,rows.get(new ScopeKey(module.name(),scope)),stubs,leaf,files);
+                        var result=scope(model,project,local,generation,module,scope,rows.get(new ScopeKey(module.name(),scope)),stubs,leaf,files,scopeWorkers,managerBudget);
                         scopes.put(module.name()+(scope==0?"/main":"/test"),result);
                     }
                 },modules));
@@ -112,7 +117,16 @@ public final class Stage3 {
             }
         }
         var bodies=generation.commitUnitsFull(selections);
-        return new Result(project,bodies,scopes,count,new ArrayList<>(faults),(System.nanoTime()-started)/1_000_000);
+        return new Result(project,bodies,scopes,count,new ArrayList<>(faults),(System.nanoTime()-started)/1_000_000,managerBudget.statistics());
+    }
+
+    private static int width(Order order) {
+        var depths=new java.util.HashMap<String,Integer>();var counts=new java.util.HashMap<Integer,Integer>();int width=1;
+        for(var module:order.modules()) {
+            int depth=order.dependencies().get(module.name()).stream().mapToInt(depths::get).max().orElse(-1)+1;
+            depths.put(module.name(),depth);width=Math.max(width,counts.merge(depth,1,Integer::sum));
+        }
+        return width;
     }
 
     private static Scope admit(Scope scope, BodyGeneration generation) {
@@ -134,7 +148,8 @@ public final class Stage3 {
     }
 
     private Scope scope(ProjectModel model,Identity project,LocalRoot local,BodyGeneration generation,ProjectModel.Module module,int scope,
-                        List<FileRow> rows,StubDirectories stubs,java.util.function.Function<Identity,MachineLeaf> leaves,ExecutorService workers) {
+                        List<FileRow> rows,StubDirectories stubs,java.util.function.Function<Identity,MachineLeaf> leaves,ExecutorService workers,
+                        int scopeWorkers,Pool.Managers managerBudget) {
         if(rows.isEmpty())return new Scope(List.of(),Output.build(tree,generation,List.of()),List.of(),0,List.of());
         var descriptor=ModuleRecord.decode(required(generation.local(LocalStore.moduleKey(project,module.name()))));
         var own=SourceLeaf.decode(required(generation.local(LocalStore.sourceLeafKey(project,module.name(),scope))),digest.width());
@@ -159,7 +174,7 @@ public final class Stage3 {
                 dev.jvmd.boot.cold.stage2.JavacOptions.effectiveRelease(descriptor.release(),descriptorOptions.contains("--enable-preview"),Runtime.version().feature()),null,List.of());
         var results=new ArrayList<File>();int descriptorEmissions=0;
         var headerDiagnostics=new ArrayList<Diagnostics.Message>();
-        try(var pool=new Pool(configuration,this.workers)) {
+        try(var pool=new Pool(configuration,Math.min(scopeWorkers,rows.size()),managerBudget)) {
             var attribute=processed?Attribute.processed(tree,generation,leaves.apply(own.k()),route,pool,options,plan,
                     descriptor.processing().path().stream().map(p->repository.resolve(p.location())).toList(),Path.of(model.root()))
                     :Attribute.unprocessed(tree,generation,leaves.apply(own.k()),route,pool,options);

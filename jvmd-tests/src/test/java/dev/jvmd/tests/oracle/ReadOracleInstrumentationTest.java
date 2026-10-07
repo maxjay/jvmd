@@ -51,6 +51,8 @@ public class ReadOracleInstrumentationTest {
                 "com/sun/tools/javac/code/Symbol", "com/sun/tools/javac/comp/Resolve", "com/sun/tools/javac/code/Scope$ScopeImpl");
         assertThat(result).as(errors.toString()).isNotZero();
         assertThat(trace.loaded()).contains("q/Base", "java/lang/Object").doesNotContain("p/App");
+        assertThat(trace.queries()).contains(new ReadOracleTrace.Missing("METHOD","q/Base","inherited"),
+                new ReadOracleTrace.Missing("TYPE","q/Base",""),new ReadOracleTrace.Missing("TYPE","q/Child",""));
         assertThat(trace.modules()).contains("java.base", "java.compiler");
         assertThat(trace.loaded()).noneMatch(name -> name.endsWith("/module-info"));
         assertThat(trace.predefined()).contains(new ReadOracleTrace.Missing("FIELD", "", "q"));
@@ -73,5 +75,6 @@ public class ReadOracleInstrumentationTest {
         assertThat(excluded.loaded()).isEmpty(); assertThat(excluded.absent()).isEmpty();
         assertThat(excluded.modules()).isEmpty();
         assertThat(excluded.predefined()).isEmpty();
+        assertThat(excluded.queries()).isEmpty();
     }
 }

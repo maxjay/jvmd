@@ -19,15 +19,21 @@ final class ProcessorBody {
     private final ProcessorPlan plan;
     private final List<Path> path;
     private final Path project;
+    private final Pool pool;
+    private dev.jvmd.boot.cold.stage2.ProcessorPath prepared;
+    private final dev.jvmd.boot.cold.stage2.FrozenConfiguration configuration;
 
-    ProcessorBody(ProcessorPlan plan, List<Path> path, Path project) {
-        this.plan = plan; this.path = List.copyOf(path); this.project = project.toAbsolutePath().normalize();
+    ProcessorBody(ProcessorPlan plan, List<Path> path, Path project,Pool pool) {
+        this.plan = plan; this.path = List.copyOf(path); this.project = project.toAbsolutePath().normalize();this.pool=pool;
+        configuration=ProcessorHost.supportedOverlayScope(plan.invocation())
+                ?new dev.jvmd.boot.cold.stage2.FrozenConfiguration(this.project):null;
     }
 
     List<String> check(Digest digest, FileRow row, URI uri) throws IOException {
+        checkPrepared();
         if (!project.resolve(row.path()).normalize().toUri().equals(uri))
             throw new IllegalArgumentException("Processor source location differs from F: " + row.path());
-        var snapshot = ProcessorConfiguration.current(digest, project, row.path());
+        var snapshot = configuration==null?ProcessorConfiguration.current(digest, project, row.path()):configuration.current(digest,row.path());
         var current = new ProcessorRecords.Context(plan.invocation().processorPathHash(), plan.invocation().optionsHash(), snapshot.proof());
         if (!current.equals(row.processor()))
             throw new IllegalArgumentException("Processor context differs from F: " + row.path());
@@ -39,10 +45,25 @@ final class ProcessorBody {
 
     ProcessorHost open(Digest digest, Attribute.Options options) throws IOException {
         var sources = plan.sources();
-        var host = ProcessorHost.bodies(path, digest, project.resolve(".jvmd/body-capture"), options.charset(), plan.currentInvocation(), options.hash());
+        var host = ProcessorHost.bodies(prepared(digest), digest, project.resolve(".jvmd/body-capture"), options.charset(), plan.currentInvocation(), options.hash());
         host.sourceDeclarations(sources);
         host.modulePackages(plan::modulePackages);
         return host;
+    }
+    private synchronized dev.jvmd.boot.cold.stage2.ProcessorPath prepared(Digest digest) throws IOException {
+        if(prepared==null) {
+            var snapshot=new dev.jvmd.boot.cold.stage2.ProcessorPath(path,digest,plan.invocation().processorPathHash());
+            if(configuration!=null)snapshot.configuration(configuration);
+            try {pool.own(snapshot);prepared=snapshot;}catch(RuntimeException failure){snapshot.close();throw failure;}
+        }
+        return prepared;
+    }
+    private synchronized void checkPrepared() throws IOException {if(prepared!=null)prepared.check();}
+    synchronized dev.jvmd.boot.cold.stage2.ProcessorPath.Statistics statistics() {
+        return prepared==null?new dev.jvmd.boot.cold.stage2.ProcessorPath.Statistics(0,0,0):prepared.statistics();
+    }
+    dev.jvmd.boot.cold.stage2.FrozenConfiguration.Statistics configurationStatistics() {
+        return configuration==null?new dev.jvmd.boot.cold.stage2.FrozenConfiguration.Statistics(0,0,0):configuration.statistics();
     }
 
     /** Check every configured generator, including a native derivation whose processor did not run in this unit. */

@@ -53,7 +53,11 @@ public final class ProcessorHost implements AutoCloseable {
     private static final String DECLARATIONS = "META-INF/gradle/incremental.annotation.processors";
     private static final Set<String> TESTED_OVERLAYS = Set.of(
             "lombok.launch.AnnotationProcessorHider$AnnotationProcessor", "lombok.launch.AnnotationProcessorHider$ClaimingProcessor");
+    public static boolean supportedOverlayScope(ProcessorRecords.Scope scope) {
+        return !scope.processors().isEmpty() && scope.processors().stream().allMatch(p->TESTED_OVERLAYS.contains(p.processorClass()));
+    }
     private final URLClassLoader loader;
+    private boolean closeLoader=true;
     private final Digest digest;
     private final Path generatedDirectory;
     private final ProcessorCapture capture;
@@ -109,6 +113,34 @@ public final class ProcessorHost implements AutoCloseable {
             throw new IllegalArgumentException("Processor bytes differ from Stage 2");
         }
         return host;
+    }
+
+    /** Scope-owned frozen bytes; only independently tested overlays share a loader. Every invocation gets fresh instances. */
+    public static ProcessorHost bodies(ProcessorPath path,Digest digest,Path generatedDirectory,java.nio.charset.Charset charset,
+                                       ProcessorRecords.Scope scope,Identity optionsHash) throws IOException {
+        if(!scope.optionsHash().equals(optionsHash))throw new IllegalArgumentException("Processor options differ from Stage 2");
+        if(!scope.processorPathHash().equals(path.identity()))throw new IllegalArgumentException("Processor bytes differ from Stage 2");
+        return new ProcessorHost(path,digest,generatedDirectory,charset,scope);
+    }
+    private ProcessorHost(ProcessorPath path,Digest digest,Path generatedDirectory,java.nio.charset.Charset charset,
+                          ProcessorRecords.Scope scope) throws IOException {
+        this.digest=digest;this.generatedDirectory=generatedDirectory.toAbsolutePath().normalize();
+        capture=new ProcessorCapture(this.generatedDirectory,charset);pathHash=path.identity();
+        var lease=path.loader(scope.processors().stream().allMatch(p->p.capability().declared()==ProcessorRecords.AGGREGATING
+                || TESTED_OVERLAYS.contains(p.processorClass())));
+        loader=lease.value();closeLoader=lease.owned();
+        try {
+            for(var invocation:scope.processors()) {
+                if(invocation.capability().declared()==ProcessorRecords.AGGREGATING)continue;
+                var name=invocation.processorClass();
+                var processor=(Processor)Class.forName(name,true,loader).getConstructor().newInstance();
+                processors.add(new Wrapped(processor,path.declaration(name)));
+                previousCapability(name,invocation.capability());
+            }
+        } catch(ReflectiveOperationException|RuntimeException failure) {
+            if(closeLoader)loader.close();
+            throw new IllegalStateException("Cannot load annotation processor",failure);
+        }
     }
 
     private ProcessorHost(List<Path> path, List<String> names, Digest digest, Path generatedDirectory,
@@ -304,7 +336,7 @@ public final class ProcessorHost implements AutoCloseable {
                 new ProcessorRecords.Observation(p.name, closedCapabilities.get(p.name), closedModelProofs.get(p.name))).toList());
         processors.clear(); // discard all javac Elements, Trees and processor instance state with this header compile
         diagnosticScope = DIRECT;
-        loader.close();
+        if(closeLoader)loader.close();
     }
 
     private final class Wrapped implements Processor {

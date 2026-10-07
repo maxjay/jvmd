@@ -64,6 +64,8 @@ class Stage3Test {
             var current=copies.get(i);int start=current.events().size();
             var ordered=i==0?model:new ProjectModel(model.root(),model.jdkHome(),model.modules().reversed(),model.bytes());
             var result=driver(digest,tree,i==0?1:4).run(current,ordered);
+            assertThat(result.managers().live()).isZero();
+            assertThat(result.managers().peak()).isBetween(1,i==0?1:4);
             assertThat(result.faults()).isEmpty();assertThat(result.files()).isEqualTo(5);assertThat(result.bodies().current(local)).isTrue();
             sameBytes(classes(current,result.scopes().get("dep/main")),expectedDep);sameBytes(classes(current,result.scopes().get("app/main")),expectedApp);
             sameBytes(classes(current,result.scopes().get("app/test")),expectedTest);
@@ -79,6 +81,26 @@ class Stage3Test {
         }
         var consumers=ReverseIndex.bodyConsumers(digest,copies.getFirst(),new ReverseIndex.Dependency(ReverseIndex.T,"q/Base",Keys.FIELD,"VALUE"));
         assertThat(consumers).contains(new ReverseIndex.Consumer(first.project(), Stage2Support.source("app/src/main/java/p/App.java")));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void concurrentScopesShareOneManagerBudget(Digest digest) throws Exception {
+        for(int count:List.of(2,8)) {
+            var modules=new Stage2Support.Mod[count];var sources=new TreeMap<String,String>();
+            for(int i=0;i<count;i++) {
+                modules[i]=new Stage2Support.Mod("m"+i,"g:m"+i+":1",List.of());
+                for(int f=0;f<4;f++)sources.put("m"+i+"/src/main/java/p"+i+"/C"+f+".java",
+                        "package p"+i+"; public class C"+f+" { public String value(){ return String.valueOf("+f+"); } }");
+            }
+            Stage2Support.write(dir,sources);var model=ProjectModel.parse(Stage2Support.model(dir,modules));
+            var tree=new ContentTree(digest);var store=Stage2Support.jdkOnly(digest).copy();boot(digest,tree,store,model);
+            for(int workers:List.of(1,4)) {
+                var result=driver(digest,tree,workers).run(store.copy(),model);
+                assertThat(result.managers().live()).isZero();assertThat(result.managers().peak()).isBetween(1,workers);
+                assertThat(result.faults()).isEmpty();assertThat(result.files()).isEqualTo(count*4);
+                System.out.println("F14 scopes="+count+" workers="+workers+" managers="+result.managers());
+            }
+        }
     }
 
     @ParameterizedTest @MethodSource("digests")

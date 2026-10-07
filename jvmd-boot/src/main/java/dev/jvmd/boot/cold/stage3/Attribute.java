@@ -88,6 +88,12 @@ public final class Attribute {
     private final Pool pool;
     private final Options options;
     private final ProcessorBody processing;
+    public dev.jvmd.boot.cold.stage2.ProcessorPath.Statistics processorStatistics() {
+        return processing==null?new dev.jvmd.boot.cold.stage2.ProcessorPath.Statistics(0,0,0):processing.statistics();
+    }
+    public dev.jvmd.boot.cold.stage2.FrozenConfiguration.Statistics configurationStatistics() {
+        return processing==null?new dev.jvmd.boot.cold.stage2.FrozenConfiguration.Statistics(0,0,0):processing.configurationStatistics();
+    }
 
     private Attribute(ContentTree tree,LocalStore store,MachineLeaf own,Route route,Pool pool,Options options,ProcessorBody processing) {
         if (!pool.key().equals(new Pool.Key(route.routeHash(),own.k())))
@@ -105,7 +111,7 @@ public final class Attribute {
     public static Attribute processed(ContentTree tree,LocalStore store,MachineLeaf own,Route route,Pool pool,Options options,
                                       ProcessorPlan plan,List<Path> processorPath,Path project) {
         if (!plan.invocation().equals(options.processing)) throw new IllegalArgumentException("Attribution options differ from the processor plan");
-        return new Attribute(tree,store,own,route,pool,options,new ProcessorBody(plan,processorPath,project));
+        return new Attribute(tree,store,own,route,pool,options,new ProcessorBody(plan,processorPath,project,pool));
     }
 
     /** Persist CF/RS/U only. The driver owns C, reverse/output trees and the BROOT commit. */
@@ -176,6 +182,7 @@ public final class Attribute {
         // Check all existing content before publishing this result; an incomplete input identity must never overwrite it.
         // Only publication is serialized: different workers can compute the same ACI concurrently.
         synchronized(store) {
+            if(store instanceof BodyGeneration) {records.forEach(store::put);store.flush();return;}
             var missing=new TreeMap<byte[],byte[]>(Arrays::compareUnsigned);
             records.forEach((key,value) -> {
                 var existing=store.get(key);

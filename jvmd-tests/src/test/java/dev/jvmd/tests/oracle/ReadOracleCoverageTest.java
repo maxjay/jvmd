@@ -27,11 +27,25 @@ class ReadOracleCoverageTest {
                 .containsExactly("LOAD p/Lib", "ABSENT Missing[kind=D, owner=p/Missing, name=]");
     }
 
-    @Test void aNamedRangeCoversLoadedStateButNonzeroCannotCoverAbsence() {
+    @Test void loadedOwnerInventoryDoesNotEstablishQueryCoverageAndNonzeroCannotCoverAbsence() {
         var missing = new ReadOracleTrace.Missing("METHOD", "p/Lib", "run");
         var proof = proof(List.of(entry(Proof.T, 2, "run", NONZERO)), List.of());
         assertThat(ReadOracleTrace.uncovered(proof, List.of("p/Lib"), List.of(missing)))
                 .containsExactly("ABSENT " + missing);
+        var actual=new ReadOracleTrace.Missing("FIELD","p/Lib","value");
+        assertThat(ReadOracleTrace.missingQueries(proof,List.of(actual),List.of())).containsExactly(actual);
+        assertThat(ReadOracleTrace.unjustified(proof,List.of(actual),List.of())).containsExactly(missing);
+    }
+
+    @Test void bothDirectionsRequireTheSameProjectionWidth() {
+        var method=new ReadOracleTrace.Missing("METHOD","p/Lib","run");
+        var all=new ReadOracleTrace.Missing("METHOD","p/Lib","");
+        var broad=proof(List.of(entry(Proof.T,2,"",NONZERO)),List.of());
+        assertThat(ReadOracleTrace.missingQueries(broad,List.of(method),List.of())).isEmpty();
+        assertThat(ReadOracleTrace.unjustified(broad,List.of(method),List.of())).containsExactly(all);
+        assertThat(ReadOracleTrace.unjustified(broad,List.of(all),List.of())).isEmpty();
+        var narrow=proof(List.of(entry(Proof.T,2,"run",NONZERO)),List.of());
+        assertThat(ReadOracleTrace.missingQueries(narrow,List.of(all),List.of())).containsExactly(all);
     }
 
     @Test void ordinaryTypeEntriesCannotCoverModuleQualifiedDescriptorReads() {

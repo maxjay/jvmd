@@ -29,7 +29,7 @@ import org.junit.jupiter.api.Test;
 /**
  * Stages 2 and 3 through {@link BootDecision} on the real store: a MACHINE boot of a small repository and the JDK, a LOCAL cold boot of a
  * project, a second start that logs the skip and touches nothing, and the records on disk, which are exactly those of the section 4
- * table with rooted {@code C|}, {@code CF|}, {@code RS|} and {@code OUT|} records.
+ * table with rooted {@code C|}, {@code CI|}, {@code CF|}, {@code RS|} and {@code OUT|} records.
  */
 @Tag("phase-3")
 class RocksLocalBootTest {
@@ -71,11 +71,26 @@ class RocksLocalBootTest {
             try (var store = Generation.of(indexDir, format).open()) {
                 var kinds = new TreeMap<String, Integer>();
                 for (var key : store.keys()) kinds.merge(kind(key), 1, Integer::sum);
-                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "BV", "BSEQ", "BM", "PB", "PE", "CF", "C", "RS", "U", "OUT");
+                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "BV", "BSEQ", "BM", "PB", "PE", "CF", "C", "CI", "RS", "U", "OUT");
                 assertThat(kinds.get("C")).as("one body proof per compiled source").isEqualTo(Fixtures.multi().size());
                 for (var key : store.keys()) if (kind(key).equals("X")) assertThat(ReverseIndex.isHeaderKey(key) || ReverseIndex.isBodyKey(key))
                         .as("versioned current header and body reverse namespaces").isTrue();
-                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "CF", "C", "RS", "U", "OUT");
+                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "BROOT", "CF", "C", "CI", "RS", "U", "OUT");
+                var tree = new ContentTree(digest);
+                var bodies = dev.jvmd.index.layer.local.BodiesRoot.decode(store.get(LocalStore.bodiesRootKey(projectKey)), digest.width());
+                int indexed = 0;
+                for (var key : store.keys()) if (kind(key).equals("CI")) {
+                    var selected = tree.get(bodies.bodiesRoot(), h -> store.get(MachineStore.nodeKey(h)), key);
+                    assertThat(selected).as("indexed receipt selected by persisted BROOT").isNotNull();
+                    var value = dev.jvmd.index.layer.local.RootedRecords.value(tree, store::get, selected);
+                    assertThat(value).as("indexed receipt selected by persisted BROOT").isEqualTo(store.get(key));
+                    var receipt = dev.jvmd.index.layer.local.ProofIndex.decode(value, digest.width());
+                    tree.verify(tree.root(receipt.queries(), h -> store.get(MachineStore.nodeKey(h))), h -> store.get(MachineStore.nodeKey(h)));
+                    assertThat(tree.get(bodies.bodiesRoot(), h -> store.get(MachineStore.nodeKey(h)), LocalStore.resultKey(receipt.aci())))
+                            .as("persisted receipt names a selected admitted result").isNotNull();
+                    indexed++;
+                }
+                assertThat(indexed).isEqualTo(kinds.get("CI")).isPositive().isLessThanOrEqualTo(kinds.get("C"));
                 assertThat(kinds.get("MOD")).isEqualTo(4);
                 assertThat(kinds.get("RT")).isEqualTo(8);
                 assertThat(kinds.get("SL")).isEqualTo(8);
@@ -129,7 +144,7 @@ class RocksLocalBootTest {
     private static String kind(byte[] key) {
         if (new String(key, StandardCharsets.US_ASCII).equals("ROOT")) return "ROOT";
         var text = new String(key, StandardCharsets.ISO_8859_1);
-        for (var tag : List.of("BROOT|", "BV|", "BSEQ|", "BM|", "PB|", "PE|", "CF|", "OUT|", "U|", "LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "DF|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
+        for (var tag : List.of("BROOT|", "BV|", "BSEQ|", "BM|", "PB|", "PE|", "CF|", "CI|", "OUT|", "U|", "LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "DF|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
         if (key[0] == 'L' && key.length == 33) return "L";
         if (key[0] == 'N' && key.length == 33) return "N";
         if (key[0] == 'P') return "P";

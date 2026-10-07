@@ -109,15 +109,16 @@ A proof is a header of the identities it was read against, then its entries grou
 | Record | Key | Value | Space |
 | --- | --- | --- | --- |
 | Proof | `C\|projectKey\|module\|scope\|path` | header and entries by type (B.1); the file's last attribution context, beside its header proof in the file row | LOCAL, per project |
+| Indexed proof | `CI\|projectKey\|module\|scope\|path` | validated exact binding, fixed source/compiler inputs, query-tree root, ACI, optional processor context/observations (5.3.1) | LOCAL, per project |
 | Result | `RS\|ACI` | `list<(zstr internalName \|\| id cf)>`, diagnostics (B.2) | content-addressed; shared wherever the inputs coincide |
 | Class file | `CF\|Digest(bytes)` | the class bytes | shared across files, versions and projects |
 | Uses | `U\|ACI` | per entry key, the offset ranges in `f` where it was resolved (B.4) | content-addressed |
-| Reverse | `X\|B13L22\|dependency\|projectKey\|module\|scope\|path` | empty: one entry per consumer, so the consumers of a key are a prefix range and a consumer joins or leaves in O(log) (B.3) | LOCAL, per project |
+| Reverse | `X\|B14L22\|dependency\|projectKey\|module\|scope\|path` | empty: one entry per consumer, so the consumers of a key are a prefix range and a consumer joins or leaves in O(log) (B.3) | LOCAL, per project |
 | Output | `OUT\|projectKey\|module\|scope` | root of the `ContentTree` internal name to `cf` over the scope's valid class files (B.5) | LOCAL, per project |
 | Annotation layer | `N\|hash` nodes of `A` and `EA`; `a` in `P\|`, `Built`, route elements | as stage 1 | shared with MACHINE |
 | Bodies root | BROOT\|projectKey | FORMAT, the bodies tree root, the stage 2 root it extended, machine root, model hash (B.7). Stage 2's LROOT is read and never written by stage 3; bodies exist when BROOT.localRoot equals LROOT.root. | per project |
 
-Content-addressed records (`RS|`, `CF|`, `U|`) carry no project; the proof is per project because it is the locator for a path; `X|` and `OUT|` are indexes and carry the project. Checking a file is: read its proof, verify by descent, recompute `ACI` from the current sums, read `RS|ACI`.
+Content-addressed records (`RS|`, `CF|`, `U|`) carry no project; the proof is per project because it is the locator for a path; `X|` and `OUT|` are indexes and carry the project. Indexed checking reads CI, verifies fixed inputs and current processor observations, and intersects its query tree with a transition from its validated binding. If valid, retain its existing ACI and read RS|ACI; do not decode the flat C or recompute ACI over all entries.
 
 `C|` and `RS|` are keyed exactly as stage 2 decided for them; validity is the proof, the key is the stable part of the route. `CF|` dedups identical bytes wherever they come from. `X|` and `OUT|` are indexes, so they carry the project.
 
@@ -188,7 +189,7 @@ A result is a function of exactly what the attribution read: the fixed body comp
 
 ### 3.7 The reverse index is find-references
 
-The body namespace is X|B13L22| with form/type/kind/name and SourceUnit suffix, exactly as B.3 specifies. Each current consumer occupies one empty-valued entry. Prefixes through type select all T/N consumers of a changed provider; prefixes through kind/name select consumers of one range. D indexes exact type absence. The uses record U|ACI supplies offsets from the same collection pass. Prefix cost depends on current fan-out, with no historical membership probes. Candidate discovery follows the distinct delta domains; Valid confirms their recorded answers. This API is intended for LIVE, whose production scheduler is deferred.
+The body namespace is X|B14L22| with form/type/kind/name and SourceUnit suffix, exactly as B.3 specifies. Each current consumer occupies one empty-valued entry. Prefixes through type select all T/N consumers of a changed provider; prefixes through kind/name select consumers of one range. D indexes exact type absence. The uses record U|ACI supplies offsets from the same collection pass. Prefix cost depends on current fan-out, with no historical membership probes. Candidate discovery follows the distinct delta domains; Valid confirms their recorded answers. This API is intended for LIVE, whose production scheduler is deferred.
 
 ### 3.8 Output as a tree
 
@@ -251,7 +252,7 @@ Every file has a result and a proof. A reader checks a result by descent on its 
 | Result | `RS\|ACI` | class file refs, diagnostics, flag (B.2) | content-addressed |
 | Class file | `CF\|Digest(bytes)` | bytes | shared |
 | Uses | `U\|ACI` | offsets per key (B.4) | content-addressed |
-| Reverse | `X\|B13L22\|dependency\|projectKey\|module\|scope\|path` | empty (B.3) | per project |
+| Reverse | `X\|B14L22\|dependency\|projectKey\|module\|scope\|path` | empty (B.3) | per project |
 | Output | `OUT\|projectKey\|module\|scope` | tree root (B.5); a file that failed attribution contributes nothing, so its previous class files are deleted on materialise, as javac would emit nothing for it | per project |
 | Materialised | `MAT\|projectKey\|module\|scope\|dirHash` | last completed OUT root; consult MATP first | per machine, outside the tree |
 | Pending materialisation | `MATP\|projectKey\|module\|scope\|dirHash` | empty or pending OUT root; must finish before a newer target starts | per machine, outside the tree |
@@ -354,7 +355,9 @@ Failed simple-type lookups collect exact candidate keys. Arrange binds each key 
 
 Selected executable types also contribute parameter, return, type-variable and thrown-type headers. A `void` invocation whose declared exception changes from unchecked to checked must invalidate even though its result expression has no class type. TypeMirror dispatch uses `TypeKind`: javac's healthy ClassType also implements the ErrorType interface.
 
-### 5.3 Verify: the descent
+### 5.3 Verify: reference grouped descent
+
+The following full-proof implementation remains an audit/reference path. The persisted indexed path in 5.3.1 avoids its grouped scan.
 
 ```
 Valid(proof, route, own, f) -> bool:                                                      // own = the module's current leaf for this scope
@@ -388,6 +391,16 @@ processorContext(f) = none when the module has no processor path, otherwise
 ```
 
 Cost after processor-context validation: equal routeHash/ownR is the complete header shortcut. Equal definer sums plus ownR discharge only T and absence entries; types containing N still require independent N reads. With no sufficient shortcut, validation scans the grouped proof: each referenced type needs one definer lookup and one oSum comparison; T ranges need reads only when that oSum moved, while every N range needs an independent range read. Never a walk of `T`, never a per-leaf step. The root sums of the definer indexes are the projection this question needs; their root hashes (the first draft) move on every `k` and would have discarded the shortcut on every unrelated API edit.
+
+### 5.3.1 Persisted indexed validation
+
+Attribute materialises CI and a ContentTree of exact T/N/D questions while the proof is already in memory. Each entry binds its query key to the expected answer. CI carries a validated binding (own k, route hash, DD/DS/DC root hashes), basename/source/options/compiler inputs, the query root, existing ACI and processor observations. These exact binding/storage roots are acceleration coordinates, not ACI inputs. The driver publishes CI in the ordinary unit manifest.
+
+ProofIndex.Transition derives its frontier from exact old/new own and ordered-route roots. Same-position route substitutions use pairwise T/N Diff; other ordered edits enumerate owners in moved/added/removed leaves. Effective old/new provider comparisons retain independent N and presence semantics, filter shadowed changes and share each provider-pair delta. A disappeared provider also selects all T/N questions for that owner, including expected-zero names absent from fact deltas. The frontier is prepared once per binding pair.
+
+ProofIndex.advance first checks that the receipt was validated at the transition start, fixed inputs are unchanged, and current processor observations/admission still match. It probes only changed query keys or removed-owner prefixes. A successful receipt preserves query root and ACI and may advance its validated binding without rewriting the query tree. Keeping an older receipt instead requires the next transition to begin at that older binding. No caller-supplied incomplete delta or unanchored empty transition is accepted.
+
+The [algorithm, costs and tests](pr62-indexed-proof-validation.md) distinguish the implemented primitive from production LIVE scheduling and F04 semantic coverage. The test reuse harness reads indexed receipts but still enumerates files; its Lombok admission gate remains failing.
 
 ### 5.4 Arrange: entries into the descent shape
 
@@ -446,7 +459,7 @@ Stage3.run(model, store):
                     select Entry references for RS|id and its CF in this unit's manifest; no C/U/body-X for a successful descriptor
             for f in ordinary rows(module, scope) in parallel over the pool's contexts: (result, proof, uses, aci) = Attribute(f, scope, pool)
                 stream immutable CF and BV values; retain Entry references, not class payloads
-                select C, admitted RS/U, CF and empty current body reverse entries in this unit's manifest
+                select C, admitted CI/RS/U, CF and empty current body reverse entries in this unit's manifest
             revoke unsupported processor results across the scope before final selection
             OUT = tree.build(sorted (internalName -> cf) over clean results); select OUT in the scope manifest
     commitUnitsFull(all cold unit manifests)                                                  // initializes BM unit/refcount trees and applies the body delta
@@ -550,8 +563,8 @@ Absences, deliberately: no `util/`, no configuration file, no flag. No class nam
 | Class bytes are javac's | `Attribute(f)` against stubs produces byte-identical class files and identical diagnostics to a whole-module javac run over the same sources, classpath and options. The oracle is javac, run by the test, never a build tool's output directory. |
 | Proofs are complete (required) | Every semantically consumed external query is represented by a recorded answer or an explicit fixed-input discharge. Equal fixed inputs and answers imply equal class bytes and diagnostics. The independent acceptance gate remains open. |
 | Proofs are minimal (required) | Every proof entry is justified by the native semantic read closure at T/N/D or admitted processor-query granularity. A changed recorded projection can invalidate even when the final bytes happen to remain equal. |
-| Proofs are sums | Every identity in a proof is a root sum of a definer index, an `oSum`, a range sum of `T` or `N`, a range sum of `RES\|` (a configuration file, or its absence), or `ownR`; none is a key; `k` appears nowhere in the proof record. |
-| Verification is a descent | Equal routeHash/ownR permits a header return. Otherwise the current API scans grouped proof entries and performs indexed exact reads; its work is not proportional only to changed queries. Reverse discovery can avoid calling it for unrelated files. |
+| Proof answers are sums | Semantic answers are exact T/N range sums or D absence; processor observations retain their specified projections. C header witnesses and CI binding/query-root hashes accelerate validation and remain outside ACI. |
+| Verification is indexed | CI intersects a rooted binding transition with the stored query tree. The legacy grouped descent remains a reference implementation, not the incremental validation path. |
 | `k` is `res`-exact | Equal APIs from a jar and from source give equal `k`; an A-only metadata edit leaves `k`, `r`, every `oSum` and every `routeHash` unchanged and rewrites nodes of `A` and `EA` only. |
 | Results are pure (required) | A result is a function of its ACI; identical class bytes share one CF content record. Complete query coverage remains an acceptance obligation. |
 | Sums conserve | After any `apply`, the new sum equals the old sum minus the removed plus the added, at every level. |
@@ -559,13 +572,13 @@ Absences, deliberately: no `util/`, no configuration file, no flag. No class nam
 
 ### 7.2 Cost
 
-**Unresolved review requirements.** The current bounds below describe measured implementation, not acceptance of weaker requirements. F05 still requires a proved changed-query frontier intersected with a persistent/grouped proof, counting preparation and decoding. F09 still requires either explicit acceptance of expected locality and its adversarial behaviour, or a boundary/structure redesign for deterministic edit-local work. The user requires a focused comparison of bounds, preserved properties, reads/writes/bytes/allocations before a separate tree decision; no production redesign is authorized. The requested [focused comparison](pr62-locality-comparison.md) is now available with read/write/byte/allocation evidence and a prefix-chain counterexample to the isolated radix alternative; it leaves F09 open. Deferring the production LIVE scheduler does not discharge either primitive requirement.
+**Unresolved review requirements.** The current bounds below describe measured implementation, not acceptance of weaker requirements. F05 now has a persisted query index, anchored transition and measured intersection, including preparation and decoding; complete F04 read coverage and production LIVE scheduling remain separate obligations. F09 still requires either explicit acceptance of expected locality and its adversarial behaviour, or a boundary/structure redesign for deterministic edit-local work. The user requires a focused comparison of bounds, preserved properties, reads/writes/bytes/allocations before a separate tree decision; no production redesign is authorized. The requested [focused comparison](pr62-locality-comparison.md) is now available with read/write/byte/allocation evidence and a prefix-chain counterexample to the isolated radix alternative; it leaves F09 open. Deferring the production LIVE scheduler does not discharge either primitive requirement.
 
 Let `F` be files, `D` declarations per file, `P` proof entries per file (distinct `(t, kind, name)` resolved through), `W` workers, `C` the classpath open cost.
 
 - `Attribute(f)`: native parse/attribute/generate cost plus the syntax walk and consumed hierarchy/member-query closure. The collector is not bounded by source size alone: inherited method contracts and distinct tested type closures contribute work. Named direct-member questions use indexed scopes and task-local memoization; unrelated members are not enumerated for these questions. Stable classpath setup is shared across the scope's workers.
 - `Arrange`: O(P) own-first definer lookups and range sums, each O(log).
-- `Valid`: header-only when routeHash/ownR is unchanged. Otherwise, with Q referenced types, P stored entries, A type absences, R_N N entries, R_Tdelta T ranges under changed owner sums and indexed lookup depth L, the fallback bound is O(Q*L + P + (R_N + R_Tdelta + A)*L), excluding processor verification. Equal definer sums discharge T/presence but not N. This API does not accept a proved changed-query frontier; no changed-only descent is claimed.
+- Indexed Valid: for d changed semantic questions, d query-tree point reads plus entries under disappeared-provider prefixes, with actual tree height and encoded bytes counted. Frontier preparation is shared once per old/new binding and includes own/route Diff, changed provider-pair T/N Diff, and affected-owner enumeration for non-substitution route changes. Cold capture visits P entries once; hot CI decoding is independent of resolution-proof size. Processor observations retain their own verification cost. The grouped reference validator still scans its proof. F09 bounds continue to apply to all underlying Diff work.
 - Cold driver: every ordinary file is attributed and a full initial OUT is built. Tree update work includes changed paths and any chunk resynchronisation; cap-only runs can require a linear suffix. Reuse measurements in test orchestration establish avoided javac work, not an integrated production LIVE work bound.
 - Memory: at most `W` managers across the run, partitioned among active scopes. Active tasks retain their output bytes until streaming completes; selection retains Entry references and metadata, not project CF payloads. Materialisation stages one verified CF at a time: payload heap scales with the largest changed CF, while paths/references scale with changed entries and staging disk space with changed bytes. Cold unit/result metadata still scales with file/record count.
 - `Materialise`: O(changed class files) by `Diff`.
@@ -589,7 +602,7 @@ Let `F` be files, `D` declarations per file, `P` proof entries per file (distinc
 15. **Processors.** A module with Lombok on its processor path: source facts equal class facts for an `@Getter` class (invariant 1 of stage 2 holds with processing on, through the wrapper); `Attribute` of a file using the getter against stubs compiles to javac's bytes. A module with AutoValue: the generated file is a row with origin and `GEN|` id; a change to the annotated file's bytes fails exactly that derivation; a change to a route type the generator read through `Elements` fails it through the originating file's header proof. Replace the processor jar with one of identical API and a changed body: `processorPathHash` moves and every result of the module is invalid; the `k`-based identity would not have moved.
 16. **Content addressing.** Two files whose types compile to identical bytes share `CF|` records; attribution of a file twice writes nothing the second time; two files with equal inputs anywhere share one `RS|ACI`.
 17. **The given source wins and the pool stays clean.** A file whose module declares a type with the same binary name as one on the route: `Attribute` resolves it to the module's own, from the source when it is `f` and from the stub otherwise, because the own stub directory precedes the route on the classpath; the bytes equal javac's over the whole module. Attributing `f`, then `g`, then `f` again through one context gives the same bytes each time; `W` contexts attribute `W` files concurrently with identical results to serial.
-18. **Reverse index and uses.** After attributing a fixture, the prefix `X|B13L22|(form=0, K, METHOD, foo)|project` lists exactly the files that call `K.foo`; adding one caller writes one entry; each `U|` entry's offsets point at the call sites.
+18. **Reverse index and uses.** After attributing a fixture, the prefix `X|B14L22|(form=0, K, METHOD, foo)|project` lists exactly the files that call `K.foo`; adding one caller writes one entry; each `U|` entry's offsets point at the call sites.
 19. **Output tree and materialise.** `OUT|` root equals a fresh build over the scope's class files; materialising twice writes nothing the second time; after one file changes, exactly its class files are written; after a file fails, exactly its class files are deleted.
 20. **No LOCAL reads before the root beyond stage 2's.** A cold stage 3 reads LOCAL records stage 2 committed (routes, rows, definers, stubs) and MACHINE; it reads none of its own records before it writes `BROOT`. A rerun reaches its own previous records through the previous `BROOT` only, and `LROOT` is never written by stage 3.
 21. **Digest is swappable.** The suite passes with two `Digest` implementations.
@@ -626,12 +639,12 @@ The rule for an unlisted concern: if it needs a body attributed, it is stage 3's
 
 ### 9.1 Decided now
 
-- Same RocksDB instance and key-prefix scheme as stages 1 and 2 (stage 2, 9.1). New prefixes: `C|`, `RS|`, `CF|`, `U|`, `OUT|`, `MAT|`, `MATP|`, `MATOWNER|`; `X|B13L22|` for current body consumers and BV/BM/BSEQ for immutable values, selection and publication.
+- Same RocksDB instance and key-prefix scheme as stages 1 and 2 (stage 2, 9.1). New prefixes: `C|`, `CI|`, `RS|`, `CF|`, `U|`, `OUT|`, `MAT|`, `MATP|`, `MATOWNER|`; `X|B14L22|` for current body consumers and BV/BM/BSEQ for immutable values, selection and publication.
 - `CF|` values are class bytes, stored as the record's value, not as blobs beside the store: a class file is a few kilobytes and RocksDB handles that shape well. Revisit only with a measurement.
 - `RS|` contains class references and diagnostics. Its bytes are stored as an immutable BV value selected by the rooted entry; class payloads remain separately content-addressed.
-- In the LOCAL tree: `C|`, `RS|`, `CF|`, `X|`, `OUT|`. Outside it: `U|` (derivable from re-attribution; content-addressed, so it is written to the store and never to the tree) and `MAT|`/`MATP|`/`MATOWNER|` (per machine). Nothing per machine or per path under `RS|`, `CF|`, `U|`; `C|`, `X|` and `OUT|` carry the project because they are the project's index of its own files.
+- In the LOCAL tree: `C|`, `CI|`, `RS|`, `CF|`, `X|`, `OUT|`. Outside it: `U|` (derivable from re-attribution; content-addressed, so it is written to the store and never to the tree) and `MAT|`/`MATP|`/`MATOWNER|` (per machine). Nothing per machine or per path under `RS|`, `CF|`, `U|`; `C|`, `X|` and `OUT|` carry the project because they are the project's index of its own files.
 - Immutable data is flushed/synced before atomic compare-and-publish of BROOT, current bindings, current X and the history counter. The bodies tree is edited with apply; old roots retain their immutable values.
-- FORMAT: stage 2's FORMAT with the full javac runtime version (`Runtime.version().toString()`, not the feature number: two builds of one feature release can differ in bytes, diagnostics and inference), `layout=4` (the `A` layer) and `bodies=13` and locale=root (B.6: javac's diagnostic locale is an input of the bytes and messages, so it is fixed; the source charset is an input too and is in optionsHash). A different FORMAT is a cold boot, never a migration.
+- FORMAT: stage 2's FORMAT with the full javac runtime version (`Runtime.version().toString()`, not the feature number: two builds of one feature release can differ in bytes, diagnostics and inference), `layout=4` (the `A` layer) and `bodies=14` and locale=root (B.6: javac's diagnostic locale is an input of the bytes and messages, so it is fixed; the source charset is an input too and is in optionsHash). A different FORMAT is a cold boot, never a migration.
 - Two roots per project. LROOT|projectKey is stage 2's and stage 3 never writes it. BROOT|projectKey (B.7) holds the bodies tree root and the LROOT.root it extended; bodies exist exactly when the two agree, and Diff(BROOT.localRoot, LROOT.root) is the stage 2 change set when they do not. Stage 3 edits the bodies tree with apply over the previous BROOT.root carrying that Diff, never over LROOT alone on a rerun.
 
 ### 9.2 Deferred
@@ -808,7 +821,7 @@ ACI                   = Digest(bodyEmitFormat || str basename || id κ_file || i
 ### B.3 Reverse
 
 ```
-key   = ASCII "X|B13L22|" || u8 form || zstr type || u8 kind || zstr name
+key   = ASCII "X|B14L22|" || u8 form || zstr type || u8 kind || zstr name
         || id project || zstr module || u8 scope || zstr path
 value = empty
 form 0: T(type, kind, name)
@@ -842,10 +855,10 @@ MATOWNER|dirHash = random store-owned directory lineage token; bookkeeping, neve
 ### B.6 FORMAT
 
 ```
-FORMAT = <current LOCAL FORMAT, including full javac runtime version and locale=root>;bodies=13
+FORMAT = <current LOCAL FORMAT, including full javac runtime version and locale=root>;bodies=14
 ```
 
-`bodies=13` narrows the frozen processor-metadata exception because exact bytes do not prove cross-input declaration queries. Body layout 12 added explicit reuse admission and rejected ordinary binary metadata reads until their exact projection is implemented. Body layout 11 fenced native internal-method/resource-close observations and compiler-bound result identities. Body layout 9 introduced immutable rooted values, current-only body reverse publication and persistent unit selection. Body layout 7 fenced proofs that omitted inherited-field absences for captured parameters and locals. Earlier changes preserve exact diagnostic message code units (4), basename display for native diagnostic source arguments (5), and processor capability-history admission (6). A different FORMAT is a cold body boot; it does not require rebuilding unchanged Stage 2 headers.
+`bodies=14` adds rooted CI query indexes and validated binding/ACI receipts. Body layout 13 narrowed the frozen processor-metadata exception because exact bytes do not prove cross-input declaration queries. Body layout 12 added explicit reuse admission and rejected ordinary binary metadata reads until their exact projection is implemented. Body layout 11 fenced native internal-method/resource-close observations and compiler-bound result identities. Body layout 9 introduced immutable rooted values, current-only body reverse publication and persistent unit selection. Body layout 7 fenced proofs that omitted inherited-field absences for captured parameters and locals. Earlier changes preserve exact diagnostic message code units (4), basename display for native diagnostic source arguments (5), and processor capability-history admission (6). A different FORMAT is a cold body boot; it does not require rebuilding unchanged Stage 2 headers.
 
 ### B.7 Bodies root
 

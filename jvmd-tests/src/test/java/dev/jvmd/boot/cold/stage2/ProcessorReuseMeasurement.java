@@ -137,6 +137,9 @@ class ProcessorReuseMeasurement {
         var selected = new TreeMap<SourceUnit,List<Entry>>();
         var oldResults = new ArrayList<ResultRecord>();var results = new ArrayList<ResultRecord>();
         var attributed = new TreeSet<String>(); var served = new TreeSet<String>();
+        var binding=ProofIndex.Binding.capture(tree,own,route,generation::get);
+        var transitions=new java.util.HashMap<ProofIndex.Binding,ProofIndex.Transition>();
+        var validationWork=new ProofIndex.Work();
         long validationNanos = 0, attributeNanos = 0;
         try (var stubs = new StubDirectories(tree, generation, k -> MachineLeaf.decode(generation.get(MachineStore.leafKey(k)), digest.width()))) {
             var directory = stubs.get(source.k());
@@ -146,17 +149,18 @@ class ProcessorReuseMeasurement {
                 var attribute = Attribute.processed(tree, generation, own, route, pool, options, plan, List.of(lombok), dir);
                 for (var row : new TreeMap<>(current.rows()).values()) {
                     long started = System.nanoTime();
-                    var proof = Proof.decode(generation.get(LocalStore.proofKey(project, "app", 0, row.path())), digest.width());
-                    boolean valid = previous.options().equals(options.hash()) && previous.rows().get(row.path()).kappa().equals(row.kappa())
-                            && proof.valid(tree, own, route, row.processor(), observations, generation::get);
+                    var indexed=ProofIndex.decode(generation.get(LocalStore.proofIndexKey(project,new SourceUnit("app",0,row.path()))),digest.width());
+                    var transition=transitions.computeIfAbsent(indexed.binding(),prior->
+                            ProofIndex.Transition.between(tree,prior,binding,generation::get,validationWork));
+                    var inputs=new ProofIndex.Inputs(row.path().substring(row.path().lastIndexOf('/')+1),row.kappa(),options.hash());
+                    boolean valid=indexed.advance(transition,inputs,row.processor(),observations)!=null;
                     validationNanos += System.nanoTime() - started;
                     Attribute.Computed computed;
                     if (valid) {
                         served.add(row.path());
                         continue; // already selected by its unchanged rooted unit manifest
                     } else {
-                        var oldAci=proof.aci(digest,row.path().substring(row.path().lastIndexOf('/')+1),
-                                previous.rows().get(row.path()).kappa(),previous.options());
+                        var oldAci=indexed.aci();
                         oldResults.add(ResultRecord.decode(generation.get(LocalStore.resultKey(oldAci)),digest.width()));
                         started = System.nanoTime();
                         computed = attribute.run(row, dir.resolve(row.path()).toUri(), Files.readAllBytes(dir.resolve(row.path())));
@@ -166,6 +170,7 @@ class ProcessorReuseMeasurement {
                     assertThat(computed.result().attributed()).as(row.path() + ": " + computed.result().diagnostics()).isTrue();
                     var entries=new ArrayList<Entry>();
                     entries.add(generation.record(LocalStore.proofKey(project, "app", 0, row.path()), computed.proof().encode()));
+                    entries.add(generation.record(LocalStore.proofIndexKey(project,new SourceUnit("app",0,row.path())),computed.indexed().encode()));
                     entries.add(generation.record(LocalStore.resultKey(computed.aci()), computed.result().encode()));
                     entries.add(generation.record(LocalStore.usesKey(computed.aci()), computed.uses().encode()));
                     results.add(computed.result());

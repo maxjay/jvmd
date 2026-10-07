@@ -74,6 +74,14 @@ class Stage3Test {
             assertThat(reads.get(end-1)).isEqualTo("sync");
             for(var scope:result.scopes().values())for(var file:scope.files()) {
                 var proof=current.get(LocalStore.proofKey(result.project(), Stage2Support.source(file.path())));assertThat(proof).isEqualTo(file.computed().proof().encode());
+                var indexed=BodyRecords.read(tree,current,result.bodies().bodiesRoot(),LocalStore.proofIndexKey(result.project(),Stage2Support.source(file.path())));
+                assertThat(indexed).isEqualTo(file.computed().indexed().encode());
+                var decoded=ProofIndex.decode(indexed,digest.width());
+                assertThat(decoded.aci()).isEqualTo(file.computed().aci());
+                var work=new ProofIndex.Work();
+                var unchanged=ProofIndex.Transition.between(tree,decoded.binding(),decoded.binding(),key->{throw new AssertionError("Unchanged resolution read storage");},work);
+                assertThat(decoded.advance(unchanged,decoded.inputs(),null,null)).isNotNull();
+                assertThat(work.proofNodeReads).isZero();
                 assertThat(tree.get(result.bodies().bodiesRoot(),h->current.get(MachineStore.nodeKey(h)),LocalStore.resultKey(file.computed().aci()))).isNotNull();
                 assertThat(tree.get(result.bodies().bodiesRoot(),h->current.get(MachineStore.nodeKey(h)),LocalStore.usesKey(file.computed().aci()))).isNull();
             }
@@ -81,6 +89,44 @@ class Stage3Test {
         }
         var consumers=ReverseIndex.bodyConsumers(digest,copies.getFirst(),new ReverseIndex.Dependency(ReverseIndex.T,"q/Base",Keys.FIELD,"VALUE"));
         assertThat(consumers).contains(new ReverseIndex.Consumer(first.project(), Stage2Support.source("app/src/main/java/p/App.java")));
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void persistedIndexedProofSurvivesAnUnrelatedEditAndRejectsAConsumedConstantEdit(Digest digest) throws Exception {
+        var sources=new TreeMap<String,String>();
+        sources.put("p/Api.java","package p; public class Api {public static final int VALUE=1; public static final int OTHER=1;}");
+        sources.put("p/Use.java","package p; public class Use {public int get(){return Api.VALUE;}}");
+        var model=ProjectModel.parse(Stage2Support.model(dir,new Stage2Support.Mod("app","g:app:1",List.of())));
+        Stage2Support.write(dir.resolve("app/src/main/java"),sources);
+        var tree=new ContentTree(digest);var store=Stage2Support.jdkOnly(digest).copy();boot(digest,tree,store,model);
+        var cold=driver(digest,tree,1).run(store,model);assertThat(cold.faults()).isEmpty();
+        var unit=new SourceUnit("app",0,"app/src/main/java/p/Use.java");
+        var bytes=BodyRecords.read(tree,store,cold.bodies().bodiesRoot(),LocalStore.proofIndexKey(cold.project(),unit));
+        var index=ProofIndex.decode(bytes,digest.width());var originalQueries=index.queries();var originalAci=index.aci();
+        var expected=Stage2Support.compile(dir.resolve("native-initial"),sources,List.of(),List.of()).get("p/Use.class");
+        for(boolean consumed:List.of(false,true)) {
+            sources.put("p/Api.java",sources.get("p/Api.java").replace(consumed?"VALUE=1":"OTHER=1",consumed?"VALUE=2":"OTHER=2"));
+            Stage2Support.write(dir.resolve("app/src/main/java"),sources);boot(digest,tree,store,model);
+            var own=SourceLeaf.decode(store.get(LocalStore.sourceLeafKey(cold.project(),"app",0)),digest.width());
+            var leaf=MachineLeaf.decode(store.get(MachineStore.leafKey(own.k())),digest.width());
+            var route=Route.decode(store.get(LocalStore.routeKey(cold.project(),"app",0)),digest.width());
+            java.util.function.Function<byte[],byte[]> records=key->{
+                assertThat(BodyRecords.tag(key,"C") || BodyRecords.tag(key,"RS") || BodyRecords.tag(key,"CF")).isFalse();
+                return store.get(key);
+            };
+            var binding=ProofIndex.Binding.capture(tree,leaf,route,records);
+            var transition=ProofIndex.Transition.between(tree,index.binding(),binding,records,new ProofIndex.Work());
+            var next=index.advance(transition,index.inputs(),null,null);
+            var nativeBytes=Stage2Support.compile(dir.resolve("native-"+consumed),sources,List.of(),List.of()).get("p/Use.class");
+            if(consumed) {
+                assertThat(next).isNull();assertThat(nativeBytes).isNotEqualTo(expected);
+            } else {
+                assertThat(nativeBytes).isEqualTo(expected);assertThat(next).isNotNull();
+                assertThat(next.queries()).isEqualTo(originalQueries);assertThat(next.aci()).isEqualTo(originalAci);
+                index=ProofIndex.decode(next.encode(),digest.width());
+            }
+        }
+        assertThat(BodyRecords.read(tree,store,cold.bodies().bodiesRoot(),LocalStore.proofIndexKey(cold.project(),unit))).isEqualTo(bytes);
     }
 
     @ParameterizedTest @MethodSource("digests")

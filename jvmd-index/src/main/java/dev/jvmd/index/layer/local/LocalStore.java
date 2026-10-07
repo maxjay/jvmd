@@ -65,6 +65,8 @@ public interface LocalStore extends MachineStore {
     static byte[] siblingKey(Identity leafSetSib) { return join("DS|", leafSetSib.view()); }
     static byte[] conflictsKey(Identity routeHash) { return join("DC|", routeHash.view()); }
     static byte[] proofKey(Identity projectKey, SourceUnit unit) { return join("C|", projectKey.view(), "|", unit.encode()); }
+    /** Compact validated binding/ACI receipt and query-tree root; flat C remains an audit record. */
+    static byte[] proofIndexKey(Identity projectKey, SourceUnit unit) { return join("CI|", projectKey.view(), "|", unit.encode()); }
     static byte[] proofKey(Identity projectKey, String module, int scope, String path) { return proofKey(projectKey, new SourceUnit(module, scope, path)); }
     static byte[] resultKey(Identity aci) { return join("RS|", aci.view()); }
     static byte[] classFileKey(Identity content) { return join("CF|", content.view()); }

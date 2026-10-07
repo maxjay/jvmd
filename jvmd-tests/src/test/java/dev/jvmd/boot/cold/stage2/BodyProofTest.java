@@ -103,6 +103,14 @@ class BodyProofTest {
             assertThat(proof.types().getFirst().entries()).isNotEqualTo(current.types().getFirst().entries());
             assertThat(after.valid(before.proof(List.of(HEADER), List.of()))).isTrue();
             assertThat(after.valid(proof)).as("N must not be discharged by equal T projections").isFalse();
+            var indexed=ProofIndex.capture(before.tree,before.own,before.route,proof,
+                    new ProofIndex.Inputs("Use.java",digest.hash(new byte[]{1}),digest.hash(new byte[]{2})),before.store::get,before.store);
+            var afterBinding=ProofIndex.Binding.capture(after.tree,after.own,after.route,after.store::get);
+            java.util.function.Function<byte[],byte[]> records=key->{
+                var value=after.store.get(key);return value==null?before.store.get(key):value;
+            };
+            var transition=ProofIndex.Transition.between(before.tree,indexed.binding(),afterBinding,records,new ProofIndex.Work());
+            assertThat(indexed.advance(transition,indexed.inputs(),null,null)).as("Indexed N provider delta").isNull();
 
             var project = digest.hash(new byte[]{42});
             var dependency = new ReverseIndex.Dependency(ReverseIndex.N, "q/Base", Keys.TYPE, "Foo");

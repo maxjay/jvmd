@@ -2,7 +2,7 @@
 
 7 October 2026. Production baseline: `5e6985e7b98e71d1b0a328619c27a256ebfea33f`.
 
-**F09 remains open. No production tree or persisted format has changed.** The user requested this comparison before a separate architectural decision. Neither retaining the current scheme nor deploying the prototype below is an accepted resolution.
+**F09 remains open. This comparison changes neither production tree code nor the tree node format.** The user requested this comparison before a separate architectural decision. Neither retaining the current scheme nor deploying the prototype below is an accepted resolution.
 
 The current scheme has useful expected locality under explicit distribution assumptions, but no deterministic resynchronisation bound. A small ordered radix alternative removes rank-shifted CAP cascades and preserves the requested semantic properties. It substitutes a key-length bound for a population bound and has a serious long-prefix-chain counterexample. I do **not** recommend adopting it globally on this evidence.
 

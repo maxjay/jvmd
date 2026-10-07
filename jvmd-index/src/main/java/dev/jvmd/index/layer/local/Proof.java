@@ -137,15 +137,26 @@ public record Proof(Header header, List<Type> types, List<String> absent, Proces
     public boolean valid(ContentTree tree, MachineLeaf own, Route route, ProcessorRecords.Context processor,
                          ProcessorRecords.Body currentBody, Function<byte[], byte[]> records) {
         if (!reusable) return false;
-        if (!Objects.equals(header.processor(), processor)) return false;
+        if (!processorValid(header.processor(), processorBody, processor, currentBody, records)) return false;
+        boolean sameOwn = own.r().equals(header.ownR());
+        if (sameOwn && route.routeHash().equals(header.routeHash())) return true;
+        return resolutionValid(tree, own, route, records, sameOwn);
+    }
+
+    static boolean processorValid(ProcessorRecords.Context expected, ProcessorRecords.Body processorBody,
+                                  ProcessorRecords.Context processor, ProcessorRecords.Body currentBody,
+                                  Function<byte[], byte[]> records) {
+        if (!Objects.equals(expected, processor)) return false;
         if (processor != null) {
             if (processorBody == null || currentBody == null || !processorBody.reusable() || !currentBody.reusable()
                     || !processorBody.sameInputs(currentBody)) return false;
             if (!processorBody.configuredProcessors().equals(currentBody.configuredProcessors())
                     || !processorBody.violations(processor, records).isEmpty()) return false;
         } else if (currentBody != null) return false;
-        boolean sameOwn = own.r().equals(header.ownR());
-        if (sameOwn && route.routeHash().equals(header.routeHash())) return true;
+        return true;
+    }
+
+    private boolean resolutionValid(ContentTree tree, MachineLeaf own, Route route, Function<byte[], byte[]> records, boolean sameOwn) {
         var read = new DefinerIndex.Reader(tree, own, route, records);
         // The definer sums project T and presence, not the selected provider's independent N ranges.
         boolean sameT = sameOwn && read.external().sum().equals(header.ddSum()) && read.sibling().sum().equals(header.dsSum())

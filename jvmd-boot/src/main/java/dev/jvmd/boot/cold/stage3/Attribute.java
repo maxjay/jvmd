@@ -10,6 +10,7 @@ import dev.jvmd.index.layer.local.FileRow;
 import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ModuleRecord;
 import dev.jvmd.index.layer.local.Proof;
+import dev.jvmd.index.layer.local.ProofIndex;
 import dev.jvmd.index.layer.local.ProofCollector;
 import dev.jvmd.index.layer.local.ProcessorPlan;
 import dev.jvmd.index.layer.local.ProcessorRecords;
@@ -77,7 +78,10 @@ public final class Attribute {
 
     /** An unsupported fresh result has no reusable ACI/RS/U, but its class bytes and diagnostics remain available.
      * A successful zero-body module descriptor has no body proof; its RS is addressed directly by the exact T/A inputs. */
-    public record Computed(Identity aci,ResultRecord result,Proof proof,UsesRecord uses,List<String> faults) {
+    public record Computed(Identity aci,ResultRecord result,Proof proof,UsesRecord uses,List<String> faults,ProofIndex indexed) {
+        public Computed(Identity aci,ResultRecord result,Proof proof,UsesRecord uses,List<String> faults) {
+            this(aci,result,proof,uses,faults,null);
+        }
         public Computed { faults=List.copyOf(faults); }
         public boolean reusable() { return aci!=null; }
     }
@@ -88,6 +92,7 @@ public final class Attribute {
     private final Pool pool;
     private final Options options;
     private final ProcessorBody processing;
+    private final dev.jvmd.core.tree.NodeSink proofNodes;
     public dev.jvmd.boot.cold.stage2.ProcessorPath.Statistics processorStatistics() {
         return processing==null?new dev.jvmd.boot.cold.stage2.ProcessorPath.Statistics(0,0,0):processing.statistics();
     }
@@ -101,6 +106,7 @@ public final class Attribute {
         if (!pool.configuration().options().equals(options.javac()) || !pool.configuration().charset().equals(options.charset()))
             throw new IllegalArgumentException("Compiler pool does not match the hashed attribution options");
         this.tree=tree;this.store=store;this.own=own;this.route=route;this.pool=pool;this.options=options;this.processing=processing;
+        this.proofNodes=store instanceof BodyGeneration?store:new dev.jvmd.boot.cold.stage1.Written().throughShared(store);
     }
 
     public static Attribute unprocessed(ContentTree tree,LocalStore store,MachineLeaf own,Route route,Pool pool,Options options) {
@@ -151,7 +157,9 @@ public final class Attribute {
             faults.add("unsupported for reuse: retained binary metadata reads have no exact proof projection");
             proof=proof.rejectReuse();
         }
-        var aci=proof.reusable() && (body==null || body.reusable()) ? proof.aci(digest,basename,row.kappa(),options.hash()) : null;
+        var indexed=proof.reusable() && (body==null || body.reusable())
+                ? ProofIndex.capture(tree,own,route,proof,new ProofIndex.Inputs(basename,row.kappa(),options.hash()),store::get,proofNodes) : null;
+        var aci=indexed==null?null:indexed.aci();
         boolean attributed=messages.stream().noneMatch(d -> d.kind()==0);
         var records=new TreeMap<byte[],byte[]>(Arrays::compareUnsigned);
         var classes=new ArrayList<ResultRecord.ClassFile>();
@@ -161,7 +169,7 @@ public final class Attribute {
         var result=new ResultRecord(attributed,classes,messages);
         if (aci!=null) { records.put(LocalStore.resultKey(aci),result.encode());records.put(LocalStore.usesKey(aci),bound.uses().encode()); }
         publish(row,records);
-        return new Computed(aci,result,proof,bound.uses(),new ArrayList<>(faults));
+        return new Computed(aci,result,proof,bound.uses(),new ArrayList<>(faults),indexed);
     }
 
     private Pool.Completed<ProofCollector.Body> compile(URI uri,byte[] source,List<ResultRecord.Diagnostic> messages,ProcessorHost host)

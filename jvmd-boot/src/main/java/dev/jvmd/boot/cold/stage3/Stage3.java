@@ -107,6 +107,10 @@ public final class Stage3 {
                     var key=LocalStore.classFileKey(c.contentHash());records.put(key,java.util.Objects.requireNonNull(generation.reference(key)));
                 }
                 if(computed.reusable()) {
+                    if(computed.indexed()!=null) {
+                        var indexed=LocalStore.proofIndexKey(project,new SourceUnit(module.name(),scope,file.path()));
+                        records.put(indexed,generation.record(indexed,computed.indexed().encode()));
+                    }
                     var key=LocalStore.resultKey(computed.aci());records.put(key,generation.record(key,computed.result().encode()));
                     if(computed.proof()!=null) {
                         var uses=LocalStore.usesKey(computed.aci());records.put(uses,generation.record(uses,computed.uses().encode()));

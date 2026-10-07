@@ -17,7 +17,7 @@ public final class BodyRecords {
     public static byte[] value(ContentTree tree, LocalStore store, Entry entry) {
         return RootedRecords.value(tree,store::get,entry);
     }
-    public static boolean isBody(byte[] key) { return tag(key,"C") || tag(key,"RS") || tag(key,"CF") || tag(key,"OUT") || tag(key,"BM") || ReverseIndex.isBodyKey(key); }
+    public static boolean isBody(byte[] key) { return tag(key,"C") || tag(key,"CI") || tag(key,"RS") || tag(key,"CF") || tag(key,"OUT") || tag(key,"BM") || ReverseIndex.isBodyKey(key); }
     public static boolean tag(byte[] key, String tag) {
         var prefix = (tag + "|").getBytes(StandardCharsets.US_ASCII);
         return key.length >= prefix.length && Arrays.equals(key, 0, prefix.length, prefix, 0, prefix.length);

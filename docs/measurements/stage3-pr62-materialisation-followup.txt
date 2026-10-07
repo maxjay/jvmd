@@ -723,4 +723,3 @@ cecb656b29fe85d7b47714545083312705466a7acdc1897702ffd5a4883f95c4  jvmd-tests/src
 2f82ebcb6aa7a0339a39b779ddceb8cdf51c482f09909cf92acd57fd89b8c75c  jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceManifestTest.java
 0de54cb4d729e7a74c7c2f0701f44be88fe6b68ee0812b85f05fc8e219946458  jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceReaderSmokeTest.java
 bf21db412394d1c728a24f6f387d9f45c704e68ef12e07f6d15f956f0f44b2e1  jvmd-tests/src/test/java/dev/jvmd/tests/WorkspaceSemanticProtocolTest.java
-

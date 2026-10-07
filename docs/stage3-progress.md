@@ -12,6 +12,8 @@ The production entry point is still a complete cold Stage2/Stage3 driver. The tw
 
 Current follow-up evidence: **273 tests pass** with all 594 Java inputs frozen. Both digests match **1,395 class files and 26/26 ordered diagnostic scopes** (589 compilations, 10 descriptors). The temporary metadata boundary leaves **332 files non-reusable** per run. The two-digest 2,000-file supported Lombok measurement still matches native output and its prior affected-file counts; it still scans every proof. [Exact evidence and limits](measurements/stage3-pr62-materialisation-followup.txt). These results close the tested F19/F20 defects, not the remaining architectural acceptance gates.
 
+F09 now has a [focused comparison](pr62-locality-comparison.md), including a standalone prototype and 1,176 read/write/byte/allocation rows under both digests. The radix alternative removes the cap-only cascade but introduces a severe prefix-chain cost; it is not recommended as a global replacement. Production tree code is unchanged and no weaker contract or redesign has been approved. The latest hosted run at 5e6985e7 failed six stale low-level processor context-count assertions; the tests now assert the intended metadata rejection/context reset explicitly, and the 100-test native processor/admission/pool gate passes. This is separate from the earlier frozen 273-test evidence.
+
 ## Ordered delivery
 
 1. PR A: Appendix A, LAYOUT 4. Separate T/res and A/tail, EA edges, key-bound sums, warning annotations in res and stubs, annotation identities on bindings, own-first header proofs with absences. Stage 1/2 regressions, source/binary equality on fixtures and this project, conservation and cost checks. Land on main before Stage 3.

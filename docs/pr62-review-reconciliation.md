@@ -27,6 +27,12 @@ The supplied `JVMD-PR62-consolidated-review.md` reviews `aefad3bda1d647100b56f11
 | F19 | Fixed in the follow-up: materialisation stages and verifies one CF at a time, retaining only paths/content references. The 16/64 MiB work axis under both digests retains zero earlier payload arrays at subsequent CF reads. Disk staging is proportional to changed output bytes; heap payload retention is bounded by the largest CF. |
 | F20 | Fixed in the follow-up: MATP records the pending target before staging/deletion/install; recovery completes it before applying any requested newer root. MAT advances and MATP clears in one store batch. Directory file locking plus a persisted ownership token prevents interleaved or incompatible writers. Reopen/fault cases cover same/newer/original targets and restoring a deleted class; no directory scan is used. |
 
+## F09 comparison and processor context follow-up
+
+The [focused F09 comparison](pr62-locality-comparison.md) measures the current implementation and an isolated ordered-radix prototype, with both digests, 1,176 work rows and independent canonical-root/range/sum/diff checks. The exact cap-only fixture reproduces the review. The alternative removes that suffix cascade but has a serious prefix-chain adversary and more nodes on ordinary keys. It is not a production replacement or acceptance of a weaker contract. F09 remains open pending a separate explicit decision.
+
+Hosted Tests at 5e6985e7 ran 860 Phase 3 tests with six failures: three low-level BodyProcessorTest cases under both digests still expected one javac context. Those calls deliberately omit Attribute's immutable compiler-input snapshot; the metadata admission change requires fresh contexts for unproved ordinary binary reads. The tests now check metadataSupported explicitly and retain native class bytes, diagnostics, generated outputs and processor observations. The fresh BodyProcessorTest/FixedCompilerInputsTest/ProcessedAttributeTest/BinaryMetadataAdmissionTest/BodyPoolTest gate passes **100 tests**, zero failures/errors/skips. The hosted failure is not mislabeled as a green full suite, and these test edits do not change production behaviour.
+
 ## First repair batch evidence
 
 F01 baseline: two digest cases failed because oldProofValid was true with equal DD/DS/DC/owner T projections and unequal N. After F01 alone, the same two cases failed at body discovery because candidates were empty (F02). After both fixes, `BodyProofTest`, `BodyReverseTest` and `HeaderReverseTest`: **36 tests passed**.

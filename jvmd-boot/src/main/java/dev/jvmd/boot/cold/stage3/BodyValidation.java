@@ -17,6 +17,7 @@ public final class BodyValidation {
         public final ProofIndex.Work proofs=new ProofIndex.Work();
         public final ReverseIndex.Work reverse=new ReverseIndex.Work();
         public long setupReads, setupBytes, setupNodeReads, receipts, receiptBytes, transitions, directUnits, fixedInputRejections;
+        public long admissionUnits, admissionNodeReads, admissionBytes;
     }
     public record Checked(ProofIndex previous, boolean reusable) { }
     private final ContentTree tree;
@@ -32,7 +33,7 @@ public final class BodyValidation {
     private final Set<SourceUnit> candidates;
 
     /**
-     * Direct must include previous non-reusable units and the complete non-T/N/D input delta (source,
+     * Direct must include the complete non-T/N/D/M input delta (source,
      * generated/configuration inputs, compiler/options and processor admission), not a file inventory.
      * This primitive does not infer those changes or certify units omitted from that caller-owned set.
      * A scope must already have an accepted cold/incremental baseline. Missing or incompatible baselines
@@ -56,6 +57,7 @@ public final class BodyValidation {
         var selected=new TreeSet<SourceUnit>();
         for(var unit:direct) {requireScope(unit);selected.add(unit);}
         work.directUnits+=selected.size();
+        selectUnadmitted(selected);
         selected.addAll(ReverseIndex.bodyCandidates(store,transition(before),project,module,scope,work.reverse));
         candidates=Collections.unmodifiableSet(selected);
         checkCurrent();
@@ -63,6 +65,27 @@ public final class BodyValidation {
 
     public Set<SourceUnit> candidates() {return candidates;}
     public ProofIndex.Binding binding() {return after;}
+
+    private void selectUnadmitted(Set<SourceUnit> selected) {
+        var value=rooted(previous.bodiesRoot(),LocalStore.bodyAdmissionKey(project));
+        if(value==null) {
+            if(rooted(previous.bodiesRoot(),LocalStore.bodySelectionKey(project))!=null)
+                throw new IllegalStateException("Body admission selector missing; cold attribution required");
+            return; // no selected units
+        }
+        var root=DefinerIndex.decodeRoot(value,tree.digest().width());
+        if(root.count()==0)return;
+        var prefix=new dev.jvmd.core.tree.Codec.Writer().zstr(module).u8(scope).toBytes();
+        tree.forEach(root.hash(),hash->{
+            var bytes=record(MachineStore.nodeKey(hash));work.admissionNodeReads++;
+            if(bytes!=null)work.admissionBytes+=bytes.length;return bytes;
+        },prefix,entry->{
+            var in=new dev.jvmd.core.tree.Codec.Reader(entry.key());var unit=SourceUnit.decode(in);
+            if(in.remaining()!=0 || entry.value().length!=tree.digest().width())
+                throw new IllegalStateException("Invalid body admission selector");
+            requireScope(unit);selected.add(unit);work.admissionUnits++;
+        });
+    }
 
     /** Only candidates are opened. The original receipt's binding, never just the last step, anchors validation. */
     public Checked check(SourceUnit unit, ProofIndex.Inputs inputs, ProcessorRecords.Context processor, ProcessorRecords.Body observations) {

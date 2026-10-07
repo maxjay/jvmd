@@ -87,6 +87,9 @@ public interface LocalStore extends MachineStore {
     static byte[] materialisationOwnerKey(Identity directory) { return join("MATOWNER|", directory.view()); }
     static byte[] bodiesRootKey(Identity projectKey) { return join("BROOT|", projectKey.view()); }
     static byte[] bodySelectionKey(Identity projectKey) { return join("BM|", projectKey.view()); }
+    static byte[] bodyAdmissionKey(Identity projectKey) {
+        return join("BM|", projectKey.view(), "|A");
+    }
     static byte[] bodiesRootHistoryKey(Identity projectKey, int n) {
         return join("BROOT|", projectKey.view(), "|" + BodiesRoot.VERSION + "|", new dev.jvmd.core.tree.Codec.Writer().u32(n).toBytes());
     }

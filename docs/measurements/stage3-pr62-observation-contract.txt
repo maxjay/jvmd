@@ -192,3 +192,28 @@ READER-POOL SHA3-256 warnings=0 first=ReaderStatistics[events=405, physicalReads
 READER-POOL SHA3-256 warnings=1 first=ReaderStatistics[events=405, physicalReads=3, queries=5, nodeReads=18, nodeBytes=4368] second=ReaderStatistics[events=810, physicalReads=6, queries=10, nodeReads=18, nodeBytes=4368]
 READER-POOL SHA3-256 warnings=0 first=ReaderStatistics[events=405, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3981] second=ReaderStatistics[events=593, physicalReads=3, queries=5, nodeReads=13, nodeBytes=3981]
 READER-SLICE SHA3-256 metadataChange prefixes=2 hits=1 receipts=1 proofNodes=1 frontierNodes=25
+
+
+Rooted non-reuse admission selector checkpoint, 7 October 2026
+Parent: b3eb0ff6; approved format reservations unchanged.
+BM|project|A is a separately rooted selector using existing BM codec/value/tree/publication machinery. Its root is an acceleration coordinate, never an ACI input. A nonempty baseline missing this required selector rejects incremental validation/publication and requires full cold attribution. No migration or full-file scan fallback.
+80 tests PASS, zero failures/errors/skips:
+mvn -B -pl jvmd-tests -am test -Dtest=BodyValidationTest,BodyValidationNativeTest,BodySelectionTest,BodyGenerationTest,NativeReaderSliceTest,OutputRecoveryTest,BodyRecordsTest,ModuleArchitectureTest,ForbiddenIdentifiersTest,Stage3Test -Dsurefire.failIfNoSpecifiedTests=false -DexcludedGroups=corpus,read-oracle
+Tests cover scope selection without caller-supplied nonreuse inventory, delta repair/retirement, historical roots, actual Rocks reopen, absent-selector cold reconstruction, current-X integration and publication/materialisation preservation.
+The first focused run (46 tests, three failures) exposed one extra BV root reread and a test assumption that a two-entry tree is always one node. Production now reuses its freshly encoded BM roots in the atomic binding batch; the original F11 BV-read limit remains unchanged. The growth assertion now requires equal node reads and bytes across populations for each digest rather than assuming identical tree shapes between digests. The corrected focused run passed all 46 tests before the final 80-test gate.
+Counters below exclude BROOT lookup traversal and physical Rocks/WAL traffic; they count the exact admission prefix traversal. No C/CI is opened during candidate discovery. F09 and the other Stage 3 acceptance gaps remain open.
+review62-admission-selector.log sha256=e1637449c8221c1a77ed3176b78adfa48d6445b3f55bba5c024267034e718c67
+review62-admission-selector-v2.log sha256=fc71e6a414dad666c8efa77c0563ca48c45934d39e58e21f26103b26bb2634d5
+review62-admission-final.log sha256=2164f86535640e509418c49e4be708a7c89f111950a1c60674b71fea5a8a43e0
+F11 Sha256 units=128 node reads=36
+F11 Sha256 units=1024 node reads=39
+F11 Sha256 units=8192 node reads=62
+F11 Sha3 units=128 node reads=39
+F11 Sha3 units=1024 node reads=52
+F11 Sha3 units=8192 node reads=56
+ADMISSION SHA-256 admitted=64 retired=64 selected=1 nodes=2 bytes=278 receiptsBeforeCheck=0 writes=0
+ADMISSION SHA-256 admitted=512 retired=512 selected=1 nodes=2 bytes=278 receiptsBeforeCheck=0 writes=0
+ADMISSION SHA-256 admitted=4096 retired=4096 selected=1 nodes=2 bytes=278 receiptsBeforeCheck=0 writes=0
+ADMISSION SHA3-256 admitted=64 retired=64 selected=1 nodes=1 bytes=183 receiptsBeforeCheck=0 writes=0
+ADMISSION SHA3-256 admitted=512 retired=512 selected=1 nodes=1 bytes=183 receiptsBeforeCheck=0 writes=0
+ADMISSION SHA3-256 admitted=4096 retired=4096 selected=1 nodes=1 bytes=183 receiptsBeforeCheck=0 writes=0

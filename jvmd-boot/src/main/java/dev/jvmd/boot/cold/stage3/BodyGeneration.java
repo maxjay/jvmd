@@ -154,13 +154,25 @@ public final class BodyGeneration implements LocalStore {
         var selectionKey=LocalStore.bodySelectionKey(project);
         var oldSelection=previous==null?null:tree.get(previous.bodiesRoot(),this::node,selectionKey);
         var state=oldSelection==null?null:BodySelection.State.decode(BodyRecords.value(tree,store,oldSelection),tree.digest().width());
+        var admissionKey=LocalStore.bodyAdmissionKey(project);
+        var oldAdmission=previous==null?null:tree.get(previous.bodiesRoot(),this::node,admissionKey);
+        if(!complete && oldSelection!=null && oldAdmission==null)
+            throw new IllegalStateException("Body admission selector missing; cold attribution required");
+        var admissionBefore=oldAdmission==null?null:DefinerIndex.decodeRoot(BodyRecords.value(tree,store,oldAdmission),tree.digest().width());
         var delta=BodySelection.apply(tree,this::node,this,state,changed,retired,complete);
+        var admission=BodyAdmission.apply(tree,this::node,this,admissionBefore,changed,retired,complete);
         var removed=new ArrayList<>(delta.removed());var added=new ArrayList<>(delta.added());
-        Entry selection=null;
-        if(delta.state().units().count()!=0)selection=record(selectionKey,delta.state().encode());
+        var selectionBytes=delta.state().units().count()==0?null:delta.state().encode();
+        Entry selection=selectionBytes==null?null:record(selectionKey,selectionBytes);
         if(oldSelection==null?selection!=null:selection==null || !oldSelection.h().equals(selection.h())) {
             if(oldSelection!=null)removed.add(oldSelection);
             if(selection!=null)added.add(selection);
+        }
+        var admissionBytes=delta.state().units().count()==0?null:DefinerIndex.encodeRoot(admission);
+        Entry admissionSelection=admissionBytes==null?null:record(admissionKey,admissionBytes);
+        if(oldAdmission==null?admissionSelection!=null:admissionSelection==null || !oldAdmission.h().equals(admissionSelection.h())) {
+            if(oldAdmission!=null)removed.add(oldAdmission);
+            if(admissionSelection!=null)added.add(admissionSelection);
         }
         synchronized(store) {
             checkRoots();
@@ -177,7 +189,8 @@ public final class BodyGeneration implements LocalStore {
             for(var entry:removed)if((tag(entry.key(),"C") || tag(entry.key(),"OUT") || tag(entry.key(),"BM")) && !addedKeys.contains(entry.key()))
                 bindings.add(new byte[][]{entry.key(),null});
             for(var entry:added)if(!tag(entry.key(),"CF") && !ReverseIndex.isBodyKey(entry.key()))
-                bindings.add(new byte[][]{entry.key(),BodyRecords.value(tree,store,entry)});
+                bindings.add(new byte[][]{entry.key(),Arrays.equals(entry.key(),selectionKey)?selectionBytes
+                        :Arrays.equals(entry.key(),admissionKey)?admissionBytes:BodyRecords.value(tree,store,entry)});
             for(var entry:delta.uses()) {
                 var value=BodyRecords.value(tree,store,entry);
                 var existing=getPreviousUses(entry.key());

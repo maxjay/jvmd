@@ -14,6 +14,12 @@ The same vertical fixture adds a private non-enum VAR without changing T, then o
 
 Open work remains: supported operation/failure coverage, source/sibling richer compiler views, processor model/admission/selectors, full pool effect lifecycle, complete read/write/byte/allocation measurements, original 2,000-file Lombok gate and independent strict completeness/minimality gate. This checkpoint is not Stage 3 acceptance. F09 is open and unchanged. General event planning, LIVE, warm boot and application tooling are outside this approval; persisted candidate/admission primitives remain Stage 3 obligations. PR62 stays draft and unmerged.
 
+## Rooted admission selection, 2026-10-07
+
+The caller-owned “previously non-reusable units” requirement is now implemented as BM|project|A, within the existing codec/tree/publication system. It selects source units with C but no admitted CI and is independent of ACI. Changed-unit publication derives only touched entries, keeps historical roots, and atomically commits the selector with current X/BROOT. Scope-prefix validation discovers those units without scanning files, manifests or proofs. A missing selector on a nonempty baseline requires cold reconstruction. Descriptor outputs remain outside ordinary-body admission.
+
+The growth fixture holds returned units, selector reads and bytes constant through 4,096 admitted files and retired entries, while actual Rocks reopen and accepted→rejected/retired transitions preserve exact rooted state. Existing F11 read limits were preserved by reusing the small just-encoded selection roots in the publication batch rather than rereading them from BV. This completes this admission selector only; processor query verification and its indexed discovery remain open, as do full strict read acceptance, richer source inputs, remaining metadata/failure operations, complete costs and F09.
+
 ## Findings
 
 ### Native reader proof follow-up, 2026-10-07

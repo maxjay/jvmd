@@ -190,6 +190,90 @@ class BodyValidationTest {
     }
 
     @ParameterizedTest @MethodSource("digests")
+    void unadmittedSelectionIsRootedAndIndependentOfAdmittedUnitsAndRetiredHistory(Digest digest) {
+        long expectedReads=-1,expectedBytes=-1;
+        for(int population:new int[]{64,512,4096}) {
+            var f=new Fixture(digest);var a=f.state(1,1);var local=f.publish(a);
+            var gen=BodyGeneration.begin(f.tree,f.store,f.project,local);
+            var selected=new TreeMap<SourceUnit,List<Entry>>();var retired=new TreeSet<SourceUnit>();
+            selected.put(USE,List.of(gen.record(LocalStore.proofKey(f.project,USE),new byte[]{1})));
+            var index=f.index(a,f.proof(a,List.of(ProofIndexTest.t("p/Api",Keys.FIELD,"VALUE")),List.of()));
+            for(int i=0;i<population;i++) {
+                var admitted=new SourceUnit("app",0,"admitted/"+i+".java");
+                selected.put(admitted,List.of(gen.record(LocalStore.proofIndexKey(f.project,admitted),index.encode())));
+                var stale=new SourceUnit("app",0,"retired/"+i+".java");retired.add(stale);
+                selected.put(stale,List.of(gen.record(LocalStore.proofKey(f.project,stale),new byte[]{2})));
+            }
+            var otherScope=new SourceUnit("app",1,"Test.java");
+            selected.put(otherScope,List.of(gen.record(LocalStore.proofKey(f.project,otherScope),new byte[]{3})));
+            var historical=gen.commitUnitsFull(selected);
+            var accepted=BodyGeneration.begin(f.tree,f.store,f.project,local).commitUnitsDelta(Map.of(),retired);
+            var work=new BodyValidation.Work();long writes=f.store.recordWriteCount(),nodes=f.store.nodeWriteCount();
+            var plan=f.plan(f.store,List.of(),work);
+            assertThat(plan.candidates()).containsExactly(USE);
+            assertThat(work.directUnits).isZero();assertThat(work.reverse.hits).isZero();
+            assertThat(work.admissionUnits).isOne();
+            if(expectedReads<0) {expectedReads=work.admissionNodeReads;expectedBytes=work.admissionBytes;}
+            assertThat(work.admissionNodeReads).isEqualTo(expectedReads);
+            assertThat(work.admissionBytes).isEqualTo(expectedBytes);
+            assertThat(work.receipts).isZero();assertThat(work.proofs.proofNodeReads).isZero();
+            assertThat(plan.check(USE,f.inputs,null,null).reusable()).isFalse();
+            assertThat(f.store.recordWriteCount()).isEqualTo(writes);assertThat(f.store.nodeWriteCount()).isEqualTo(nodes);
+            var oldRoot=DefinerIndex.decodeRoot(BodyRecords.read(f.tree,f.store,historical.bodiesRoot(),LocalStore.bodyAdmissionKey(f.project)),digest.width());
+            assertThat(oldRoot.count()).isEqualTo(population+2);
+            var current=DefinerIndex.decodeRoot(BodyRecords.read(f.tree,f.store,accepted.bodiesRoot(),LocalStore.bodyAdmissionKey(f.project)),digest.width());
+            assertThat(current.count()).isEqualTo(2);
+            System.out.printf(Locale.ROOT,"ADMISSION %s admitted=%d retired=%d selected=%d nodes=%d bytes=%d receiptsBeforeCheck=0 writes=0%n",
+                    digest.name(),population,population,work.admissionUnits,work.admissionNodeReads,work.admissionBytes);
+            var next=BodyGeneration.begin(f.tree,f.store,f.project,local);
+            next.commitUnitsDelta(Map.of(USE,f.select(next,USE,a,"VALUE")),Set.of(otherScope));
+            assertThat(f.plan(f.store,List.of(),new BodyValidation.Work()).candidates()).isEmpty();
+            assertThatThrownBy(plan::checkCurrent).hasMessageContaining("changed");
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void missingAdmissionStateRequiresColdReconstructionInsteadOfAnInventoryScan(Digest digest) {
+        var f=new Fixture(digest);var a=f.state(1,1);var local=f.publish(a);
+        var gen=BodyGeneration.begin(f.tree,f.store,f.project,local);
+        var before=gen.commitUnitsFull(Map.of(USE,f.select(gen,USE,a,"VALUE")));
+        var nodes=(java.util.function.Function<Identity,byte[]>)(id->f.store.get(MachineStore.nodeKey(id)));
+        var oldTree=f.tree.root(before.bodiesRoot(),nodes);
+        var missing=f.tree.apply(oldTree,List.of(LocalStore.bodyAdmissionKey(f.project)),List.of(),nodes,f.store);f.store.flush();
+        var legacy=new BodiesRoot(before.format(),missing.hash(),before.localRoot(),before.machineRoot(),before.modelHash());
+        f.store.putBodiesRoot(digest,f.project,new LocalStore.BodyCommit(legacy.encode(),before.encode(),
+                f.store.get(LocalStore.localRootKey(f.project)),f.store.get(MachineStore.ROOT_KEY),List.of()));
+        assertThatThrownBy(()->f.plan(f.store,List.of(),new BodyValidation.Work())).hasMessageContaining("cold attribution required");
+        assertThatThrownBy(()->BodyGeneration.begin(f.tree,f.store,f.project,local).commitUnitsDelta(Map.of(),Set.of()))
+                .hasMessageContaining("cold attribution required");
+        var cold=BodyGeneration.begin(f.tree,f.store,f.project,local);
+        cold.commitUnitsFull(Map.of(USE,f.select(cold,USE,a,"VALUE")));
+        assertThat(f.plan(f.store,List.of(),new BodyValidation.Work()).candidates()).isEmpty();
+    }
+
+    @ParameterizedTest @MethodSource("digests")
+    void unadmittedSelectionSurvivesRocksReopenAndRetiresWithItsUnit(Digest digest) {
+        var f=new Fixture(digest);var a=f.state(1,1);
+        var disk=Generation.of(directory,Format.of(digest,Runtime.version().feature()));
+        try(var machine=disk.create()) {machine.putRoot(new byte[]{1});}
+        BodiesRoot original;
+        try(var store=disk.openLocal()) {
+            f.store.snapshot().forEach(store::put);store.flush();
+            var local=f.publish(store,a);var gen=BodyGeneration.begin(f.tree,store,f.project,local);
+            original=gen.commitUnitsFull(Map.of(USE,List.of(gen.record(LocalStore.proofKey(f.project,USE),new byte[]{1}))));
+        }
+        try(var store=disk.openLocal()) {
+            var work=new BodyValidation.Work();var plan=f.plan(store,List.of(),work);
+            assertThat(plan.candidates()).containsExactly(USE);assertThat(work.admissionUnits).isOne();
+            var local=LocalRoot.decode(digest,store.get(LocalStore.localRootKey(f.project)));
+            BodyGeneration.begin(f.tree,store,f.project,local).commitUnitsDelta(Map.of(),Set.of(USE));
+            assertThat(f.plan(store,List.of(),new BodyValidation.Work()).candidates()).isEmpty();
+            var historical=DefinerIndex.decodeRoot(BodyRecords.read(f.tree,store,original.bodiesRoot(),LocalStore.bodyAdmissionKey(f.project)),digest.width());
+            assertThat(historical.count()).isOne();
+        }
+    }
+
+    @ParameterizedTest @MethodSource("digests")
     void disappearedProviderSelectsZeroQueriesAndPublicationRacesRejectThePlan(Digest digest) {
         var f=new Fixture(digest);var a=f.state(1,1);var gone=f.state(f.leaf(List.of()),List.of());
         var local=f.publish(a);var gen=BodyGeneration.begin(f.tree,f.store,f.project,local);

@@ -71,6 +71,14 @@ public final class BootDecision {
      * @throws IllegalStateException if MACHINE has not been booted
      */
     public static Optional<Stage2.Result> local(Path indexDir, ProjectModel model, Path repository) throws IOException {
+        return local(indexDir, model, repository, Runtime.getRuntime().availableProcessors());
+    }
+
+    /**
+     * {@link #local(Path, ProjectModel, Path)} on {@code workers} threads. Interrupting the calling thread cancels the boot: no module
+     * job starts after it, the running ones end at their next scope, and no root is written.
+     */
+    public static Optional<Stage2.Result> local(Path indexDir, ProjectModel model, Path repository, int workers) throws IOException {
         // A model that is no longer valid is never kept, even if a root was committed for it under older rules.
         model.validate();
         var digest = Sha256.INSTANCE;
@@ -85,7 +93,7 @@ public final class BootDecision {
                 return Optional.empty();
             }
             LOG.log(System.Logger.Level.INFO, "local generation for {0}: {1}; cold booting, warm boot not implemented", model.root(), stale.get());
-            var stage2 = new Stage2(digest, new ContentTree(digest), jdkFeature, Runtime.getRuntime().availableProcessors(), repository, ClassFacts::of);
+            var stage2 = new Stage2(digest, new ContentTree(digest), jdkFeature, workers, repository, ClassFacts::of);
             var result = stage2.run(store, model);
             log(result);
             return Optional.of(result);

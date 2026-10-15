@@ -29,7 +29,8 @@ public final class RocksMachineStore implements MachineStore, AutoCloseable {
 
     RocksMachineStore(java.nio.file.Path directory, boolean readOnly) {
         try {
-            options = new Options().setCreateIfMissing(!readOnly);
+            // One open per boot decision: keep two old info logs, not RocksDB's thousand.
+            options = new Options().setCreateIfMissing(!readOnly).setKeepLogFileNum(2);
             db = readOnly ? RocksDB.openReadOnly(options, directory.toString()) : RocksDB.open(options, directory.toString());
         } catch (RocksDBException e) { throw failure(e); }
     }

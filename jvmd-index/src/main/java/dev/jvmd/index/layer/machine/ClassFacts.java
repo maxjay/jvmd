@@ -140,6 +140,11 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                 Edges.method(desc, signature, thrownNames, (target, kind) -> edge(target, kind, key));
             }
             facts.sort((a, b) -> Arrays.compareUnsigned(a.m(), b.m()));
+            // The leaf's chunker needs strictly increasing keys. Two facts of one class share a key when two members share a name and
+            // descriptor (illegal by JVMS 4.5 and 4.6, not enforced by java.lang.classfile), or when NULs in legal names make two
+            // zstr keys collide. Either way the class is one fault, with none of its facts admitted.
+            for (int i = 1; i < facts.size(); i++)
+                if (Arrays.equals(facts.get(i - 1).m(), facts.get(i).m())) throw new Fault("Duplicate member key in " + owner);
             return new ClassFacts(owner, List.copyOf(facts), List.copyOf(edges.values()));
         }
 

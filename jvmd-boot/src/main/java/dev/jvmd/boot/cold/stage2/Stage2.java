@@ -208,6 +208,9 @@ public final class Stage2 {
                 if (cause instanceof Error error) throw error;
                 throw new IllegalStateException("Stage 2 job failed", cause);
             }
-        } finally { pool.shutdown(); }
+        } finally {
+            // Join every worker before the caller closes the store they write into (as in stage 1).
+            pool.close();
+        }
     }
 }

@@ -9,8 +9,9 @@ import java.util.Comparator;
 
 /**
  * The generation directory {@code indexDir / FORMAT} (stage 1, 2.5). A different FORMAT is a different, empty directory: there is
- * no migration. {@link #create} fails if a ROOT exists, and replaces a directory that has none (a boot that died before its root
- * leaves nothing that is trusted).
+ * no migration. {@link #create} fails if a ROOT exists, and replaces a store that opens without one (a boot that died before its
+ * root leaves nothing that is trusted). A store that exists but cannot be opened is neither: it may hold MACHINE and every
+ * project's LOCAL root, so it is an error and is never deleted.
  */
 public final class Generation {
     private final Path directory;
@@ -21,13 +22,18 @@ public final class Generation {
 
     public Path directory() { return directory; }
 
-    /** True if the directory holds a store with a ROOT. A missing or unreadable store has none. */
+    /**
+     * True if the directory holds a store with a ROOT. A missing or empty directory has none.
+     *
+     * @throws IllegalStateException if a store exists but cannot be opened: that is not the same as having no ROOT
+     */
     public boolean hasRoot() {
-        if (!Files.isDirectory(directory)) return false;
+        if (!Files.isDirectory(directory) || isEmpty(directory)) return false;
         try (var store = new RocksMachineStore(directory, true)) {
             return store.hasRoot();
         } catch (RuntimeException unreadable) {
-            return false;
+            throw new IllegalStateException("Machine index generation " + directory + " exists but cannot be opened; it was left untouched. "
+                    + "Move it aside to cold boot a new one.", unreadable);
         }
     }
 
@@ -62,6 +68,12 @@ public final class Generation {
             throw new IllegalStateException("MACHINE generation is not committed: " + directory);
         }
         return new RocksLocalStore(machine);
+    }
+
+    private static boolean isEmpty(Path dir) {
+        try (var entries = Files.list(dir)) {
+            return entries.findAny().isEmpty();
+        } catch (IOException e) { throw new UncheckedIOException(e); }
     }
 
     private static void deleteRecursively(Path root) throws IOException {

@@ -140,6 +140,10 @@ public record ClassFacts(String ownerKey, List<Fact> facts, List<Entry> edges) {
                 Edges.method(desc, signature, thrownNames, (target, kind) -> edge(target, kind, key));
             }
             facts.sort((a, b) -> Arrays.compareUnsigned(a.m(), b.m()));
+            // JVMS 4.5 and 4.6: no two fields, and no two methods, share a name and descriptor. java.lang.classfile does not enforce
+            // it, and the leaf's chunker needs strictly increasing keys: such a class is one fault, with none of its facts admitted.
+            for (int i = 1; i < facts.size(); i++)
+                if (Arrays.equals(facts.get(i - 1).m(), facts.get(i).m())) throw new Fault("Duplicate member declaration in " + owner);
             return new ClassFacts(owner, List.copyOf(facts), List.copyOf(edges.values()));
         }
 

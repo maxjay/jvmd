@@ -74,8 +74,9 @@ public final class MavenModel {
             // As the compiler plugin passes it: a module descriptor records its project version.
             if (modular) options.add("--module-version").add(m.gav().substring(m.gav().lastIndexOf(':') + 1));
             var scopes = node.putObject("scopes");
-            scope(scopes.putObject("main"), mainRoots, main, m.processing(), repo);
-            scope(scopes.putObject("test"), roots(root, m.testSources(), m.testProcessing().generatedDirectory()), test, m.testProcessing(), repo);
+            scope(scopes.putObject("main"), mainRoots, main, processing(m.processing(), release(m), name + " (main)", warnings), m.processing(), repo);
+            scope(scopes.putObject("test"), roots(root, m.testSources(), m.testProcessing().generatedDirectory()), test,
+                    processing(m.testProcessing(), release(m), name + " (test)", warnings), m.testProcessing(), repo);
         }
         try {
             return new Result(Json.MAPPER.writeValueAsBytes(doc), List.copyOf(warnings));
@@ -156,7 +157,19 @@ public final class MavenModel {
         return false;
     }
 
-    private static void scope(ObjectNode node, List<String> roots, List<Dependency> dependencies, Resolution.Processing processing, Path repo) {
+    /**
+     * The scope's processing mode (demo plan A9). An unset proc is decided by the build JDK, which the model does not know: javac
+     * before 23 processes implicitly, 23 and later does not. A module whose release is 23 or later can only be built by 23 or later, so
+     * it gets none. Below that it gets full, which is what a project built for 17 or 21 relies on, and the choice is reported.
+     */
+    private static String processing(Resolution.Processing processing, int release, String scope, List<String> warnings) {
+        if (!processing.mode().isBlank()) return processing.mode();
+        if (release >= 23) return "none";
+        warnings.add(scope + ": proc is not set; processors on the classpath run, as javac before 23 runs them");
+        return "full";
+    }
+
+    private static void scope(ObjectNode node, List<String> roots, List<Dependency> dependencies, String mode, Resolution.Processing processing, Path repo) {
         var r = node.putArray("sourceRoots");
         roots.forEach(r::add);
         var d = node.putArray("dependencies");
@@ -164,9 +177,7 @@ public final class MavenModel {
             var n = d.addObject().put("coordinate", dep.coordinate());
             if (dep.location() != null) n.put("location", dep.location()); else n.put("module", dep.module());
         }
-        // An unset proc is processing: javac before 23 found processors on the classpath without being asked, which is what a project
-        // built for 17 or 21 relies on; the pinned compiler only does when asked (demo plan A8). Absent from the model means none.
-        String mode = processing.mode().isBlank() ? "full" : processing.mode();
+        // Absent from the model means none.
         if (mode.equals("none")) return;
         var p = node.putObject("processing").put("mode", mode);
         var path = p.putArray("processorPath");

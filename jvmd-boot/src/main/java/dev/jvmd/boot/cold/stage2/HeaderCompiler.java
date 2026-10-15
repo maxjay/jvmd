@@ -176,36 +176,15 @@ final class HeaderCompiler {
                             ProjectModel.Processing processing, List<Path> processorPath, String generatedRoot) {
         // A scope with no source files has an empty leaf (appendix A); javac would call it an error.
         if (sources.isEmpty()) return new Compiled(List.of(), null, null, null, null, null, List.of());
-        var options = new ArrayList<String>();
-        options.addAll(List.of("-source", String.valueOf(release), "-Xlint:-options", "-implicit:none"));
-        Path generated = null;
-        var scratch = new ArrayList<Path>();
-        if (processing.enabled()) {
-            try {
-                // Processors write sources to -s and resources to -d; both are this task's own, and go with it.
-                generated = Files.createTempDirectory("jvmd-generated-");
-                scratch.add(generated);
-                var classes = Files.createTempDirectory("jvmd-processed-");
-                scratch.add(classes);
-                options.addAll(List.of("-proc:full", "-s", generated.toString(), "-d", classes.toString()));
-            } catch (IOException e) {
-                for (var dir : scratch) delete(dir);
-                throw new UncheckedIOException(e);
-            }
-            if (!processorPath.isEmpty()) options.addAll(List.of("--processor-path", String.join(File.pathSeparator, processorPath.stream().map(Path::toString).toList())));
-            if (!processing.processors().isEmpty()) options.addAll(List.of("-processor", String.join(",", processing.processors())));
-        } else options.add("-proc:none");
-        options.add("--class-path");
+        var base = new ArrayList<String>(List.of("-source", String.valueOf(release), "-Xlint:-options", "-implicit:none", "--class-path"));
         // An empty classpath would be the current directory; a path that cannot exist is the empty classpath.
-        options.add(classpath.isEmpty() ? Path.of(System.getProperty("java.io.tmpdir"), "jvmd-no-classpath").toString()
+        base.add(classpath.isEmpty() ? Path.of(System.getProperty("java.io.tmpdir"), "jvmd-no-classpath").toString()
                 : String.join(File.pathSeparator, classpath.stream().map(Path::toString).toList()));
-        options.addAll(List.of("--system", jdkHome.toString()));
-        options.addAll(filtered(javacOptions));
+        base.addAll(List.of("--system", jdkHome.toString()));
+        base.addAll(filtered(javacOptions));
 
         var compiler = ToolProvider.getSystemJavaCompiler();
-        var diagnostics = new DiagnosticCollector<JavaFileObject>();
         var charset = charset(javacOptions);
-        var files = compiler.getStandardFileManager(diagnostics, null, charset);
         var units = new ArrayList<Unit>(sources.size());
         var objects = new ArrayList<SourceObject>(sources.size());
         // javac hands its own wrappers back, so a file is recognised by its URI, never by the object it was given.
@@ -218,13 +197,36 @@ final class HeaderCompiler {
             objects.add(object);
             byUri.put(object.toUri(), unit);
         }
+        // With processors javac defers parse diagnostics to the end of processing, and a file that does not parse stops processing for
+        // the whole scope. So the files are first parsed alone, without processors: one that does not parse is its unit's parse fault
+        // here, and the processing task never sees it.
+        if (processing.enabled()) parseAlone(compiler, base, objects, byUri, charset);
+
+        StandardJavaFileManager files = null;
         JavacTaskImpl task = null;
+        var scratch = new ArrayList<Path>();
         try {
-            task = (JavacTaskImpl) compiler.getTask(null, files, diagnostics, options, null, objects);
-            // Every unit entered, in every processing round, by URI: a later round re-enters a file as a new tree, and a generated file
-            // is entered only in the round after the one that wrote it.
+            var options = new ArrayList<String>(base);
+            Path generated = null, classes = null;
+            if (processing.enabled()) {
+                // Processors write sources to -s and resources to -d; both are this task's own, and go with it.
+                generated = Files.createTempDirectory("jvmd-generated-");
+                scratch.add(generated);
+                classes = Files.createTempDirectory("jvmd-processed-");
+                scratch.add(classes);
+                options.addAll(List.of("-proc:full", "-s", generated.toString(), "-d", classes.toString()));
+                if (!processorPath.isEmpty()) options.addAll(List.of("--processor-path", String.join(File.pathSeparator, processorPath.stream().map(Path::toString).toList())));
+                if (!processing.processors().isEmpty()) options.addAll(List.of("-processor", String.join(",", processing.processors())));
+            } else options.add("-proc:none");
+            var diagnostics = new DiagnosticCollector<JavaFileObject>();
+            files = compiler.getStandardFileManager(diagnostics, null, charset);
+            task = (JavacTaskImpl) compiler.getTask(null, files, diagnostics, options, null, objects.stream().filter(o -> o.unit.parsed()).toList());
+            // Every unit entered, in every processing round, by URI: a round re-enters the files it has, and a generated file is entered
+            // in the round after the one that wrote it. Whether processing ran at all is the processing event.
             var enteredTrees = new LinkedHashMap<URI, CompilationUnitTree>();
+            var processed = new boolean[1];
             task.addTaskListener(new TaskListener() {
+                @Override public void started(TaskEvent e) { if (e.getKind() == TaskEvent.Kind.ANNOTATION_PROCESSING) processed[0] = true; }
                 @Override public void finished(TaskEvent e) {
                     if (e.getKind() == TaskEvent.Kind.ENTER && e.getCompilationUnit() != null) enteredTrees.put(e.getSourceFile().toUri(), e.getCompilationUnit());
                 }
@@ -249,11 +251,23 @@ final class HeaderCompiler {
             }
             task.enter(entered);
             if (processing.enabled() && entered.size() < parsed.size()) {
-                // JavacTaskImpl.enter runs the processors only once every parsed file is entered. A module-info.java or a file that did
-                // not parse never is here, so the processing that enter skipped runs now, over what was entered.
+                // JavacTaskImpl.enter runs the processors only once every parsed file is entered. A module-info.java never is here, so
+                // the processing that enter skipped runs now, over what was entered.
                 @SuppressWarnings({"rawtypes", "unchecked"})
                 com.sun.tools.javac.util.List roots = com.sun.tools.javac.util.List.from((List) entered);
                 JavaCompiler.instance(task.getContext()).processAnnotations(roots);
+            }
+            if (processing.enabled()) {
+                // A processor's error fails the scope, as it fails the build, rather than publishing headers it left incomplete
+                // (amendments 4.8). So does processing that javac skipped over an error of its own: with a processor to run, javac
+                // reports either the processing event or the errors that stopped it. Without one there is nothing to run, and an error is
+                // an ordinary header fault.
+                var errors = diagnostics.getDiagnostics().stream().filter(d -> d.getKind() == Diagnostic.Kind.ERROR).toList();
+                var failed = errors.stream().filter(d -> d.getCode() != null && d.getCode().startsWith("compiler.err.proc.")).toList();
+                if (!failed.isEmpty() || !processed[0] && !errors.isEmpty()
+                        && (!processing.processors().isEmpty() || declaresProcessor(processorPath.isEmpty() ? classpath : processorPath)))
+                    throw new IllegalStateException("Annotation processing failed: " + String.join("; ", (failed.isEmpty() ? errors : failed).stream()
+                            .map(d -> (d.getSource() == null ? "" : d.getSource().getName() + ":" + d.getLineNumber() + " ") + d.getMessage(null)).toList()));
             }
 
             // The last tree of each file entered, then the files processors wrote, in path order.
@@ -267,16 +281,21 @@ final class HeaderCompiler {
                     if (file.startsWith(generated)) written.put(generatedRoot + generated.relativize(file).toString().replace('\\', '/'), e.getValue());
                 }
                 for (var w : written.entrySet()) {
+                    // No κ or size: a generated file is never read back to validate, and its bytes may carry a timestamp (a generator's
+                    // @Generated date) that would make every cold boot's row, and root, differ. Its facts are what it contributes.
                     var unit = new Unit(w.getKey(), true);
-                    var file = Path.of(w.getValue().getSourceFile().toUri());
-                    try {
-                        var bytes = Files.readAllBytes(file);
-                        unit.kappa = digest.hash(bytes);
-                        unit.size = bytes.length;
-                    } catch (IOException e) { throw new UncheckedIOException(e); }
                     units.add(unit);
                     byUri.put(w.getValue().getSourceFile().toUri(), unit);
                     finalTrees.add(w.getValue());
+                }
+                // A processor can also write class files, which javac compiles nothing from and stage 2 reads nothing of: the types they
+                // declare would be missing without a word. Each is a faulted unit instead.
+                try (var walk = Files.walk(classes)) {
+                    for (var file : walk.filter(p -> p.toString().endsWith(".class")).sorted().toList()) {
+                        var unit = new Unit(generatedRoot + classes.relativize(file).toString().replace('\\', '/'), true);
+                        unit.parseError = "an annotation processor wrote a class file; stage 2 reads generated sources only";
+                        units.add(unit);
+                    }
                 }
             }
 
@@ -296,10 +315,48 @@ final class HeaderCompiler {
                 }
             }
             return new Compiled(units, task.getElements(), task.getTypes(), trees, task, files, scratch);
-        } catch (RuntimeException e) {
+        } catch (IOException e) {
             release(task, files, scratch);
+            throw new UncheckedIOException(e);
+        } catch (RuntimeException | Error e) {
+            // Whatever ends the compilation releases what it opened: the compiler holds every classpath jar open.
+            release(task, files, scratch);
+            // A processor that throws reaches here as javac's AnnotationProcessingError, an Error: the scope fails, the JVM does not.
+            if (e.getClass().getName().equals("com.sun.tools.javac.processing.AnnotationProcessingError"))
+                throw new IllegalStateException("An annotation processor failed: " + e.getCause(), e.getCause() == null ? e : e.getCause());
             throw e;
         }
+    }
+
+    /** {@link #compile}'s first pass when processors run: each file parsed alone, without processors; what does not parse is a fault. */
+    private static void parseAlone(javax.tools.JavaCompiler compiler, List<String> base, List<SourceObject> objects, java.util.Map<URI, Unit> byUri, Charset charset) {
+        var diagnostics = new DiagnosticCollector<JavaFileObject>();
+        var options = new ArrayList<String>(base);
+        options.add("-proc:none");
+        try (var files = compiler.getStandardFileManager(diagnostics, null, charset)) {
+            var task = (JavacTaskImpl) compiler.getTask(null, files, diagnostics, options, null, objects);
+            try { task.parse(); } finally { JavaCompiler.instance(task.getContext()).close(); }
+        } catch (IOException e) { throw new UncheckedIOException(e); }
+        for (var d : diagnostics.getDiagnostics()) {
+            if (d.getKind() != Diagnostic.Kind.ERROR) continue;
+            var unit = d.getSource() == null ? null : byUri.get(d.getSource().toUri());
+            if (unit == null) throw new IllegalStateException("javac refused the module's options: " + d.getMessage(null));
+            var message = d.getLineNumber() + ":" + d.getColumnNumber() + " " + d.getMessage(null);
+            unit.parseError = unit.parseError == null ? message : unit.parseError + "; " + message;
+        }
+    }
+
+    /** Where javac's discovery would find a processor: a {@code META-INF/services} declaration in a jar or directory of the path. */
+    private static boolean declaresProcessor(List<Path> path) {
+        var service = "META-INF/services/javax.annotation.processing.Processor";
+        for (var entry : path) {
+            if (Files.isDirectory(entry)) { if (Files.isRegularFile(entry.resolve(service))) return true; continue; }
+            if (!Files.isRegularFile(entry)) continue;
+            try (var jar = new java.util.zip.ZipFile(entry.toFile())) {
+                if (jar.getEntry(service) != null) return true;
+            } catch (IOException unreadable) { /* javac would not find one there either */ }
+        }
+        return false;
     }
 
     /** C.1: forces completion of a type's header and members, so that everything javac resolves is resolved before facts are read. */

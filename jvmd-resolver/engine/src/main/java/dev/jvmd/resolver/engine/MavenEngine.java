@@ -188,14 +188,16 @@ public final class MavenEngine implements AutoCloseable {
             var main = new LinkedHashSet<String>(); var test = new LinkedHashSet<String>();var runtime=new LinkedHashSet<String>();
             runtime.add(m.getOutputDirectory());main.add(m.getOutputDirectory()); test.add(m.getTestOutputDirectory()); test.add(m.getOutputDirectory());
             var seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<DependencyNode, Boolean>());
-            var mainOrder = new LinkedHashSet<String>(); var testOrder = new LinkedHashSet<String>();
-            walk(resolved.getRoot(), null, gav, build, main, test,runtime, seen, reactor, mainOrder, testOrder);
+            var mainOrder = new LinkedHashSet<String>(); var testOrder = new LinkedHashSet<String>(); var runtimeOrder = new LinkedHashSet<String>();
+            runtimeOrder.add(m.getOutputDirectory());
+            walk(resolved.getRoot(), null, gav, build, main, test,runtime, seen, reactor, mainOrder, testOrder, runtimeOrder);
             build.modules.add(new Resolution.Module(gav, moduleDir.toString(), model.getPackaging(), sources, testSources,
                     m.getOutputDirectory(), m.getTestOutputDirectory(), release,
                     model.getDependencies().stream().map(d -> d.getGroupId() + ":" + d.getArtifactId() + ":" + d.getVersion()).toList(),CompilerSettings.options(model,false),CompilerSettings.options(model,true),
                     processors(model,false,moduleDir,session,remotes,main,build),processors(model,true,moduleDir,session,remotes,test,build)));
             build.classpaths.put(gav + ":main", List.copyOf(main)); build.classpaths.put(gav + ":test", List.copyOf(test));build.classpaths.put(gav+":runtime",List.copyOf(runtime));
             build.compileOrder.put(gav + ":main", List.copyOf(mainOrder)); build.compileOrder.put(gav + ":test", List.copyOf(testOrder));
+            build.compileOrder.put(gav + ":runtime", List.copyOf(runtimeOrder));
         }
         build.dependencyMillis=(System.nanoTime()-modelsAt)/1e6;build.warnings.addAll(localOverlay.warnings());
         return build;
@@ -251,7 +253,8 @@ public final class MavenEngine implements AutoCloseable {
     }
     private static void walk(DependencyNode node, String parent, String root, Build build,
                              Set<String> main, Set<String> test,Set<String> runtime, Set<DependencyNode> seen,
-                             java.util.function.Function<org.eclipse.aether.artifact.Artifact,String> reactor, Set<String> mainOrder, Set<String> testOrder) {
+                             java.util.function.Function<org.eclipse.aether.artifact.Artifact,String> reactor, Set<String> mainOrder, Set<String> testOrder,
+                             Set<String> runtimeOrder) {
         var artifact = node.getArtifact();
         String id = root + "|" + (artifact == null ? root : artifact.toString());
         String gav = artifact == null ? root : artifact.getGroupId() + ":" + artifact.getArtifactId() + ":" + artifact.getVersion();
@@ -269,18 +272,22 @@ public final class MavenEngine implements AutoCloseable {
             // left out of the classpaths below); a classifier is kept so a consumer can tell a test-jar from the module's main output.
             String sibling = reactor.apply(artifact);
             String ordered = sibling != null ? Resolution.REACTOR + sibling + (artifact.getClassifier().isEmpty() ? "" : ":" + artifact.getClassifier()) : path;
-            if (ordered != null) { testOrder.add(ordered); if (!scope.equals("test") && !scope.equals("runtime")) mainOrder.add(ordered); }
+            if (ordered != null) {
+                testOrder.add(ordered);
+                if (!scope.equals("test") && !scope.equals("runtime")) mainOrder.add(ordered);
+                if (!scope.equals("test") && !scope.equals("provided")) runtimeOrder.add(ordered);
+            }
         }
         if (winner == null && artifact != null && artifact.getExtension().equals("jar") && path != null) {
             test.add(path);if(!scope.equals("test")&&!scope.equals("provided"))runtime.add(path);
             if (!scope.equals("test") && !scope.equals("runtime")) main.add(path);
         }
         if (!seen.add(node) || winner != null) return;
-        for (var child : node.getChildren()) walk(child, id, root, build, main, test,runtime, seen, reactor, mainOrder, testOrder);
+        for (var child : node.getChildren()) walk(child, id, root, build, main, test,runtime, seen, reactor, mainOrder, testOrder, runtimeOrder);
     }
     private String contextFingerprint() {
         String properties = environment.systemProperties().entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).sorted().collect(java.util.stream.Collectors.joining("\n"));
-        return Hashing.sha256(("workspace-models-v7\n" + models.mavenVersion() + "\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
+        return Hashing.sha256(("workspace-models-v8\n" + models.mavenVersion() + "\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
     }
     private static ProjectModelState.Input input(Path path, boolean strong) throws Exception {
         path = path.toAbsolutePath().normalize();

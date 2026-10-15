@@ -422,11 +422,12 @@ Breakpoint line numbers are **one-based**, unlike LSP positions. Breakpoints can
 | `inspect` | Object handle; depth up to 4 and breadth up to 20, or `release: true` |
 | `eval` | Expression, frame token, tier 1 or 2 |
 | `hotswap` | Changed Java source paths; inspect `restart_required` and per-module results |
+| `output` | The application's stdout and stderr: the last `tail` characters (default 16,384), or everything after `since` (pass the previous `written`); `alive`, `exit_code` once it has exited, `truncated` and `complete` |
 | `restart`, `stop` | Restart returns a new run ID; stop releases that run |
 | `histogram` | Bounded class histogram, or `args.jfr` recording settings |
 | `instances`, `referrers` | Type reference or object handle; explicit `max` required, capped at 1000 |
 
-Poll `session.status` (or the `status` tool) for run state and stopped threads while a debug UI is active. There is no socket push subscription for breakpoint events or application stdout/stderr. Keep polling modest and stop it when the view closes.
+Poll `session.status` (or the `status` tool) for run state and stopped threads while a debug UI is active. There is no socket push subscription for breakpoint events or application stdout/stderr; poll `output` with `since` for the latter. Keep polling modest and stop it when the view closes.
 
 Frame tokens expire after execution resumes, stepping, evaluation that invokes target methods, or class redefinition. Reacquire frames after these actions. Object handles expire after 60 seconds; release them when an inspector closes. Debuggee locals need compiler debug metadata (`-g`).
 

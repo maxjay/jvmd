@@ -234,7 +234,7 @@ public final class MavenEngine implements AutoCloseable {
         boolean enabled=!"none".equals(proc)&&explicit;
         if(enabled&&paths.isEmpty())paths.addAll(classpath);
         lombok|=paths.stream().anyMatch(MavenEngine::lombok);
-        return new Resolution.Processing(List.copyOf(paths),names,enabled,enabled&&lombok,ProcessorSettings.generatedDirectory(model,test,module));
+        return new Resolution.Processing(List.copyOf(paths),names,enabled,enabled&&lombok,ProcessorSettings.generatedDirectory(model,test,module),proc,!coordinates.isEmpty()&&!"none".equals(proc));
     }
     private static boolean lombok(String path){return Path.of(path).getFileName().toString().matches("lombok-[0-9].*\\.jar");}
     private static RepositoryPolicy policy(org.apache.maven.model.RepositoryPolicy policy) {

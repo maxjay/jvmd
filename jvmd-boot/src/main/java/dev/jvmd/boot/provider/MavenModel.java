@@ -65,9 +65,6 @@ public final class MavenModel {
             test.removeAll(main);
             if (!m.testCompilerOptions().equals(m.compilerOptions()))
                 warnings.add(name + ": test compiler options " + m.testCompilerOptions() + " differ from main; the model has one option list, main's");
-            for (var p : List.of(m.processing(), m.testProcessing()))
-                if (p.enabled())
-                    warnings.add(name + " (" + (p == m.processing() ? "main" : "test") + "): annotation processing is configured and stage 2 does not run it yet; generated declarations are missing");
             var mainRoots = roots(root, m.sources(), m.processing().generatedDirectory());
             boolean modular = moduleInfo(root, mainRoots);
             ObjectNode node = list.addObject();
@@ -77,8 +74,9 @@ public final class MavenModel {
             // As the compiler plugin passes it: a module descriptor records its project version.
             if (modular) options.add("--module-version").add(m.gav().substring(m.gav().lastIndexOf(':') + 1));
             var scopes = node.putObject("scopes");
-            scope(scopes.putObject("main"), mainRoots, main);
-            scope(scopes.putObject("test"), roots(root, m.testSources(), m.testProcessing().generatedDirectory()), test);
+            scope(scopes.putObject("main"), mainRoots, main, processing(m.processing(), release(m), name + " (main)", warnings), m.processing(), repo);
+            scope(scopes.putObject("test"), roots(root, m.testSources(), m.testProcessing().generatedDirectory()), test,
+                    processing(m.testProcessing(), release(m), name + " (test)", warnings), m.testProcessing(), repo);
         }
         try {
             return new Result(Json.MAPPER.writeValueAsBytes(doc), List.copyOf(warnings));
@@ -159,7 +157,19 @@ public final class MavenModel {
         return false;
     }
 
-    private static void scope(ObjectNode node, List<String> roots, List<Dependency> dependencies) {
+    /**
+     * The scope's processing mode (demo plan A9). An unset proc is decided by the build JDK, which the model does not know: javac
+     * before 23 processes implicitly, 23 and later does not. A module whose release is 23 or later can only be built by 23 or later, so
+     * it gets none. Below that it gets full, which is what a project built for 17 or 21 relies on, and the choice is reported.
+     */
+    private static String processing(Resolution.Processing processing, int release, String scope, List<String> warnings) {
+        if (!processing.mode().isBlank()) return processing.mode();
+        if (release >= 23) return "none";
+        warnings.add(scope + ": proc is not set; processors on the classpath run, as javac before 23 runs them");
+        return "full";
+    }
+
+    private static void scope(ObjectNode node, List<String> roots, List<Dependency> dependencies, String mode, Resolution.Processing processing, Path repo) {
         var r = node.putArray("sourceRoots");
         roots.forEach(r::add);
         var d = node.putArray("dependencies");
@@ -167,6 +177,17 @@ public final class MavenModel {
             var n = d.addObject().put("coordinate", dep.coordinate());
             if (dep.location() != null) n.put("location", dep.location()); else n.put("module", dep.module());
         }
+        // Absent from the model means none.
+        if (mode.equals("none")) return;
+        var p = node.putObject("processing").put("mode", mode);
+        var path = p.putArray("processorPath");
+        if (processing.explicitPath())
+            for (var jar : processing.path()) {
+                var file = Path.of(jar).toAbsolutePath().normalize();
+                path.add(file.startsWith(repo) ? slashes(repo.relativize(file)) : slashes(file));
+            }
+        var names = p.putArray("processors");
+        processing.names().forEach(names::add);
     }
 
     private static String slashes(Path path) { return path.toString().replace('\\', '/'); }

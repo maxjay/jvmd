@@ -30,8 +30,15 @@ public record Resolution(String root, List<Module> modules, List<Node> nodes, Li
             this(gav,directory,packaging,sources,testSources,classes,testClasses,release,dependencies,List.of("--release",release==null||release.isBlank()?"25":release),List.of("--release",release==null||release.isBlank()?"25":release));
         }
     }
-    /** Implements phase 5: resolved processor inputs, never loaded by the daemon. */
-    public record Processing(List<String> path,List<String> names,boolean enabled,boolean lombok,String generatedDirectory) {
+    /**
+     * Implements phase 5: resolved processor inputs, never loaded by the daemon.
+     *
+     * @param mode         the compiler plugin's {@code proc} as configured ({@code none}, {@code only}, {@code full}), or empty if unset
+     * @param explicitPath {@code path} is the resolved {@code annotationProcessorPaths}; otherwise processors are found on the classpath
+     */
+    public record Processing(List<String> path,List<String> names,boolean enabled,boolean lombok,String generatedDirectory,String mode,boolean explicitPath) {
+        public Processing { if(mode==null)mode=""; }
+        public Processing(List<String> path,List<String> names,boolean enabled,boolean lombok,String generatedDirectory){this(path,names,enabled,lombok,generatedDirectory,"",false);}
         public static Processing none(){return new Processing(List.of(),List.of(),false,false,"");}
     }
     /** Implements 4.3: version winners and retained conflict losers. */

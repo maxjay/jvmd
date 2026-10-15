@@ -55,7 +55,7 @@ No fault is raised. Stage 2 faults parse errors and duplicate declarations, not 
 
 There is also no production provider. Nothing builds a `ProjectModel` from a Maven project, so LOCAL had only been booted from models built in tests (`MavenModelHelper` builds them from real Maven projects). The evidence above was taken with a throwaway model built from `maven-compiler-plugin`'s `compilePath`. Note that `maven-dependency-plugin:build-classpath` silently leaves out reactor siblings.
 
-### Where develop stands (Oct 15, after #63–#73)
+### Where develop stands (Oct 15, after #63–#74)
 
 Demo step 1 runs in the product. A daemon started from the image boots MACHINE before READY. Opening hawkBit then boots its LOCAL layer in the background from the session's own resolution, and `daemon.status` reports it under `layered_index`.
 
@@ -78,6 +78,7 @@ What changed since main, in order:
 - #71: the daemon wiring. Processors are isolated from the daemon's class path, and a boot can be cancelled.
 - #72: one module and scope per source file (A2).
 - #73: bounded tree reads and the linear-space ordered diff (A5).
+- #74: lossless modified UTF-8 for every persisted string and key (§2.1). MACHINE parser 7, LOCAL 26.
 
 Next for the demo is step 2, a body edit: body compilation (stage 3 core) and hot swap. The daemon's existing `run.start` / `debug.op hotswap` already recompiles named files and redefines their classes, outside the layered index. Step 2 is about deciding which files from LOCAL and compiling them against its stubs.
 

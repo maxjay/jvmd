@@ -47,6 +47,24 @@ final class ModuleJob {
     /** A source file found under a source root: javac reads it, once, when it asks for it. */
     private record Found(String path, Path file, long mtimeNanos) { }
 
+    /** The class-file target the build writes: {@code --release}, else {@code -target}, else the language level. */
+    static int target(List<String> options, int release) {
+        for (var flag : List.of("--release", "-target", "--target")) {
+            int i = options.indexOf(flag);
+            if (i >= 0 && i + 1 < options.size()) {
+                var value = options.get(i + 1).strip();
+                try { return Integer.parseInt(value.startsWith("1.") ? value.substring(2) : value); } catch (NumberFormatException e) { break; }
+            }
+        }
+        return release;
+    }
+
+    /**
+     * The path prefix of a file an annotation processor wrote: {@code @generated/<module>/<main|test>/} and its path below the
+     * generated source output. No project file has it, so a generated file's row never collides with a source file's.
+     */
+    static final String GENERATED = "@generated/";
+
     /** A file's row before its header proof, which needs the definer indexes of the route (3.18). Nothing of its bytes. */
     private record Pending(String path, long size, long mtimeNanos, Identity kappa, Identity sum, List<String> types, List<FileRow.Fault> faults,
                            Set<String> headerTargets, ProofCollector.Observations reads) { }
@@ -82,14 +100,20 @@ final class ModuleJob {
         var pending = new ArrayList<Pending>();
         var seen = new HashSet<ByteBuffer>();
         long headerStarted = System.nanoTime();
-        var compiled = HeaderCompiler.compile(toCompile, classpath, Path.of(boot.model.jdkHome()), release, options, digest);
+        var processing = module.scope(scope).processing();
+        var processorPath = new ArrayList<Path>();
+        for (var location : processing.processorPath()) processorPath.add(boot.repository.resolve(location));
+        var compiled = HeaderCompiler.compile(toCompile, classpath, Path.of(boot.model.jdkHome()), release, options, digest,
+                processing, processorPath, GENERATED + module.name() + (scope == LocalStore.MAIN ? "/main/" : "/test/"));
         boot.headerNanos.addAndGet(System.nanoTime() - headerStarted);
         try (compiled) {
-            var extract = new SourceFacts(digest, compiled.elements, compiled.types, options.contains("-parameters"));
+            var extract = new SourceFacts(digest, compiled.elements, compiled.types, options.contains("-parameters"), target(options, module.release()) >= 11);
             var unitsByPath = new HashMap<String, HeaderCompiler.Unit>();
             for (var u : compiled.units) unitsByPath.put(u.path, u);
-            // 4. Each compilation unit, in path order.
-            for (var file : found) {
+            // 4. Each compilation unit, in path order: the scope's files, then what its processors wrote (stamped with no time).
+            var units = new ArrayList<Found>(found);
+            for (var u : compiled.units) if (u.generated) units.add(new Found(u.path, null, 0));
+            for (var file : units) {
                 var unit = unitsByPath.get(file.path());
                 var kappa = unit.kappa == null ? sums.zero() : unit.kappa; // javac could not read it: the file is a parse fault
                 if (!unit.parsed()) {

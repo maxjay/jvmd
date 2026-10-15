@@ -28,10 +28,23 @@ public record ProjectModel(String root, String jdkHome, List<Module> modules, by
         public Scope scope(int scope) { return scope == LocalStore.MAIN ? main : test; }
     }
 
-    public record Scope(List<String> sourceRoots, List<Dependency> dependencies) { }
+    public record Scope(List<String> sourceRoots, List<Dependency> dependencies, Processing processing) { }
 
     /** Exactly one of {@code location} (a jar) and {@code module} (a sibling) is set. */
     public record Dependency(String coordinate, String location, String module) { }
+
+    /**
+     * Annotation processing in a scope's header compilation (amendments 4.8): absent from the model means none.
+     *
+     * @param mode          {@code none}, {@code full} or {@code only}; header compilation treats {@code only} as {@code full}
+     * @param processorPath jar locations, as dependency locations are written; empty means processors are found on the classpath
+     * @param processors    explicit processor class names, empty for discovery
+     */
+    public record Processing(String mode, List<String> processorPath, List<String> processors) {
+        public static final Processing NONE = new Processing("none", List.of(), List.of());
+
+        public boolean enabled() { return !mode.equals("none"); }
+    }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -60,7 +73,14 @@ public record ProjectModel(String root, String jdkHome, List<Module> modules, by
                 throw new Fault("Dependency " + text(d, "coordinate") + " must have exactly one of location and module");
             deps.add(new Dependency(text(d, "coordinate"), location, module));
         }
-        return new Scope(strings(node.path("sourceRoots")), List.copyOf(deps));
+        return new Scope(strings(node.path("sourceRoots")), List.copyOf(deps), processing(node.path("processing")));
+    }
+
+    private static Processing processing(JsonNode node) {
+        if (node.isMissingNode() || node.isNull()) return Processing.NONE;
+        String mode = node.path("mode").asText("full");
+        if (!List.of("none", "full", "only").contains(mode)) throw new Fault("Unknown processing mode: " + mode);
+        return new Processing(mode, strings(node.path("processorPath")), strings(node.path("processors")));
     }
 
     private static String text(JsonNode node, String field) {

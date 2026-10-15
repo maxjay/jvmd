@@ -101,7 +101,8 @@ public final class MavenEngine implements AutoCloseable {
         for (Path path : build.inputs.stream().sorted().toList()) inputs.add(input(path, build.strong.contains(path)));
         String fingerprint = Hashing.sha256((context+Json.MAPPER.writeValueAsString(inputs)).getBytes(StandardCharsets.UTF_8));
         var graph = new Resolution(root.toString(), List.copyOf(build.modules), List.copyOf(build.nodes.values()),
-                List.copyOf(build.edges), Map.copyOf(build.classpaths), List.copyOf(build.warnings), fingerprint, true, false, Map.copyOf(build.compileOrder));
+                List.copyOf(build.edges), Map.copyOf(build.classpaths), List.copyOf(build.warnings), fingerprint, true, false, Map.copyOf(build.compileOrder),
+                Map.copyOf(build.postCompile));
         Cached cached = new Cached(context, inputs, graph);
         if (workspace == null) {
             Path temp = Files.createTempFile(directory, "graph-", ".tmp");
@@ -123,6 +124,9 @@ public final class MavenEngine implements AutoCloseable {
         final Set<Resolution.Edge> edges = new LinkedHashSet<>();
         final Map<String, List<String>> classpaths = new LinkedHashMap<>();
         final Map<String, List<String>> compileOrder = new LinkedHashMap<>();
+        final Map<String, List<String>> postCompile = new LinkedHashMap<>();
+        /** Per plugin jar and goal, the mojo's default phase ("" for none), so each descriptor is read once per resolution. */
+        final Map<String, String> mojoPhases = new java.util.concurrent.ConcurrentHashMap<>();
         final List<String> warnings = new ArrayList<>();
     }
     private Build build(Path root,List<Path> roots,boolean ignoreVersions,org.apache.maven.settings.Settings settings, boolean offline,
@@ -198,6 +202,7 @@ public final class MavenEngine implements AutoCloseable {
             build.classpaths.put(gav + ":main", List.copyOf(main)); build.classpaths.put(gav + ":test", List.copyOf(test));build.classpaths.put(gav+":runtime",List.copyOf(runtime));
             build.compileOrder.put(gav + ":main", List.copyOf(mainOrder)); build.compileOrder.put(gav + ":test", List.copyOf(testOrder));
             build.compileOrder.put(gav + ":runtime", List.copyOf(runtimeOrder));
+            build.postCompile.put(gav, postCompile(model, plugin -> pluginJar(session, plugin), build.inputs, build.mojoPhases));
         }
         build.dependencyMillis=(System.nanoTime()-modelsAt)/1e6;build.warnings.addAll(localOverlay.warnings());
         return build;
@@ -251,6 +256,86 @@ public final class MavenEngine implements AutoCloseable {
         return new Dependency(artifact, d.getScope(), d.isOptional(), d.getExclusions().stream()
                 .map(e -> new Exclusion(e.getGroupId(), e.getArtifactId(), "*", "*")).toList());
     }
+    /** Goals that rewrite classes after javac at their default phase, so a POM need not bind them to {@code process-classes}. */
+    private static final Set<String> CLASS_REWRITERS = Set.of(
+            "org.hibernate.orm.tooling:hibernate-enhance-maven-plugin:enhance", "org.hibernate.orm:hibernate-maven-plugin:enhance",
+            "org.codehaus.mojo:aspectj-maven-plugin:compile", "dev.aspectj:aspectj-maven-plugin:compile",
+            "org.jacoco:jacoco-maven-plugin:instrument", "com.ethlo.persistence.tools:eclipselink-maven-plugin:weave",
+            "de.empulse.eclipselink:staticweave-maven-plugin:weave", "org.apache.openjpa:openjpa-maven-plugin:enhance",
+            "io.ebean:ebean-maven-plugin:enhance", "net.bytebuddy:byte-buddy-maven-plugin:transform",
+            "org.datanucleus:datanucleus-maven-plugin:enhance", "com.nickwongdev:aspectj-maven-plugin:compile");
+
+    /** Goals bound to {@code process-classes} that write beside the classes (a manifest, an index) or only check them. */
+    private static final Set<String> CLASS_READERS = Set.of(
+            "org.apache.felix:maven-bundle-plugin:manifest", "biz.aQute.bnd:bnd-maven-plugin:bnd-process",
+            "org.jboss.jandex:jandex-maven-plugin:jandex", "io.smallrye:jandex-maven-plugin:jandex",
+            "org.eclipse.sisu:sisu-maven-plugin:main-index", "org.apache.maven.plugins:maven-plugin-plugin:descriptor",
+            "org.codehaus.mojo:animal-sniffer-maven-plugin:check", "de.thetaphi:forbiddenapis:check");
+
+    /**
+     * The plugin goals of a module's build that rewrite its main classes after javac: any goal that runs at {@code process-classes},
+     * explicitly or by its mojo's default phase (from the plugin's descriptor in the local repository, when it is there), and the known
+     * rewriters wherever they run. Not: an execution bound to phase {@code none}, and the known goals that only write beside the classes or
+     * check them. From the effective model, so inherited and profile-activated plugins count. Every plugin jar consulted, present or
+     * absent, is added to {@code consulted}: the answer changes when one is downloaded, so the cached resolution must too.
+     */
+    static List<String> postCompile(org.apache.maven.model.Model model, java.util.function.Function<org.apache.maven.model.Plugin, Path> jars,
+                                    Set<Path> consulted, Map<String, String> phases) {
+        var out = new ArrayList<String>();
+        if (model.getBuild() == null) return out;
+        for (var plugin : model.getBuild().getPlugins())
+            for (var execution : plugin.getExecutions())
+                for (var goal : execution.getGoals()) {
+                    String key = plugin.getGroupId() + ":" + plugin.getArtifactId() + ":" + goal;
+                    String bound = execution.getPhase() == null || execution.getPhase().isBlank() ? null : execution.getPhase();
+                    if ("none".equals(bound) || CLASS_READERS.contains(key)) continue;
+                    String phase = bound;
+                    if (phase == null) {
+                        var jar = jars.apply(plugin);
+                        if (jar != null) {
+                            consulted.add(jar);
+                            String found = phases.computeIfAbsent(jar + "!" + goal, k -> { var p = defaultPhase(jar, goal); return p == null ? "" : p; });
+                            phase = found.isEmpty() ? null : found;
+                        }
+                    }
+                    if ("process-classes".equals(phase) || CLASS_REWRITERS.contains(key)) out.add(key + "@" + (phase == null ? "default" : phase));
+                }
+        return List.copyOf(out);
+    }
+
+    /** Where the local repository keeps a plugin's jar (split repositories included), or null when the model gives no version. */
+    private static Path pluginJar(org.eclipse.aether.RepositorySystemSession session, org.apache.maven.model.Plugin plugin) {
+        if (plugin.getVersion() == null || plugin.getVersion().isBlank()) return null;
+        var artifact = new DefaultArtifact(plugin.getGroupId(), plugin.getArtifactId(), "jar", plugin.getVersion());
+        return session.getLocalRepository().getBasedir().toPath().resolve(session.getLocalRepositoryManager().getPathForLocalArtifact(artifact)).toAbsolutePath().normalize();
+    }
+
+    /** A mojo's default phase from {@code META-INF/maven/plugin.xml} in the plugin jar, or null when the jar or the mojo is not there. */
+    private static String defaultPhase(Path jar, String goal) {
+        if (!Files.isRegularFile(jar)) return null;
+        try (var zip = new java.util.zip.ZipFile(jar.toFile())) {
+            var entry = zip.getEntry("META-INF/maven/plugin.xml");
+            if (entry == null) return null;
+            var factory = javax.xml.parsers.DocumentBuilderFactory.newInstance();
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            org.w3c.dom.Document document;
+            try (var in = zip.getInputStream(entry)) { document = factory.newDocumentBuilder().parse(in); }
+            var mojos = document.getElementsByTagName("mojo");
+            for (int i = 0; i < mojos.getLength(); i++) {
+                var mojo = (org.w3c.dom.Element) mojos.item(i);
+                if (goal.equals(child(mojo, "goal"))) return child(mojo, "phase");
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+    private static String child(org.w3c.dom.Element parent, String name) {
+        for (var node = parent.getFirstChild(); node != null; node = node.getNextSibling())
+            if (node instanceof org.w3c.dom.Element element && element.getTagName().equals(name)) return element.getTextContent().trim();
+        return null;
+    }
+
     private static void walk(DependencyNode node, String parent, String root, Build build,
                              Set<String> main, Set<String> test,Set<String> runtime, Set<DependencyNode> seen,
                              java.util.function.Function<org.eclipse.aether.artifact.Artifact,String> reactor, Set<String> mainOrder, Set<String> testOrder,
@@ -287,7 +372,7 @@ public final class MavenEngine implements AutoCloseable {
     }
     private String contextFingerprint() {
         String properties = environment.systemProperties().entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).sorted().collect(java.util.stream.Collectors.joining("\n"));
-        return Hashing.sha256(("workspace-models-v8\n" + models.mavenVersion() + "\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
+        return Hashing.sha256(("workspace-models-v10\n" + models.mavenVersion() + "\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
     }
     private static ProjectModelState.Input input(Path path, boolean strong) throws Exception {
         path = path.toAbsolutePath().normalize();

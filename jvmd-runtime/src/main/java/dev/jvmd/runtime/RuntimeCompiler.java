@@ -21,7 +21,8 @@ public final class RuntimeCompiler {
         var before=new LinkedHashMap<Path,String>();for(Path source:sources)before.put(source,Hashing.sha256(source));
         var args=new ArrayList<String>(options);if(options.stream().noneMatch(option->option.startsWith("-proc:")))args.add("-proc:none");args.addAll(List.of("-g","-parameters","-XDrawDiagnostics","-s",Files.createDirectories(temporary.resolve("generated")).toString(),"-d",output.toString()));
         if(!classpath.isEmpty())args.addAll(List.of("-classpath",String.join(java.io.File.pathSeparator,classpath.stream().map(Path::toString).toList())));
-        if(!sourceRoots.isEmpty())args.addAll(List.of("-sourcepath",String.join(java.io.File.pathSeparator,sourceRoots.stream().map(Path::toString).toList())));
+        // Always, even empty, as the in-process compile sets it: with no source path javac would look for sources on the classpath.
+        args.addAll(List.of("-sourcepath",String.join(java.io.File.pathSeparator,sourceRoots.stream().map(Path::toString).toList())));
         sources.forEach(source->args.add(source.toString()));Files.write(arguments,args.stream().map(RuntimeCompiler::quote).toList(),StandardCharsets.UTF_8);
         var tail=new StringBuilder();long start=System.nanoTime();Process child=null;
         try{
@@ -35,6 +36,9 @@ public final class RuntimeCompiler {
         }finally{if(child!=null&&child.isAlive())kill(child);delete(temporary);}
     }
     private static String quote(String value){return "\""+value.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n").replace("\r","\\r")+"\"";}
+    private static final java.util.concurrent.ConcurrentHashMap<Path,Object> OUTPUTS=new java.util.concurrent.ConcurrentHashMap<>();
+    /** One lock per output folder, taken by every writer of it in this process: a module's compile and publication, a hot swap's publication. */
+    public static Object outputLock(Path output){return OUTPUTS.computeIfAbsent(output.toAbsolutePath().normalize(),_->new Object());}
     public static void publish(Compilation compiled,Path output)throws Exception{
         output=output.toAbsolutePath().normalize();Files.createDirectories(output);
         for(var entry:compiled.classes().entrySet()){

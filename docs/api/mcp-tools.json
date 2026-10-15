@@ -724,6 +724,15 @@
             "type": "boolean",
             "default": false
           },
+          "ignore_post_compile": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 1000,
+            "description": "Modules (groupId:artifactId:version, groupId:artifactId or artifactId) whose post-compile goals leave the class files as javac wrote them. jvmd then compiles each of them itself when stale, into a folder only runs that name it see, and allows hot swaps in it."
+          },
           "limit": {
             "type": "integer",
             "minimum": 1,

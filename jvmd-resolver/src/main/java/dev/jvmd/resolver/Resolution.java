@@ -8,19 +8,27 @@ import java.util.Map;
  *
  * @param classpaths   per {@code gav:main|test|runtime}, the files a compiler would read: reactor modules only once built
  * @param compileOrder per {@code gav:main|test}, the compile classpath in Maven's order with every reactor module present, built or
- *                     not; per {@code gav:runtime}, the runtime classpath (compile and runtime scope, the module's own output
- *                     first) in the same form;
- *                     not, as {@code reactor:<gav>}; other entries are absolute file paths. The stage 2 project model reads this
+ *                     not, as {@code reactor:<gav>}; other entries are absolute file paths. Per {@code gav:runtime}, the runtime
+ *                     classpath (compile and runtime scope, the module's own output first) in the same form. The stage 2 project model
+ *                     reads this
+ * @param postCompile  per module gav, the plugin goals of its build that rewrite its classes after javac, as
+ *                     {@code groupId:artifactId:goal@phase}: any goal bound to {@code process-classes}, and the known enhancers and
+ *                     weavers at whatever phase they run
  */
 public record Resolution(String root, List<Module> modules, List<Node> nodes, List<Edge> edges,
                          Map<String, List<String>> classpaths, List<String> warnings,
-                         String fingerprint, boolean offline, boolean cached, Map<String, List<String>> compileOrder) {
+                         String fingerprint, boolean offline, boolean cached, Map<String, List<String>> compileOrder,
+                         Map<String, List<String>> postCompile) {
     public static final String REACTOR = "reactor:";
 
-    public Resolution { if (compileOrder == null) compileOrder = Map.of(); }
+    public Resolution { if (compileOrder == null) compileOrder = Map.of(); if (postCompile == null) postCompile = Map.of(); }
+    public Resolution(String root, List<Module> modules, List<Node> nodes, List<Edge> edges, Map<String, List<String>> classpaths,
+                      List<String> warnings, String fingerprint, boolean offline, boolean cached, Map<String, List<String>> compileOrder) {
+        this(root, modules, nodes, edges, classpaths, warnings, fingerprint, offline, cached, compileOrder, Map.of());
+    }
     public Resolution(String root, List<Module> modules, List<Node> nodes, List<Edge> edges, Map<String, List<String>> classpaths,
                       List<String> warnings, String fingerprint, boolean offline, boolean cached) {
-        this(root, modules, nodes, edges, classpaths, warnings, fingerprint, offline, cached, Map.of());
+        this(root, modules, nodes, edges, classpaths, warnings, fingerprint, offline, cached, Map.of(), Map.of());
     }
     /** Implements 4.3 and 4.6: module paths derived by Maven's model builder. */
     public record Module(String gav, String directory, String packaging, List<String> sources,
@@ -48,6 +56,6 @@ public record Resolution(String root, List<Module> modules, List<Node> nodes, Li
                        String path, String winner, String reason, boolean optional) { }
     /** Implements 4.4: module/artifact dependency edges with scope. */
     public record Edge(String src, String dst, String scope) { }
-    public Resolution cachedCopy() { return new Resolution(root, modules, nodes, edges, classpaths, warnings, fingerprint, offline, true, compileOrder); }
+    public Resolution cachedCopy() { return new Resolution(root, modules, nodes, edges, classpaths, warnings, fingerprint, offline, true, compileOrder, postCompile); }
     public List<String> classpath() { return classpaths.values().stream().flatMap(List::stream).distinct().toList(); }
 }

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.jvmd.boot.cold.stage1.Enumerate;
 import dev.jvmd.boot.cold.stage1.Stage1;
+import dev.jvmd.boot.provider.MavenModel;
+import dev.jvmd.core.Config;
 import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.hash.digests.Sha256;
@@ -14,9 +16,11 @@ import dev.jvmd.index.layer.machine.ClassFacts;
 import dev.jvmd.index.layer.machine.MachineLeaf;
 import dev.jvmd.index.layer.machine.MachineStore;
 import dev.jvmd.index.layer.machine.MachineTree;
+import dev.jvmd.resolver.MavenResolver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,6 +28,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -149,6 +154,55 @@ class MavenProjectTest {
             out.put(e.getKey(), MachineLeaf.decode(store.get(MachineStore.leafKey(k)), digest.width()));
         }
         return out;
+    }
+
+    /**
+     * The product's provider (demo plan A4): one jvmd-resolver resolution, nothing compiled. Its model is the same before and after the
+     * reactor is built, agrees with the model this test class derives from Maven's own compile, and boots to the same source leaves.
+     */
+    @Test void theProviderModelIsMavensAnswerWhetherOrNotTheReactorWasBuilt() throws Exception {
+        var digest = Sha256.INSTANCE;
+        int release = Stage2Support.FEATURE;
+        var root = Files.createTempDirectory("stage2-provider");
+        var state = Files.createTempDirectory("stage2-provider-state");
+        try {
+            generate(root, release);
+            var jdk = Path.of(System.getProperty("java.home"));
+            var config = new Config(jdk, null, repository(), 3, Duration.ofHours(1), 2048, false, state, state.resolve("socket"));
+            MavenModel.Result unbuilt, built;
+            try (var resolver = new MavenResolver(config)) { unbuilt = MavenModel.of(resolver.resolve(root), repository(), jdk); }
+            var maven = MavenModelHelper.build(root, repository(), release); // runs mvn compile: from here on every module is built
+            try (var resolver = new MavenResolver(config)) { built = MavenModel.of(resolver.resolve(root), repository(), jdk); }
+            assertThat(new String(built.json())).as("built or not, one model").isEqualTo(new String(unbuilt.json()));
+            assertThat(unbuilt.warnings()).isEmpty();
+
+            var provider = unbuilt.parse();
+            provider.validate();
+            var expected = ProjectModel.parse(maven.json());
+            assertThat(provider.modules().stream().map(ProjectModel.Module::name).toList())
+                    .containsExactlyInAnyOrderElementsOf(expected.modules().stream().map(ProjectModel.Module::name).toList());
+            for (var m : provider.modules()) {
+                var e = expected.modules().stream().filter(x -> x.name().equals(m.name())).findFirst().orElseThrow();
+                assertThat(m.coordinate()).isEqualTo(e.coordinate());
+                assertThat(m.release()).isEqualTo(e.release());
+                assertThat(m.main().dependencies()).as("main dependencies of %s, in order", m.name()).isEqualTo(e.main().dependencies());
+                assertThat(m.test().dependencies()).as("test dependencies of %s, in order", m.name()).isEqualTo(e.test().dependencies());
+                // The helper also lists the annotation processor output directory; the provider leaves it to stage 2's processors.
+                assertThat(m.main().sourceRoots()).isEqualTo(e.main().sourceRoots().stream().filter(r -> !r.endsWith("generated-sources/annotations")).toList());
+                assertThat(m.test().sourceRoots()).isEqualTo(e.test().sourceRoots().stream().filter(r -> !r.endsWith("generated-test-sources/test-annotations")).toList());
+            }
+            var fromProvider = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 4, repository(), ClassFacts::of)
+                    .run(Stage2Support.jdkOnly(digest).copy(), provider);
+            var fromMaven = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 4, repository(), ClassFacts::of)
+                    .run(Stage2Support.jdkOnly(digest).copy(), expected);
+            assertThat(fromProvider.faults()).isEmpty();
+            assertThat(fromProvider.leaves().keySet()).isEqualTo(fromMaven.leaves().keySet());
+            assertThat(fromProvider.leaves().keySet().stream().filter(k -> !fromProvider.leaves().get(k).equals(fromMaven.leaves().get(k))))
+                    .as("source leaves whose k differs (options: provider %s, maven %s)", provider.modules().getFirst().javacOptions(), expected.modules().getFirst().javacOptions())
+                    .isEmpty();
+            assertThat(fromProvider.annotations().keySet().stream().filter(k -> !fromProvider.annotations().get(k).equals(fromMaven.annotations().get(k))))
+                    .as("source leaves whose a differs").isEmpty();
+        } finally { Stage2Support.delete(root); Stage2Support.delete(state); }
     }
 
     @ParameterizedTest @MethodSource("cases")

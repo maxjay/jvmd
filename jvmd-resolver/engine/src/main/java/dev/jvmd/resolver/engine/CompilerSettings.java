@@ -23,6 +23,7 @@ public final class CompilerSettings {
             options.add("-source");options.add(source);options.add("-target");options.add(target);
         }
         if(Boolean.parseBoolean(value(config,"enablePreview",model,"maven.compiler.enablePreview","false")))options.add("--enable-preview");
+        if(Boolean.parseBoolean(value(config,"parameters",model,"maven.compiler.parameters","false")))options.add("-parameters");
         String encoding=value(config,"encoding",model,"project.build.sourceEncoding","UTF-8");options.add("-encoding");options.add(encoding);
         var args=config.getChild(test?"testCompilerArgs":"compilerArgs");if(args==null&&test)args=config.getChild("compilerArgs");
         if(args!=null)for(var arg:args.getChildren())if(arg.getValue()!=null)options.add(arg.getValue());

@@ -1,0 +1,164 @@
+package dev.jvmd.boot.provider;
+
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.jvmd.core.Json;
+import dev.jvmd.index.layer.local.ProjectModel;
+import dev.jvmd.resolver.Resolution;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * The stage 2 project model of a Maven reactor (stage 2, section 8 and appendix A; demo plan A4), translated from one jvmd-resolver
+ * {@link Resolution}. Nothing is compiled and no lifecycle runs: each scope's dependencies are Maven's compile classpath, in Maven's
+ * order, where a reactor module is a sibling wherever it occurs, built or not.
+ *
+ * <p>Annotation processor output directories are not source roots: the processors run inside stage 2 (amendments 4.8), so what an
+ * earlier build left there would declare the generated types twice. A generated-sources directory that contains the processor output
+ * is dropped with it; the resolver lists the generator subdirectories beside it separately.
+ */
+public final class MavenModel {
+    private MavenModel() { }
+
+    /**
+     * @param json     the model document; its digest is the model hash of the LOCAL root
+     * @param warnings what the model cannot express and therefore left out, one line each
+     */
+    public record Result(byte[] json, List<String> warnings) {
+        public ProjectModel parse() { return ProjectModel.parse(json); }
+    }
+
+    /**
+     * @param repository Maven's local repository: jar locations under it are written relative to it
+     * @param jdkHome    the JDK the project compiles against
+     * @throws ProjectModel.Fault if the resolution predates {@link Resolution#compileOrder()}
+     */
+    public static Result of(Resolution resolution, Path repository, Path jdkHome) {
+        var root = Path.of(resolution.root()).toAbsolutePath().normalize();
+        var repo = repository.toAbsolutePath().normalize();
+        var names = new HashMap<String, String>();
+        var modules = new ArrayList<Resolution.Module>();
+        for (var m : resolution.modules()) {
+            if (m.packaging().equals("pom")) continue;
+            var dir = Path.of(m.directory()).toAbsolutePath().normalize();
+            names.put(m.gav(), dir.equals(root) ? "root" : slashes(root.relativize(dir)));
+            modules.add(m);
+        }
+        var coordinates = new HashMap<String, String>();
+        for (var node : resolution.nodes()) if (node.path() != null) coordinates.putIfAbsent(node.path(), node.gav());
+
+        var warnings = new ArrayList<String>();
+        var doc = Json.MAPPER.createObjectNode();
+        doc.put("root", slashes(root));
+        doc.put("jdkHome", slashes(jdkHome.toAbsolutePath().normalize()));
+        var list = doc.putArray("modules");
+        for (var m : modules) {
+            var name = names.get(m.gav());
+            var main = dependencies(resolution, m.gav() + ":main", names, coordinates, repo, name, warnings);
+            var test = dependencies(resolution, m.gav() + ":test", names, coordinates, repo, name, warnings);
+            test.removeAll(main);
+            var mainRoots = roots(root, m.sources(), m.processing().generatedDirectory());
+            boolean modular = moduleInfo(root, mainRoots);
+            ObjectNode node = list.addObject();
+            node.put("name", name).put("coordinate", m.gav()).put("release", release(m)).put("moduleInfo", modular);
+            var options = node.putArray("javacOptions");
+            m.compilerOptions().forEach(options::add);
+            // As the compiler plugin passes it: a module descriptor records its project version.
+            if (modular) options.add("--module-version").add(m.gav().substring(m.gav().lastIndexOf(':') + 1));
+            var scopes = node.putObject("scopes");
+            scope(scopes.putObject("main"), mainRoots, main);
+            scope(scopes.putObject("test"), roots(root, m.testSources(), m.testProcessing().generatedDirectory()), test);
+        }
+        try {
+            return new Result(Json.MAPPER.writeValueAsBytes(doc), List.copyOf(warnings));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException(e); }
+    }
+
+    /** One dependency of the model: exactly one of {@code location} (a jar) and {@code module} (a sibling) is set. */
+    private record Dependency(String coordinate, String location, String module) { }
+
+    private static List<Dependency> dependencies(Resolution resolution, String key, Map<String, String> names, Map<String, String> coordinates,
+                                                 Path repo, String self, List<String> warnings) {
+        var order = resolution.compileOrder().get(key);
+        if (order == null) throw new ProjectModel.Fault("The resolution has no compile order for " + key + "; resolve the project again");
+        var out = new LinkedHashSet<Dependency>();
+        for (var entry : order) {
+            if (entry.startsWith(Resolution.REACTOR)) {
+                var gav = entry.substring(Resolution.REACTOR.length());
+                var sibling = names.get(gav);
+                if (sibling == null) {
+                    // A classifier jar of a sibling (a test-jar): no module leaf stands for it.
+                    warnings.add(self + " (" + key.substring(key.lastIndexOf(':') + 1) + "): sibling artifact " + gav + " is not a module leaf; left out");
+                    continue;
+                }
+                if (!sibling.equals(self)) out.add(new Dependency(gav, null, sibling));
+                continue;
+            }
+            var path = Path.of(entry).toAbsolutePath().normalize();
+            if (path.startsWith(repo)) {
+                var parts = repo.relativize(path);
+                int n = parts.getNameCount();
+                if (n >= 4) {
+                    var group = new StringBuilder();
+                    for (int i = 0; i < n - 3; i++) group.append(i == 0 ? "" : ".").append(parts.getName(i));
+                    out.add(new Dependency(group + ":" + parts.getName(n - 3) + ":" + parts.getName(n - 2), slashes(parts), null));
+                    continue;
+                }
+            }
+            // A system-scope or otherwise external jar: its own absolute location, under the coordinate Maven resolved it as.
+            var gav = coordinates.get(entry);
+            if (gav == null) { warnings.add(self + ": classpath entry " + entry + " has no coordinate; left out"); continue; }
+            out.add(new Dependency(gav, slashes(path), null));
+        }
+        return new ArrayList<>(out);
+    }
+
+    private static List<String> roots(Path root, List<String> sources, String processorOutput) {
+        var generated = processorOutput == null || processorOutput.isBlank() ? null : Path.of(processorOutput).toAbsolutePath().normalize();
+        var out = new ArrayList<String>();
+        for (var s : sources) {
+            var dir = Path.of(s).toAbsolutePath().normalize();
+            if (generated != null && generated.startsWith(dir)) continue;
+            out.add(dir.startsWith(root) ? slashes(root.relativize(dir)) : slashes(dir));
+        }
+        return out;
+    }
+
+    /** The language level: {@code --release}, else {@code -source}, else what the resolver read from the POM properties. */
+    private static int release(Resolution.Module m) {
+        var options = m.compilerOptions();
+        for (var flag : List.of("--release", "-source", "--source")) {
+            int i = options.indexOf(flag);
+            if (i >= 0 && i + 1 < options.size()) return level(options.get(i + 1));
+        }
+        return level(m.release());
+    }
+
+    private static int level(String text) {
+        if (text == null || text.isBlank()) return 0;
+        var t = text.strip();
+        if (t.startsWith("1.")) t = t.substring(2);
+        try { return Integer.parseInt(t); } catch (NumberFormatException e) { return 0; }
+    }
+
+    private static boolean moduleInfo(Path root, List<String> mainRoots) {
+        for (var r : mainRoots) if (Files.isRegularFile(root.resolve(r).resolve("module-info.java"))) return true;
+        return false;
+    }
+
+    private static void scope(ObjectNode node, List<String> roots, List<Dependency> dependencies) {
+        var r = node.putArray("sourceRoots");
+        roots.forEach(r::add);
+        var d = node.putArray("dependencies");
+        for (var dep : dependencies) {
+            var n = d.addObject().put("coordinate", dep.coordinate());
+            if (dep.location() != null) n.put("location", dep.location()); else n.put("module", dep.module());
+        }
+    }
+
+    private static String slashes(Path path) { return path.toString().replace('\\', '/'); }
+}

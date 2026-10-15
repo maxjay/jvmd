@@ -108,6 +108,29 @@ public record ProjectModel(String root, String jdkHome, List<Module> modules, by
                 }
         }
         if (!Files.isRegularFile(Path.of(jdkHome).resolve("lib/modules"))) throw new Fault("jdkHome has no lib/modules: " + jdkHome);
+        refuseSharedSources();
+    }
+
+    /**
+     * Demo plan A2: a source file is compiled by one module in one scope. Its records ({@code F}, {@code X}) are keyed by its path, so two
+     * modules or scopes compiling the same file would overwrite each other's. A source root that is, or lies under, a root of another
+     * module or scope is therefore a fault, never collapsed into one. Roots nested within one scope are fine: each file is found once.
+     */
+    private void refuseSharedSources() {
+        record Root(Path path, String owner) { }
+        var roots = new ArrayList<Root>();
+        for (var m : modules) {
+            for (var r : m.main().sourceRoots()) roots.add(new Root(resolve(r).toAbsolutePath().normalize(), m.name() + " (main)"));
+            for (var r : m.test().sourceRoots()) roots.add(new Root(resolve(r).toAbsolutePath().normalize(), m.name() + " (test)"));
+        }
+        for (int i = 0; i < roots.size(); i++)
+            for (int j = i + 1; j < roots.size(); j++) {
+                var a = roots.get(i);
+                var b = roots.get(j);
+                if (!a.owner().equals(b.owner()) && (a.path().startsWith(b.path()) || b.path().startsWith(a.path())))
+                    throw new Fault("Source root " + a.path() + " of " + a.owner() + " overlaps source root " + b.path() + " of " + b.owner()
+                            + ": a source file must belong to one module and scope");
+            }
     }
 
     /** A path of the model: absolute, or relative to the project root. */

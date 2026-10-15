@@ -150,6 +150,17 @@ class LocalCodecsTest {
                     .isInstanceOf(ProjectModel.Fault.class).hasMessageContaining("lib/modules");
             assertThatThrownBy(() -> ProjectModel.parse("{\"root\":\"x\",\"jdkHome\":\"y\",\"modules\":[{\"name\":\"a\",\"coordinate\":\"g:a:1\",\"scopes\":{\"main\":{\"dependencies\":[{\"coordinate\":\"g:b:1\"}]}}}]}".getBytes()))
                     .isInstanceOf(ProjectModel.Fault.class).hasMessageContaining("exactly one of location and module");
+            // Demo plan A2: a source file belongs to one module and scope; roots nested within one scope are fine.
+            var a = new Stage2Support.Mod("a", "g:a:1", List.of());
+            var sharing = new Stage2Support.Mod("b", "g:b:1", Stage2Support.FEATURE, List.of(), List.of("a/src/main/java/p"), List.of(), List.of(), List.of());
+            assertThatThrownBy(() -> ProjectModel.parse(Stage2Support.model(root, a, sharing)).validate())
+                    .isInstanceOf(ProjectModel.Fault.class).hasMessageContaining("a (main)").hasMessageContaining("b (main)").hasMessageContaining("overlaps");
+            var testInMain = new Stage2Support.Mod("b", "g:b:1", Stage2Support.FEATURE, List.of(), List.of("b/src"), List.of(), List.of("b/src/test/java"), List.of());
+            assertThatThrownBy(() -> ProjectModel.parse(Stage2Support.model(root, testInMain)).validate())
+                    .isInstanceOf(ProjectModel.Fault.class).hasMessageContaining("b (main)").hasMessageContaining("b (test)");
+            var nested = new Stage2Support.Mod("b", "g:b:1", Stage2Support.FEATURE, List.of(), List.of("b/src/main/java", "b/src/main/java/q", "b/src/main/java/../java"),
+                    List.of(), List.of("b/src/test/java"), List.of());
+            ProjectModel.parse(Stage2Support.model(root, a, nested)).validate();
             assertThat(Coordinate.parse("g:a:1")).isEqualTo(new Coordinate("g", "a", "1"));
             assertThatThrownBy(() -> Coordinate.parse("g:a")).isInstanceOf(IllegalArgumentException.class);
         } finally { Stage2Support.delete(root); }

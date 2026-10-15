@@ -80,15 +80,25 @@ public final class SourceFacts {
     private final Elements elements;
     private final Types types;
     private final boolean parameters;
+    private final boolean nestMates;
 
     /**
      * @param parameters whether the module compiles with {@code -parameters}: parameter names are then in the tail, as javac writes them
      */
     public SourceFacts(Digest digest, Elements elements, Types types, boolean parameters) {
+        this(digest, elements, types, parameters, true);
+    }
+
+    /**
+     * @param nestMates whether the module's class files are written for a target of 11 or later, where javac records a member type's
+     *                  nest host; for an older target it records none, and neither does the fact
+     */
+    public SourceFacts(Digest digest, Elements elements, Types types, boolean parameters, boolean nestMates) {
         this.digest = digest;
         this.elements = elements;
         this.types = types;
         this.parameters = parameters;
+        this.nestMates = nestMates;
     }
 
     /** The facts of the top-level types a file declares, and of their member types, in declaration order. */
@@ -221,7 +231,7 @@ public final class SourceFacts {
         if (nested) {
             Element top = type;
             while (top.getEnclosingElement() instanceof TypeElement enclosing) top = enclosing;
-            host = binaryName((TypeElement) top);
+            host = nestMates ? binaryName((TypeElement) top) : null;
             outer = binaryName((TypeElement) type.getEnclosingElement());
         }
         String signature = classSignature(type, errors);

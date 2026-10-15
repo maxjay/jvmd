@@ -133,6 +133,77 @@ class ContentTreeTest {
         assertThatThrownBy(() -> tree.verify(root, sink.nodes::get)).isInstanceOf(IllegalStateException.class);
     }
 
+    @ParameterizedTest @MethodSource("digests")
+    void aRangeVisitsExactlyItsEntriesAndReadsOnlyTheNodesThatCanHoldThem(Digest digest) {
+        var tree = new ContentTree(digest);
+        var all = entries(digest, 6000, 4);
+        var sink = new MapSink();
+        var root = tree.build(all, sink);
+        var random = new Random(9);
+        for (int i = 0; i < 40; i++) {
+            long lo = random.nextInt(18000), hi = lo + random.nextInt(i < 20 ? 300 : 9000);
+            var expected = new ArrayList<Long>();
+            for (var e : all) {
+                long k = ByteBuffer.wrap(e.key()).getLong();
+                if (k >= lo && k < hi) expected.add(k);
+            }
+            var visited = new ArrayList<Long>();
+            var reads = new int[1];
+            tree.forEach(root.hash(), h -> { reads[0]++; return sink.nodes.get(h); }, key(lo), key(hi), e -> visited.add(ByteBuffer.wrap(e.key()).getLong()));
+            assertThat(visited).isEqualTo(expected);
+            if (i < 20) assertThat(reads[0]).as("a narrow range reads a path, not the tree").isLessThan(sink.nodes.size() / 4);
+        }
+        var everything = new ArrayList<Entry>();
+        tree.forEach(root.hash(), sink.nodes::get, null, null, everything::add);
+        assertThat(everything).hasSize(all.size());
+    }
+
+    /**
+     * The bounded walk on deep trees (small B and CAP) with keys of every length, including 0x00 and 0xFF bytes: exactly the entries in
+     * range, in order, for open, inverted and prefix bounds, and no node fetched twice.
+     */
+    @ParameterizedTest @MethodSource("digests")
+    void aBoundedWalkOnADeepTreeVisitsExactlyItsRangeAndFetchesNoNodeTwice(Digest digest) {
+        var random = new Random(31);
+        for (int round = 0; round < 60; round++) {
+            var tree = new ContentTree(digest, 4, 3);
+            var keys = new java.util.TreeSet<byte[]>(Arrays::compareUnsigned);
+            int n = 1 + random.nextInt(400);
+            while (keys.size() < n) {
+                var k = new byte[random.nextInt(5)];
+                for (int i = 0; i < k.length; i++) k[i] = (byte) (random.nextInt(4) == 0 ? (random.nextBoolean() ? 0 : 0xFF) : random.nextInt(256));
+                keys.add(k);
+            }
+            var entries = new ArrayList<Entry>();
+            for (var k : keys) entries.add(new Entry(k, new byte[] {1}, digest.hash(k)));
+            var sink = new MapSink();
+            var root = tree.build(entries, sink);
+            for (int q = 0; q < 20; q++) {
+                byte[] from = random.nextInt(5) == 0 ? null : randomKey(random), to = random.nextInt(5) == 0 ? null : randomKey(random);
+                var expected = entries.stream().filter(e -> (from == null || Arrays.compareUnsigned(e.key(), from) >= 0)
+                        && (to == null || Arrays.compareUnsigned(e.key(), to) < 0)).map(e -> java.util.HexFormat.of().formatHex(e.key())).toList();
+                var fetched = new HashMap<Identity, Integer>();
+                var visited = new ArrayList<String>();
+                tree.forEach(root.hash(), h -> { fetched.merge(h, 1, Integer::sum); return sink.nodes.get(h); }, from, to,
+                        e -> visited.add(java.util.HexFormat.of().formatHex(e.key())));
+                assertThat(visited).isEqualTo(expected);
+                assertThat(fetched.values()).allMatch(c -> c == 1);
+                if (from != null && from.length > 0) {
+                    var prefixed = new ArrayList<String>();
+                    tree.forEachPrefix(root.hash(), sink.nodes::get, from, e -> prefixed.add(java.util.HexFormat.of().formatHex(e.key())));
+                    assertThat(prefixed).isEqualTo(entries.stream().filter(e -> e.key().length >= from.length
+                            && Arrays.equals(e.key(), 0, from.length, from, 0, from.length)).map(e -> java.util.HexFormat.of().formatHex(e.key())).toList());
+                }
+            }
+        }
+    }
+
+    private static byte[] randomKey(Random random) {
+        var k = new byte[random.nextInt(4)];
+        for (int i = 0; i < k.length; i++) k[i] = (byte) (random.nextInt(4) == 0 ? (random.nextBoolean() ? 0 : 0xFF) : random.nextInt(256));
+        return k;
+    }
+
     @Test void changingOneEntryRewritesOnlyAPathOfNodes() {
         var digest = Sha256.INSTANCE;
         var tree = new ContentTree(digest);

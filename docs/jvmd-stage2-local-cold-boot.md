@@ -153,7 +153,7 @@ Semantic leaf, definer and stub records do not include checkout paths. Their con
 
 ### 3.14 Stubs
 
-Sibling modules compile against cached class-file stubs synthesized from T, never by re-entering siblings' source. Stubs contain resolution attributes and minimal warning annotations; they do not open A. The cache has an S list per leaf and an ST blob per type. The outer stub's key includes exactly the direct member-type data it emits, not each child's oSum. Appendix B.10 defines the key.
+Sibling modules compile against cached class-file stubs synthesized from T, never by re-entering siblings' source. Stubs contain resolution attributes and, read from the leaf's A, the annotations each class, field and method retains, visible and invisible: annotation processors read a sibling's annotations through its stubs (a JPA metamodel generator decides a superclass by @MappedSuperclass). Type annotations, parameter annotations and names, record-component and package annotations are not emitted yet. The cache has an S list per leaf and annotation identity and an ST blob per type. The outer stub's key includes exactly the direct member-type data it emits, not each child's oSum; a type that emits annotations adds the digest of exactly those. Appendix B.10 defines the keys.
 
 ### 3.15 Defaults absent from MACHINE
 
@@ -205,6 +205,7 @@ E/EA targets seed implicit declaration dependencies but are not a complete looku
 | `DF\|leafSet` | Persisted all-definer, multiple-definer and disjoint roots |
 | `X\|H5\|...` | Current empty dependency/project/path reverse records |
 | `LROOT\|project` | Current commitment; prior commitments retained under numbered keys |
+| `LSTART\|project` | Wall-clock start of the boot that published the current commitment; a hint for the boot decision (5.7), outside the tree |
 | `C\|...`, `RS\|...` | Legacy reserved codecs; no records written by Stage 2 |
 
 ## 5. Pseudocode
@@ -216,12 +217,12 @@ ContentTree sorts keys; ContentList retains input order. Both use content-define
 ### 5.2a Stubs
 
 ```text
-stubs(leaf):
-    try S|k and each referenced ST blob
-    otherwise read the leaf's T and O
-    for each type: compute stKey from oSum and emitted direct-member-type data
-                  read ST|stKey or synthesize/write it from res
-    write S|k as the ordered list of type names and stKeys
+stubs(leaf, a):
+    try S|Digest(RENDERER || k || a) and each referenced ST blob
+    otherwise read the leaf's T, O and A
+    for each type: compute stKey from oSum, emitted direct-member-type data and emitted annotations
+                  read ST|stKey or synthesize/write it from res and A
+    write S|Digest(RENDERER || k || a) as the ordered list of type names and stKeys
 ```
 
 ### 5.3 Bind
@@ -302,7 +303,15 @@ Current raw X keys are a secondary index maintained only by LROOT publication; o
 
 ### 5.7 Boot decision
 
-Open the MACHINE generation for current FORMAT. Compare the stored project's LOCAL format with LocalFormat.of(current machine format). A matching commitment logs one skip line because warm boot is not implemented. Missing or incompatible LOCAL format causes a cold rebuild in the shared store; old roots remain history. A changed MACHINE FORMAT selects a different generation directory. Never decode old fact codecs as current or migrate records in place.
+Open the MACHINE generation for current FORMAT. A committed root is kept only while nothing it was built from changed (demo plan A3); warm boot not being implemented, anything else is a cold rebuild in the shared store, and old roots remain history. The root is kept, with one skip line, when all of these hold:
+
+- its LOCAL format is LocalFormat.of(current machine format) (checked before the root is decoded), it verifies, and its MACHINE root and model hash are the current ones;
+- its F rows, read through its own tree with each row's digest checked against the tree entry, are exactly the current source files. A file whose size differs is changed. A file whose modification time differs, or lies within two seconds (one FAT tick) of `LSTART|project`, is read and compared with the row's κ; any other file is unchanged without being read. A missing stamp means every file is read;
+- no jar entry of its RT rows (read the same way) that bound to nothing can now be opened.
+
+Not compared, and so the business of warm boot: a jar or the JDK changed in place (MACHINE is never re-committed), the bytes of jars indexed on the spot, processor paths and their configuration, and a file restored with other content under its old size and time. Anything that cannot be read is itself a reason to rebuild. The F and RT ranges are walked over their key range only; no X or other prefix is read. `LSTART|project` is written after LROOT, so a stamp lost or left by an earlier boot is earlier than the root's own and only makes more files be read.
+
+A changed MACHINE FORMAT selects a different generation directory. Never decode old fact codecs as current or migrate records in place.
 
 ## 6. Code structure
 
@@ -354,7 +363,7 @@ Memory includes active javac tasks/scope facts, persistent state versions, compl
 22. Persisted DF reopens lazily across boots/checkouts, preserves historical snapshots and opens only changed O leaves for a derived state; large/random histories equal fresh folds.
 23. Planned ancestry, persistent leaf-set Diff and conflict apply preserve fresh-build roots across workers and add/remove/move/repeat histories. A small route edit never reopens an unrelated large O universe. Shared nodes are readable after any root-publishing flush.
 24. `Deprecated.since` changes A/a only; full Deprecated/SafeVarargs values remain recoverable; source and binary A match.
-25. Incompatible MACHINE parser/LOCAL versions cold boot; old generations remain opaque/untouched. A second start of the current format takes the skip branch.
+25. Incompatible MACHINE parser/LOCAL versions cold boot; old generations remain opaque/untouched. A second start of the current format takes the skip branch only while 5.7 finds nothing changed: an edited, added or removed source file, a changed model, a jar that can now be read or a row that is not the root's own causes a cold rebuild.
 26. Repeated reverse churn leaves prefix work proportional to current consumers in memory and Rocks, including reopen. Old LOCAL roots still verify after current X deletion. Failed publication leaves root and reverse keys unchanged.
 27. Fresh repeated cold boots and another checkout reuse exact DF/DC: zero O-universe traversal and zero conflict build/apply/node emission. Count work, not just equal output bytes.
 
@@ -370,7 +379,7 @@ Kotlin/Scala/Groovy contribute through compiled class files, not SourceFacts. Bu
 
 One RocksDB per MACHINE generation contains shared nodes/leaves and project-prefixed LOCAL records. One atomic write retains the previous LROOT, updates current X inserts/deletes, and swaps LROOT. Historical empty X values live in immutable LOCAL nodes. Garbage collection of other unreachable records and the history retention policy are deferred.
 
-Current representation is `layout=4;parser=4;local=5`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
+Current representation is `layout=4;parser=7;local=26`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write. Parser 7 and LOCAL 26 write every string as lossless modified UTF-8 (amendments 2.1); parsers 5 and 6 and LOCAL 6–23 named other codecs on the unmerged stage 3 branch and are skipped.
 
 ## 10. Implementation and completion rules
 
@@ -401,11 +410,11 @@ Completion requires the invariants above under both digests, the real Rocks reop
 }
 ```
 
-Dependencies are already mediated, ordered and transitive. Each has exactly one of location or module. Test dependencies are additions to main. JDK entries are supplied from jdkHome and not listed. A missing source root is skipped; an empty scope has an empty leaf. Reject duplicate module names, unknown sibling modules, malformed coordinates, invalid JDK homes and cycles. Store normalized MOD/RT/SL records and the hash of original model bytes, not a second serialized model.
+Dependencies are already mediated, ordered and transitive. Each has exactly one of location or module. Test dependencies are additions to main. JDK entries are supplied from jdkHome and not listed. A missing source root is skipped; an empty scope has an empty leaf. Reject duplicate module names, unknown sibling modules, malformed coordinates, invalid JDK homes and cycles. Reject a source root that is, or lies under, a source root of another module or scope: F and X are keyed by path, so a file must belong to one module and scope (demo plan A2). Roots that exist are compared as written (normalized) and as real paths, so a link into another module's root is an overlap; a root that does not exist is skipped, as the boot skips it; roots nested within one scope are allowed, each file being found once. A root that is itself a link is walked through its target, its files keeping paths under the root as written. Store normalized MOD/RT/SL records and the hash of original model bytes, not a second serialized model.
 
 ## Appendix B. Codecs
 
-Primitives use the existing Codec: big-endian integers, fixed-width `id`, length-prefixed `str`/`lenBytes`, NUL-terminated `zstr`, u32-counted lists and explicit optional markers. Literal ASCII tags include their displayed `|`; variable fields below use explicit encodings. Human-readable key separators in MOD/RT/F/SL follow LocalStore's key functions; X's suffix uses the self-delimiting encoding in B.9.
+Primitives use the existing Codec: big-endian integers, fixed-width `id`, length-prefixed `str`/`lenBytes`, NUL-terminated `zstr`, (strings in lossless modified UTF-8 over UTF-16 code units, NUL as `C0 80`, malformed or noncanonical bytes rejected; amendments 2.1; this applies to keys built outside Codec too), u32-counted lists and explicit optional markers. Literal ASCII tags include their displayed `|`; variable fields below use explicit encodings. Human-readable key separators in MOD/RT/F/SL follow LocalStore's key functions; X's suffix uses the self-delimiting encoding in B.9.
 
 ### B.1 MachineLeaf and annotation roots
 
@@ -468,13 +477,14 @@ LROOT|project = str FORMAT || id local.hash || id local.sum || u32 count || u8 l
               || id machineRoot || id modelHash || id commitment
 commitment = Digest(all preceding value bytes)
 history key = LROOT|project|u32 n, counting from 1
+LSTART|project = u64 wall-clock milliseconds at which the publishing boot started (before any source file was statted)
 ```
 
 ### B.8 FORMAT
 
 ```text
-machine = layout=4;digest=<name>;jdk=<feature>;parser=4
-local   = <machine>;local=5;javac=<runtime feature>
+machine = layout=4;digest=<name>;jdk=<feature>;parser=7
+local   = <machine>;local=26;javac=<runtime feature>
 ```
 
 Parser changes when identical class bytes would yield different retained facts/projections. LOCAL changes when its record layout or persisted proof meaning changes. Incompatible commitments cannot take a current-format skip.
@@ -494,13 +504,14 @@ TYPE is 0, FIELD 1, METHOD 2. Reverse form numbers differ from F's absence numbe
 ### B.10 Stub records
 
 ```text
-S|k      = list<(str internalName || id stKey)>
+S|Digest(u8 RENDERER || k || a) = list<(str internalName || id stKey)>
 ST|stKey = lenBytes classBytes
-stKey    = Digest(zstr typeKey || id oSum || sorted direct-member-type encodings)
+stKey    = Digest(zstr typeKey || id oSum || sorted direct-member-type encodings || u8 0 || u8 RENDERER || [id shown])
 member encoding = zstr memberInternalName || opt<str> exactInnerName || u16 emittedInnerFlags
+shown    = Digest(per emitting element in key order: lenBytes m || annotation list visible || annotation list invisible)
 ```
 
-Sorting is unsigned byte order. A type without member types has the original Digest(typeKey || oSum) key. A child method change cannot affect an outer stub that only emits the child's name/nesting/flags. S/ST are shared derivable caches and need not be retained by project roots.
+Sorting is unsigned byte order. A type without member types has no member part. RENDERER is the stub renderer's version (2: retained annotations); a stub cached by another renderer is never served. A member encoding starts with a non-empty name, so the 0 after the last one is unambiguous. shown covers only what the stub emits: parameter names or type annotations in a tail do not move the key, and a type that emits no annotations has no shown part. A child method change cannot affect an outer stub that only emits the child's name/nesting/flags. S/ST are shared derivable caches and need not be retained by project roots.
 
 ## Appendix C. Header compilation and SourceFacts
 

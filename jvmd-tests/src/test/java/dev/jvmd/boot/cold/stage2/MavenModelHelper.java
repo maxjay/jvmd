@@ -38,8 +38,8 @@ final class MavenModelHelper {
      */
     static Model build(Path root, Path repository, int release) throws IOException, InterruptedException {
         var modules = modules(root, root, new ArrayList<>());
-        maven(root, "-Dmdep.includeScope=compile", "-Dmdep.outputFile=target/jvmd-classpath-main.txt", "help:effective-pom", "-Doutput=" + root.resolve("target/jvmd-effective-pom.xml").toAbsolutePath());
-        maven(root, "-Dmdep.includeScope=test", "-Dmdep.outputFile=target/jvmd-classpath-test.txt");
+        maven(root, "-DincludeScope=compile", "-Dmdep.outputFile=target/jvmd-classpath-main.txt", "help:effective-pom", "-Doutput=" + root.resolve("target/jvmd-effective-pom.xml").toAbsolutePath());
+        maven(root, "-DincludeScope=test", "-Dmdep.outputFile=target/jvmd-classpath-test.txt");
 
         var effective = effectiveProjects(root.resolve("target/jvmd-effective-pom.xml"));
         var byClasses = new LinkedHashMap<Path, Module>();
@@ -55,7 +55,8 @@ final class MavenModelHelper {
             var test = classpath(m.directory().resolve("target/jvmd-classpath-test.txt"));
             var mainEntries = entries(main, byClasses, repository, m);
             var testOnly = new ArrayList<>(entries(test, byClasses, repository, m));
-            testOnly.removeAll(mainEntries);
+            // Additional test dependencies only (stage 2, 2.1): the entries are arrays, so compare them by content, not identity.
+            testOnly.removeIf(t -> mainEntries.stream().anyMatch(x -> java.util.Arrays.equals(x, t)));
             ObjectNode node = list.addObject();
             node.put("name", m.name()).put("coordinate", m.coordinate()).put("release", release).put("moduleInfo", false);
             // As the build passes them: the compiler plugin gives a module its project version as --module-version.

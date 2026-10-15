@@ -33,14 +33,16 @@ public interface LocalStore extends MachineStore {
     // ---- key layout (section 4). Defined here so every implementation writes the same bytes. -------------------------------
     int MAIN = 0, TEST = 1;
 
-    static byte[] moduleKey(Identity projectKey, String module) { return join("MOD|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8)); }
+    static byte[] moduleKey(Identity projectKey, String module) { return join("MOD|", projectKey.view(), "|", dev.jvmd.core.tree.Mutf8.encode(module)); }
     static byte[] sourceLeafKey(Identity projectKey, String module, int scope) {
-        return join("SL|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
+        return join("SL|", projectKey.view(), "|", dev.jvmd.core.tree.Mutf8.encode(module), "|", new byte[] {(byte) scope});
     }
     static byte[] routeKey(Identity projectKey, String module, int scope) {
-        return join("RT|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
+        return join("RT|", projectKey.view(), "|", dev.jvmd.core.tree.Mutf8.encode(module), "|", new byte[] {(byte) scope});
     }
-    static byte[] fileKey(Identity projectKey, String path) { return join("F|", projectKey.view(), "|", path.getBytes(StandardCharsets.UTF_8)); }
+    /** The prefix of every {@code RT|} key of the project. */
+    static byte[] routePrefix(Identity projectKey) { return join("RT|", projectKey.view(), "|"); }
+    static byte[] fileKey(Identity projectKey, String path) { return join("F|", projectKey.view(), "|", dev.jvmd.core.tree.Mutf8.encode(path)); }
     static byte[] disjointKey(Identity leafSetExt) { return join("DD|", leafSetExt.view()); }
     static byte[] siblingKey(Identity leafSetSib) { return join("DS|", leafSetSib.view()); }
     static byte[] conflictsKey(Identity routeHash) { return join("DC|", routeHash.view()); }
@@ -50,6 +52,12 @@ public interface LocalStore extends MachineStore {
     static byte[] stubKey(Identity k) { return join("S|", k.view()); }
     static byte[] stubTypeKey(Identity stKey) { return join("ST|", stKey.view()); }
     static byte[] localRootKey(Identity projectKey) { return join("LROOT|", projectKey.view()); }
+    /**
+     * {@code u64} wall-clock milliseconds at which the boot that wrote the current root started. Not a record of the root and not in its
+     * tree: a hint for the skip rule, written after the root, so a stamp that is lost or left from an earlier boot is only ever earlier
+     * than the root's own, which makes the rule check more files, never fewer.
+     */
+    static byte[] bootStartKey(Identity projectKey) { return join("LSTART|", projectKey.view()); }
     /** A kept previous root; {@code n} counts from 1, oldest first. */
     static byte[] localRootHistoryKey(Identity projectKey, int n) {
         return join("LROOT|", projectKey.view(), "|", new byte[] {(byte) (n >>> 24), (byte) (n >>> 16), (byte) (n >>> 8), (byte) n});

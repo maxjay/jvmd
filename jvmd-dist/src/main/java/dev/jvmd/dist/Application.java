@@ -26,6 +26,8 @@ public final class Application implements AutoCloseable {
     private final dev.jvmd.index.SemanticMemoStore localMemos;
     private final dev.jvmd.analyzer.SourceNamespaces sourceNamespaces;
     private volatile MavenResolver resolver;
+    // Stage 1 at start and stage 2 per opened Maven project (demo plan, step 1); boots nothing until bootMachine.
+    private final LayeredIndex layered;
     private volatile dev.jvmd.runtime.JavaRuntime.Selection debuggeeRuntime;
     private volatile java.util.concurrent.CompletableFuture<IndexService> index;
     private volatile IndexService bootstrappingIndex;
@@ -48,6 +50,7 @@ public final class Application implements AutoCloseable {
     private record TypeCompletionCache(String generation,String prefix,List<Map<String,Object>> rows,boolean complete) { }
     public Application(Config config) {
         this.config = config;
+        layered = new LayeredIndex(config);
         // Restart reuse of unchanged content hashes (§90). Restored observations are validated
         // against current file stamps before use; the journal is never semantic authority.
         classpathFiles.persistence(config.stateDir().resolve("file-observations-v1.bin"));
@@ -73,6 +76,7 @@ public final class Application implements AutoCloseable {
                     :envelope.warn("index_reconciling: machine-wide repository inventory is still reconciling; results outside this session's resolved dependencies may be incomplete");
         });
         dispatcher.status("source_namespaces",sourceNamespaces::status);
+        dispatcher.status("layered_index",layered::status);
         dispatcher.register("session.open", (_, p) -> {
             awaitReady();
             var session = sessions.open(Path.of(Dispatcher.required(p, "root")));
@@ -95,6 +99,7 @@ public final class Application implements AutoCloseable {
             }
             return session.execute(() -> {
                 Resolution graph = workspace(session).roots().stream().anyMatch(root->Files.isRegularFile(root.resolve("pom.xml"))) ? refresh(session) : null;
+                if (graph != null) layered.local(graph);
                 return new Envelope(0, "live", false, null, session.warnings(), java.util.Map.of("session", session.id(),
                         "root", session.root().toString(), "classpath_entries", graph == null ? 0 : graph.classpath().size(),
                         "modules", graph == null ? 0 : graph.modules().size()));
@@ -1129,6 +1134,8 @@ public final class Application implements AutoCloseable {
     private void awaitReady(){if(config.indexOnStart())index();}
     /** Block until the daemon can serve sessions (storage open, persisted inventory restored). */
     public void awaitSessionCapable(){awaitReady();}
+    /** Stage 1 of the layered index: boots MACHINE, then the LOCAL layers of the sessions opened so far. {@code main} calls it before READY. */
+    public void bootMachine() throws java.io.IOException { layered.bootMachine(); }
     private void bindIndex(Session session,IndexService database)throws Exception {
         var graph=(Resolution)session.state("resolution");if(graph==null)return;
         String generation=graph.fingerprint()+":"+database.generation();
@@ -1214,6 +1221,7 @@ public final class Application implements AutoCloseable {
 
     @Override public void close() throws Exception {
         if(!closed.compareAndSet(false,true))return;
+        layered.close();
         try { sessions.close(); } finally {
             classpathFiles.flushObservations();
             try { if (resolver != null) resolver.close(); }
@@ -1267,8 +1275,9 @@ public final class Application implements AutoCloseable {
         server.start();
         try {
             app.awaitReady();
-            // Stage 1 of the layered index: the MACHINE cold boot, before READY. A failure here is a start failure.
-            dev.jvmd.boot.BootDecision.machine(config.stateDir().resolve("machine"), config);
+            // Stage 1 of the layered index: the MACHINE cold boot, before READY. A failure here is a start failure. Sessions opened
+            // meanwhile have their LOCAL boots waiting on it; they run in the background after it.
+            app.bootMachine();
             server.ready();
             System.out.println("READY " + config.socket());
             server.await();

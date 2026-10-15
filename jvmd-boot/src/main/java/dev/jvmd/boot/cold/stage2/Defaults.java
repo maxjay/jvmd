@@ -180,7 +180,11 @@ final class Defaults implements AutoCloseable {
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while indexing", interrupted);
-        } finally { pool.shutdownNow(); }
+        } finally {
+            // Stop what has not started, then join what has: no worker may outlive the store it writes into (as in stage 1).
+            pool.shutdownNow();
+            pool.close();
+        }
     }
 
     private Bind.Leaf index(Enumerate.Location location) {

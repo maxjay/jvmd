@@ -101,7 +101,7 @@ public final class MavenEngine implements AutoCloseable {
         for (Path path : build.inputs.stream().sorted().toList()) inputs.add(input(path, build.strong.contains(path)));
         String fingerprint = Hashing.sha256((context+Json.MAPPER.writeValueAsString(inputs)).getBytes(StandardCharsets.UTF_8));
         var graph = new Resolution(root.toString(), List.copyOf(build.modules), List.copyOf(build.nodes.values()),
-                List.copyOf(build.edges), Map.copyOf(build.classpaths), List.copyOf(build.warnings), fingerprint, true, false);
+                List.copyOf(build.edges), Map.copyOf(build.classpaths), List.copyOf(build.warnings), fingerprint, true, false, Map.copyOf(build.compileOrder));
         Cached cached = new Cached(context, inputs, graph);
         if (workspace == null) {
             Path temp = Files.createTempFile(directory, "graph-", ".tmp");
@@ -122,6 +122,7 @@ public final class MavenEngine implements AutoCloseable {
         final Map<String, Resolution.Node> nodes = new LinkedHashMap<>();
         final Set<Resolution.Edge> edges = new LinkedHashSet<>();
         final Map<String, List<String>> classpaths = new LinkedHashMap<>();
+        final Map<String, List<String>> compileOrder = new LinkedHashMap<>();
         final List<String> warnings = new ArrayList<>();
     }
     private Build build(Path root,List<Path> roots,boolean ignoreVersions,org.apache.maven.settings.Settings settings, boolean offline,
@@ -173,6 +174,8 @@ public final class MavenEngine implements AutoCloseable {
         var overlay = new OverlayReader(localOverlay);
         session.setWorkspaceReader(org.eclipse.aether.util.repository.ChainedWorkspaceReader.newInstance(overlay,org.eclipse.aether.util.repository.ChainedWorkspaceReader.newInstance(workspace,poms)));
         long modelsAt=System.nanoTime();build.modelMillis=(modelsAt-started)/1e6;
+        // A reactor module as the overlay substitutes it: by exact version, or by groupId:artifactId when versions are ignored.
+        java.util.function.Function<org.eclipse.aether.artifact.Artifact,String> reactor=a->{var m=localOverlay.match(new WorkspaceSource.Artifact(a.getGroupId(),a.getArtifactId(),a.getExtension(),a.getClassifier(),a.getVersion()));return m==null?null:m.gav();};
         for(var item:prepared){
             session.setUserProperties(item.properties()); models.associate(session, settings, item.directory(), remap(item.properties()), item.remotes()); var model=item.model();var remotes=item.remotes();var moduleDir=item.directory();var module=item.module();
             String gav=module.gav(),release=module.release();var sources=module.sources();var testSources=module.testSources();var m=model.getBuild();
@@ -185,12 +188,14 @@ public final class MavenEngine implements AutoCloseable {
             var main = new LinkedHashSet<String>(); var test = new LinkedHashSet<String>();var runtime=new LinkedHashSet<String>();
             runtime.add(m.getOutputDirectory());main.add(m.getOutputDirectory()); test.add(m.getTestOutputDirectory()); test.add(m.getOutputDirectory());
             var seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<DependencyNode, Boolean>());
-            walk(resolved.getRoot(), null, gav, build, main, test,runtime, seen);
+            var mainOrder = new LinkedHashSet<String>(); var testOrder = new LinkedHashSet<String>();
+            walk(resolved.getRoot(), null, gav, build, main, test,runtime, seen, reactor, mainOrder, testOrder);
             build.modules.add(new Resolution.Module(gav, moduleDir.toString(), model.getPackaging(), sources, testSources,
                     m.getOutputDirectory(), m.getTestOutputDirectory(), release,
                     model.getDependencies().stream().map(d -> d.getGroupId() + ":" + d.getArtifactId() + ":" + d.getVersion()).toList(),CompilerSettings.options(model,false),CompilerSettings.options(model,true),
                     processors(model,false,moduleDir,session,remotes,main,build),processors(model,true,moduleDir,session,remotes,test,build)));
             build.classpaths.put(gav + ":main", List.copyOf(main)); build.classpaths.put(gav + ":test", List.copyOf(test));build.classpaths.put(gav+":runtime",List.copyOf(runtime));
+            build.compileOrder.put(gav + ":main", List.copyOf(mainOrder)); build.compileOrder.put(gav + ":test", List.copyOf(testOrder));
         }
         build.dependencyMillis=(System.nanoTime()-modelsAt)/1e6;build.warnings.addAll(localOverlay.warnings());
         return build;
@@ -229,7 +234,7 @@ public final class MavenEngine implements AutoCloseable {
         boolean enabled=!"none".equals(proc)&&explicit;
         if(enabled&&paths.isEmpty())paths.addAll(classpath);
         lombok|=paths.stream().anyMatch(MavenEngine::lombok);
-        return new Resolution.Processing(List.copyOf(paths),names,enabled,enabled&&lombok,ProcessorSettings.generatedDirectory(model,test,module));
+        return new Resolution.Processing(List.copyOf(paths),names,enabled,enabled&&lombok,ProcessorSettings.generatedDirectory(model,test,module),proc,!coordinates.isEmpty()&&!"none".equals(proc));
     }
     private static boolean lombok(String path){return Path.of(path).getFileName().toString().matches("lombok-[0-9].*\\.jar");}
     private static RepositoryPolicy policy(org.apache.maven.model.RepositoryPolicy policy) {
@@ -245,7 +250,8 @@ public final class MavenEngine implements AutoCloseable {
                 .map(e -> new Exclusion(e.getGroupId(), e.getArtifactId(), "*", "*")).toList());
     }
     private static void walk(DependencyNode node, String parent, String root, Build build,
-                             Set<String> main, Set<String> test,Set<String> runtime, Set<DependencyNode> seen) {
+                             Set<String> main, Set<String> test,Set<String> runtime, Set<DependencyNode> seen,
+                             java.util.function.Function<org.eclipse.aether.artifact.Artifact,String> reactor, Set<String> mainOrder, Set<String> testOrder) {
         var artifact = node.getArtifact();
         String id = root + "|" + (artifact == null ? root : artifact.toString());
         String gav = artifact == null ? root : artifact.getGroupId() + ":" + artifact.getArtifactId() + ":" + artifact.getVersion();
@@ -258,16 +264,23 @@ public final class MavenEngine implements AutoCloseable {
                 winnerId == null ? "selected by Maven" : "conflict: selected " + winnerId, node.getDependency() != null && node.getDependency().isOptional());
         build.nodes.merge(id, entry, (old, current) -> old.winner() != null && current.winner() == null ? current : old);
         if (parent != null) build.edges.add(new Resolution.Edge(parent, id, scope));
+        if (winner == null && artifact != null && artifact.getExtension().equals("jar")) {
+            // The compile order keeps a reactor module in its place whether or not it was built (an unbuilt one has no file and is
+            // left out of the classpaths below); a classifier is kept so a consumer can tell a test-jar from the module's main output.
+            String sibling = reactor.apply(artifact);
+            String ordered = sibling != null ? Resolution.REACTOR + sibling + (artifact.getClassifier().isEmpty() ? "" : ":" + artifact.getClassifier()) : path;
+            if (ordered != null) { testOrder.add(ordered); if (!scope.equals("test") && !scope.equals("runtime")) mainOrder.add(ordered); }
+        }
         if (winner == null && artifact != null && artifact.getExtension().equals("jar") && path != null) {
             test.add(path);if(!scope.equals("test")&&!scope.equals("provided"))runtime.add(path);
             if (!scope.equals("test") && !scope.equals("runtime")) main.add(path);
         }
         if (!seen.add(node) || winner != null) return;
-        for (var child : node.getChildren()) walk(child, id, root, build, main, test,runtime, seen);
+        for (var child : node.getChildren()) walk(child, id, root, build, main, test,runtime, seen, reactor, mainOrder, testOrder);
     }
     private String contextFingerprint() {
         String properties = environment.systemProperties().entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).sorted().collect(java.util.stream.Collectors.joining("\n"));
-        return Hashing.sha256(("workspace-models-v6\n" + models.mavenVersion() + "\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
+        return Hashing.sha256(("workspace-models-v7\n" + models.mavenVersion() + "\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
     }
     private static ProjectModelState.Input input(Path path, boolean strong) throws Exception {
         path = path.toAbsolutePath().normalize();

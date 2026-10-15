@@ -256,6 +256,10 @@ class LocalColdBootTest {
         var a = actual.snapshot();
         var e = expected.snapshot();
         if (except != null) { a.remove(except); e.remove(except); }
+        // The boot-start stamp is a time, not a record of the root.
+        var stamp = "LSTART|".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        a.keySet().removeIf(k -> Arrays.equals(k, 0, Math.min(k.length, stamp.length), stamp, 0, stamp.length));
+        e.keySet().removeIf(k -> Arrays.equals(k, 0, Math.min(k.length, stamp.length), stamp, 0, stamp.length));
         assertThat(a.keySet()).as("record keys").containsExactlyElementsOf(e.keySet());
         for (var entry : e.entrySet()) assertThat(a.get(entry.getKey())).isEqualTo(entry.getValue());
     }
@@ -614,9 +618,10 @@ class LocalColdBootTest {
         var project = multiProject();
         try {
             var booted = boot(digest, multiModel(project, false), 4);
-            // MACHINE and shared DF/DD/DS/DC/S/ST records may be read; nothing of the project's own.
+            // MACHINE (including the annotation leaves AL a sibling's stubs carry) and shared DF/DD/DS/DC/S/ST records may be read;
+            // nothing of the project's own.
             assertThat(booted.store().readsBeforeRoot()).isNotEmpty().doesNotContainAnyElementsOf(List.of("MOD", "RT", "F", "C", "X", "RS", "LROOT"));
-            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "ROOT", "DD", "DS", "DC", "DF", "S", "ST");
+            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "AL", "ROOT", "DD", "DS", "DC", "DF", "S", "ST");
             var events = booted.store().events();
             assertThat(events.indexOf("sync")).as("sync once, then the root").isLessThan(events.indexOf("putLocalRoot"));
             assertThat(events.stream().filter("sync"::equals).count()).isEqualTo(1);
@@ -1065,7 +1070,8 @@ class LocalColdBootTest {
         var k = booted.result().leaves().get(leaf);
         Stubs.stubs(digest, new ContentTree(digest), leaf(digest, store, k), nodes(store), cache);
         var out = new HashMap<String, Identity>();
-        for (var ref : Stubs.decodeList(lists.get(k), digest.width())) out.put(ref.internalName(), ref.stKey());
+        // The leaf's one list, whatever its key (S|Digest(RENDERER || k)).
+        for (var ref : Stubs.decodeList(lists.values().iterator().next(), digest.width())) out.put(ref.internalName(), ref.stKey());
         return out;
     }
 
@@ -1204,26 +1210,28 @@ class LocalColdBootTest {
     }
 
     /**
-     * The member part of a stub key is sorted by the unsigned bytes of {@code memberTypeKey}, not by {@code String.compareTo}: the two
-     * differ for a supplementary character against a high BMP one (here U+FF21, UTF-8 {@code EF BC A1}, against U+1D400, UTF-8
-     * {@code F0 9D 90 80}), and the key must be the same in every language and on every machine.
+     * The member part of a stub key is sorted by the unsigned bytes of {@code memberTypeKey}, not by {@code String.compareTo}. In
+     * modified UTF-8 (amendments 2.1) the two differ for NUL: its {@code C0 80} sorts after every one-byte character, here U+007F.
+     * A supplementary character is encoded as its two surrogates, so it sorts as String does. The key must be the same in every
+     * language and on every machine.
      */
     @ParameterizedTest @MethodSource("digests")
     void theMemberPartOfAStubKeyIsSortedByUnsignedBytes(Digest digest) {
-        var bmp = "p/O$\uFF21";
-        var supplementary = "p/O$\uD835\uDC00";
-        assertThat(bmp.compareTo(supplementary)).as("String order puts the supplementary one first").isGreaterThan(0);
+        var oneByte = "p/O$\u007F";
+        var nul = "p/O$\u0000";
+        assertThat(nul.compareTo(oneByte)).as("String order puts NUL first").isLessThan(0);
         var oSum = digest.hash("o".getBytes());
         var typeKey = new dev.jvmd.core.tree.Codec.Writer().zstr("p/O").toBytes();
-        byte[] first = new dev.jvmd.core.tree.Codec.Writer().zstr(bmp).optStr("\uFF21").u16(9).toBytes();
-        byte[] second = new dev.jvmd.core.tree.Codec.Writer().zstr(supplementary).optStr("\uD835\uDC00").u16(8).toBytes();
-        var expected = digest.hash(typeKey, oSum.view(), first, second); // bytes order: EF.. before F0..
-        var wrongOrder = digest.hash(typeKey, oSum.view(), second, first);
-        var a = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(bmp, "\uFF21", 9), new Stubs.Member(supplementary, "\uD835\uDC00", 8)));
-        var b = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(supplementary, "\uD835\uDC00", 8), new Stubs.Member(bmp, "\uFF21", 9)));
+        byte[] first = new dev.jvmd.core.tree.Codec.Writer().zstr(oneByte).optStr("\u007F").u16(9).toBytes();
+        byte[] second = new dev.jvmd.core.tree.Codec.Writer().zstr(nul).optStr("\u0000").u16(8).toBytes();
+        byte[] renderer = {0, Stubs.RENDERER};
+        var expected = digest.hash(typeKey, oSum.view(), first, second, renderer); // bytes order: 7F before C0 80
+        var wrongOrder = digest.hash(typeKey, oSum.view(), second, first, renderer);
+        var a = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(oneByte, "\u007F", 9), new Stubs.Member(nul, "\u0000", 8)));
+        var b = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(nul, "\u0000", 8), new Stubs.Member(oneByte, "\u007F", 9)));
         assertThat(a).as("whatever order the members arrive in").isEqualTo(b);
         assertThat(a).isEqualTo(expected).isNotEqualTo(wrongOrder);
-        assertThat(Stubs.stKey(digest, "p/O", oSum, List.of())).as("no members: exactly Digest(typeKey || oSum)").isEqualTo(digest.hash(typeKey, oSum.view()));
+        assertThat(Stubs.stKey(digest, "p/O", oSum, List.of())).as("no members: exactly Digest(typeKey || oSum || 0 || RENDERER)").isEqualTo(digest.hash(typeKey, oSum.view(), renderer));
     }
 
     // ---- declaration reads: everything a declaration resolved a name through outside bodies ------------------------------------------------

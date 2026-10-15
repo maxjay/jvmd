@@ -12,6 +12,7 @@ import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.index.layer.local.Route;
 import dev.jvmd.index.layer.local.RouteEntry;
+import dev.jvmd.index.layer.machine.AnnotationLeaf;
 import dev.jvmd.index.layer.machine.Keys;
 import dev.jvmd.index.layer.machine.MachineLeaf;
 import dev.jvmd.index.layer.machine.MachineStore;
@@ -115,14 +116,21 @@ final class Boot implements AutoCloseable {
     }
 
     /**
-     * A directory of the stub class files of leaf {@code k}, made on first use (3.14). A stub is {@code ST|Digest(typeKey || oSum)},
-     * one type's, shared across leaves and projects, and {@code S|k} is the leaf's list of them: both are read first, and only a type
-     * whose stub is missing is synthesised and written, so an edit costs the types it changed and not the module.
+     * A directory of the stub class files of leaf {@code k} with annotations {@code a}, made on first use (3.14). A stub is
+     * {@code ST|stKey}, one type's, shared across leaves and projects, and {@code S|Digest(RENDERER || k || a)} is the leaf's list of
+     * them: both are read first, and only a type whose stub is missing is synthesised and written, so an edit costs the types it
+     * changed and not the module. The stubs carry the annotations {@code A} retains, which processors read through siblings.
+     *
+     * @param a the leaf's annotation identity; its {@code AL|a} is written before any dependent runs, so a missing one is an error, never
+     *          stubs without annotations
      */
-    Path stubDir(Identity k) {
-        return stubDirs.computeIfAbsent(k, key -> {
+    Path stubDir(Identity k, Identity a) {
+        return stubDirs.computeIfAbsent(digest.hash(k.view(), a.view()), key -> {
+            var annotationLeaf = store.get(MachineStore.annotationLeafKey(a));
+            if (annotationLeaf == null) throw new IllegalStateException("No annotation leaf for a bound key");
+            var annotations = AnnotationLeaf.decode(annotationLeaf, digest.width()).annotations();
             try {
-                var stubs = Stubs.stubs(digest, tree, leaf(key), this::node, new Stubs.Cache() {
+                var stubs = Stubs.stubs(digest, tree, leaf(k), a, annotations, this::node, new Stubs.Cache() {
                     @Override public byte[] list(Identity k) { return store.get(LocalStore.stubKey(k)); }
                     @Override public void putList(Identity k, byte[] value) { store.put(LocalStore.stubKey(k), value); }
                     @Override public byte[] type(Identity stKey) { return store.get(LocalStore.stubTypeKey(stKey)); }

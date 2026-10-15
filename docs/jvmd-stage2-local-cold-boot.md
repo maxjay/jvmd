@@ -379,7 +379,7 @@ Kotlin/Scala/Groovy contribute through compiled class files, not SourceFacts. Bu
 
 One RocksDB per MACHINE generation contains shared nodes/leaves and project-prefixed LOCAL records. One atomic write retains the previous LROOT, updates current X inserts/deletes, and swaps LROOT. Historical empty X values live in immutable LOCAL nodes. Garbage collection of other unreachable records and the history retention policy are deferred.
 
-Current representation is `layout=4;parser=4;local=5`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write.
+Current representation is `layout=4;parser=7;local=26`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write. Parser 7 and LOCAL 26 write every string as lossless modified UTF-8 (amendments 2.1); parsers 5 and 6 and LOCAL 6–23 named other codecs on the unmerged stage 3 branch and are skipped.
 
 ## 10. Implementation and completion rules
 
@@ -414,7 +414,7 @@ Dependencies are already mediated, ordered and transitive. Each has exactly one 
 
 ## Appendix B. Codecs
 
-Primitives use the existing Codec: big-endian integers, fixed-width `id`, length-prefixed `str`/`lenBytes`, NUL-terminated `zstr`, u32-counted lists and explicit optional markers. Literal ASCII tags include their displayed `|`; variable fields below use explicit encodings. Human-readable key separators in MOD/RT/F/SL follow LocalStore's key functions; X's suffix uses the self-delimiting encoding in B.9.
+Primitives use the existing Codec: big-endian integers, fixed-width `id`, length-prefixed `str`/`lenBytes`, NUL-terminated `zstr`, (strings in lossless modified UTF-8 over UTF-16 code units, NUL as `C0 80`, malformed or noncanonical bytes rejected; amendments 2.1; this applies to keys built outside Codec too), u32-counted lists and explicit optional markers. Literal ASCII tags include their displayed `|`; variable fields below use explicit encodings. Human-readable key separators in MOD/RT/F/SL follow LocalStore's key functions; X's suffix uses the self-delimiting encoding in B.9.
 
 ### B.1 MachineLeaf and annotation roots
 
@@ -483,8 +483,8 @@ LSTART|project = u64 wall-clock milliseconds at which the publishing boot starte
 ### B.8 FORMAT
 
 ```text
-machine = layout=4;digest=<name>;jdk=<feature>;parser=4
-local   = <machine>;local=5;javac=<runtime feature>
+machine = layout=4;digest=<name>;jdk=<feature>;parser=7
+local   = <machine>;local=26;javac=<runtime feature>
 ```
 
 Parser changes when identical class bytes would yield different retained facts/projections. LOCAL changes when its record layout or persisted proof meaning changes. Incompatible commitments cannot take a current-format skip.

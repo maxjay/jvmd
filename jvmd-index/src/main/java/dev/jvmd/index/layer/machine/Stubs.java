@@ -131,7 +131,7 @@ public final class Stubs {
             if (complete) return out;
         }
 
-        var decls = new TreeMap<String, TypeDecl>();
+        var decls = new TreeMap<String, TypeDecl>(dev.jvmd.core.tree.Mutf8::compare);
         tree.forEach(leaf.k(), reader, entry -> {
             var m = Keys.Member.decode(entry.key());
             var decl = decls.computeIfAbsent(m.owner(), o -> { var d = new TypeDecl(); d.owner = o; return d; });
@@ -159,7 +159,7 @@ public final class Stubs {
         });
 
         // The members of a type are the types whose outer class it is: the outer's InnerClasses attribute is how javac finds them.
-        var members = new TreeMap<String, List<String>>();
+        var members = new TreeMap<String, List<String>>(dev.jvmd.core.tree.Mutf8::compare);
         for (var decl : decls.values()) {
             if (decl.type == null || decl.type.outer() == null) continue;
             members.computeIfAbsent(decl.type.outer(), o -> new ArrayList<>()).add(decl.owner);

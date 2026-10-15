@@ -136,7 +136,7 @@ public final class Stage2 {
         var foreign = new ArrayList<String>();
         var filePrefix = LocalStore.fileKey(projectKey, "");
         tree.forEachPrefix(root.local().hash(), nodes, filePrefix, entry -> {
-            var path = new String(entry.key(), filePrefix.length, entry.key().length - filePrefix.length, StandardCharsets.UTF_8);
+            var path = dev.jvmd.core.tree.Mutf8.decode(entry.key(), filePrefix.length, entry.key().length - filePrefix.length);
             if (path.startsWith(ModuleJob.GENERATED)) return; // derived from the files around it, which this compares
             var row = committed(digest, store, entry);
             if (row == null) foreign.add("file row of " + path);

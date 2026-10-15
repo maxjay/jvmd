@@ -1,13 +1,12 @@
 package dev.jvmd.core.tree;
 
 import dev.jvmd.core.hash.Identity;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 /**
- * The primitive encodings of stage 1, appendix A.1: fixed-width big-endian integers, length-prefixed UTF-8 strings,
- * NUL-terminated strings for keys, raw identities. No varints and no library framing, so a codec is reproducible from the
- * appendix alone.
+ * The primitive encodings of stage 1, appendix A.1: fixed-width big-endian integers, length-prefixed strings, NUL-terminated
+ * strings for keys, raw identities. Strings are lossless modified UTF-8 ({@link Mutf8}, amendments 2.1). No varints and no library
+ * framing, so a codec is reproducible from the appendix alone.
  */
 public final class Codec {
     private Codec() { }
@@ -43,14 +42,14 @@ public final class Codec {
             length += to - from;
             return this;
         }
-        /** {@code str}: u32 byte length, then standard UTF-8. */
+        /** {@code str}: u32 byte length, then modified UTF-8. */
         public Writer str(String s) {
-            var bytes = s.getBytes(StandardCharsets.UTF_8);
+            var bytes = Mutf8.encode(s);
             u32(bytes.length);
             return raw(bytes);
         }
-        /** {@code zstr}: UTF-8 bytes then one 0x00. Java identifiers, internal names and descriptors cannot contain 0x00. */
-        public Writer zstr(String s) { raw(s.getBytes(StandardCharsets.UTF_8)); return u8(0); }
+        /** {@code zstr}: modified UTF-8, then one 0x00. NUL inside the string is {@code C0 80}, so the 0x00 only ever terminates. */
+        public Writer zstr(String s) { raw(Mutf8.encode(s)); return u8(0); }
         public Writer id(Identity id) { return raw(id.view()); }
         /** {@code opt<str>}. */
         public Writer optStr(String s) { if (s == null) return u8(0); u8(1); return str(s); }
@@ -89,15 +88,29 @@ public final class Codec {
             java.util.Objects.checkFromIndexSize(position, n, bytes.length);
             position += n;
         }
-        public String str() { return new String(raw(count()), StandardCharsets.UTF_8); }
+        /**
+         * @throws IllegalArgumentException if the bytes are not canonical modified UTF-8
+         * @throws IndexOutOfBoundsException if the length runs past the end
+         */
+        public String str() {
+            int n = count();
+            var out = Mutf8.decode(bytes, position, n);
+            position += n;
+            return out;
+        }
         public Identity id(int width) { return Identity.of(raw(width)); }
         public byte[] lenBytes() { return raw(count()); }
-        /** {@code zstr}: UTF-8 bytes up to a 0x00, which is consumed and not part of the string. */
+        /**
+         * {@code zstr}: modified UTF-8 up to a 0x00, which is consumed and not part of the string.
+         *
+         * @throws IllegalArgumentException if there is no 0x00, or the bytes before it are not canonical modified UTF-8
+         */
         public String zstr() {
-            int start = position;
-            while (bytes[position] != 0) position++;
-            var out = new String(bytes, start, position - start, StandardCharsets.UTF_8);
-            position++;
+            int end = position;
+            while (end < bytes.length && bytes[end] != 0) end++;
+            if (end == bytes.length) throw new IllegalArgumentException("Unterminated zstr at byte " + position);
+            var out = Mutf8.decode(bytes, position, end - position);
+            position = end + 1;
             return out;
         }
         /** {@code opt<str>}: a presence byte, then the string if it is 1. */

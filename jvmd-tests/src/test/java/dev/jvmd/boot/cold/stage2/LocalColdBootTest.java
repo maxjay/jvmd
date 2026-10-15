@@ -1210,24 +1210,25 @@ class LocalColdBootTest {
     }
 
     /**
-     * The member part of a stub key is sorted by the unsigned bytes of {@code memberTypeKey}, not by {@code String.compareTo}: the two
-     * differ for a supplementary character against a high BMP one (here U+FF21, UTF-8 {@code EF BC A1}, against U+1D400, UTF-8
-     * {@code F0 9D 90 80}), and the key must be the same in every language and on every machine.
+     * The member part of a stub key is sorted by the unsigned bytes of {@code memberTypeKey}, not by {@code String.compareTo}. In
+     * modified UTF-8 (amendments 2.1) the two differ for NUL: its {@code C0 80} sorts after every one-byte character, here U+007F.
+     * A supplementary character is encoded as its two surrogates, so it sorts as String does. The key must be the same in every
+     * language and on every machine.
      */
     @ParameterizedTest @MethodSource("digests")
     void theMemberPartOfAStubKeyIsSortedByUnsignedBytes(Digest digest) {
-        var bmp = "p/O$\uFF21";
-        var supplementary = "p/O$\uD835\uDC00";
-        assertThat(bmp.compareTo(supplementary)).as("String order puts the supplementary one first").isGreaterThan(0);
+        var oneByte = "p/O$\u007F";
+        var nul = "p/O$\u0000";
+        assertThat(nul.compareTo(oneByte)).as("String order puts NUL first").isLessThan(0);
         var oSum = digest.hash("o".getBytes());
         var typeKey = new dev.jvmd.core.tree.Codec.Writer().zstr("p/O").toBytes();
-        byte[] first = new dev.jvmd.core.tree.Codec.Writer().zstr(bmp).optStr("\uFF21").u16(9).toBytes();
-        byte[] second = new dev.jvmd.core.tree.Codec.Writer().zstr(supplementary).optStr("\uD835\uDC00").u16(8).toBytes();
+        byte[] first = new dev.jvmd.core.tree.Codec.Writer().zstr(oneByte).optStr("\u007F").u16(9).toBytes();
+        byte[] second = new dev.jvmd.core.tree.Codec.Writer().zstr(nul).optStr("\u0000").u16(8).toBytes();
         byte[] renderer = {0, Stubs.RENDERER};
-        var expected = digest.hash(typeKey, oSum.view(), first, second, renderer); // bytes order: EF.. before F0..
+        var expected = digest.hash(typeKey, oSum.view(), first, second, renderer); // bytes order: 7F before C0 80
         var wrongOrder = digest.hash(typeKey, oSum.view(), second, first, renderer);
-        var a = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(bmp, "\uFF21", 9), new Stubs.Member(supplementary, "\uD835\uDC00", 8)));
-        var b = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(supplementary, "\uD835\uDC00", 8), new Stubs.Member(bmp, "\uFF21", 9)));
+        var a = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(oneByte, "\u007F", 9), new Stubs.Member(nul, "\u0000", 8)));
+        var b = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(nul, "\u0000", 8), new Stubs.Member(oneByte, "\u007F", 9)));
         assertThat(a).as("whatever order the members arrive in").isEqualTo(b);
         assertThat(a).isEqualTo(expected).isNotEqualTo(wrongOrder);
         assertThat(Stubs.stKey(digest, "p/O", oSum, List.of())).as("no members: exactly Digest(typeKey || oSum || 0 || RENDERER)").isEqualTo(digest.hash(typeKey, oSum.view(), renderer));

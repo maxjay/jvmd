@@ -10,8 +10,8 @@ import java.util.function.Function;
 
 /**
  * The one primitive behind API diffing, upgrade impact and warm boot (stage 2, 5.2): what differs between two roots, descending
- * only where hashes differ. For d differing entries it reads O(d * depth) nodes, because a subtree whose hash is equal on both
- * sides is skipped whole and content-defined chunk boundaries re-synchronise after a change.
+ * only where hashes differ. Equal subtrees are skipped whole. Small deltas need not imply few unequal nodes: adversarial
+ * cap-only runs can shift chunk boundaries across a linear suffix.
  *
  * <p>Two shapes: {@link #trees} merges by key; {@link #lists} aligns chunks and compares only the runs of chunks that differ.
  */
@@ -28,6 +28,14 @@ public final class Diff {
 
     public record ListResult(List<Positioned> removed, List<Positioned> added) {
         public boolean isEmpty() { return removed.isEmpty() && added.isEmpty(); }
+    }
+
+    /** Optional counters for ordered alignment; node fetches are measured separately by the supplied reader. */
+    public static final class ListWork {
+        long comparisons;
+        int maxFrontierCells;
+        public long comparisons() { return comparisons; }
+        public int maxFrontierCells() { return maxFrontierCells; }
     }
 
     /** A node as its parent names it. {@code start} is the index of its first element, which only lists use. */
@@ -54,10 +62,16 @@ public final class Diff {
     }
 
     public static ListResult lists(Digest digest, Root a, Root b, Function<Identity, byte[]> reader) {
+        return lists(digest, a, b, reader, null);
+    }
+
+    public static ListResult lists(Digest digest, Root a, Root b, Function<Identity, byte[]> reader, ListWork work) {
         var removed = new ArrayList<Positioned>();
         var added = new ArrayList<Positioned>();
         if (a.hash().equals(b.hash())) return new ListResult(removed, added);
-        new Walk(digest.width(), reader, true).run(List.of(root(a)), List.of(root(b)), null, null, removed, added);
+        var walk = new Walk(digest.width(), reader, true);
+        walk.listWork = work;
+        walk.run(List.of(root(a)), List.of(root(b)), null, null, removed, added);
         return new ListResult(removed, added);
     }
 
@@ -68,6 +82,7 @@ public final class Diff {
         final Function<Identity, byte[]> reader;
         final boolean ordered;
         boolean exact;
+        ListWork listWork;
 
         Walk(int width, Function<Identity, byte[]> reader, boolean ordered) {
             this.width = width;
@@ -161,29 +176,13 @@ public final class Diff {
             }
         }
 
-        /** A short run of list chunks: elements are matched by a longest common subsequence of (id, h), so a move is a remove and an add. */
+        /** Unmatched runs use a linear-space edit frontier; their length is not bounded by a chunk cap. */
         void compareOrdered(List<Ref> a, List<Ref> b, List<Positioned> removedAt, List<Positioned> addedAt) {
             var x = new ArrayList<Positioned>();
             var y = new ArrayList<Positioned>();
             for (var r : a) { int at = r.start(); for (var e : entriesOf(r)) x.add(new Positioned(at++, e)); }
             for (var r : b) { int at = r.start(); for (var e : entriesOf(r)) y.add(new Positioned(at++, e)); }
-            int n = x.size(), m = y.size();
-            var lcs = new int[n + 1][m + 1];
-            for (int i = n - 1; i >= 0; i--)
-                for (int j = m - 1; j >= 0; j--)
-                    lcs[i][j] = same(x.get(i), y.get(j)) ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
-            int i = 0, j = 0;
-            while (i < n && j < m) {
-                if (same(x.get(i), y.get(j))) { i++; j++; }
-                else if (lcs[i + 1][j] >= lcs[i][j + 1]) removedAt.add(x.get(i++));
-                else addedAt.add(y.get(j++));
-            }
-            while (i < n) removedAt.add(x.get(i++));
-            while (j < m) addedAt.add(y.get(j++));
-        }
-
-        static boolean same(Positioned p, Positioned q) {
-            return Arrays.equals(p.element().key(), q.element().key()) && p.element().h().equals(q.element().h());
+            new OrderedDiff(x, y, removedAt, addedAt, listWork).run(0, x.size(), 0, y.size());
         }
     }
 }

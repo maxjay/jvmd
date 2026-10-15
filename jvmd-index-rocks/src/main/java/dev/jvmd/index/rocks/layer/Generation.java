@@ -23,12 +23,12 @@ public final class Generation {
     public Path directory() { return directory; }
 
     /**
-     * True if the directory holds a store with a ROOT. A missing or empty directory has none.
+     * True if the directory holds a store with a ROOT. A missing directory, or one RocksDB never finished creating, has none.
      *
      * @throws IllegalStateException if a store exists but cannot be opened: that is not the same as having no ROOT
      */
     public boolean hasRoot() {
-        if (!Files.isDirectory(directory) || isEmpty(directory)) return false;
+        if (!Files.isDirectory(directory) || neverCreated(directory)) return false;
         try (var store = new RocksMachineStore(directory, true)) {
             return store.hasRoot();
         } catch (RuntimeException unreadable) {
@@ -70,9 +70,15 @@ public final class Generation {
         return new RocksLocalStore(machine);
     }
 
-    private static boolean isEmpty(Path dir) {
+    /**
+     * A directory RocksDB never finished creating: no {@code CURRENT}, which RocksDB installs atomically when a database is first set
+     * up, and no table or write-ahead log files. A create killed or failed inside {@code RocksDB.open} leaves only LOCK, LOG, IDENTITY
+     * or a manifest, from which nothing is reachable.
+     */
+    private static boolean neverCreated(Path dir) {
+        if (Files.exists(dir.resolve("CURRENT"))) return false;
         try (var entries = Files.list(dir)) {
-            return entries.findAny().isEmpty();
+            return entries.map(p -> p.getFileName().toString()).noneMatch(name -> name.endsWith(".sst") || name.endsWith(".log"));
         } catch (IOException e) { throw new UncheckedIOException(e); }
     }
 

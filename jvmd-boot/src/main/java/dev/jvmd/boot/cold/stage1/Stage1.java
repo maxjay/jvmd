@@ -88,7 +88,8 @@ public final class Stage1 {
             throw new IllegalStateException("Stage 1 interrupted", interrupted);
         } finally {
             // Join every worker, also when the boot failed: the caller closes the store next, and a worker still writing into a closed
-            // RocksDB is a native use-after-close, not an exception.
+            // RocksDB is a native use-after-close, not an exception. The wait is unbounded, as the success path's future.get() already
+            // is: a worker stuck in I/O hangs a failed boot rather than letting it close the store under that worker.
             pool.close();
         }
 

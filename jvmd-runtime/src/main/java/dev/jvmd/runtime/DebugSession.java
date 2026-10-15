@@ -33,6 +33,8 @@ public final class DebugSession implements AutoCloseable {
     private final Map<Long,Stop> stopped=new LinkedHashMap<>();
     private final List<String> warnings=new CopyOnWriteArrayList<>();
     private final StringBuilder output=new StringBuilder();
+    /** Characters the application has written in all, of which {@link #output} keeps the last 65,536. */
+    private long written;
     private final Thread reader,eventReader;
     private CompletableFuture<Void> nextStop=new CompletableFuture<>();
     private volatile boolean closed,disconnected,invoking;
@@ -54,7 +56,7 @@ public final class DebugSession implements AutoCloseable {
             try(var input=new InputStreamReader(process.getInputStream(),StandardCharsets.UTF_8)){
                 char[] buffer=new char[4096];int count;var line=new StringBuilder();
                 while((count=input.read(buffer))!=-1){
-                    synchronized(output){output.append(buffer,0,count);if(output.length()>65536)output.delete(0,output.length()-65536);}
+                    synchronized(output){output.append(buffer,0,count);written+=count;if(output.length()>65536)output.delete(0,output.length()-65536);}
                     for(int i=0;i<count;i++){char c=buffer[i];if(c=='\n'){
                         String value=line.toString().strip();if(value.startsWith("Listening for transport dt_socket at address: ")){
                             try{port.complete(Integer.parseInt(value.substring(value.lastIndexOf(' ')+1)));}catch(NumberFormatException ignored){}
@@ -232,11 +234,24 @@ public final class DebugSession implements AutoCloseable {
     }
     public long pid(){return process.pid();}
     public String output(){synchronized(output){return output.toString();}}
-    /** The last 64 KiB the application wrote (stdout and stderr), whether it is running, and its exit code once it has exited. */
-    public Map<String,Object> outputStatus(){
-        var result=new LinkedHashMap<String,Object>();result.put("run_session",id);result.put("alive",process.isAlive());
-        if(!process.isAlive())result.put("exit_code",process.exitValue());
-        result.put("output",output());return result;
+    /**
+     * What the application wrote (stdout and stderr): the last {@code tail} characters (default 16,384), or everything after character
+     * {@code since} that is still kept (the last 65,536). {@code written} is the position to pass as {@code since} next time. Whether it
+     * is running, and once it has exited its exit code; {@code complete} says the output has been read to its end.
+     */
+    public Map<String,Object> outputStatus(int tail,long since)throws InterruptedException{
+        boolean alive=process.isAlive();
+        if(!alive)reader.join(1000); // the process can exit before its last output is read
+        var result=new LinkedHashMap<String,Object>();result.put("run_session",id);result.put("alive",alive);
+        if(!alive)result.put("exit_code",process.exitValue());
+        synchronized(output){
+            long first=written-output.length();
+            int from=since>=0?(int)Math.max(0,Math.min(output.length(),since-first)):Math.max(0,output.length()-tail);
+            result.put("output",output.substring(from));result.put("from",first+from);result.put("written",written);
+            result.put("truncated",since>=0?since<first:from>0);
+        }
+        result.put("complete",!alive&&!reader.isAlive());
+        return result;
     }
     public String id(){return id;}
     public Launch launch(){return launch;}

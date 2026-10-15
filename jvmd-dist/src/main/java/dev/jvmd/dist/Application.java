@@ -1022,14 +1022,9 @@ public final class Application implements AutoCloseable {
             var compiled=new HashSet<String>();
             compileRuntimeModule(session,graph,module,compiled,new HashSet<>());
             classpath.add(output);
-            // A sibling whose classes were older than its sources had no file when the graph was resolved, so the runtime classpath
-            // leaves it out; it was compiled from source just now (or is compiled here, if only the runtime needs it), and its
-            // output goes on the classpath after the module's own.
-            for(var sibling:overlay(session,graph).runtimeDependencies(graph,module.gav())){
-                compileRuntimeModule(session,graph,sibling,compiled,new HashSet<>());
-                classpath.add(Path.of(sibling.classes()));
-            }
-            graph.classpaths().getOrDefault(module.gav()+":runtime",graph.classpaths().getOrDefault(module.gav()+":main",List.of())).forEach(path->classpath.add(Path.of(path)));
+            var order=graph.compileOrder().get(module.gav()+":runtime");
+            if(order!=null)runtimeClasspath(session,graph,module,order,compiled,classpath);
+            else graph.classpaths().getOrDefault(module.gav()+":runtime",graph.classpaths().getOrDefault(module.gav()+":main",List.of())).forEach(path->classpath.add(Path.of(path)));
             for(var local:graph.modules()){
                 var roots=local.sources().stream().map(Path::of).toList();sourceRoots.addAll(roots);coordinates.put(Path.of(local.directory()),local.gav());
                 var compilePath=new LinkedHashSet<Path>();compilePath.add(Path.of(local.classes()));graph.classpaths().getOrDefault(local.gav()+":main",List.of()).forEach(path->compilePath.add(Path.of(path)));overlay(session,graph).dependencies(graph,local.gav(),false).forEach(m->compilePath.add(Path.of(m.classes())));
@@ -1043,6 +1038,24 @@ public final class Application implements AutoCloseable {
         var request=new dev.jvmd.runtime.RunManager.Request(launch,new dev.jvmd.runtime.SourceLookup(List.copyOf(sourceRoots),coordinates),config.jdkHome(),List.copyOf(sourceRoots),options,output,List.copyOf(targets));
         return runs(session).start(request);
     }
+    /**
+     * The runtime classpath in Maven's order. A reactor module is in its place whether or not it was built: one whose classes are older
+     * than its sources has no file in the resolved graph, and is compiled from source here (runtime-only ones included).
+     */
+    private void runtimeClasspath(Session session,Resolution graph,Resolution.Module module,List<String> order,Set<String> compiled,Set<Path> classpath)throws Exception{
+        for(String entry:order){
+            if(!entry.startsWith(Resolution.REACTOR)){classpath.add(Path.of(entry));continue;}
+            String reference=entry.substring(Resolution.REACTOR.length());boolean tests=reference.endsWith(":tests");
+            String gav=tests?reference.substring(0,reference.length()-":tests".length()):reference;
+            var sibling=graph.modules().stream().filter(m->m.gav().equals(gav)).findFirst().orElse(null);
+            if(sibling==null||sibling.gav().equals(module.gav()))continue;
+            boolean unbuilt=!Files.isDirectory(Path.of(sibling.classes()));
+            compileRuntimeModule(session,graph,sibling,compiled,new HashSet<>());
+            classpath.add(Path.of(tests?sibling.testClasses():sibling.classes()));
+            if(unbuilt&&Files.isDirectory(Path.of(sibling.directory()).resolve("src/main/resources")))
+                session.warn("run_resources: "+sibling.gav()+" was never built, so its resources are not on the run's classpath; build it once with Maven");
+        }
+    }
     /** The main class {@code target} names, if it is fully qualified and exactly one source root holds its top-level source file. */
     private Map<String,Object> mainBySource(Session session,Resolution graph,String target)throws Exception{
         if(!javax.lang.model.SourceVersion.isName(target.replace('$','.'))||!target.contains("."))return null;
@@ -1052,7 +1065,15 @@ public final class Application implements AutoCloseable {
         else roots.addAll(workspace(session).roots());
         var found=roots.stream().map(root->root.resolve(relative).toAbsolutePath().normalize()).filter(Files::isRegularFile).distinct().toList();
         if(found.size()!=1)return null;
-        return Map.of("fqn",target,"name_path",target,"source_file",found.getFirst().toString(),"kind","class");
+        var file=found.getFirst();
+        // On a case-insensitive file system Main.java answers for app.main too.
+        if(!file.toRealPath().getFileName().toString().equals(relative.substring(relative.lastIndexOf('/')+1)))return null;
+        if(target.contains("$")){
+            var text=Files.readString(file);
+            for(String nested:target.substring(target.indexOf('$')+1).split("\\$"))
+                if(!java.util.regex.Pattern.compile("\\b(class|interface|enum|record)\\s+"+java.util.regex.Pattern.quote(nested)+"\\b").matcher(text).find())return null;
+        }
+        return Map.of("fqn",target,"name_path",target,"source_file",file.toString(),"kind","class");
     }
     private static List<String> runtimeCompilerOptions(Resolution.Module module){
         var options=new ArrayList<>(module.compilerOptions());var processor=module.processing();

@@ -774,6 +774,7 @@
               "inspect",
               "eval",
               "hotswap",
+              "output",
               "restart",
               "histogram",
               "instances",

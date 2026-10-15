@@ -8,6 +8,8 @@ import java.util.Map;
  *
  * @param classpaths   per {@code gav:main|test|runtime}, the files a compiler would read: reactor modules only once built
  * @param compileOrder per {@code gav:main|test}, the compile classpath in Maven's order with every reactor module present, built or
+ *                     not; per {@code gav:runtime}, the runtime classpath (compile and runtime scope, the module's own output
+ *                     first) in the same form;
  *                     not, as {@code reactor:<gav>}; other entries are absolute file paths. The stage 2 project model reads this
  */
 public record Resolution(String root, List<Module> modules, List<Node> nodes, List<Edge> edges,

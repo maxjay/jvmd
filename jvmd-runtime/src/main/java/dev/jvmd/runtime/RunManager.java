@@ -25,7 +25,7 @@ public final class RunManager implements AutoCloseable {
         var run=runs.get(id);if(run==null)throw new RpcException(-32001,"session_not_found",Map.of("run_session",id));var debug=run.debug();
         return switch(op){
             case "break"->{String type=args.hasNonNull("class")?args.get("class").asText():null;Path file=args.hasNonNull("path")?source(run,args.get("path").asText()):null;yield Envelope.of(2,"live",debug.breakpoint(type,file,Dispatcher.bounded(args,"line",0,Integer.MAX_VALUE)));}
-            case "output"->Envelope.of(2,"live",debug.outputStatus());
+            case "output"->Envelope.of(2,"live",debug.outputStatus(positive(args,"tail",16384,65536),args.hasNonNull("since")?Math.max(0,args.get("since").asLong()):-1));
             case "unbreak"->Envelope.of(2,"live",Map.of("removed",debug.unbreak(Dispatcher.required(args,"breakpoint"))));
             case "continue"->{debug.resume(thread(args));yield Envelope.of(2,"live",debug.status());}
             case "step_over","step_into","step_out"->{debug.step(thread(args),op);yield Envelope.of(2,"live",debug.status());}

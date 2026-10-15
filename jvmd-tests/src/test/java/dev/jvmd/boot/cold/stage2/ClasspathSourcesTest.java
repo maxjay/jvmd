@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.io.TempDir;
@@ -44,5 +45,12 @@ class ClasspathSourcesTest {
         var result = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 2, repo, ClassFacts::of)
                 .run(Stage2Support.jdkOnly(digest).copy(), ProjectModel.parse(json));
         assertThat(result.faults()).as("q.OnlySource has no class, so it does not resolve").anyMatch(f -> f.contains("p/A.java") && f.contains("OnlySource"));
+        assertThat(result.parsedFiles()).as("the jar's source file is not a unit of the scope").isEqualTo(1);
+        assertThat(result.faults()).noneMatch(f -> f.contains("q/OnlySource.java"));
+    }
+
+    @Test void optionsThatOpenAnotherSourceLocationAreDropped() {
+        assertThat(HeaderCompiler.filtered(List.of("-sourcepath", "src", "--source-path=src", "--module-source-path", "m=src",
+                "--module-source-path=m=src", "--patch-module", "m=src", "--patch-module=m=src", "-parameters"))).containsExactly("-parameters");
     }
 }

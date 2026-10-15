@@ -338,6 +338,7 @@ final class HeaderCompiler {
         var options = new ArrayList<String>(base);
         options.add("-proc:none");
         try (var files = compiler.getStandardFileManager(diagnostics, null, charset)) {
+            // As in the task proper; parsing alone never looks a name up, so this only keeps the two file managers alike.
             files.setLocation(StandardLocation.SOURCE_PATH, List.of());
             var task = (JavacTaskImpl) compiler.getTask(null, files, diagnostics, options, null, objects);
             try { task.parse(); } finally { JavaCompiler.instance(task.getContext()).close(); }
@@ -390,7 +391,9 @@ final class HeaderCompiler {
 
     /** Options that take an argument, and are dropped with it (C.1). */
     private static final Set<String> DROPPED_WITH_ARGUMENT = Set.of("-d", "-s", "-h", "-processor", "-processorpath", "--processor-path", "--release", "-source", "--source",
-            "-target", "--target", "--module-version", "-classpath", "-cp", "--class-path", "-sourcepath", "--source-path", "--module-path", "-p", "--system");
+            "-target", "--target", "--module-version", "-classpath", "-cp", "--class-path", "-sourcepath", "--source-path", "--module-path", "-p", "--system",
+            // Each opens another place sources are looked up in (C.1, amendments 4.7).
+            "--module-source-path", "--patch-module");
 
     /** The module's own options minus everything this task decides itself: output, processing, classpath, release and system. */
     static List<String> filtered(List<String> options) {

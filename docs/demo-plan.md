@@ -55,20 +55,20 @@ No fault is raised. Stage 2 faults parse errors and duplicate declarations, not 
 
 There is also no production provider. Nothing builds a `ProjectModel` from a Maven project, so LOCAL had only been booted from models built in tests (`MavenModelHelper` builds them from real Maven projects). The evidence above was taken with a throwaway model built from `maven-compiler-plugin`'s `compilePath`. Note that `maven-dependency-plugin:build-classpath` silently leaves out reactor siblings.
 
-### Where develop stands (Oct 15, after #63–#74)
+### Where develop stands (Oct 15, develop at the merge of #74)
 
-Demo step 1 runs in the product. A daemon started from the image boots MACHINE before READY. Opening hawkBit then boots its LOCAL layer in the background from the session's own resolution, and `daemon.status` reports it under `layered_index`.
+The indexing half of demo step 1 runs in the product. A daemon started from the image boots MACHINE before READY. Opening hawkBit then boots its LOCAL layer in the background from the session's own resolution, and `daemon.status` reports it under `layered_index`. Compiling bodies and running the server are not part of it yet: nothing reads LOCAL so far.
 
-| Step | Result on hawkBit 1.0.4 |
+| Step | Result on hawkBit 1.0.4 (image, default config) |
 |---|---|
-| MACHINE (image JDK, 821 jars) | 7.5 s before READY; 16 class faults (Spring Boot executable jars, A6) |
-| `session.open` | 7.3 s, the existing Maven resolution |
-| LOCAL cold boot in the daemon, half the cores | 34.7 s: 40 modules, 939 files, 2 faults (the `rest-core:tests` test-jar, which the model cannot express) |
-| Daemon restart, then `session.open` | MACHINE skipped; LOCAL `current` 0.4 s after the open (#69's skip rule) |
-| SIGTERM during a LOCAL boot | exits in 3.3 s; no root written; the next start cold boots |
-| Invariant 1 | all 32 comparable modules equal javac's own output. The 2 EclipseLink-woven modules are compared with an unwoven `mvn compile` (#67, #68). |
+| MACHINE (image JDK plus `~/.m2`) | about 7.5 s before READY, over 821 jar locations on the first run (855 later the same day, because `~/.m2` grew). 16 class faults, all `BOOT-INF/classes` in hawkBit's own executable jars: A6 is not done. |
+| `session.open` | 7–10 s, the existing Maven resolution |
+| LOCAL cold boot in the daemon | about 34 s: 40 modules, 939 files, 2 faults (the `rest-core:tests` test-jar, which the model cannot express). §4's 13.8 s covered the main scope only, with `-proc:none`. This boot includes test scopes and annotation processors, and uses half the cores (8 of 16). |
+| Daemon restart | `session.open` re-resolves (7–10 s). MACHINE is then skipped without checking `~/.m2`, because warm boot is not implemented (A3). LOCAL is `current` 0.4 s later (#69). |
+| SIGTERM during a LOCAL boot | exits in 3.3 s when sent 8 s into the boot: running module jobs finish their scope, and closing waits at most 60 s. No root is written, and the next start cold boots. |
+| Invariant 1, main scope, 32 of the 39 jar modules | 30 equal the Maven-built jars; the 2 EclipseLink-woven ones equal an unwoven `mvn compile` (#67, #68; re-checked on develop at #73). `hawkbit-ui` has no jar, and test scopes are not compared. |
 
-What changed since main, in order:
+What changed since main, in PR-number order (#63 made CI manual-only; #64 added the amendments and this plan):
 - #65: MACHINE never deletes a store it cannot open (A1).
 - #66: the Maven provider (A4).
 - #67: processors in header compilation (§4.8, A9).
@@ -78,9 +78,11 @@ What changed since main, in order:
 - #71: the daemon wiring. Processors are isolated from the daemon's class path, and a boot can be cancelled.
 - #72: one module and scope per source file (A2).
 - #73: bounded tree reads and the linear-space ordered diff (A5).
-- #74: lossless modified UTF-8 for every persisted string and key (§2.1). MACHINE parser 7, LOCAL 26.
+- #74: lossless modified UTF-8 for every persisted string and key (§2.1). MACHINE parser 7, LOCAL 26. Presence-byte strictness is left.
 
-Next for the demo is step 2, a body edit: body compilation (stage 3 core) and hot swap. The daemon's existing `run.start` / `debug.op hotswap` already recompiles named files and redefines their classes, outside the layered index. Step 2 is about deciding which files from LOCAL and compiling them against its stubs.
+Still open from "Now" in §5: §4.1 (the platform from ct.sym; see A11) and A6.
+
+Next is step 2: body compilation (stage 3 core). Hot swap already exists (`run.start` / `debug.op hotswap`), but it covers method bodies only and compiles outside the layered index against the run's class path. What is missing is choosing the files from LOCAL and compiling them against its stubs.
 
 ## 5. Scope: which amendment sections, and when
 
@@ -108,17 +110,23 @@ These were found by auditing main and by the hawkBit run. They are not in the am
 | A3 | The LOCAL skip compares the model, the MACHINE commit, the source files and the jars that bound to nothing, not FORMAT alone (#69, stage 2 §5.7). Until warm boot exists, a mismatch is a cold rebuild. Not compared yet, since they need warm boot's bindings: jars and the JDK changed in place (MACHINE is never re-committed), jars indexed on the spot (A7), and processor paths and configuration (A9). This overlaps §4.9, whose `LROOT` carries those identities; A3 is the decision that uses them, and it is needed before §4.9 lands. |
 | A4 | A real provider. The model comes from the compiler step: classpath, processor path, options and generated roots per module and scope. |
 | A5 | The ordered list `Diff` replaces its O(n·m) LCS with a linear-space diff. This is PR #62 review finding F18; F16–F17 are the bounded tree reads and decoding fixed with it. All three were fixed only on `feat/jvmd-stage-3` (0caa85a4); ported to develop with their regression test (#73). |
-| A6 | Spring Boot executable jars in `~/.m2` (`BOOT-INF/`) are recognised and not faulted class by class. |
+| A6 (open) | Spring Boot executable jars in `~/.m2` (`BOOT-INF/`) are recognised and not faulted class by class. |
 | A7 (open) | LOCAL already indexes jars that MACHINE lacks on the spot (stage 2 invariant 16). Those records are not under the MACHINE commit, and §4.9 requires every published record to be rooted, so where they are rooted must be decided before §4.9. |
 | A8 (open) | A project built by a JDK other than the pinned one without `--release` compiles against a different platform than its build. The model records the build JDK, and the mismatch is reported. |
 | A9 | Header compilation runs the scope's annotation processors (§4.8, #67). An unset `proc` is decided by the build JDK, which the model does not record: javac before 23 processes implicitly, 23 and later does not. A module whose release is 23 or later gets no processing. Below that it gets `full`, which is what projects built for 17 or 21 rely on, and the provider reports the choice. A processor error, or processing javac skipped over an error of its own, fails the scope rather than publishing incomplete headers. A file that does not parse is a parse fault and is kept out of the processing task. A class file a processor writes is a fault. Not yet bound to any record: the processor path and its configuration files (`lombok.config`), which warm reuse will need. |
 | A10 (open) | Sibling stubs carry the annotations `A` retains (#68), so a dependent's header facts now depend on a sibling's `a` as well as its `k`. But `RouteEntry.Sibling`, `routeHash`, `R` and header proofs bind only `k`, so an annotation-only edit to a sibling cannot invalidate a dependent that is reused. Cold boot is unaffected. Before any reuse (warm boot, LIVE, stage 3), the dependency must be recorded: per-type `META`/`CLASS_INPUT` answers (§4.10), or the sibling's `a` in the route. |
-| A11 (open) | LOCAL header compilation reads the platform from `--system <jdk_home>`, and runs annotation processors inside the daemon (#71). Processors there see only their own path and the JDK's modules, not the daemon's class path. The daemon's default `jdk_home` is its jlink image, which holds only the modules jvmd needs. `java.desktop` was added for hawkBit, because spring-boot-configuration-processor loads `java.beans`; it adds about 2 s to a cold MACHINE boot. A project that compiles against another platform module, or a processor that loads one, faults or fails. Two changes close this: §4.1's platform (ct.sym for `--release`, `platformID`) for compilation, and running LOCAL in a child JVM of `jdk_home` for processors. The child JVM would also bound the boot's heap, which is unbounded in the daemon today. |
+| A11 (open) | LOCAL header compilation reads the platform from `--system <jdk_home>`, and runs annotation processors inside the daemon (#71). Processors there see only their own path and the daemon runtime's JDK modules (its jlink image, not `jdk_home`), never the daemon's class path. The image holds only the modules jvmd needs. `java.desktop` was added for hawkBit, because spring-boot-configuration-processor loads `java.beans`; that grows the image from 204 MB to 231 MB, with no measurable MACHINE slowdown. A project that compiles against another platform module, or a processor that loads one, faults or fails. Two changes close this: §4.1's platform (ct.sym for `--release`, `platformID`) for compilation, and running LOCAL in a child JVM of `jdk_home` (or a full image) for processors. A child JVM would also give the boot its own heap; today it shares the daemon's (no `-Xmx`, and `heap_ceiling_mb` only budgets caches). |
 
-## 7. Follow-ups found in review
+## 7. Follow-ups (not exhaustive)
 
-- **Ordered diff budget:** `OrderedDiff` is O((n+m)·D) with no budget, about 2.4 s for two disjoint runs of 16k elements (#73). A comparison budget would fall back to remove-all/add-all for that run.
-- **Node strictness:** `Node.entries` rejects trailing bytes, and `Node.elements`/`Node.children` should too (#73).
-- **AotDaemon READY timeout:** the AotDaemon tests wait 10 s for READY. Since main, MACHINE indexes the real `~/.m2` before READY, which is 8–11 s here. Those tests should point `m2_repo` at a fixture repository.
-- **Failed boots retry:** every reopen of a project whose LOCAL boot failed runs the boot again (#71). Remember the failed model and source stamps.
-- **The kill switch:** `-Djvmd.layered.local=false` should become a `config.json` key with the next change to `Config`.
+From the reviews of #69–#74, left open:
+- **`OrderedDiff` budget:** it is O((n+m)·D) with no budget, about 1.3–2.4 s for two disjoint 16k runs, depending on machine and keys (#73). This is latent: the only caller, `DefinerIndex.conflicts`, diffs lists of hundreds. A comparison budget would fall back to remove-all/add-all for that run.
+- **`Node` strictness:** `Node.entries` rejects trailing bytes; `Node.elements`/`children` should too (#73).
+- **AotDaemon READY timeout:** already on main (33a9032), the daemon indexes the real `~/.m2` as MACHINE before READY, about 7–10 s here. The AotDaemon tests wait 10 s for READY and do not set `m2_repo`, so they are at the edge. They should use a fixture repository.
+- **Failed LOCAL boots:** every reopen retries one, with no memory of the failed model and stamps (#71).
+- **Re-triggering LOCAL:** a resolution refreshed after `session.open` does not re-trigger the LOCAL boot; reopening does (#71).
+- **Shared state dir:** two daemons with different sockets share one state dir, and the second one's LOCAL boot fails on the RocksDB lock (#71).
+- **The kill switch:** `-Djvmd.layered.local=false` should become a `config.json` key with the next change to `Config` (#71).
+- **Source path vs Maven:** jvmd differs from Maven on resource reads from the source path, and on implicit compilation of sources excluded with `<excludes>` (#70).
+- **Case aliasing:** on case-insensitive file systems, case-only aliasing between source roots is not detected (#72).
+- **§2.1 remainder:** `optStr`/`optId` presence bytes other than 0 and 1 are not rejected yet (#74). F-row T_reads/absences are ordered by String, not specified by the appendix (#74).

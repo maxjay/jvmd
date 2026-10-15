@@ -224,7 +224,9 @@ final class HeaderCompiler {
             // An explicit, empty source path: without one javac looks for sources on the classpath, and a jar that bundles .java files
             // would have them parsed and entered as declarations of this scope (C.1, amendments 4.7).
             files.setLocation(StandardLocation.SOURCE_PATH, List.of());
-            task = (JavacTaskImpl) compiler.getTask(null, files, diagnostics, options, null, objects.stream().filter(o -> o.unit.parsed()).toList());
+            // Processors are loaded apart from the process running javac (ProcessorLoaders).
+            task = (JavacTaskImpl) compiler.getTask(null, processing.enabled() ? ProcessorLoaders.isolating(files) : files, diagnostics, options, null,
+                    objects.stream().filter(o -> o.unit.parsed()).toList());
             // Every unit entered, in every processing round, by URI: a round re-enters the files it has, and a generated file is entered
             // in the round after the one that wrote it. Whether processing ran at all is the processing event.
             var enteredTrees = new LinkedHashMap<URI, CompilationUnitTree>();

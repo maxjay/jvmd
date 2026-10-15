@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise an extracted release through its real installer and public transports."""
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -94,6 +95,24 @@ def rpc(sock_path, method):
         result = read_frame(connection.makefile("rb"))
         assert "error" not in result, result
         return result["result"]["result"]
+
+
+def wait_for_daemon_exit(sock_path, timeout=90):
+    """daemon.shutdown only acknowledges. The daemon then closes (a background LOCAL boot included), deletes its socket and
+    releases its lock; its state directory must not be deleted before that."""
+    lock_path = sock_path.with_name(sock_path.name + ".lock")
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not sock_path.exists():
+            try:
+                with open(lock_path, "a") as handle:
+                    fcntl.lockf(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.lockf(handle, fcntl.LOCK_UN)
+                return
+            except OSError:
+                pass
+        time.sleep(0.05)
+    raise AssertionError(f"daemon did not exit within {timeout} s of daemon.shutdown")
 
 
 def check_launcher_paths(image, work):
@@ -221,6 +240,7 @@ def main():
                     client.process.wait(timeout=10)
             if socket_path.exists():
                 rpc(socket_path, "daemon.shutdown")
+                wait_for_daemon_exit(socket_path)
         evidence = {"distribution": json.loads((image / "distribution.json").read_text()),
                     "checksum": "passed", "corruption_rejected": True, "upgrade_selection": "passed", "immutable_launch_paths": True,
                     "relocated_aot": "used", "bundled_node": True, "mcp_tools": 14,

@@ -140,8 +140,8 @@ public final class ContentTree {
         entries(hash, reader, from, to, null, out);
     }
 
-    /** Entries under a rooted prefix. Nonoverlapping child intervals are never fetched. */
-    public void forEach(Identity hash, Function<Identity, byte[]> reader, byte[] prefix, java.util.function.Consumer<Entry> out) {
+    /** Entries whose key begins with {@code prefix} (not null). Nonoverlapping child intervals are never fetched. */
+    public void forEachPrefix(Identity hash, Function<Identity, byte[]> reader, byte[] prefix, java.util.function.Consumer<Entry> out) {
         entries(hash, reader, prefix, prefixEnd(prefix), null, out);
     }
 

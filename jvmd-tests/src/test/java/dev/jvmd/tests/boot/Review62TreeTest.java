@@ -65,6 +65,7 @@ class Review62TreeTest {
                 default -> { for (int i = 500; i < 4000; i += 500) b.set(i, element(digest, -i)); }
             }
             var next = list.build(b, store); var work = new Diff.ListWork();
+            assumeAllocationCounted();
             long before = ((com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean()).getCurrentThreadAllocatedBytes();
             var result = Diff.lists(digest, old, next, store.nodes::get, work);
             long allocated = ((com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean()).getCurrentThreadAllocatedBytes() - before;
@@ -80,6 +81,7 @@ class Review62TreeTest {
     void f16UnselectedPayloadDoesNotBecomeQueryAllocation(Digest digest) {
         var tree = new ContentTree(digest, 1 << 20, 128);
         var bean = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+        assumeAllocationCounted();
         var measurements = new ArrayList<Long>();
         for (int size : new int[]{0, 65_536, 1_048_576}) {
             var store = new ContentTreeTest.MapSink();
@@ -100,7 +102,7 @@ class Review62TreeTest {
             assertThat(tree.get(root.hash(), store.nodes::get, key(2))).isNull();
             assertThat(tree.rangeSum(root, store.nodes::get, key(2), key(3))).isEqualTo(tree.sums().zero());
             var selected = new ArrayList<Entry>();
-            tree.forEach(root.hash(), store.nodes::get, key(1), selected::add);
+            tree.forEachPrefix(root.hash(), store.nodes::get, key(1), selected::add);
             assertThat(selected).hasSize(1);
             assertThat(selected.getFirst().value()).containsExactly(7);
             var truncated = Arrays.copyOf(store.nodes.get(root.hash()), store.nodes.get(root.hash()).length - 1);
@@ -147,5 +149,11 @@ class Review62TreeTest {
             assertThat(writes.writes).isBetween(size / ContentTree.CAP, size / ContentTree.CAP + 16);
             System.out.println("F09 " + digest.getClass().getSimpleName() + " entries=" + size + " node emissions=" + writes.writes);
         }
+    }
+
+    /** The allocation bounds are vacuous where the JVM does not count allocation per thread. */
+    private static void assumeAllocationCounted() {
+        var bean = (com.sun.management.ThreadMXBean) ManagementFactory.getThreadMXBean();
+        org.junit.jupiter.api.Assumptions.assumeTrue(bean.isThreadAllocatedMemorySupported() && bean.isThreadAllocatedMemoryEnabled());
     }
 }

@@ -174,7 +174,8 @@ public final class MavenEngine implements AutoCloseable {
         var overlay = new OverlayReader(localOverlay);
         session.setWorkspaceReader(org.eclipse.aether.util.repository.ChainedWorkspaceReader.newInstance(overlay,org.eclipse.aether.util.repository.ChainedWorkspaceReader.newInstance(workspace,poms)));
         long modelsAt=System.nanoTime();build.modelMillis=(modelsAt-started)/1e6;
-        var reactor=prepared.stream().map(p->p.module().gav()).collect(java.util.stream.Collectors.toUnmodifiableSet());
+        // A reactor module as the overlay substitutes it: by exact version, or by groupId:artifactId when versions are ignored.
+        java.util.function.Function<org.eclipse.aether.artifact.Artifact,String> reactor=a->{var m=localOverlay.match(new WorkspaceSource.Artifact(a.getGroupId(),a.getArtifactId(),a.getExtension(),a.getClassifier(),a.getVersion()));return m==null?null:m.gav();};
         for(var item:prepared){
             session.setUserProperties(item.properties()); models.associate(session, settings, item.directory(), remap(item.properties()), item.remotes()); var model=item.model();var remotes=item.remotes();var moduleDir=item.directory();var module=item.module();
             String gav=module.gav(),release=module.release();var sources=module.sources();var testSources=module.testSources();var m=model.getBuild();
@@ -250,7 +251,7 @@ public final class MavenEngine implements AutoCloseable {
     }
     private static void walk(DependencyNode node, String parent, String root, Build build,
                              Set<String> main, Set<String> test,Set<String> runtime, Set<DependencyNode> seen,
-                             Set<String> reactor, Set<String> mainOrder, Set<String> testOrder) {
+                             java.util.function.Function<org.eclipse.aether.artifact.Artifact,String> reactor, Set<String> mainOrder, Set<String> testOrder) {
         var artifact = node.getArtifact();
         String id = root + "|" + (artifact == null ? root : artifact.toString());
         String gav = artifact == null ? root : artifact.getGroupId() + ":" + artifact.getArtifactId() + ":" + artifact.getVersion();
@@ -266,7 +267,8 @@ public final class MavenEngine implements AutoCloseable {
         if (winner == null && artifact != null && artifact.getExtension().equals("jar")) {
             // The compile order keeps a reactor module in its place whether or not it was built (an unbuilt one has no file and is
             // left out of the classpaths below); a classifier is kept so a consumer can tell a test-jar from the module's main output.
-            String ordered = reactor.contains(gav) ? Resolution.REACTOR + gav + (artifact.getClassifier().isEmpty() ? "" : ":" + artifact.getClassifier()) : path;
+            String sibling = reactor.apply(artifact);
+            String ordered = sibling != null ? Resolution.REACTOR + sibling + (artifact.getClassifier().isEmpty() ? "" : ":" + artifact.getClassifier()) : path;
             if (ordered != null) { testOrder.add(ordered); if (!scope.equals("test") && !scope.equals("runtime")) mainOrder.add(ordered); }
         }
         if (winner == null && artifact != null && artifact.getExtension().equals("jar") && path != null) {

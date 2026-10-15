@@ -45,13 +45,15 @@ public final class MavenModel {
         for (var m : resolution.modules()) {
             if (m.packaging().equals("pom")) continue;
             var dir = Path.of(m.directory()).toAbsolutePath().normalize();
-            names.put(m.gav(), dir.equals(root) ? "root" : slashes(root.relativize(dir)));
+            // "." for a jar module at the reactor root: no subdirectory module can have that name.
+            names.put(m.gav(), dir.equals(root) ? "." : slashes(root.relativize(dir)));
             modules.add(m);
         }
         var coordinates = new HashMap<String, String>();
         for (var node : resolution.nodes()) if (node.path() != null) coordinates.putIfAbsent(node.path(), node.gav());
 
-        var warnings = new ArrayList<String>();
+        // A sibling depended on at another version is the sibling (the overlay substitutes it by groupId:artifactId); say so.
+        var warnings = new ArrayList<String>(resolution.warnings().stream().filter(w -> w.startsWith("overlay_version")).toList());
         var doc = Json.MAPPER.createObjectNode();
         doc.put("root", slashes(root));
         doc.put("jdkHome", slashes(jdkHome.toAbsolutePath().normalize()));
@@ -61,6 +63,11 @@ public final class MavenModel {
             var main = dependencies(resolution, m.gav() + ":main", names, coordinates, repo, name, warnings);
             var test = dependencies(resolution, m.gav() + ":test", names, coordinates, repo, name, warnings);
             test.removeAll(main);
+            if (!m.testCompilerOptions().equals(m.compilerOptions()))
+                warnings.add(name + ": test compiler options " + m.testCompilerOptions() + " differ from main; the model has one option list, main's");
+            for (var p : List.of(m.processing(), m.testProcessing()))
+                if (p.enabled())
+                    warnings.add(name + " (" + (p == m.processing() ? "main" : "test") + "): annotation processing is configured and stage 2 does not run it yet; generated declarations are missing");
             var mainRoots = roots(root, m.sources(), m.processing().generatedDirectory());
             boolean modular = moduleInfo(root, mainRoots);
             ObjectNode node = list.addObject();
@@ -99,6 +106,7 @@ public final class MavenModel {
                 continue;
             }
             var path = Path.of(entry).toAbsolutePath().normalize();
+            if (!Files.isRegularFile(path)) { warnings.add(self + ": classpath entry " + entry + " is not a jar file; left out"); continue; }
             if (path.startsWith(repo)) {
                 var parts = repo.relativize(path);
                 int n = parts.getNameCount();
@@ -122,7 +130,8 @@ public final class MavenModel {
         var out = new ArrayList<String>();
         for (var s : sources) {
             var dir = Path.of(s).toAbsolutePath().normalize();
-            if (generated != null && generated.startsWith(dir)) continue;
+            // The processor output itself, a directory below it, or one that contains it.
+            if (generated != null && (generated.startsWith(dir) || dir.startsWith(generated))) continue;
             out.add(dir.startsWith(root) ? slashes(root.relativize(dir)) : slashes(dir));
         }
         return out;

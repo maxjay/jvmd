@@ -37,6 +37,7 @@ import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
+import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 
 /**
@@ -220,6 +221,9 @@ final class HeaderCompiler {
             } else options.add("-proc:none");
             var diagnostics = new DiagnosticCollector<JavaFileObject>();
             files = compiler.getStandardFileManager(diagnostics, null, charset);
+            // An explicit, empty source path: without one javac looks for sources on the classpath, and a jar that bundles .java files
+            // would have them parsed and entered as declarations of this scope (C.1, amendments 4.7).
+            files.setLocation(StandardLocation.SOURCE_PATH, List.of());
             task = (JavacTaskImpl) compiler.getTask(null, files, diagnostics, options, null, objects.stream().filter(o -> o.unit.parsed()).toList());
             // Every unit entered, in every processing round, by URI: a round re-enters the files it has, and a generated file is entered
             // in the round after the one that wrote it. Whether processing ran at all is the processing event.
@@ -334,6 +338,7 @@ final class HeaderCompiler {
         var options = new ArrayList<String>(base);
         options.add("-proc:none");
         try (var files = compiler.getStandardFileManager(diagnostics, null, charset)) {
+            files.setLocation(StandardLocation.SOURCE_PATH, List.of());
             var task = (JavacTaskImpl) compiler.getTask(null, files, diagnostics, options, null, objects);
             try { task.parse(); } finally { JavaCompiler.instance(task.getContext()).close(); }
         } catch (IOException e) { throw new UncheckedIOException(e); }

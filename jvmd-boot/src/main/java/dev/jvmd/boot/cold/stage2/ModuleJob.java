@@ -44,8 +44,8 @@ final class ModuleJob {
 
     ModuleJob(Boot boot) { this.boot = boot; }
 
-    /** A source file found under a source root: javac reads it, once, when it asks for it. */
-    record Found(String path, Path file, long mtimeNanos) { }
+    /** A source file found under a source root, with its size and modification time from one stat: javac reads it, once, when it asks for it. */
+    record Found(String path, Path file, long size, long mtimeNanos) { }
 
     /**
      * The class-file target the build writes: {@code --release}, else {@code -target}, either as two arguments or with {@code =}, else
@@ -117,7 +117,7 @@ final class ModuleJob {
             for (var u : compiled.units) unitsByPath.put(u.path, u);
             // 4. Each compilation unit, in path order: the scope's files, then what its processors wrote (stamped with no time).
             var units = new ArrayList<Found>(found);
-            for (var u : compiled.units) if (u.generated) units.add(new Found(u.path, null, 0));
+            for (var u : compiled.units) if (u.generated) units.add(new Found(u.path, null, 0, 0));
             for (var file : units) {
                 var unit = unitsByPath.get(file.path());
                 var kappa = unit.kappa == null ? sums.zero() : unit.kappa; // javac could not read it: the file is a parse fault
@@ -340,8 +340,9 @@ final class ModuleJob {
         }
         var out = new ArrayList<Found>(byPath.size());
         for (var e : byPath.entrySet()) {
-            var instant = Files.readAttributes(e.getValue(), BasicFileAttributes.class).lastModifiedTime().toInstant();
-            out.add(new Found(e.getKey(), e.getValue(), instant.getEpochSecond() * 1_000_000_000L + instant.getNano()));
+            var attributes = Files.readAttributes(e.getValue(), BasicFileAttributes.class);
+            var instant = attributes.lastModifiedTime().toInstant();
+            out.add(new Found(e.getKey(), e.getValue(), attributes.size(), instant.getEpochSecond() * 1_000_000_000L + instant.getNano()));
         }
         return out;
     }

@@ -256,6 +256,10 @@ class LocalColdBootTest {
         var a = actual.snapshot();
         var e = expected.snapshot();
         if (except != null) { a.remove(except); e.remove(except); }
+        // The boot-start stamp is a time, not a record of the root.
+        var stamp = "LSTART|".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        a.keySet().removeIf(k -> Arrays.equals(k, 0, Math.min(k.length, stamp.length), stamp, 0, stamp.length));
+        e.keySet().removeIf(k -> Arrays.equals(k, 0, Math.min(k.length, stamp.length), stamp, 0, stamp.length));
         assertThat(a.keySet()).as("record keys").containsExactlyElementsOf(e.keySet());
         for (var entry : e.entrySet()) assertThat(a.get(entry.getKey())).isEqualTo(entry.getValue());
     }

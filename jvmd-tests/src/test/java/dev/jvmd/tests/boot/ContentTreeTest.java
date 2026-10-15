@@ -133,6 +133,31 @@ class ContentTreeTest {
         assertThatThrownBy(() -> tree.verify(root, sink.nodes::get)).isInstanceOf(IllegalStateException.class);
     }
 
+    @ParameterizedTest @MethodSource("digests")
+    void aRangeVisitsExactlyItsEntriesAndReadsOnlyTheNodesThatCanHoldThem(Digest digest) {
+        var tree = new ContentTree(digest);
+        var all = entries(digest, 6000, 4);
+        var sink = new MapSink();
+        var root = tree.build(all, sink);
+        var random = new Random(9);
+        for (int i = 0; i < 40; i++) {
+            long lo = random.nextInt(18000), hi = lo + random.nextInt(i < 20 ? 300 : 9000);
+            var expected = new ArrayList<Long>();
+            for (var e : all) {
+                long k = ByteBuffer.wrap(e.key()).getLong();
+                if (k >= lo && k < hi) expected.add(k);
+            }
+            var visited = new ArrayList<Long>();
+            var reads = new int[1];
+            tree.forEach(root.hash(), h -> { reads[0]++; return sink.nodes.get(h); }, key(lo), key(hi), e -> visited.add(ByteBuffer.wrap(e.key()).getLong()));
+            assertThat(visited).isEqualTo(expected);
+            if (i < 20) assertThat(reads[0]).as("a narrow range reads a path, not the tree").isLessThan(sink.nodes.size() / 4);
+        }
+        var everything = new ArrayList<Entry>();
+        tree.forEach(root.hash(), sink.nodes::get, null, null, everything::add);
+        assertThat(everything).hasSize(all.size());
+    }
+
     @Test void changingOneEntryRewritesOnlyAPathOfNodes() {
         var digest = Sha256.INSTANCE;
         var tree = new ContentTree(digest);

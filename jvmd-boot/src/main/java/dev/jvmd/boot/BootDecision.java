@@ -3,7 +3,6 @@ package dev.jvmd.boot;
 import dev.jvmd.boot.cold.stage1.Stage1;
 import dev.jvmd.boot.cold.stage2.Stage2;
 import dev.jvmd.index.layer.local.LocalFormat;
-import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.core.Config;
 import dev.jvmd.core.hash.digests.Sha256;
@@ -63,11 +62,12 @@ public final class BootDecision {
 
     /**
      * Boots LOCAL for one project into the committed MACHINE generation (stage 2, 5.7). The project's records live under the key prefix
-     * of its project key; a project that already has a LOCAL root of this FORMAT would be a warm boot, which does not exist yet: log one
-     * line and return, deleting nothing and not falling through to a cold boot.
+     * of its project key. A committed root is kept while {@link Stage2#stale} finds nothing it was built from changed: one line is
+     * logged and nothing is written. Otherwise, warm boot not existing yet, the project is cold booted again; its previous root stays
+     * as history and nothing is deleted.
      *
      * @param repository the Maven repository root the model's locations are relative to
-     * @return the boot's result, or empty if a committed LOCAL generation was skipped
+     * @return the boot's result, or empty if the committed LOCAL root was kept
      * @throws IllegalStateException if MACHINE has not been booted
      */
     public static Optional<Stage2.Result> local(Path indexDir, ProjectModel model, Path repository) throws IOException {
@@ -77,16 +77,12 @@ public final class BootDecision {
         var generation = Generation.of(indexDir, format);
         // One open of the store answers everything: whether MACHINE is committed, whether this project is, and the boot itself.
         try (var store = generation.openLocal()) {
-            // A committed root is kept only while nothing it was built from changed (demo plan A3); without warm boot, a change is a
-            // cold rebuild, and the old root stays as history.
-            if (store.get(LocalStore.localRootKey(Stage2.projectKey(digest, model))) != null) {
-                var stale = Stage2.stale(digest, store, model, LocalFormat.of(format));
-                if (stale.isEmpty()) {
-                    LOG.log(System.Logger.Level.INFO, "local generation for {0} committed and current; skipping", model.root());
-                    return Optional.empty();
-                }
-                LOG.log(System.Logger.Level.INFO, "local generation for {0} is stale ({1}); cold booting, warm boot not implemented", model.root(), stale.get());
+            var stale = Stage2.stale(digest, store, model, LocalFormat.of(format), repository);
+            if (stale.isEmpty()) {
+                LOG.log(System.Logger.Level.INFO, "local generation for {0} committed and current; skipping", model.root());
+                return Optional.empty();
             }
+            LOG.log(System.Logger.Level.INFO, "local generation for {0}: {1}; cold booting, warm boot not implemented", model.root(), stale.get());
             var stage2 = new Stage2(digest, new ContentTree(digest), jdkFeature, Runtime.getRuntime().availableProcessors(), repository, ClassFacts::of);
             var result = stage2.run(store, model);
             log(result);

@@ -66,6 +66,11 @@ public final class MavenModel {
             if (!m.testCompilerOptions().equals(m.compilerOptions()))
                 warnings.add(name + ": test compiler options " + m.testCompilerOptions() + " differ from main; the model has one option list, main's");
             var mainRoots = roots(root, m.sources(), m.processing().generatedDirectory());
+            // The resolver lists every directory under generated-sources as a main root once it exists, including one that a
+            // build-helper add-test-source put there for the tests; such a directory is the test scope's alone.
+            var testRoots = roots(root, m.testSources(), m.testProcessing().generatedDirectory());
+            var generatedSources = parent(m.processing().generatedDirectory());
+            mainRoots.removeIf(r -> testRoots.contains(r) && generatedSources != null && generatedSources.equals(parent(root.resolve(r).toString())));
             boolean modular = moduleInfo(root, mainRoots);
             ObjectNode node = list.addObject();
             node.put("name", name).put("coordinate", m.gav()).put("release", release(m)).put("moduleInfo", modular);
@@ -75,7 +80,7 @@ public final class MavenModel {
             if (modular) options.add("--module-version").add(m.gav().substring(m.gav().lastIndexOf(':') + 1));
             var scopes = node.putObject("scopes");
             scope(scopes.putObject("main"), mainRoots, main, processing(m.processing(), release(m), name + " (main)", warnings), m.processing(), repo);
-            scope(scopes.putObject("test"), roots(root, m.testSources(), m.testProcessing().generatedDirectory()), test,
+            scope(scopes.putObject("test"), testRoots, test,
                     processing(m.testProcessing(), release(m), name + " (test)", warnings), m.testProcessing(), repo);
         }
         try {
@@ -133,6 +138,11 @@ public final class MavenModel {
             out.add(dir.startsWith(root) ? slashes(root.relativize(dir)) : slashes(dir));
         }
         return out;
+    }
+
+    private static Path parent(String directory) {
+        if (directory == null || directory.isBlank()) return null;
+        return Path.of(directory).toAbsolutePath().normalize().getParent();
     }
 
     /** The language level: {@code --release}, else {@code -source}, else what the resolver read from the POM properties. */

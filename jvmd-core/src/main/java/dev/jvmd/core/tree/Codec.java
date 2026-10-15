@@ -84,9 +84,15 @@ public final class Codec {
         public long u64() { return (u32() << 32) | u32(); }
         public long i64() { return u64(); }
         public byte[] raw(int n) {
+            java.util.Objects.checkFromIndexSize(position, n, bytes.length);
             var out = Arrays.copyOfRange(bytes, position, position + n);
             position += n;
             return out;
+        }
+        /** Consume a checked byte range without allocating a copy. */
+        public void skip(int n) {
+            java.util.Objects.checkFromIndexSize(position, n, bytes.length);
+            position += n;
         }
         /** @throws IllegalArgumentException if the bytes are not canonical modified UTF-8 */
         public String str() {

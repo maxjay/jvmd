@@ -134,7 +134,7 @@ public final class Stage2 {
         var routes = new ArrayList<Route>();
         var foreign = new ArrayList<String>();
         var filePrefix = LocalStore.fileKey(projectKey, "");
-        tree.forEach(root.local().hash(), nodes, filePrefix, ContentTree.prefixEnd(filePrefix), entry -> {
+        tree.forEachPrefix(root.local().hash(), nodes, filePrefix, entry -> {
             var path = dev.jvmd.core.tree.Mutf8.decode(entry.key(), filePrefix.length, entry.key().length - filePrefix.length);
             if (path.startsWith(ModuleJob.GENERATED)) return; // derived from the files around it, which this compares
             var row = committed(digest, store, entry);
@@ -142,7 +142,7 @@ public final class Stage2 {
             else files.put(path, FileRow.decode(path, row, digest.width()));
         });
         var routePrefix = LocalStore.routePrefix(projectKey);
-        tree.forEach(root.local().hash(), nodes, routePrefix, ContentTree.prefixEnd(routePrefix), entry -> {
+        tree.forEachPrefix(root.local().hash(), nodes, routePrefix, entry -> {
             var row = committed(digest, store, entry);
             if (row == null) foreign.add("route row");
             else routes.add(Route.decode(row, digest.width()));

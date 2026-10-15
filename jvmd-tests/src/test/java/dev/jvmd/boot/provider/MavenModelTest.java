@@ -57,6 +57,26 @@ class MavenModelTest {
         assertThat(model.modules().get(1).main().processing().processors()).containsExactly("p.Gen");
     }
 
+    /**
+     * Once a build-helper add-test-source directory under generated-sources exists, the resolver lists it for main as well (it lists
+     * every directory there). It is the test scope's: main keeps the directories the tests do not claim.
+     */
+    @Test void aGeneratedDirectoryTheTestsAddIsNotAMainRoot() {
+        var dir = ROOT.resolve("g");
+        var generated = dir.resolve("target/generated-sources");
+        var main = new Resolution.Processing(List.of(), List.of(), false, false, generated.resolve("annotations").toString(), "none", false);
+        var test = new Resolution.Processing(List.of(), List.of(), false, false, dir.resolve("target/generated-test-sources/test-annotations").toString(), "none", false);
+        var module = new Resolution.Module("g:g:1", dir.toString(), "jar",
+                List.of(dir.resolve("src/main/java").toString(), generated.toString(), generated.resolve("annotations").toString(),
+                        generated.resolve("fixtures").toString(), generated.resolve("antlr4").toString()),
+                List.of(dir.resolve("src/test/java").toString(), generated.resolve("fixtures").toString()),
+                dir.resolve("target/classes").toString(), dir.resolve("target/test-classes").toString(), "17", List.of(),
+                List.of("--release", "17"), List.of("--release", "17"), main, test);
+        var model = MavenModel.of(resolution(module), REPO, ROOT).parse().modules().getFirst();
+        assertThat(model.main().sourceRoots()).containsExactly("g/src/main/java", "g/target/generated-sources/antlr4");
+        assertThat(model.test().sourceRoots()).containsExactly("g/src/test/java", "g/target/generated-sources/fixtures");
+    }
+
     @Test void anExplicitProcessorPathIsWrittenLikeDependencyLocations() {
         var explicit = new Resolution.Processing(List.of(REPO.resolve("org/p/gen/1/gen-1.jar").toString(), "/elsewhere/tool.jar"),
                 List.of(), true, false, "", "", true);

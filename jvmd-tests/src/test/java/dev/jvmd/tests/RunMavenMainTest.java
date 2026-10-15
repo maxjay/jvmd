@@ -252,40 +252,50 @@ class RunMavenMainTest {
     /**
      * A module whose POM runs a goal that rewrites classes after javac (bound to process-classes, as weaving or enhancement is) is left to
      * the build: a run uses its build output while that is current, a hot swap in it is refused, and once a source is newer than the
-     * build output a run is refused rather than put a plain compile before the build's classes. A caller who knows the goals leave the
-     * classes alone can start the run with ignore_post_compile, and then jvmd compiles and hot swaps the module as any other.
+     * build output a run is refused rather than put a plain compile before the build's classes. A run that names the module in
+     * ignore_post_compile compiles and hot swaps it as any other, into a folder of its own: a run on the build's classes never sees it.
      */
     @Test void aModuleWhoseBuildRewritesItsClassesIsLeftToTheBuild() throws Exception {
         var root = reactor("app");
         weavingModule(root, "app", "", "app/Main.java", """
                 package app;
                 public class Main {
-                    static String value() { return "built"; }
+                    static String value() { return new java.io.File("go").exists() ? "lazy " + Lazy.text() : "built"; }
                     public static void main(String[] args) throws Exception { for (int i = 0; i < 2400; i++) { System.out.println(value()); Thread.sleep(25); } }
                 }
                 """);
-        var main = root.resolve("app/src/main/java/app/Main.java");
+        var lazy = root.resolve("app/src/main/java/app/Lazy.java");
+        Files.writeString(lazy, "package app; public class Lazy { static String text() { return \"woven\"; } }");
         build(root, "app", List.of());
         try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
             String session = TestSupport.open(app, root);
-            var run = new Run(app, session, call(app, "run.start", Map.of("session", session, "target", "app.Main", "debug", true)).path("run_session").asText());
-            awaitOutput(run, "built");
-            Files.writeString(main, Files.readString(main).replace("\"built\"", "\"jvmd\""));
-            Files.setLastModifiedTime(main, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 5_000));
-            var refused = TestSupport.request(app.dispatcher(), "debug.op", Map.of("session", session, "run_session", run.id(), "op", "hotswap", "args", Map.of("path", main.toString())));
+            var woven = new Run(app, session, call(app, "run.start", Map.of("session", session, "target", "app.Main", "debug", true)).path("run_session").asText());
+            awaitOutput(woven, "built");
+            Files.writeString(lazy, Files.readString(lazy).replace("\"woven\"", "\"jvmd\""));
+            Files.setLastModifiedTime(lazy, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 5_000));
+            var refused = TestSupport.request(app.dispatcher(), "debug.op", Map.of("session", session, "run_session", woven.id(), "op", "hotswap", "args", Map.of("path", lazy.toString())));
             assertThat(refused.path("error").toString()).as(refused.toPrettyString()).contains("org.example:weaver-maven-plugin:weave@process-classes")
-                    .contains("mvn -pl app -am process-classes").contains("ignore_post_compile");
-            call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "stop", "args", Map.of()));
+                    .contains("mvn -pl app -am process-classes").contains("ignore_post_compile: [\\\"fixture:app:1\\\"]");
             var blocked = TestSupport.request(app.dispatcher(), "run.start", Map.of("session", session, "target", "app.Main", "debug", false));
             assertThat(blocked.path("error").toString()).as(blocked.toPrettyString()).contains("weaver-maven-plugin").contains("Rebuild");
+            var unknown = TestSupport.request(app.dispatcher(), "run.start", Map.of("session", session, "target", "app.Main", "ignore_post_compile", List.of("nothing")));
+            assertThat(unknown.path("error").toString()).as(unknown.toPrettyString()).contains("names no module");
 
-            var allowed = new Run(app, session, call(app, "run.start", Map.of("session", session, "target", "app.Main", "debug", true, "ignore_post_compile", true)).path("run_session").asText());
-            awaitOutput(allowed, "jvmd");
-            Files.writeString(main, Files.readString(main).replace("\"jvmd\"", "\"swapped\""));
-            var swapped = call(app, "debug.op", Map.of("session", session, "run_session", allowed.id(), "op", "hotswap", "args", Map.of("path", main.toString())));
+            // The woven run is still going on the build's classes; this one compiles the stale module itself.
+            var plain = new Run(app, session, call(app, "run.start", Map.of("session", session, "target", "app.Main", "debug", true, "ignore_post_compile", List.of("app"))).path("run_session").asText());
+            awaitOutput(plain, "built");
+            Files.writeString(root.resolve("go"), "");
+            awaitOutput(plain, "lazy jvmd");
+            awaitOutput(woven, "lazy woven");
+            assertThat(call(app, "debug.op", Map.of("session", session, "run_session", woven.id(), "op", "output", "args", Map.of())).path("output").asText())
+                    .as("the run on the build's classes never loads jvmd's plain compile").doesNotContain("lazy jvmd");
+            var main = root.resolve("app/src/main/java/app/Main.java");
+            Files.writeString(main, Files.readString(main).replace("\"lazy \"", "\"swapped \""));
+            var swapped = call(app, "debug.op", Map.of("session", session, "run_session", plain.id(), "op", "hotswap", "args", Map.of("path", main.toString())));
             assertThat(swapped.path("restart_required").asBoolean()).as(swapped.toPrettyString()).isFalse();
-            awaitOutput(allowed, "swapped");
-            call(app, "debug.op", Map.of("session", session, "run_session", allowed.id(), "op", "stop", "args", Map.of()));
+            awaitOutput(plain, "swapped jvmd");
+            call(app, "debug.op", Map.of("session", session, "run_session", plain.id(), "op", "stop", "args", Map.of()));
+            call(app, "debug.op", Map.of("session", session, "run_session", woven.id(), "op", "stop", "args", Map.of()));
         }
     }
 
@@ -371,6 +381,45 @@ class RunMavenMainTest {
             Thread.sleep(300);
             var after = call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "output", "args", Map.of("since", written)));
             assertThat(after.path("output").asText()).as("the program runs on").contains("two other").doesNotContain("Error");
+            call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "stop", "args", Map.of()));
+        }
+    }
+
+    /**
+     * A hot swap across modules is all or nothing: every module's files are compiled first, a module before its dependents, and then
+     * redefined in one call. When one change needs a restart (a method added to a library), no class is redefined, whatever order the
+     * files are given in, and the program runs on its old classes rather than call a method it does not have.
+     */
+    @Test void aHotSwapAcrossModulesRedefinesAllOrNothing() throws Exception {
+        var root = reactor("core", "app");
+        module(root, "core", "", Map.of("core/Names.java", "package core; public class Names { public static String name() { return \"core\"; } }"));
+        module(root, "app", dependency("fixture", "core", null), Map.of("app/Main.java", """
+                package app;
+                public class Main {
+                    static String value() { return "name " + core.Names.name(); }
+                    public static void main(String[] args) throws Exception { for (int i = 0; i < 2400; i++) { System.out.println(value()); Thread.sleep(25); } }
+                }
+                """));
+        build(root, "core", List.of());
+        build(root, "app", List.of(root.resolve("core/target/classes")));
+        try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
+            String session = TestSupport.open(app, root);
+            var run = new Run(app, session, call(app, "run.start", Map.of("session", session, "target", "app.Main", "debug", true)).path("run_session").asText());
+            awaitOutput(run, "name core");
+            var names = root.resolve("core/src/main/java/core/Names.java");
+            Files.writeString(names, Files.readString(names).replace("public static String name()", "public static String extra() { return \"extra\"; } public static String name()"));
+            var main = root.resolve("app/src/main/java/app/Main.java");
+            Files.writeString(main, Files.readString(main).replace("core.Names.name()", "core.Names.extra()"));
+            for (var paths : List.of(List.of(names.toString(), main.toString()), List.of(main.toString(), names.toString()))) {
+                var swapped = call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "hotswap", "args", Map.of("paths", paths)));
+                assertThat(swapped.path("restart_required").asBoolean()).as(swapped.toPrettyString()).isTrue();
+                for (var module : swapped.path("modules")) assertThat(module.path("redefined").asInt()).as(swapped.toPrettyString()).isZero();
+            }
+            long written = call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "output", "args", Map.of())).path("written").asLong();
+            Thread.sleep(300);
+            var after = call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "output", "args", Map.of("since", written)));
+            assertThat(after.path("alive").asBoolean()).as(after.toPrettyString()).isTrue();
+            assertThat(after.path("output").asText()).as("the program runs on its old classes").contains("name core").doesNotContain("Error");
             call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "stop", "args", Map.of()));
         }
     }

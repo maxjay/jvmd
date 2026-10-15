@@ -125,6 +125,8 @@ public final class MavenEngine implements AutoCloseable {
         final Map<String, List<String>> classpaths = new LinkedHashMap<>();
         final Map<String, List<String>> compileOrder = new LinkedHashMap<>();
         final Map<String, List<String>> postCompile = new LinkedHashMap<>();
+        /** Per plugin jar and goal, the mojo's default phase ("" for none), so each descriptor is read once per resolution. */
+        final Map<String, String> mojoPhases = new java.util.concurrent.ConcurrentHashMap<>();
         final List<String> warnings = new ArrayList<>();
     }
     private Build build(Path root,List<Path> roots,boolean ignoreVersions,org.apache.maven.settings.Settings settings, boolean offline,
@@ -200,7 +202,7 @@ public final class MavenEngine implements AutoCloseable {
             build.classpaths.put(gav + ":main", List.copyOf(main)); build.classpaths.put(gav + ":test", List.copyOf(test));build.classpaths.put(gav+":runtime",List.copyOf(runtime));
             build.compileOrder.put(gav + ":main", List.copyOf(mainOrder)); build.compileOrder.put(gav + ":test", List.copyOf(testOrder));
             build.compileOrder.put(gav + ":runtime", List.copyOf(runtimeOrder));
-            build.postCompile.put(gav, postCompile(model, session.getLocalRepository().getBasedir().toPath()));
+            build.postCompile.put(gav, postCompile(model, plugin -> pluginJar(session, plugin), build.inputs, build.mojoPhases));
         }
         build.dependencyMillis=(System.nanoTime()-modelsAt)/1e6;build.warnings.addAll(localOverlay.warnings());
         return build;
@@ -274,9 +276,11 @@ public final class MavenEngine implements AutoCloseable {
      * The plugin goals of a module's build that rewrite its main classes after javac: any goal that runs at {@code process-classes},
      * explicitly or by its mojo's default phase (from the plugin's descriptor in the local repository, when it is there), and the known
      * rewriters wherever they run. Not: an execution bound to phase {@code none}, and the known goals that only write beside the classes or
-     * check them. From the effective model, so inherited and profile-activated plugins count.
+     * check them. From the effective model, so inherited and profile-activated plugins count. Every plugin jar consulted, present or
+     * absent, is added to {@code consulted}: the answer changes when one is downloaded, so the cached resolution must too.
      */
-    static List<String> postCompile(org.apache.maven.model.Model model, Path localRepository) {
+    static List<String> postCompile(org.apache.maven.model.Model model, java.util.function.Function<org.apache.maven.model.Plugin, Path> jars,
+                                    Set<Path> consulted, Map<String, String> phases) {
         var out = new ArrayList<String>();
         if (model.getBuild() == null) return out;
         for (var plugin : model.getBuild().getPlugins())
@@ -285,17 +289,29 @@ public final class MavenEngine implements AutoCloseable {
                     String key = plugin.getGroupId() + ":" + plugin.getArtifactId() + ":" + goal;
                     String bound = execution.getPhase() == null || execution.getPhase().isBlank() ? null : execution.getPhase();
                     if ("none".equals(bound) || CLASS_READERS.contains(key)) continue;
-                    String phase = bound != null ? bound : defaultPhase(localRepository, plugin, goal);
+                    String phase = bound;
+                    if (phase == null) {
+                        var jar = jars.apply(plugin);
+                        if (jar != null) {
+                            consulted.add(jar);
+                            String found = phases.computeIfAbsent(jar + "!" + goal, k -> { var p = defaultPhase(jar, goal); return p == null ? "" : p; });
+                            phase = found.isEmpty() ? null : found;
+                        }
+                    }
                     if ("process-classes".equals(phase) || CLASS_REWRITERS.contains(key)) out.add(key + "@" + (phase == null ? "default" : phase));
                 }
         return List.copyOf(out);
     }
 
-    /** A mojo's default phase from {@code META-INF/maven/plugin.xml} in the plugin jar, or null when the jar is not in the local repository. */
-    private static String defaultPhase(Path localRepository, org.apache.maven.model.Plugin plugin, String goal) {
-        if (localRepository == null || plugin.getVersion() == null || plugin.getVersion().isBlank()) return null;
-        var jar = localRepository.resolve(plugin.getGroupId().replace('.', '/')).resolve(plugin.getArtifactId()).resolve(plugin.getVersion())
-                .resolve(plugin.getArtifactId() + "-" + plugin.getVersion() + ".jar");
+    /** Where the local repository keeps a plugin's jar (split repositories included), or null when the model gives no version. */
+    private static Path pluginJar(org.eclipse.aether.RepositorySystemSession session, org.apache.maven.model.Plugin plugin) {
+        if (plugin.getVersion() == null || plugin.getVersion().isBlank()) return null;
+        var artifact = new DefaultArtifact(plugin.getGroupId(), plugin.getArtifactId(), "jar", plugin.getVersion());
+        return session.getLocalRepository().getBasedir().toPath().resolve(session.getLocalRepositoryManager().getPathForLocalArtifact(artifact)).toAbsolutePath().normalize();
+    }
+
+    /** A mojo's default phase from {@code META-INF/maven/plugin.xml} in the plugin jar, or null when the jar or the mojo is not there. */
+    private static String defaultPhase(Path jar, String goal) {
         if (!Files.isRegularFile(jar)) return null;
         try (var zip = new java.util.zip.ZipFile(jar.toFile())) {
             var entry = zip.getEntry("META-INF/maven/plugin.xml");
@@ -356,7 +372,7 @@ public final class MavenEngine implements AutoCloseable {
     }
     private String contextFingerprint() {
         String properties = environment.systemProperties().entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).sorted().collect(java.util.stream.Collectors.joining("\n"));
-        return Hashing.sha256(("workspace-models-v9\n" + models.mavenVersion() + "\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
+        return Hashing.sha256(("workspace-models-v10\n" + models.mavenVersion() + "\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
     }
     private static ProjectModelState.Input input(Path path, boolean strong) throws Exception {
         path = path.toAbsolutePath().normalize();

@@ -36,6 +36,9 @@ public final class RuntimeCompiler {
         }finally{if(child!=null&&child.isAlive())kill(child);delete(temporary);}
     }
     private static String quote(String value){return "\""+value.replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n").replace("\r","\\r")+"\"";}
+    private static final java.util.concurrent.ConcurrentHashMap<Path,Object> OUTPUTS=new java.util.concurrent.ConcurrentHashMap<>();
+    /** One lock per output folder, taken by every writer of it in this process: a module's compile and publication, a hot swap's publication. */
+    public static Object outputLock(Path output){return OUTPUTS.computeIfAbsent(output.toAbsolutePath().normalize(),_->new Object());}
     public static void publish(Compilation compiled,Path output)throws Exception{
         output=output.toAbsolutePath().normalize();Files.createDirectories(output);
         for(var entry:compiled.classes().entrySet()){

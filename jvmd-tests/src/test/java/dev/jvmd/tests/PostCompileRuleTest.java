@@ -57,12 +57,17 @@ class PostCompileRuleTest {
         pom(root.resolve("family/child"), "family", "child", null, "");
         // A goal with no phase in the POM, whose mojo defaults to process-classes in its descriptor.
         pom(root.resolve("defaulted"), "parent", "defaulted", null, "<build><plugins>" + plugin("org.example", "transformer-maven-plugin", null, "transform") + "</plugins></build>");
+        // Resolved once before the plugin is in the local repository: the goal's phase is unknown, so it does not count yet.
+        try (var resolver = new MavenResolver(TestSupport.config(temp, Duration.ofHours(1)))) {
+            assertThat(resolver.resolve(root).postCompile().get("fixture:defaulted:1")).isEmpty();
+        }
         var jar = Files.createDirectories(temp.resolve("repository/org/example/transformer-maven-plugin/1")).resolve("transformer-maven-plugin-1.jar");
         try (var out = new JarOutputStream(Files.newOutputStream(jar))) {
             out.putNextEntry(new ZipEntry("META-INF/maven/plugin.xml"));
             out.write(("<plugin><groupId>org.example</groupId><artifactId>transformer-maven-plugin</artifactId><mojos>"
                     + "<mojo><goal>check</goal><phase>verify</phase></mojo><mojo><goal>transform</goal><phase>process-classes</phase></mojo></mojos></plugin>").getBytes());
         }
+        // Once it is there (a Maven build downloaded it), the cached resolution is stale and the goal counts.
         try (var resolver = new MavenResolver(TestSupport.config(temp, Duration.ofHours(1)))) {
             var rule = resolver.resolve(root).postCompile();
             assertThat(rule).containsAllEntriesOf(Map.of(

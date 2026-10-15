@@ -687,9 +687,13 @@
           "default": false
         },
         "ignore_post_compile": {
-          "type": "boolean",
-          "default": false,
-          "description": "Use jvmd's own compile for a stale module even though its build runs goals after javac (process-classes), for goals that leave the class files as javac wrote them. Also allows hot swaps in such modules."
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "maxItems": 1000,
+          "description": "Modules (groupId:artifactId:version, groupId:artifactId or artifactId) whose post-compile goals leave the class files as javac wrote them. jvmd then compiles each of them itself when stale, into a folder only runs that name it see, and allows hot swaps in it."
         },
         "limit": {
           "type": "integer",

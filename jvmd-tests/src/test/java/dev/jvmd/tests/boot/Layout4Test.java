@@ -86,6 +86,16 @@ class Layout4Test {
             return annotated.nodes.get(h);
         }, Stubs.Cache.NONE);
         assertThat(reads).contains(annotated.value.k(), annotated.value.oHash());
+        // Given the annotation tree, a stub may open A as well, and only A: never the annotation edges.
+        var annotationNodes = new HashSet<Identity>();
+        reach(annotated.annotations.hash(), annotated, annotationNodes);
+        var annotatedReads = new HashSet<Identity>();
+        Stubs.stubs(digest, annotated.tree, annotated.value, annotated.a, annotated.annotations, h -> {
+            annotatedReads.add(h);
+            assertThat(resolutionNodes.contains(h) || annotationNodes.contains(h)).as("annotated stub read %s belongs to T/O/A", h).isTrue();
+            return annotated.nodes.get(h);
+        }, Stubs.Cache.NONE);
+        assertThat(annotatedReads).contains(annotated.annotations.hash()).doesNotContain(annotated.annotationEdges.hash());
         var ownerNodes = new HashSet<Identity>();
         reach(annotated.value.oHash(), annotated, ownerNodes);
         DefinerIndex.fold(annotated.tree, List.of(annotated.value.k()), dev.jvmd.index.layer.local.Bind.leafSetRoot(digest, List.of(annotated.value.k()), new NodeSink() { public void write(Node n) { annotated.nodes.put(n.hash(), n.bytes()); } public void flush() { } }), null, h -> annotated.value, h -> {

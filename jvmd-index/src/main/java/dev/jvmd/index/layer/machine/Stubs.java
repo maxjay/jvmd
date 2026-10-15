@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -40,7 +41,8 @@ import java.util.function.Function;
  * everything in its {@code res}, including warning metadata and annotation-type meta-annotations. Given the leaf's annotation tree
  * {@code A}, each class, field and method also carries the annotations its class file retains, visible and invisible: annotation
  * processors read them through a sibling's stubs (a JPA metamodel generator decides a superclass by its {@code @MappedSuperclass}).
- * Type annotations, parameter annotations and parameter names are not emitted yet, nor executable bodies. A method without
+ * Not emitted yet: type annotations, parameter annotations and parameter names, record-component annotations, package annotations
+ * (package-info), and private members, which have no facts; nor executable bodies. A method without
  * {@code Code} is legal input to javac; stubs are compile-time input and are never loaded by a JVM. A stub is a pure function of one
  * type's {@code res}, its retained annotations and its direct members' InnerClasses projection, so it is cached per type and shared.
  *
@@ -100,22 +102,23 @@ public final class Stubs {
      * One thing besides {@code res} is in a class file: an outer type's {@code InnerClasses} attribute, which is how javac finds its member
      * types. Those are other types' facts, so the outer type's key names its member types, exact inner names and emitted inner flags,
      * and nothing else about them: never a member's {@code oSum}, so that a change to a method of {@code Inner}
-     * changes {@code Inner}'s stub and not {@code Outer}'s. A type without member types has exactly the key {@code Digest(typeKey || oSum)}.
+     * changes {@code Inner}'s stub and not {@code Outer}'s. Every key ends with the renderer version (see {@link #stKey}).
      */
     public static List<Stub> stubs(Digest digest, ContentTree tree, MachineLeaf leaf, Function<Identity, byte[]> reader, Cache cache) {
         return stubs(digest, tree, leaf, null, null, reader, cache);
     }
 
     /**
-     * As above, with the retained annotations of the leaf's annotation tree. A type with annotations adds their range sum to its key,
-     * so a stub with them never stands in for one without; a type with none keeps exactly the key above. The leaf's list is then
-     * {@code S|Digest(k || a)}: two leaves with one {@code k} and different annotations do not share it.
+     * As above, with the retained annotations of the leaf's annotation tree. A type whose stub emits annotations adds the digest of
+     * exactly what it emits to its key, so a stub with them never stands in for one without, and a type that emits none keeps the key
+     * above. The leaf's list is {@code S|Digest(u8 RENDERER || k || a)}: two leaves with one {@code k} and different annotations share
+     * no list.
      *
      * @param a           the leaf's annotation identity, or null for stubs without retained annotations
      * @param annotations the root of its {@code A} tree, null exactly when {@code a} is
      */
     public static List<Stub> stubs(Digest digest, ContentTree tree, MachineLeaf leaf, Identity a, Root annotations, Function<Identity, byte[]> reader, Cache cache) {
-        var listKey = a == null ? leaf.k() : digest.hash(leaf.k().view(), a.view());
+        var listKey = a == null ? digest.hash(new byte[] {RENDERER}, leaf.k().view()) : digest.hash(new byte[] {RENDERER}, leaf.k().view(), a.view());
         var listed = cache.list(listKey);
         if (listed != null) {
             var out = new ArrayList<Stub>();
@@ -140,9 +143,20 @@ public final class Stubs {
             }
         });
 
-        // A: one entry per element that retains an annotation, keyed as in T.
-        var tails = new HashMap<ByteBuffer, byte[]>();
-        if (annotations != null) tree.forEach(annotations.hash(), reader, entry -> tails.put(ByteBuffer.wrap(entry.key()), entry.value()));
+        // A: one entry per element with a tail, keyed as in T. What a stub emits of it is its annotations; the projection of a type is
+        // each emitting element's key and annotation lists, in key order, and nothing else of the tail (parameter names, type
+        // annotations), so that only what a stub shows moves its key.
+        var retained = new HashMap<ByteBuffer, Retained>();
+        var projections = new HashMap<String, List<byte[]>>();
+        if (annotations != null) tree.forEach(annotations.hash(), reader, entry -> {
+            var r = Retained.of(entry.value());
+            if (r.visible().isEmpty() && r.invisible().isEmpty()) return;
+            retained.put(ByteBuffer.wrap(entry.key()), r);
+            var projection = new Codec.Writer().lenBytes(entry.key());
+            Ann.encodeList(projection, r.visibleAnns());
+            Ann.encodeList(projection, r.invisibleAnns());
+            projections.computeIfAbsent(Keys.Member.decode(entry.key()).owner(), o -> new ArrayList<>()).add(projection.toBytes());
+        });
 
         // The members of a type are the types whose outer class it is: the outer's InnerClasses attribute is how javac finds them.
         var members = new TreeMap<String, List<String>>();
@@ -160,17 +174,14 @@ public final class Stubs {
                 var type = decls.get(member).type;
                 memberTypes.add(new Member(member, type.innerName(), innerFlags(type.access())));
             }
-            Identity retained = null;
-            if (annotations != null) {
-                var sum = tree.rangeSum(annotations.hash(), reader, Keys.ownerKey(decl.owner));
-                if (!sum.equals(tree.sums().zero())) retained = sum;
-            }
-            var stKey = stKey(digest, decl.owner, oSum, memberTypes, retained);
+            var projection = projections.get(decl.owner);
+            var shown = projection == null ? null : digest.hash(projection.toArray(byte[][]::new));
+            var stKey = stKey(digest, decl.owner, oSum, memberTypes, shown);
             var stored = cache.type(stKey);
             byte[] bytes;
             if (stored != null) bytes = new Codec.Reader(stored).lenBytes();
             else {
-                bytes = build(decl, members.getOrDefault(decl.owner, List.of()), decls, tails);
+                bytes = build(decl, members.getOrDefault(decl.owner, List.of()), decls, retained);
                 cache.putType(stKey, new Codec.Writer(bytes.length + 4).lenBytes(bytes).toBytes());
             }
             out.add(new Stub(decl.owner, bytes));
@@ -184,26 +195,31 @@ public final class Stubs {
     public record Member(String internalName, String innerName, int flags) { }
 
     /**
-     * {@code Digest(typeKey || oSum || sorted (memberTypeKey || opt<str> innerName || u16 flags))} (B.10): the member part sorted by the unsigned bytes of
-     * {@code memberTypeKey} ({@code zstr internalName}), so it is the same on every machine and in every language, and absent for a
-     * type without member types.
+     * The version of how a stub is rendered from its inputs (amendments 4.7): a stub cached by an earlier renderer is never served by a
+     * later one, whatever else of its key is equal. 2 added retained annotations.
+     */
+    public static final byte RENDERER = 2;
+
+    /**
+     * {@code Digest(typeKey || oSum || sorted (memberTypeKey || opt<str> innerName || u16 flags) || u8 0 || u8 RENDERER)} (B.10): the
+     * member part sorted by the unsigned bytes of {@code memberTypeKey} ({@code zstr internalName}), so it is the same on every machine
+     * and in every language, and absent for a type without member types. A member part starts with a non-empty name, so the 0 that
+     * follows the last one is unambiguous.
      */
     public static Identity stKey(Digest digest, String owner, Identity oSum, List<Member> members) {
         return stKey(digest, owner, oSum, members, null);
     }
 
-    /**
-     * As above, then, for a type that retains annotations, {@code || u8 1 || id retained}: the range sum of its owner prefix in
-     * {@code A}, which identifies every annotation of the type and its members. The marker byte cannot be the start of a member part.
-     */
-    public static Identity stKey(Digest digest, String owner, Identity oSum, List<Member> members, Identity retained) {
+    /** As above, then, for a type whose stub emits annotations, {@code || id shown}: the digest of what it emits. */
+    public static Identity stKey(Digest digest, String owner, Identity oSum, List<Member> members, Identity shown) {
         var parts = new ArrayList<byte[]>(List.of(Keys.ownerKey(owner), oSum.view()));
         var sorted = new ArrayList<byte[]>();
         for (var member : members) sorted.add(new Codec.Writer().zstr(member.internalName()).optStr(member.innerName()).u16(member.flags()).toBytes());
         // memberTypeKey is a zstr, so the NUL after the name ends it: comparing the whole parts compares the keys first.
         sorted.sort(Arrays::compareUnsigned);
         parts.addAll(sorted);
-        if (retained != null) { parts.add(new byte[] {1}); parts.add(retained.view()); }
+        parts.add(new byte[] {0, RENDERER});
+        if (shown != null) parts.add(shown.view());
         return digest.hash(parts.toArray(byte[][]::new));
     }
 
@@ -239,30 +255,32 @@ public final class Stubs {
      * What a tail retains first (A.4a): the visible, then the invisible, annotations of one element, all of them, including the
      * warning annotations and meta-annotations {@code res} repeats. Null for an element without a tail.
      */
-    private record Retained(List<Annotation> visible, List<Annotation> invisible) {
+    private record Retained(List<Ann> visibleAnns, List<Ann> invisibleAnns) {
         static Retained of(byte[] tail) {
-            if (tail == null) return null;
             var in = new Codec.Reader(tail);
             return new Retained(list(in), list(in));
         }
 
-        private static List<Annotation> list(Codec.Reader in) {
+        private static List<Ann> list(Codec.Reader in) {
             int n = in.count();
-            var out = new ArrayList<Annotation>(n);
-            for (int i = 0; i < n; i++) out.add(annotation(Ann.decode(in)));
+            var out = new ArrayList<Ann>(n);
+            for (int i = 0; i < n; i++) out.add(Ann.decode(in));
             return out;
         }
 
+        List<Annotation> visible() { return visibleAnns.stream().map(Stubs::annotation).toList(); }
+        List<Annotation> invisible() { return invisibleAnns.stream().map(Stubs::annotation).toList(); }
+
         /** The element's annotations: the retained ones, or else those {@code res} carries. */
-        static void apply(Retained retained, List<Annotation> fromRes, java.util.function.Consumer<RuntimeVisibleAnnotationsAttribute> visible,
-                          java.util.function.Consumer<RuntimeInvisibleAnnotationsAttribute> invisible) {
+        static void apply(Retained retained, List<Annotation> fromRes, Consumer<RuntimeVisibleAnnotationsAttribute> visible,
+                          Consumer<RuntimeInvisibleAnnotationsAttribute> invisible) {
             var shown = retained == null ? fromRes : retained.visible();
             if (!shown.isEmpty()) visible.accept(RuntimeVisibleAnnotationsAttribute.of(shown));
-            if (retained != null && !retained.invisible().isEmpty()) invisible.accept(RuntimeInvisibleAnnotationsAttribute.of(retained.invisible()));
+            if (retained != null && !retained.invisibleAnns().isEmpty()) invisible.accept(RuntimeInvisibleAnnotationsAttribute.of(retained.invisible()));
         }
     }
 
-    private static byte[] build(TypeDecl decl, List<String> memberTypes, Map<String, TypeDecl> all, Map<ByteBuffer, byte[]> tails) {
+    private static byte[] build(TypeDecl decl, List<String> memberTypes, Map<String, TypeDecl> all, Map<ByteBuffer, Retained> retained) {
         var type = decl.type;
         int kind = type.kind(), access = type.access();
         String signature = type.signature(), superName = type.superName(), host = type.nestHost(), outer = type.outer();
@@ -300,9 +318,9 @@ public final class Stubs {
                 }
                 cb.with(RecordAttribute.of(infos));
             }
-            Retained.apply(Retained.of(tails.get(ByteBuffer.wrap(Keys.typeKey(decl.owner)))), metaAnnotations, cb::with, cb::with);
-            for (var field : decl.fields) field(cb, field, Retained.of(tails.get(ByteBuffer.wrap(Keys.memberKey(decl.owner, Keys.FIELD, field.name(), field.descriptor())))));
-            for (var method : decl.methods) method(cb, method, Retained.of(tails.get(ByteBuffer.wrap(Keys.memberKey(decl.owner, Keys.METHOD, method.name(), method.descriptor())))));
+            Retained.apply(retained.get(ByteBuffer.wrap(Keys.typeKey(decl.owner))), metaAnnotations, cb::with, cb::with);
+            for (var field : decl.fields) field(cb, field, retained.get(ByteBuffer.wrap(Keys.memberKey(decl.owner, Keys.FIELD, field.name(), field.descriptor()))));
+            for (var method : decl.methods) method(cb, method, retained.get(ByteBuffer.wrap(Keys.memberKey(decl.owner, Keys.METHOD, method.name(), method.descriptor()))));
         });
     }
 

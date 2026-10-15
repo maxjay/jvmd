@@ -153,7 +153,7 @@ Semantic leaf, definer and stub records do not include checkout paths. Their con
 
 ### 3.14 Stubs
 
-Sibling modules compile against cached class-file stubs synthesized from T, never by re-entering siblings' source. Stubs contain resolution attributes and minimal warning annotations; they do not open A. The cache has an S list per leaf and an ST blob per type. The outer stub's key includes exactly the direct member-type data it emits, not each child's oSum. Appendix B.10 defines the key.
+Sibling modules compile against cached class-file stubs synthesized from T, never by re-entering siblings' source. Stubs contain resolution attributes and, read from the leaf's A, the annotations each class, field and method retains, visible and invisible: annotation processors read a sibling's annotations through its stubs (a JPA metamodel generator decides a superclass by @MappedSuperclass). Type annotations, parameter annotations and names, record-component and package annotations are not emitted yet. The cache has an S list per leaf and annotation identity and an ST blob per type. The outer stub's key includes exactly the direct member-type data it emits, not each child's oSum; a type that emits annotations adds the digest of exactly those. Appendix B.10 defines the keys.
 
 ### 3.15 Defaults absent from MACHINE
 
@@ -216,12 +216,12 @@ ContentTree sorts keys; ContentList retains input order. Both use content-define
 ### 5.2a Stubs
 
 ```text
-stubs(leaf):
-    try S|k and each referenced ST blob
-    otherwise read the leaf's T and O
-    for each type: compute stKey from oSum and emitted direct-member-type data
-                  read ST|stKey or synthesize/write it from res
-    write S|k as the ordered list of type names and stKeys
+stubs(leaf, a):
+    try S|Digest(RENDERER || k || a) and each referenced ST blob
+    otherwise read the leaf's T, O and A
+    for each type: compute stKey from oSum, emitted direct-member-type data and emitted annotations
+                  read ST|stKey or synthesize/write it from res and A
+    write S|Digest(RENDERER || k || a) as the ordered list of type names and stKeys
 ```
 
 ### 5.3 Bind
@@ -494,13 +494,14 @@ TYPE is 0, FIELD 1, METHOD 2. Reverse form numbers differ from F's absence numbe
 ### B.10 Stub records
 
 ```text
-S|k      = list<(str internalName || id stKey)>
+S|Digest(u8 RENDERER || k || a) = list<(str internalName || id stKey)>
 ST|stKey = lenBytes classBytes
-stKey    = Digest(zstr typeKey || id oSum || sorted direct-member-type encodings)
+stKey    = Digest(zstr typeKey || id oSum || sorted direct-member-type encodings || u8 0 || u8 RENDERER || [id shown])
 member encoding = zstr memberInternalName || opt<str> exactInnerName || u16 emittedInnerFlags
+shown    = Digest(per emitting element in key order: lenBytes m || annotation list visible || annotation list invisible)
 ```
 
-Sorting is unsigned byte order. A type without member types has the original Digest(typeKey || oSum) key. A child method change cannot affect an outer stub that only emits the child's name/nesting/flags. S/ST are shared derivable caches and need not be retained by project roots.
+Sorting is unsigned byte order. A type without member types has no member part. RENDERER is the stub renderer's version (2: retained annotations); a stub cached by another renderer is never served. A member encoding starts with a non-empty name, so the 0 after the last one is unambiguous. shown covers only what the stub emits: parameter names or type annotations in a tail do not move the key, and a type that emits no annotations has no shown part. A child method change cannot affect an outer stub that only emits the child's name/nesting/flags. S/ST are shared derivable caches and need not be retained by project roots.
 
 ## Appendix C. Header compilation and SourceFacts
 

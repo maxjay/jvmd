@@ -12,9 +12,12 @@ public final class HotSwap {
     public HotSwap(DebugSession debug){this.debug=debug;}
     public Envelope apply(Path compilerHome,List<Path> changed,List<Path> sourceRoots,List<String> options,Path output)throws Exception{return apply(compilerHome,changed,sourceRoots,options,output,debug.launch().classpath());}
     public Envelope apply(Path compilerHome,List<Path> changed,List<Path> sourceRoots,List<String> options,Path output,List<Path> classpath)throws Exception{
-        // Exactly the changed files: javac would otherwise compile any other source it finds newer than its class, and publish that too.
-        var exact=new ArrayList<>(options);if(!exact.contains("-implicit:none"))exact.add("-implicit:none");
-        long started=System.nanoTime();debug.vm();var compiled=RuntimeCompiler.compile(compilerHome,debug.launch().directory(),changed,classpath,sourceRoots,exact,Duration.ofSeconds(60));
+        // Exactly the given files, against the classes the program has: an empty source path, so no other source is compiled or read.
+        // A reference to an edit that was not given then fails to compile, rather than swap in a class that cannot link to what runs.
+        var exact=new ArrayList<String>();
+        for(int i=0;i<options.size();i++){String option=options.get(i);if(option.equals("-sourcepath")||option.equals("--source-path")){i++;continue;}exact.add(option);}
+        exact.add("-implicit:none");
+        long started=System.nanoTime();debug.vm();var compiled=RuntimeCompiler.compile(compilerHome,debug.launch().directory(),changed,classpath,List.of(),exact,Duration.ofSeconds(60));
         long compiledAt=System.nanoTime();var classes=new LinkedHashMap<ReferenceType,byte[]>();var names=new ArrayList<String>();
         for(var entry:compiled.classes().entrySet()){
             String name=entry.getKey().substring(0,entry.getKey().length()-6).replace('/','.');names.add(name);

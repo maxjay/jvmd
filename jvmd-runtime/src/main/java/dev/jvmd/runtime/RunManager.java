@@ -9,7 +9,10 @@ import java.util.*;
 /** Implements 4.7: workspace-owned process lifecycle and the frozen debug operation surface. */
 public final class RunManager implements AutoCloseable {
     /** Implements 4.7: all launch/compile state needed to repeat the same run after hot swap. */
-    public record Target(Path directory,List<Path> sources,List<Path> classpath,List<String> options,Path output) { }
+    public record Target(Path directory,List<Path> sources,List<Path> classpath,List<String> options,Path output,String refusal) {
+        /** A target whose hot swaps are allowed. */
+        public Target(Path directory,List<Path> sources,List<Path> classpath,List<String> options,Path output){this(directory,sources,classpath,options,output,null);}
+    }
     /** Implements 4.7: detached launch configuration and per-module compilation boundaries. */
     public record Request(DebugSession.Launch launch,SourceLookup sources,Path compilerHome,List<Path> sourceRoots,List<String> compilerOptions,Path output,List<Target> targets) { }
     private record Run(Request request,DebugSession debug,CompiledEvaluation evaluation) { }
@@ -45,6 +48,8 @@ public final class RunManager implements AutoCloseable {
                 if(changed.isEmpty())throw RpcException.invalid("Hot swap requires changed source paths");
                 var groups=new LinkedHashMap<Target,List<Path>>();
                 for(Path file:changed){var target=run.request().targets().stream().filter(t->t.sources().stream().anyMatch(file::startsWith)).max(Comparator.comparingInt(t->t.directory().getNameCount())).orElseThrow(()->RpcException.invalid("No compilation target for "+file));groups.computeIfAbsent(target,_->new ArrayList<>()).add(file);}
+                // Refused before anything is compiled or swapped, for every file the request names.
+                for(var target:groups.keySet())if(target.refusal()!=null)throw new RpcException(-32003,"unsupported_capability",Map.of("capability","hotswap","reason",target.refusal()));
                 var results=new ArrayList<Envelope>();for(var entry:groups.entrySet()){var target=entry.getKey();results.add(new HotSwap(debug).apply(run.request().compilerHome(),entry.getValue(),target.sources(),target.options(),target.output(),target.classpath()));}
                 if(results.size()==1)yield results.getFirst();
                 yield Envelope.of(2,"live",Map.of("modules",results.stream().map(Envelope::result).toList(),"restart_required",results.stream().anyMatch(r->Boolean.TRUE.equals(((Map<?,?>)r.result()).get("restart_required")))));

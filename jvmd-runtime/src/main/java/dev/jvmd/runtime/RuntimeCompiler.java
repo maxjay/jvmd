@@ -21,7 +21,8 @@ public final class RuntimeCompiler {
         var before=new LinkedHashMap<Path,String>();for(Path source:sources)before.put(source,Hashing.sha256(source));
         var args=new ArrayList<String>(options);if(options.stream().noneMatch(option->option.startsWith("-proc:")))args.add("-proc:none");args.addAll(List.of("-g","-parameters","-XDrawDiagnostics","-s",Files.createDirectories(temporary.resolve("generated")).toString(),"-d",output.toString()));
         if(!classpath.isEmpty())args.addAll(List.of("-classpath",String.join(java.io.File.pathSeparator,classpath.stream().map(Path::toString).toList())));
-        if(!sourceRoots.isEmpty())args.addAll(List.of("-sourcepath",String.join(java.io.File.pathSeparator,sourceRoots.stream().map(Path::toString).toList())));
+        // Always, even empty, as the in-process compile sets it: with no source path javac would look for sources on the classpath.
+        args.addAll(List.of("-sourcepath",String.join(java.io.File.pathSeparator,sourceRoots.stream().map(Path::toString).toList())));
         sources.forEach(source->args.add(source.toString()));Files.write(arguments,args.stream().map(RuntimeCompiler::quote).toList(),StandardCharsets.UTF_8);
         var tail=new StringBuilder();long start=System.nanoTime();Process child=null;
         try{

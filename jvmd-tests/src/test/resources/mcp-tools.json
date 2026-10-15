@@ -686,6 +686,11 @@
           "type": "boolean",
           "default": false
         },
+        "ignore_post_compile": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use jvmd's own compile for a stale module even though its build runs goals after javac (process-classes), for goals that leave the class files as javac wrote them. Also allows hot swaps in such modules."
+        },
         "limit": {
           "type": "integer",
           "minimum": 1,

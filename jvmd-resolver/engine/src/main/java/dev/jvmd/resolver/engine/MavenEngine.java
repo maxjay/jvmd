@@ -200,7 +200,7 @@ public final class MavenEngine implements AutoCloseable {
             build.classpaths.put(gav + ":main", List.copyOf(main)); build.classpaths.put(gav + ":test", List.copyOf(test));build.classpaths.put(gav+":runtime",List.copyOf(runtime));
             build.compileOrder.put(gav + ":main", List.copyOf(mainOrder)); build.compileOrder.put(gav + ":test", List.copyOf(testOrder));
             build.compileOrder.put(gav + ":runtime", List.copyOf(runtimeOrder));
-            build.postCompile.put(gav, postCompile(model));
+            build.postCompile.put(gav, postCompile(model, session.getLocalRepository().getBasedir().toPath()));
         }
         build.dependencyMillis=(System.nanoTime()-modelsAt)/1e6;build.warnings.addAll(localOverlay.warnings());
         return build;
@@ -260,23 +260,64 @@ public final class MavenEngine implements AutoCloseable {
             "org.codehaus.mojo:aspectj-maven-plugin:compile", "dev.aspectj:aspectj-maven-plugin:compile",
             "org.jacoco:jacoco-maven-plugin:instrument", "com.ethlo.persistence.tools:eclipselink-maven-plugin:weave",
             "de.empulse.eclipselink:staticweave-maven-plugin:weave", "org.apache.openjpa:openjpa-maven-plugin:enhance",
-            "io.ebean:ebean-maven-plugin:enhance");
+            "io.ebean:ebean-maven-plugin:enhance", "net.bytebuddy:byte-buddy-maven-plugin:transform",
+            "org.datanucleus:datanucleus-maven-plugin:enhance", "com.nickwongdev:aspectj-maven-plugin:compile");
+
+    /** Goals bound to {@code process-classes} that write beside the classes (a manifest, an index) or only check them. */
+    private static final Set<String> CLASS_READERS = Set.of(
+            "org.apache.felix:maven-bundle-plugin:manifest", "biz.aQute.bnd:bnd-maven-plugin:bnd-process",
+            "org.jboss.jandex:jandex-maven-plugin:jandex", "io.smallrye:jandex-maven-plugin:jandex",
+            "org.eclipse.sisu:sisu-maven-plugin:main-index", "org.apache.maven.plugins:maven-plugin-plugin:descriptor",
+            "org.codehaus.mojo:animal-sniffer-maven-plugin:check", "de.thetaphi:forbiddenapis:check");
 
     /**
-     * The plugin goals of a module's build that rewrite its main classes after javac: any goal bound to {@code process-classes}, and the
-     * known rewriters wherever they run. From the effective model, so inherited and profile-activated plugins count.
+     * The plugin goals of a module's build that rewrite its main classes after javac: any goal that runs at {@code process-classes},
+     * explicitly or by its mojo's default phase (from the plugin's descriptor in the local repository, when it is there), and the known
+     * rewriters wherever they run. Not: an execution bound to phase {@code none}, and the known goals that only write beside the classes or
+     * check them. From the effective model, so inherited and profile-activated plugins count.
      */
-    static List<String> postCompile(org.apache.maven.model.Model model) {
+    static List<String> postCompile(org.apache.maven.model.Model model, Path localRepository) {
         var out = new ArrayList<String>();
         if (model.getBuild() == null) return out;
         for (var plugin : model.getBuild().getPlugins())
             for (var execution : plugin.getExecutions())
                 for (var goal : execution.getGoals()) {
                     String key = plugin.getGroupId() + ":" + plugin.getArtifactId() + ":" + goal;
-                    String phase = execution.getPhase() == null || execution.getPhase().isBlank() ? "default" : execution.getPhase();
-                    if (phase.equals("process-classes") || CLASS_REWRITERS.contains(key)) out.add(key + "@" + phase);
+                    String bound = execution.getPhase() == null || execution.getPhase().isBlank() ? null : execution.getPhase();
+                    if ("none".equals(bound) || CLASS_READERS.contains(key)) continue;
+                    String phase = bound != null ? bound : defaultPhase(localRepository, plugin, goal);
+                    if ("process-classes".equals(phase) || CLASS_REWRITERS.contains(key)) out.add(key + "@" + (phase == null ? "default" : phase));
                 }
         return List.copyOf(out);
+    }
+
+    /** A mojo's default phase from {@code META-INF/maven/plugin.xml} in the plugin jar, or null when the jar is not in the local repository. */
+    private static String defaultPhase(Path localRepository, org.apache.maven.model.Plugin plugin, String goal) {
+        if (localRepository == null || plugin.getVersion() == null || plugin.getVersion().isBlank()) return null;
+        var jar = localRepository.resolve(plugin.getGroupId().replace('.', '/')).resolve(plugin.getArtifactId()).resolve(plugin.getVersion())
+                .resolve(plugin.getArtifactId() + "-" + plugin.getVersion() + ".jar");
+        if (!Files.isRegularFile(jar)) return null;
+        try (var zip = new java.util.zip.ZipFile(jar.toFile())) {
+            var entry = zip.getEntry("META-INF/maven/plugin.xml");
+            if (entry == null) return null;
+            var factory = javax.xml.parsers.DocumentBuilderFactory.newInstance();
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            org.w3c.dom.Document document;
+            try (var in = zip.getInputStream(entry)) { document = factory.newDocumentBuilder().parse(in); }
+            var mojos = document.getElementsByTagName("mojo");
+            for (int i = 0; i < mojos.getLength(); i++) {
+                var mojo = (org.w3c.dom.Element) mojos.item(i);
+                if (goal.equals(child(mojo, "goal"))) return child(mojo, "phase");
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+    private static String child(org.w3c.dom.Element parent, String name) {
+        for (var node = parent.getFirstChild(); node != null; node = node.getNextSibling())
+            if (node instanceof org.w3c.dom.Element element && element.getTagName().equals(name)) return element.getTextContent().trim();
+        return null;
     }
 
     private static void walk(DependencyNode node, String parent, String root, Build build,

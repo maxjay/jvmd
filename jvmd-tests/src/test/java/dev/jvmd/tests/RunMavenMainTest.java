@@ -192,8 +192,8 @@ class RunMavenMainTest {
         build(root, "app", List.of());
         var built = root.resolve("app/target/classes/app/Main.class");
         byte[] before = Files.readAllBytes(built);
-        Thread.sleep(20);
         Files.writeString(root.resolve("app/src/main/java/" + main), source("edited"));
+        Files.setLastModifiedTime(root.resolve("app/src/main/java/" + main), java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 5_000));
         try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
             assertThat(finished(start(app, root, "app.Main")).path("output").asText()).contains("edited");
             assertThat(Files.readAllBytes(built)).as("the build's class file").isEqualTo(before);
@@ -201,7 +201,7 @@ class RunMavenMainTest {
             try (var found = Files.walk(copies)) { assertThat(found.anyMatch(p -> p.endsWith("app/Main.class"))).as("jvmd's own compile").isTrue(); }
 
             Files.writeString(root.resolve("app/src/main/java/" + main), source("rebuilt"));
-            Thread.sleep(20);
+            Files.setLastModifiedTime(root.resolve("app/src/main/java/" + main), java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() - 10_000));
             build(root, "app", List.of());
             assertThat(finished(start(app, root, "app.Main")).path("output").asText()).as("the build is current again").contains("rebuilt");
             try (var found = Files.walk(copies)) { assertThat(found.anyMatch(p -> p.endsWith("app/Main.class"))).as("jvmd's copy is dropped").isFalse(); }
@@ -237,37 +237,71 @@ class RunMavenMainTest {
         }
     }
 
+    private static final String WEAVER = "<build><plugins><plugin><groupId>org.example</groupId><artifactId>weaver-maven-plugin</artifactId><version>1</version>"
+            + "<executions><execution><phase>process-classes</phase><goals><goal>weave</goal></goals></execution></executions></plugin></plugins></build>";
+
+    private static void weavingModule(Path root, String name, String dependencies, String file, String text) throws IOException {
+        Files.createDirectories(root.resolve(name));
+        Files.writeString(root.resolve(name + "/pom.xml"), "<project><modelVersion>4.0.0</modelVersion>" + PARENT + "<artifactId>" + name + "</artifactId>"
+                + "<dependencies>" + dependencies + "</dependencies>" + WEAVER + "</project>");
+        var source = root.resolve(name + "/src/main/java/" + file);
+        Files.createDirectories(source.getParent());
+        Files.writeString(source, text);
+    }
+
     /**
      * A module whose POM runs a goal that rewrites classes after javac (bound to process-classes, as weaving or enhancement is) is left to
      * the build: a run uses its build output while that is current, a hot swap in it is refused, and once a source is newer than the
-     * build output a run is refused rather than put a plain compile before the build's classes.
+     * build output a run is refused rather than put a plain compile before the build's classes. A caller who knows the goals leave the
+     * classes alone can start the run with ignore_post_compile, and then jvmd compiles and hot swaps the module as any other.
      */
     @Test void aModuleWhoseBuildRewritesItsClassesIsLeftToTheBuild() throws Exception {
         var root = reactor("app");
-        Files.createDirectories(root.resolve("app"));
-        Files.writeString(root.resolve("app/pom.xml"), "<project><modelVersion>4.0.0</modelVersion>" + PARENT + "<artifactId>app</artifactId>"
-                + "<build><plugins><plugin><groupId>org.example</groupId><artifactId>weaver-maven-plugin</artifactId><version>1</version>"
-                + "<executions><execution><phase>process-classes</phase><goals><goal>weave</goal></goals></execution></executions></plugin></plugins></build></project>");
-        var main = root.resolve("app/src/main/java/app/Main.java");
-        Files.createDirectories(main.getParent());
-        Files.writeString(main, """
+        weavingModule(root, "app", "", "app/Main.java", """
                 package app;
                 public class Main {
                     static String value() { return "built"; }
-                    public static void main(String[] args) throws Exception { System.out.println(value()); for (int i = 0; i < 1200; i++) Thread.sleep(25); }
+                    public static void main(String[] args) throws Exception { for (int i = 0; i < 2400; i++) { System.out.println(value()); Thread.sleep(25); } }
                 }
                 """);
+        var main = root.resolve("app/src/main/java/app/Main.java");
         build(root, "app", List.of());
         try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
             String session = TestSupport.open(app, root);
             var run = new Run(app, session, call(app, "run.start", Map.of("session", session, "target", "app.Main", "debug", true)).path("run_session").asText());
             awaitOutput(run, "built");
+            Files.writeString(main, Files.readString(main).replace("\"built\"", "\"jvmd\""));
             Files.setLastModifiedTime(main, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 5_000));
             var refused = TestSupport.request(app.dispatcher(), "debug.op", Map.of("session", session, "run_session", run.id(), "op", "hotswap", "args", Map.of("path", main.toString())));
-            assertThat(refused.path("error").toString()).as(refused.toPrettyString()).contains("org.example:weaver-maven-plugin:weave@process-classes").contains("Rebuild");
+            assertThat(refused.path("error").toString()).as(refused.toPrettyString()).contains("org.example:weaver-maven-plugin:weave@process-classes")
+                    .contains("mvn -pl app -am process-classes").contains("ignore_post_compile");
             call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "stop", "args", Map.of()));
             var blocked = TestSupport.request(app.dispatcher(), "run.start", Map.of("session", session, "target", "app.Main", "debug", false));
             assertThat(blocked.path("error").toString()).as(blocked.toPrettyString()).contains("weaver-maven-plugin").contains("Rebuild");
+
+            var allowed = new Run(app, session, call(app, "run.start", Map.of("session", session, "target", "app.Main", "debug", true, "ignore_post_compile", true)).path("run_session").asText());
+            awaitOutput(allowed, "jvmd");
+            Files.writeString(main, Files.readString(main).replace("\"jvmd\"", "\"swapped\""));
+            var swapped = call(app, "debug.op", Map.of("session", session, "run_session", allowed.id(), "op", "hotswap", "args", Map.of("path", main.toString())));
+            assertThat(swapped.path("restart_required").asBoolean()).as(swapped.toPrettyString()).isFalse();
+            awaitOutput(allowed, "swapped");
+            call(app, "debug.op", Map.of("session", session, "run_session", allowed.id(), "op", "stop", "args", Map.of()));
+        }
+    }
+
+    /** A dependency whose build rewrites its classes refuses the run of the module that needs it, once its sources are newer than its build output. */
+    @Test void aStaleWovenDependencyRefusesTheRun() throws Exception {
+        var root = reactor("core", "app");
+        weavingModule(root, "core", "", "core/Names.java", "package core; public class Names { public static String name() { return \"core\"; } }");
+        module(root, "app", dependency("fixture", "core", null), Map.of("app/Main.java", "package app; public class Main { public static void main(String[] args) { System.out.println(core.Names.name()); } }"));
+        build(root, "core", List.of());
+        build(root, "app", List.of(root.resolve("core/target/classes")));
+        try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
+            assertThat(finished(start(app, root, "app.Main")).path("output").asText()).contains("core");
+            Files.setLastModifiedTime(root.resolve("core/src/main/java/core/Names.java"), java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 5_000));
+            String session = TestSupport.open(app, root);
+            var refused = TestSupport.request(app.dispatcher(), "run.start", Map.of("session", session, "target", "app.Main", "debug", false));
+            assertThat(refused.path("error").toString()).as(refused.toPrettyString()).contains("fixture:core:1").contains("weaver-maven-plugin").contains("mvn -pl core -am process-classes");
         }
     }
 
@@ -326,6 +360,52 @@ class RunMavenMainTest {
             assertThat(swapped.path("classes")).as(swapped.toPrettyString()).hasSize(1);
             assertThat(swapped.path("classes").get(0).asText()).isEqualTo("app.Main");
             awaitOutput(run, "two other");
+
+            // Main now calls a method only the edited Other has; Other is not passed, so the program never gets it. The compile fails
+            // and nothing is swapped, rather than swap in a Main that cannot link.
+            Files.writeString(other, Files.readString(other).replace("static String text()", "static String extra() { return \"extra\"; } static String text()"));
+            Files.writeString(main, Files.readString(main).replace("\"two \" + Other.text()", "\"three \" + Other.extra()"));
+            var refused = TestSupport.request(app.dispatcher(), "debug.op", Map.of("session", session, "run_session", run.id(), "op", "hotswap", "args", Map.of("path", main.toString())));
+            assertThat(refused.path("error").toString()).as(refused.toPrettyString()).contains("extra");
+            long written = call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "output", "args", Map.of())).path("written").asLong();
+            Thread.sleep(300);
+            var after = call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "output", "args", Map.of("since", written)));
+            assertThat(after.path("output").asText()).as("the program runs on").contains("two other").doesNotContain("Error");
+            call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "stop", "args", Map.of()));
+        }
+    }
+
+    /**
+     * A hot swap reaches classes the program has not loaded yet and classes that are new, in a module whose build was current at launch:
+     * jvmd's folder for it is on the launch classpath and exists before the JVM starts, which reads a missing directory entry as a jar.
+     */
+    @Test void aHotSwapReachesNewAndUnloadedClassesOfAModuleTheBuildHadCurrent() throws Exception {
+        var root = reactor("app");
+        module(root, "app", "", Map.of(
+                "app/Lazy.java", "package app; public class Lazy { static String text() { return \"old\"; } }",
+                "app/Main.java", """
+                        package app;
+                        public class Main {
+                            static String value() { return new java.io.File("go").exists() ? Lazy.text() : "waiting"; }
+                            public static void main(String[] args) throws Exception { for (int i = 0; i < 2400; i++) { System.out.println("value " + value()); Thread.sleep(25); } }
+                        }
+                        """));
+        build(root, "app", List.of());
+        try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
+            String session = TestSupport.open(app, root);
+            var run = new Run(app, session, call(app, "run.start", Map.of("session", session, "target", "app.Main", "debug", true)).path("run_session").asText());
+            awaitOutput(run, "value waiting");
+            var lazy = root.resolve("app/src/main/java/app/Lazy.java");
+            Files.writeString(lazy, Files.readString(lazy).replace("\"old\"", "\"new\""));
+            var helper = root.resolve("app/src/main/java/app/Helper.java");
+            Files.writeString(helper, "package app; public class Helper { static String text() { return \"helper\"; } }");
+            var main = root.resolve("app/src/main/java/app/Main.java");
+            Files.writeString(main, Files.readString(main).replace("? Lazy.text()", "? Lazy.text() + \" \" + Helper.text()"));
+            var swapped = call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "hotswap",
+                    "args", Map.of("paths", List.of(main.toString(), lazy.toString(), helper.toString()))));
+            assertThat(swapped.path("restart_required").asBoolean()).as(swapped.toPrettyString()).isFalse();
+            Files.writeString(root.resolve("go"), "");
+            awaitOutput(run, "value new helper");
             call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "stop", "args", Map.of()));
         }
     }

@@ -4,6 +4,7 @@ import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.tree.Codec;
 import dev.jvmd.core.tree.ContentTree;
+import dev.jvmd.core.tree.Root;
 import java.lang.classfile.Annotation;
 import java.lang.classfile.AnnotationElement;
 import java.lang.classfile.AnnotationValue;
@@ -19,12 +20,15 @@ import java.lang.classfile.attribute.NestHostAttribute;
 import java.lang.classfile.attribute.PermittedSubclassesAttribute;
 import java.lang.classfile.attribute.RecordAttribute;
 import java.lang.classfile.attribute.RecordComponentInfo;
+import java.lang.classfile.attribute.RuntimeInvisibleAnnotationsAttribute;
 import java.lang.classfile.attribute.RuntimeVisibleAnnotationsAttribute;
 import java.lang.classfile.attribute.SignatureAttribute;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,10 +37,12 @@ import java.util.function.Function;
 
 /**
  * Stubs (stage 2, 3.14, 5.2a, C.8 and B.10): class files synthesised from a leaf's {@code T}, with every declared member and
- * everything in its {@code res}, including warning metadata and annotation-type meta-annotations. It reads no annotation tree
- * and includes no executable bodies or parameter names. A method without {@code Code} is legal input to javac; stubs are
- * compile-time input and are never loaded by a JVM. A stub is a pure function of one type's {@code res} and its direct members'
- * InnerClasses projection, so it is cached per type and shared.
+ * everything in its {@code res}, including warning metadata and annotation-type meta-annotations. Given the leaf's annotation tree
+ * {@code A}, each class, field and method also carries the annotations its class file retains, visible and invisible: annotation
+ * processors read them through a sibling's stubs (a JPA metamodel generator decides a superclass by its {@code @MappedSuperclass}).
+ * Type annotations, parameter annotations and parameter names are not emitted yet, nor executable bodies. A method without
+ * {@code Code} is legal input to javac; stubs are compile-time input and are never loaded by a JVM. A stub is a pure function of one
+ * type's {@code res}, its retained annotations and its direct members' InnerClasses projection, so it is cached per type and shared.
  *
  * <p>What a stub lacks that javac needs would be a field of {@code res} that was classified as {@code tail}; invariant 7.3.14
  * (compiling against stubs gives the same result as against the real class files) is where that would surface.
@@ -97,7 +103,20 @@ public final class Stubs {
      * changes {@code Inner}'s stub and not {@code Outer}'s. A type without member types has exactly the key {@code Digest(typeKey || oSum)}.
      */
     public static List<Stub> stubs(Digest digest, ContentTree tree, MachineLeaf leaf, Function<Identity, byte[]> reader, Cache cache) {
-        var listed = cache.list(leaf.k());
+        return stubs(digest, tree, leaf, null, null, reader, cache);
+    }
+
+    /**
+     * As above, with the retained annotations of the leaf's annotation tree. A type with annotations adds their range sum to its key,
+     * so a stub with them never stands in for one without; a type with none keeps exactly the key above. The leaf's list is then
+     * {@code S|Digest(k || a)}: two leaves with one {@code k} and different annotations do not share it.
+     *
+     * @param a           the leaf's annotation identity, or null for stubs without retained annotations
+     * @param annotations the root of its {@code A} tree, null exactly when {@code a} is
+     */
+    public static List<Stub> stubs(Digest digest, ContentTree tree, MachineLeaf leaf, Identity a, Root annotations, Function<Identity, byte[]> reader, Cache cache) {
+        var listKey = a == null ? leaf.k() : digest.hash(leaf.k().view(), a.view());
+        var listed = cache.list(listKey);
         if (listed != null) {
             var out = new ArrayList<Stub>();
             boolean complete = true;
@@ -121,6 +140,10 @@ public final class Stubs {
             }
         });
 
+        // A: one entry per element that retains an annotation, keyed as in T.
+        var tails = new HashMap<ByteBuffer, byte[]>();
+        if (annotations != null) tree.forEach(annotations.hash(), reader, entry -> tails.put(ByteBuffer.wrap(entry.key()), entry.value()));
+
         // The members of a type are the types whose outer class it is: the outer's InnerClasses attribute is how javac finds them.
         var members = new TreeMap<String, List<String>>();
         for (var decl : decls.values()) {
@@ -137,18 +160,23 @@ public final class Stubs {
                 var type = decls.get(member).type;
                 memberTypes.add(new Member(member, type.innerName(), innerFlags(type.access())));
             }
-            var stKey = stKey(digest, decl.owner, oSum, memberTypes);
+            Identity retained = null;
+            if (annotations != null) {
+                var sum = tree.rangeSum(annotations.hash(), reader, Keys.ownerKey(decl.owner));
+                if (!sum.equals(tree.sums().zero())) retained = sum;
+            }
+            var stKey = stKey(digest, decl.owner, oSum, memberTypes, retained);
             var stored = cache.type(stKey);
             byte[] bytes;
             if (stored != null) bytes = new Codec.Reader(stored).lenBytes();
             else {
-                bytes = build(decl, members.getOrDefault(decl.owner, List.of()), decls);
+                bytes = build(decl, members.getOrDefault(decl.owner, List.of()), decls, tails);
                 cache.putType(stKey, new Codec.Writer(bytes.length + 4).lenBytes(bytes).toBytes());
             }
             out.add(new Stub(decl.owner, bytes));
             refs.add(new Ref(decl.owner, stKey));
         }
-        cache.putList(leaf.k(), encodeList(refs));
+        cache.putList(listKey, encodeList(refs));
         return out;
     }
 
@@ -161,12 +189,21 @@ public final class Stubs {
      * type without member types.
      */
     public static Identity stKey(Digest digest, String owner, Identity oSum, List<Member> members) {
+        return stKey(digest, owner, oSum, members, null);
+    }
+
+    /**
+     * As above, then, for a type that retains annotations, {@code || u8 1 || id retained}: the range sum of its owner prefix in
+     * {@code A}, which identifies every annotation of the type and its members. The marker byte cannot be the start of a member part.
+     */
+    public static Identity stKey(Digest digest, String owner, Identity oSum, List<Member> members, Identity retained) {
         var parts = new ArrayList<byte[]>(List.of(Keys.ownerKey(owner), oSum.view()));
         var sorted = new ArrayList<byte[]>();
         for (var member : members) sorted.add(new Codec.Writer().zstr(member.internalName()).optStr(member.innerName()).u16(member.flags()).toBytes());
         // memberTypeKey is a zstr, so the NUL after the name ends it: comparing the whole parts compares the keys first.
         sorted.sort(Arrays::compareUnsigned);
         parts.addAll(sorted);
+        if (retained != null) { parts.add(new byte[] {1}); parts.add(retained.view()); }
         return digest.hash(parts.toArray(byte[][]::new));
     }
 
@@ -198,7 +235,34 @@ public final class Stubs {
         return flags;
     }
 
-    private static byte[] build(TypeDecl decl, List<String> memberTypes, Map<String, TypeDecl> all) {
+    /**
+     * What a tail retains first (A.4a): the visible, then the invisible, annotations of one element, all of them, including the
+     * warning annotations and meta-annotations {@code res} repeats. Null for an element without a tail.
+     */
+    private record Retained(List<Annotation> visible, List<Annotation> invisible) {
+        static Retained of(byte[] tail) {
+            if (tail == null) return null;
+            var in = new Codec.Reader(tail);
+            return new Retained(list(in), list(in));
+        }
+
+        private static List<Annotation> list(Codec.Reader in) {
+            int n = in.count();
+            var out = new ArrayList<Annotation>(n);
+            for (int i = 0; i < n; i++) out.add(annotation(Ann.decode(in)));
+            return out;
+        }
+
+        /** The element's annotations: the retained ones, or else those {@code res} carries. */
+        static void apply(Retained retained, List<Annotation> fromRes, java.util.function.Consumer<RuntimeVisibleAnnotationsAttribute> visible,
+                          java.util.function.Consumer<RuntimeInvisibleAnnotationsAttribute> invisible) {
+            var shown = retained == null ? fromRes : retained.visible();
+            if (!shown.isEmpty()) visible.accept(RuntimeVisibleAnnotationsAttribute.of(shown));
+            if (retained != null && !retained.invisible().isEmpty()) invisible.accept(RuntimeInvisibleAnnotationsAttribute.of(retained.invisible()));
+        }
+    }
+
+    private static byte[] build(TypeDecl decl, List<String> memberTypes, Map<String, TypeDecl> all, Map<ByteBuffer, byte[]> tails) {
         var type = decl.type;
         int kind = type.kind(), access = type.access();
         String signature = type.signature(), superName = type.superName(), host = type.nestHost(), outer = type.outer();
@@ -236,13 +300,13 @@ public final class Stubs {
                 }
                 cb.with(RecordAttribute.of(infos));
             }
-            if (!metaAnnotations.isEmpty()) cb.with(RuntimeVisibleAnnotationsAttribute.of(metaAnnotations));
-            for (var field : decl.fields) field(cb, field);
-            for (var method : decl.methods) method(cb, method);
+            Retained.apply(Retained.of(tails.get(ByteBuffer.wrap(Keys.typeKey(decl.owner)))), metaAnnotations, cb::with, cb::with);
+            for (var field : decl.fields) field(cb, field, Retained.of(tails.get(ByteBuffer.wrap(Keys.memberKey(decl.owner, Keys.FIELD, field.name(), field.descriptor())))));
+            for (var method : decl.methods) method(cb, method, Retained.of(tails.get(ByteBuffer.wrap(Keys.memberKey(decl.owner, Keys.METHOD, method.name(), method.descriptor())))));
         });
     }
 
-    private static void field(ClassBuilder cb, FieldDecl decl) {
+    private static void field(ClassBuilder cb, FieldDecl decl, Retained retained) {
         var res = decl.res();
         java.lang.constant.ConstantDesc constant = res.constant() == null ? null : switch (res.constant().tag()) {
             case 3 -> (int) res.constant().bits();
@@ -254,20 +318,20 @@ public final class Stubs {
         cb.withField(decl.name(), ClassDesc.ofDescriptor(decl.descriptor()), fb -> {
             fb.withFlags(res.access());
             if (res.warnings().deprecatedAttribute()) fb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
-            if (!res.warnings().annotations().isEmpty()) fb.with(RuntimeVisibleAnnotationsAttribute.of(res.warnings().annotations().stream().map(Stubs::annotation).toList()));
+            Retained.apply(retained, res.warnings().annotations().stream().map(Stubs::annotation).toList(), fb::with, fb::with);
             if (res.signature() != null) fb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(res.signature())));
             if (constant != null) fb.with(ConstantValueAttribute.of(constant));
         });
     }
 
-    private static void method(ClassBuilder cb, MethodDecl decl) {
+    private static void method(ClassBuilder cb, MethodDecl decl, Retained retained) {
         var res = decl.res();
         var thrown = new ArrayList<ClassDesc>();
         for (var t : res.thrown()) thrown.add(internal(t));
         AnnotationValue defaultValue = res.defaultValue() == null ? null : value(res.defaultValue());
         cb.withMethod(decl.name(), MethodTypeDesc.ofDescriptor(decl.descriptor()), res.access(), mb -> {
             if (res.warnings().deprecatedAttribute()) mb.with(java.lang.classfile.attribute.DeprecatedAttribute.of());
-            if (!res.warnings().annotations().isEmpty()) mb.with(RuntimeVisibleAnnotationsAttribute.of(res.warnings().annotations().stream().map(Stubs::annotation).toList()));
+            Retained.apply(retained, res.warnings().annotations().stream().map(Stubs::annotation).toList(), mb::with, mb::with);
             if (res.signature() != null) mb.with(SignatureAttribute.of(cb.constantPool().utf8Entry(res.signature())));
             if (!thrown.isEmpty()) mb.with(ExceptionsAttribute.ofSymbols(thrown));
             if (defaultValue != null) mb.with(AnnotationDefaultAttribute.of(defaultValue));

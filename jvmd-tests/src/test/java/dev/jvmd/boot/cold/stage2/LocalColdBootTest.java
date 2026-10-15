@@ -614,9 +614,10 @@ class LocalColdBootTest {
         var project = multiProject();
         try {
             var booted = boot(digest, multiModel(project, false), 4);
-            // MACHINE and shared DF/DD/DS/DC/S/ST records may be read; nothing of the project's own.
+            // MACHINE (including the annotation leaves AL a sibling's stubs carry) and shared DF/DD/DS/DC/S/ST records may be read;
+            // nothing of the project's own.
             assertThat(booted.store().readsBeforeRoot()).isNotEmpty().doesNotContainAnyElementsOf(List.of("MOD", "RT", "F", "C", "X", "RS", "LROOT"));
-            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "ROOT", "DD", "DS", "DC", "DF", "S", "ST");
+            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "AL", "ROOT", "DD", "DS", "DC", "DF", "S", "ST");
             var events = booted.store().events();
             assertThat(events.indexOf("sync")).as("sync once, then the root").isLessThan(events.indexOf("putLocalRoot"));
             assertThat(events.stream().filter("sync"::equals).count()).isEqualTo(1);

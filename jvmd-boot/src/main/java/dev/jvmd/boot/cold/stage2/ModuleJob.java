@@ -329,8 +329,12 @@ final class ModuleJob {
         for (var root : roots) {
             var dir = model.resolve(root);
             if (!Files.isDirectory(dir)) continue;
-            try (var walk = Files.walk(dir)) {
-                for (var file : walk.filter(p -> p.toString().endsWith(".java") && Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS)).toList()) {
+            // A root that is itself a link is walked through its target, which a walk does not enter on its own; its files keep their
+            // paths under the root as written.
+            var walked = Files.isSymbolicLink(dir) ? dir.toRealPath() : dir;
+            try (var walk = Files.walk(walked)) {
+                for (var found : walk.filter(p -> p.toString().endsWith(".java") && Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS)).toList()) {
+                    var file = walked == dir ? found : dir.resolve(walked.relativize(found));
                     var absolute = file.toAbsolutePath().normalize();
                     byPath.putIfAbsent((absolute.startsWith(base) ? base.relativize(absolute) : absolute).toString().replace('\\', '/'), file);
                 }

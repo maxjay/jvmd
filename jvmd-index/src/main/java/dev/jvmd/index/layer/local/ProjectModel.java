@@ -4,9 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -108,7 +111,60 @@ public record ProjectModel(String root, String jdkHome, List<Module> modules, by
                 }
         }
         if (!Files.isRegularFile(Path.of(jdkHome).resolve("lib/modules"))) throw new Fault("jdkHome has no lib/modules: " + jdkHome);
+        refuseSharedSources();
     }
+
+    /**
+     * Demo plan A2: a source file is compiled by one module in one scope. Its records ({@code F}, {@code X}) are keyed by its path, so
+     * two modules or scopes compiling the same file would overwrite each other's. A source root that is, or lies under, a root of another
+     * module or scope is therefore a fault, never collapsed into one.
+     *
+     * <p>Roots are compared as written (normalized) and, where that differs, as real paths, so a link from one module's root into
+     * another's overlaps too. A root that does not exist is skipped, as the boot skips it. Roots nested within one scope are fine,
+     * because each file is found once. Every overlap is named, in one fault. Work is one map entry per root and one lookup per ancestor.
+     */
+    private void refuseSharedSources() {
+        var claims = new ArrayList<Claim>();
+        for (var m : modules)
+            for (var scope : List.of(LocalStore.MAIN, LocalStore.TEST))
+                for (var r : m.scope(scope).sourceRoots()) {
+                    Path declared;
+                    try { declared = resolve(r).toAbsolutePath().normalize(); }
+                    catch (InvalidPathException e) { throw new Fault("Module " + m.name() + ": invalid source root " + r, e); }
+                    if (!Files.isDirectory(declared)) continue;
+                    var owner = new Owner(m.name(), scope == LocalStore.MAIN ? "main" : "test");
+                    claims.add(new Claim(declared, declared, owner));
+                    try {
+                        var real = declared.toRealPath();
+                        if (!real.equals(declared)) claims.add(new Claim(real, declared, owner));
+                    } catch (IOException unreadable) { /* compared as written */ }
+                }
+        var byPath = new HashMap<Path, Claim>();
+        var overlaps = new LinkedHashSet<String>();
+        for (var c : claims) {
+            var other = byPath.putIfAbsent(c.path(), c);
+            if (other != null && !other.owner().equals(c.owner())) overlaps.add(overlap(other, c));
+        }
+        for (var c : claims)
+            for (var p = c.path().getParent(); p != null; p = p.getParent()) {
+                var other = byPath.get(p);
+                if (other != null && !other.owner().equals(c.owner())) overlaps.add(overlap(other, c));
+            }
+        if (!overlaps.isEmpty())
+            throw new Fault("Source roots overlap, and a source file must belong to one module and scope: " + String.join("; ", overlaps));
+    }
+
+    /** The module and scope a source root belongs to. */
+    private record Owner(String module, String scope) {
+        @Override public String toString() { return module + " (" + scope + ")"; }
+    }
+
+    /** A source root under one of its paths: as written, or real. */
+    private record Claim(Path path, Path declared, Owner owner) {
+        String describe() { return declared + " of " + owner + (path.equals(declared) ? "" : " (really " + path + ")"); }
+    }
+
+    private static String overlap(Claim outer, Claim inner) { return inner.describe() + " is in " + outer.describe(); }
 
     /** A path of the model: absolute, or relative to the project root. */
     public Path resolve(String path) { return Path.of(root).resolve(path); }

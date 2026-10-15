@@ -1,8 +1,6 @@
-name: Tests
+name: Legacy checkpoints
+# The LSP-era phase checkpoints. Manual only: the gate for the layered index is ci.yml.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: read

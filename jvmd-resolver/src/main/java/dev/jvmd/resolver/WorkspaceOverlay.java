@@ -188,6 +188,14 @@ public final class WorkspaceOverlay implements WorkspaceSource,AutoCloseable {
         for(Path root:sources)if(Files.isDirectory(root))try(var files=Files.walk(root)){for(Path file:files.filter(Files::isRegularFile).filter(p->p.toString().endsWith(".java")).toList())newest=Math.max(newest,changedAt(file));}
         return oldest>=newest;
     }
+    /** The reactor modules on {@code owner}'s runtime classpath: compile and runtime scope, as Maven runs it. */
+    public List<Resolution.Module> runtimeDependencies(Resolution graph,String owner){
+        var result=new LinkedHashMap<String,Resolution.Module>();
+        for(var node:graph.nodes())if(node.id().startsWith(owner+"|")&&node.winner()==null&&!Set.of("test","provided").contains(node.scope())){
+            var module=match(node.gav());if(module!=null&&!module.gav().equals(owner))result.putIfAbsent(module.gav(),module);
+        }
+        return List.copyOf(result.values());
+    }
     public List<Resolution.Module> dependencies(Resolution graph,String owner,boolean test){
         var result=new LinkedHashMap<String,Resolution.Module>();
         for(var node:graph.nodes())if(node.id().startsWith(owner+"|")&&node.winner()==null&&(test||!Set.of("runtime","test").contains(node.scope()))){

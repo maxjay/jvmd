@@ -232,6 +232,12 @@ public final class DebugSession implements AutoCloseable {
     }
     public long pid(){return process.pid();}
     public String output(){synchronized(output){return output.toString();}}
+    /** The last 64 KiB the application wrote (stdout and stderr), whether it is running, and its exit code once it has exited. */
+    public Map<String,Object> outputStatus(){
+        var result=new LinkedHashMap<String,Object>();result.put("run_session",id);result.put("alive",process.isAlive());
+        if(!process.isAlive())result.put("exit_code",process.exitValue());
+        result.put("output",output());return result;
+    }
     public String id(){return id;}
     public Launch launch(){return launch;}
     public ObjectHandles handles(){return handles;}

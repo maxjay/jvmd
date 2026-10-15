@@ -55,7 +55,7 @@ No fault is raised. Stage 2 faults parse errors and duplicate declarations, not 
 
 There is also no production provider. Nothing builds a `ProjectModel` from a Maven project, so LOCAL had only been booted from models built in tests (`MavenModelHelper` builds them from real Maven projects). The evidence above was taken with a throwaway model built from `maven-compiler-plugin`'s `compilePath`. Note that `maven-dependency-plugin:build-classpath` silently leaves out reactor siblings.
 
-### Where develop stands (Oct 16, after #63–#73)
+### Where develop stands (Oct 15, after #63–#73)
 
 Demo step 1 runs in the product. A daemon started from the image boots MACHINE before READY. Opening hawkBit then boots its LOCAL layer in the background from the session's own resolution, and `daemon.status` reports it under `layered_index`.
 

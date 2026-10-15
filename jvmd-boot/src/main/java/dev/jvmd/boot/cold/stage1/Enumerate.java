@@ -30,9 +30,9 @@ public final class Enumerate {
         public boolean isModule() { return module != null; }
     }
 
-    /** Unsigned byte order of the UTF-8 names: the order of every walk and every tie-break (C.1). */
+    /** Unsigned byte order of the names' encodings ({@link dev.jvmd.core.tree.Mutf8}): the order of every walk and every tie-break (C.1), and of keys. */
     public static int compareNames(String a, String b) {
-        return Arrays.compareUnsigned(a.getBytes(StandardCharsets.UTF_8), b.getBytes(StandardCharsets.UTF_8));
+        return dev.jvmd.core.tree.Mutf8.compare(a, b);
     }
 
     /** A single jar as a location named {@code name} (tests, and the repository walk). */

@@ -53,7 +53,7 @@ public interface Entries {
      * Internal-name order, shorter prefix first, is exactly key order, which the streaming chunker requires (C.2).
      */
     static void sortByOwner(List<Item> items) {
-        items.sort((a, b) -> Arrays.compareUnsigned(a.owner().getBytes(StandardCharsets.UTF_8), b.owner().getBytes(StandardCharsets.UTF_8)));
+        items.sort((a, b) -> dev.jvmd.core.tree.Mutf8.compare(a.owner(), b.owner()));
     }
 }
 

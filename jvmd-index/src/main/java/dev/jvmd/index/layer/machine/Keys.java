@@ -60,7 +60,7 @@ public final class Keys {
     public static byte[] ownerKeyOf(byte[] m) { return Arrays.copyOf(m, nul(m) + 1); }
 
     /** The internal name of the type a fact belongs to. */
-    public static String ownerOf(byte[] m) { return new String(m, 0, nul(m), java.nio.charset.StandardCharsets.UTF_8); }
+    public static String ownerOf(byte[] m) { return dev.jvmd.core.tree.Mutf8.decode(m, 0, nul(m)); }
 
     /** {@code key(edge) = zstr target || u8 kind || m(source)}. */
     public static byte[] edgeKey(String target, int kind, byte[] source) {

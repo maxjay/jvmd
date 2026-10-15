@@ -32,7 +32,7 @@ public interface MachineStore extends NodeSink {
         return new dev.jvmd.core.tree.Codec.Writer().raw("AL|".getBytes(StandardCharsets.US_ASCII)).id(a).toBytes();
     }
     static byte[] nodeKey(Identity hash) { return prefixed(0x4E, hash.view()); }
-    static byte[] pathKey(String location) { return prefixed(0x50, location.getBytes(StandardCharsets.UTF_8)); }
+    static byte[] pathKey(String location) { return prefixed(0x50, dev.jvmd.core.tree.Mutf8.encode(location)); }
 
     private static byte[] prefixed(int tag, byte[] body) {
         var out = new byte[body.length + 1];

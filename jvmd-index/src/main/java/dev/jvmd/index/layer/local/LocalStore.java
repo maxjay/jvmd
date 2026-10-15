@@ -33,16 +33,16 @@ public interface LocalStore extends MachineStore {
     // ---- key layout (section 4). Defined here so every implementation writes the same bytes. -------------------------------
     int MAIN = 0, TEST = 1;
 
-    static byte[] moduleKey(Identity projectKey, String module) { return join("MOD|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8)); }
+    static byte[] moduleKey(Identity projectKey, String module) { return join("MOD|", projectKey.view(), "|", dev.jvmd.core.tree.Mutf8.encode(module)); }
     static byte[] sourceLeafKey(Identity projectKey, String module, int scope) {
-        return join("SL|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
+        return join("SL|", projectKey.view(), "|", dev.jvmd.core.tree.Mutf8.encode(module), "|", new byte[] {(byte) scope});
     }
     static byte[] routeKey(Identity projectKey, String module, int scope) {
-        return join("RT|", projectKey.view(), "|", module.getBytes(StandardCharsets.UTF_8), "|", new byte[] {(byte) scope});
+        return join("RT|", projectKey.view(), "|", dev.jvmd.core.tree.Mutf8.encode(module), "|", new byte[] {(byte) scope});
     }
     /** The prefix of every {@code RT|} key of the project. */
     static byte[] routePrefix(Identity projectKey) { return join("RT|", projectKey.view(), "|"); }
-    static byte[] fileKey(Identity projectKey, String path) { return join("F|", projectKey.view(), "|", path.getBytes(StandardCharsets.UTF_8)); }
+    static byte[] fileKey(Identity projectKey, String path) { return join("F|", projectKey.view(), "|", dev.jvmd.core.tree.Mutf8.encode(path)); }
     static byte[] disjointKey(Identity leafSetExt) { return join("DD|", leafSetExt.view()); }
     static byte[] siblingKey(Identity leafSetSib) { return join("DS|", leafSetSib.view()); }
     static byte[] conflictsKey(Identity routeHash) { return join("DC|", routeHash.view()); }

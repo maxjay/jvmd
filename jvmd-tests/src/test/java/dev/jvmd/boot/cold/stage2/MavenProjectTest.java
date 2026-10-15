@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.jvmd.boot.cold.stage1.Enumerate;
 import dev.jvmd.boot.cold.stage1.Stage1;
+import dev.jvmd.boot.provider.MavenModel;
+import dev.jvmd.core.Config;
 import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.hash.digests.Sha256;
@@ -14,9 +16,11 @@ import dev.jvmd.index.layer.machine.ClassFacts;
 import dev.jvmd.index.layer.machine.MachineLeaf;
 import dev.jvmd.index.layer.machine.MachineStore;
 import dev.jvmd.index.layer.machine.MachineTree;
+import dev.jvmd.resolver.MavenResolver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,6 +28,7 @@ import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -149,6 +154,89 @@ class MavenProjectTest {
             out.put(e.getKey(), MachineLeaf.decode(store.get(MachineStore.leafKey(k)), digest.width()));
         }
         return out;
+    }
+
+    /**
+     * The product's provider (demo plan A4): one jvmd-resolver resolution, nothing compiled. Its model is the same before and after the
+     * reactor is built, agrees with the model this test class derives from Maven's own compile, and boots to the same source leaves.
+     */
+    @Test void theProviderModelIsMavensAnswerWhetherOrNotTheReactorWasBuilt() throws Exception {
+        var digest = Sha256.INSTANCE;
+        int release = Stage2Support.FEATURE;
+        var root = Files.createTempDirectory("stage2-provider");
+        var state = Files.createTempDirectory("stage2-provider-state");
+        try {
+            generate(root, release);
+            var jdk = Path.of(System.getProperty("java.home"));
+            MavenModel.Result unbuilt, built;
+            try (var resolver = new MavenResolver(config(state.resolve("unbuilt"), jdk))) { unbuilt = MavenModel.of(resolver.resolve(root), repository(), jdk); }
+            var maven = MavenModelHelper.build(root, repository(), release); // runs mvn compile: from here on every module is built
+            // Its own state: a resolution cached from the unbuilt reactor would make the comparison below vacuous.
+            try (var resolver = new MavenResolver(config(state.resolve("built"), jdk))) {
+                var resolution = resolver.resolve(root);
+                assertThat(resolution.cached()).as("resolved afresh, over the built reactor").isFalse();
+                built = MavenModel.of(resolution, repository(), jdk);
+            }
+            assertThat(new String(built.json())).as("built or not, one model").isEqualTo(new String(unbuilt.json()));
+            assertThat(unbuilt.warnings()).isEmpty();
+
+            var provider = unbuilt.parse();
+            provider.validate();
+            var expected = ProjectModel.parse(maven.json());
+            assertThat(provider.modules().stream().map(ProjectModel.Module::name).toList())
+                    .containsExactlyInAnyOrderElementsOf(expected.modules().stream().map(ProjectModel.Module::name).toList());
+            for (var m : provider.modules()) {
+                var e = expected.modules().stream().filter(x -> x.name().equals(m.name())).findFirst().orElseThrow();
+                assertThat(m.coordinate()).isEqualTo(e.coordinate());
+                assertThat(m.release()).isEqualTo(e.release());
+                assertThat(m.main().dependencies()).as("main dependencies of %s, in order", m.name()).isEqualTo(e.main().dependencies());
+                assertThat(m.test().dependencies()).as("test dependencies of %s, in order", m.name()).isEqualTo(e.test().dependencies());
+                // The helper also lists the annotation processor output directory; the provider leaves it to stage 2's processors.
+                assertThat(m.main().sourceRoots()).isEqualTo(e.main().sourceRoots().stream().filter(r -> !r.endsWith("generated-sources/annotations")).toList());
+                assertThat(m.test().sourceRoots()).isEqualTo(e.test().sourceRoots().stream().filter(r -> !r.endsWith("generated-test-sources/test-annotations")).toList());
+            }
+            var fromProvider = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 4, repository(), ClassFacts::of)
+                    .run(Stage2Support.jdkOnly(digest).copy(), provider);
+            var fromMaven = new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 4, repository(), ClassFacts::of)
+                    .run(Stage2Support.jdkOnly(digest).copy(), expected);
+            assertThat(fromProvider.faults()).isEmpty();
+            assertThat(fromProvider.leaves().keySet()).isEqualTo(fromMaven.leaves().keySet());
+            assertThat(fromProvider.leaves().keySet().stream().filter(k -> !fromProvider.leaves().get(k).equals(fromMaven.leaves().get(k))))
+                    .as("source leaves whose k differs (options: provider %s, maven %s)", provider.modules().getFirst().javacOptions(), expected.modules().getFirst().javacOptions())
+                    .isEmpty();
+            assertThat(fromProvider.annotations().keySet().stream().filter(k -> !fromProvider.annotations().get(k).equals(fromMaven.annotations().get(k))))
+                    .as("source leaves whose a differs").isEmpty();
+        } finally { Stage2Support.delete(root); Stage2Support.delete(state); }
+    }
+
+    private static Config config(Path state, Path jdk) {
+        return new Config(jdk, null, repository(), 3, Duration.ofHours(1), 2048, false, state, state.resolve("socket"));
+    }
+
+    /** A module that depends on a sibling at another version still gets the sibling, as the resolver's overlay substitutes it, and is told. */
+    @Test void aSiblingDependedOnAtAnotherVersionIsStillTheSiblingAndSaysSo() throws Exception {
+        var root = Files.createTempDirectory("stage2-provider-version");
+        var state = Files.createTempDirectory("stage2-provider-version-state");
+        try {
+            Files.writeString(root.resolve("pom.xml"), """
+                    <project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
+                      <groupId>corp.it</groupId><artifactId>parent</artifactId><version>1.0</version><packaging>pom</packaging>
+                      <modules><module>a</module><module>v</module></modules>
+                    </project>
+                    """);
+            Files.createDirectories(root.resolve("a/src/main/java/a"));
+            Files.writeString(root.resolve("a/pom.xml"), module("a", ""));
+            Files.writeString(root.resolve("a/src/main/java/a/A.java"), "package a; public class A { }");
+            Files.createDirectories(root.resolve("v/src/main/java/v"));
+            Files.writeString(root.resolve("v/pom.xml"), module("v", "<dependency><groupId>corp.it</groupId><artifactId>a</artifactId><version>0.9</version></dependency>"));
+            Files.writeString(root.resolve("v/src/main/java/v/V.java"), "package v; public class V { a.A a; }");
+            var jdk = Path.of(System.getProperty("java.home"));
+            MavenModel.Result result;
+            try (var resolver = new MavenResolver(config(state, jdk))) { result = MavenModel.of(resolver.resolve(root), repository(), jdk); }
+            var v = result.parse().modules().stream().filter(m -> m.name().equals("v")).findFirst().orElseThrow();
+            assertThat(v.main().dependencies()).containsExactly(new ProjectModel.Dependency("corp.it:a:1.0", null, "a"));
+            assertThat(result.warnings()).anyMatch(w -> w.startsWith("overlay_version") && w.contains("corp.it:a:0.9"));
+        } finally { Stage2Support.delete(root); Stage2Support.delete(state); }
     }
 
     @ParameterizedTest @MethodSource("cases")

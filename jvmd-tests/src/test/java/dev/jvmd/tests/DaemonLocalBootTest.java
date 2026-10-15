@@ -1,6 +1,7 @@
 package dev.jvmd.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.jvmd.dist.Application;
@@ -47,6 +48,47 @@ class DaemonLocalBootTest {
             assertThat(rebuilt.path("source_files").asInt()).isEqualTo(2);
             assertThat(rebuilt.path("root").asText()).isNotEqualTo(booted.path("root").asText());
         }
+    }
+
+    /** Opened again before its boot started, a project is booted once, from the latest resolution. */
+    @Test void aReopenWhileWaitingReplacesTheWaitingResolution() throws Exception {
+        var root = MavenFixtures.project(temp.resolve("app"), "<properties><maven.compiler.release>17</maven.compiler.release></properties>");
+        Files.createDirectories(root.resolve("src/main/java/app"));
+        Files.writeString(root.resolve("src/main/java/app/Main.java"), "package app; public class Main { }");
+        try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
+            TestSupport.open(app, root);
+            Files.writeString(root.resolve("src/main/java/app/Added.java"), "package app; class Added { }");
+            TestSupport.open(app, root);
+            app.bootMachine();
+            var booted = await(app, "cold_booted");
+            assertThat(booted.path("source_files").asInt()).as("the second resolution's files").isEqualTo(2);
+            Thread.sleep(500);
+            assertThat(project(app).path("state").asText()).as("and no second boot").isEqualTo("cold_booted");
+        }
+    }
+
+    @Test void aMachineThatFailsFailsTheProjectsWaitingForIt() throws Exception {
+        var root = MavenFixtures.project(temp.resolve("app"), "");
+        var config = TestSupport.config(temp, Duration.ofHours(1));
+        // A file where the generation directory goes.
+        Files.createDirectories(config.stateDir());
+        Files.writeString(config.stateDir().resolve("machine"), "not a directory");
+        try (var app = new Application(config)) {
+            TestSupport.open(app, root);
+            assertThatThrownBy(app::bootMachine).as("a start failure for main").hasMessageContaining("Not a directory");
+            assertThat(layered(app).path("machine").path("state").asText()).isEqualTo("failed");
+            var project = await(app, "failed");
+            assertThat(project.path("error").asText()).contains("MACHINE did not boot");
+        }
+    }
+
+    @Test void localBootsCanBeTurnedOff() throws Exception {
+        var root = MavenFixtures.project(temp.resolve("app"), "");
+        System.setProperty("jvmd.layered.local", "false");
+        try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
+            TestSupport.open(app, root);
+            assertThat(layered(app).path("projects").size()).isZero();
+        } finally { System.clearProperty("jvmd.layered.local"); }
     }
 
     @Test void anApplicationWhoseMachineNeverBootsBootsNothing() throws Exception {

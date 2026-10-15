@@ -38,6 +38,8 @@ class ProcessingFailuresTest {
             "proc/Fail.java", "package proc; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE) public @interface Fail { }",
             "proc/Boom.java", "package proc; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE) public @interface Boom { }",
             "proc/GenClass.java", "package proc; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE) public @interface GenClass { }",
+            "proc/Probe.java", "package proc; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE) public @interface Probe { }",
+            "proc/Slow.java", "package proc; @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE) public @interface Slow { }",
             "proc/TestProcessor.java", """
                     package proc;
                     import java.util.Set;
@@ -61,6 +63,19 @@ class ProcessingFailuresTest {
                                     processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR, "failure requested", e);
                                 for (var e : round.getElementsAnnotatedWith(elements.getTypeElement("proc.Boom")))
                                     throw new IllegalStateException("boom requested");
+                                // What the processor's own class loader can see: the JDK, javac included, but not the process running javac.
+                                for (var e : round.getElementsAnnotatedWith(elements.getTypeElement("proc.Probe"))) {
+                                    var loader = getClass().getClassLoader();
+                                    for (var name : new String[] {"com.sun.source.tree.Tree", "com.sun.tools.javac.code.Symbol", "java.beans.Introspector"})
+                                        try { Class.forName(name, false, loader); }
+                                        catch (ClassNotFoundException missing) { processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR, "not visible: " + name, e); }
+                                    for (var name : new String[] {"org.assertj.core.api.Assertions", "dev.jvmd.boot.cold.stage2.Stage2", "com.fasterxml.jackson.databind.ObjectMapper"})
+                                        try { Class.forName(name, false, loader); processingEnv.getMessager().printMessage(javax.tools.Diagnostic.Kind.ERROR, "visible: " + name, e); }
+                                        catch (ClassNotFoundException hidden) { }
+                                }
+                                // A processor that takes a while, unless it is interrupted.
+                                for (var e : round.getElementsAnnotatedWith(elements.getTypeElement("proc.Slow")))
+                                    try { Thread.sleep(20_000); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
                                 for (var e : round.getElementsAnnotatedWith(elements.getTypeElement("proc.GenClass")))
                                     try (var out = processingEnv.getFiler().createClassFile("p.GenC", e).openOutputStream()) {
                                         out.write(java.lang.classfile.ClassFile.of().build(java.lang.constant.ClassDesc.of("p.GenC"), cb -> { }));
@@ -116,6 +131,34 @@ class ProcessingFailuresTest {
         assertThat(result.faults()).anyMatch(f -> f.contains("p/Broken.java")).noneMatch(f -> f.contains("p/A.java"));
         var leaf = MachineLeaf.decode(machine.get(MachineStore.leafKey(result.leaves().get("a/main"))), digest.width());
         assertThat(leaf.typeCount()).as("A and the AStamped its processing wrote; Broken declares nothing").isEqualTo(2);
+    }
+
+    /** A processor loads from its own path and the JDK only: never from the class path of the process that runs javac (the daemon's, or a test's). */
+    @Test void aProcessorSeesTheJdkButNotTheProcessRunningJavac() throws Exception {
+        var repo = repository();
+        var model = model(temp.resolve("project"), Map.of("p/A.java", "package p; @proc.Probe public class A { }"));
+        assertThat(boot(repo, model).faults()).isEmpty();
+    }
+
+    /** Interrupting the boot cancels it: the running job ends at its next scope, no other starts, and no root is written. */
+    @Test void anInterruptedBootEndsSoonAndWritesNoRoot() throws Exception {
+        var repo = repository();
+        var model = model(temp.resolve("project"), Map.of("p/A.java", "package p; @proc.Slow public class A { }"));
+        var digest = Sha256.INSTANCE;
+        var store = Stage2Support.jdkOnly(digest).copy();
+        var thrown = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        var boot = Thread.ofPlatform().start(() -> {
+            try { new Stage2(digest, new ContentTree(digest), Stage2Support.FEATURE, 2, repo, ClassFacts::of).run(store, model); }
+            catch (Throwable t) { thrown.set(t); }
+        });
+        Thread.sleep(1_000);
+        long interrupted = System.nanoTime();
+        boot.interrupt();
+        boot.join(15_000);
+        assertThat(boot.isAlive()).as("the boot ended").isFalse();
+        assertThat((System.nanoTime() - interrupted) / 1_000_000).as("well before the processor's 20 s").isLessThan(10_000);
+        assertThat(thrown.get()).isInstanceOf(java.util.concurrent.CancellationException.class);
+        assertThat(store.hasLocalRoot(Stage2.projectKey(digest, model))).isFalse();
     }
 
     @Test void aProcessorErrorFailsTheBootRatherThanPublishingIncompleteHeaders() throws Exception {

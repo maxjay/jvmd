@@ -33,7 +33,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -309,12 +310,18 @@ public final class Stage2 {
                     try {
                         var job = new ModuleJob(boot);
                         job.run(module, LocalStore.MAIN);
+                        if (Thread.currentThread().isInterrupted()) throw new CancellationException("Stage 2 was cancelled");
                         job.run(module, LocalStore.TEST);
                     } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
                 }, pool));
             }
-            try { CompletableFuture.allOf(futures.values().toArray(CompletableFuture[]::new)).join(); }
-            catch (CompletionException failed) {
+            try { CompletableFuture.allOf(futures.values().toArray(CompletableFuture[]::new)).get(); }
+            catch (InterruptedException interrupted) {
+                // Cancelled: no further job starts, and the running ones end at their next scope, before the store is closed.
+                pool.shutdownNow();
+                Thread.currentThread().interrupt();
+                throw new CancellationException("Stage 2 was cancelled");
+            } catch (ExecutionException failed) {
                 pool.shutdownNow();
                 var cause = failed.getCause();
                 if (cause instanceof RuntimeException runtime) throw runtime;

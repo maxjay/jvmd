@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -21,27 +22,33 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * The layered index in the daemon (demo plan, step 1). MACHINE is booted once at start, before READY. Then each opened Maven project
- * gets its LOCAL layer, booted in the background from the resolution its session already made. Nothing serves from these layers
- * yet; this only boots them where they will be used. {@code daemon.status} reports each one under {@code layered_index}.
+ * gets its LOCAL layer, booted in the background from the resolution its session already made. Nothing serves from these layers yet;
+ * this only boots them where they will be used. {@code daemon.status} reports each one under {@code layered_index}.
  *
  * <p>Ordering:
  * <ul>
- * <li>One worker boots one project at a time, and only after MACHINE: both stages open the generation's store, and a process can
- *     hold it open once.
+ * <li>One worker boots one project at a time, and only after MACHINE: both stages open the generation's store, and a process can hold
+ *     it open once.
  * <li>A project opened again while its boot is still waiting replaces the waiting resolution.
  * <li>A project opened again while its boot runs is booted once more afterwards. The skip rule makes that cheap when nothing changed.
  * <li>Until {@link #bootMachine} runs (a daemon started by {@code main}), requests wait and nothing runs. An application built in a
  *     test therefore boots nothing unless the test asks for it.
  * </ul>
+ * A boot uses half the cores, so the daemon keeps answering while it runs. Closing cancels it: no module job starts after that, the
+ * running ones end at their next scope, and no root is written.
  */
 final class LayeredIndex implements AutoCloseable {
     private static final System.Logger LOG = System.getLogger("dev.jvmd.dist");
     /** At most this many provider warnings per project in the status; the log has them all. */
     private static final int WARNINGS_SHOWN = 20;
-    private static final boolean LOCAL_ENABLED = Boolean.parseBoolean(System.getProperty("jvmd.layered.local", "true"));
+    /** How long closing waits for a cancelled boot's running module jobs, which javac does not interrupt. */
+    private static final long CLOSE_WAIT_SECONDS = 60;
 
     private final Config config;
     private final Path indexDir;
+    /** {@code -Djvmd.layered.local=false} turns LOCAL boots off: nothing reads LOCAL yet. */
+    private final boolean localEnabled = Boolean.parseBoolean(System.getProperty("jvmd.layered.local", "true"));
+    private final int workers = Math.max(1, Runtime.getRuntime().availableProcessors() / 2);
     private final CompletableFuture<Void> machine = new CompletableFuture<>();
     private final ExecutorService worker = Executors.newSingleThreadExecutor(Thread.ofPlatform().name("jvmd-local-boot").daemon(true).factory());
     /** Hands work to the worker; once closed, work is dropped rather than failing whoever completes MACHINE. */
@@ -49,11 +56,12 @@ final class LayeredIndex implements AutoCloseable {
     private final Map<Path, Project> projects = new ConcurrentHashMap<>();
     private volatile Map<String, Object> machineStatus = Map.of("state", "not_started");
 
-    /** A project's latest requested resolution, and what became of the last boot. */
+    /** A project's latest requested resolution, and what became of the last boot. Its fields are guarded by itself. */
     private static final class Project {
-        private Resolution next;   // guarded by this
-        private boolean waiting;   // guarded by this: a boot is scheduled and has not taken next yet
-        private volatile Map<String, Object> status = Map.of("state", "waiting_for_machine");
+        private Resolution next;
+        /** A boot is scheduled and has not taken {@link #next} yet. */
+        private boolean waiting;
+        private Map<String, Object> status = Map.of("state", "waiting_for_machine");
     }
 
     LayeredIndex(Config config) {
@@ -63,6 +71,7 @@ final class LayeredIndex implements AutoCloseable {
 
     /** Stage 1 on the calling thread; a failure is rethrown (for {@code main}, a start failure). The projects requested so far then boot. */
     void bootMachine() throws IOException {
+        if (machine.isDone() || "booting".equals(machineStatus.get("state"))) throw new IllegalStateException("MACHINE is booted once");
         machineStatus = Map.of("state", "booting");
         long started = System.nanoTime();
         try {
@@ -84,24 +93,23 @@ final class LayeredIndex implements AutoCloseable {
         }
     }
 
-    /**
-     * Boots the LOCAL layer of the resolution's project once MACHINE is committed, and returns at once. {@code -Djvmd.layered.local=false}
-     * turns this off: nothing reads LOCAL yet, and the boot of a large project takes its cores for a while.
-     */
+    /** Boots the LOCAL layer of the resolution's project once MACHINE is committed, and returns at once. */
     void local(Resolution resolution) {
-        if (!LOCAL_ENABLED) return;
+        if (!localEnabled) return;
         var root = Path.of(resolution.root()).toAbsolutePath().normalize();
         var project = projects.computeIfAbsent(root, r -> new Project());
         synchronized (project) {
             project.next = resolution;
             if (project.waiting) return;
             project.waiting = true;
-            // Until this boot starts, the status says it is coming rather than showing the last one's outcome.
-            if (!"booting".equals(project.status.get("state"))) project.status = Map.of("state", machine.isDone() ? "queued" : "waiting_for_machine");
+            if (!"booting".equals(project.status.get("state"))) project.status = waiting(project.status);
         }
         machine.whenCompleteAsync((done, failure) -> {
-            if (failure != null) project.status = Map.of("state", "failed", "error", "MACHINE did not boot: " + failure);
-            else boot(root, project);
+            if (failure == null) { boot(root, project); return; }
+            synchronized (project) {
+                project.waiting = false;
+                project.status = Map.of("state", "failed", "error", "MACHINE did not boot: " + failure);
+            }
         }, onWorker);
     }
 
@@ -111,13 +119,14 @@ final class LayeredIndex implements AutoCloseable {
             resolution = project.next;
             project.next = null;
             project.waiting = false;
+            project.status = Map.of("state", "booting");
         }
-        project.status = Map.of("state", "booting");
         long started = System.nanoTime();
+        Map<String, Object> outcome;
         try {
             var model = MavenModel.of(resolution, config.m2Repo(), config.jdkHome());
             for (var warning : model.warnings()) LOG.log(System.Logger.Level.INFO, "{0}: {1}", root, warning);
-            var result = BootDecision.local(indexDir, model.parse(), config.m2Repo());
+            var result = BootDecision.local(indexDir, model.parse(), config.m2Repo(), workers);
             var status = new LinkedHashMap<String, Object>();
             status.put("state", result.isPresent() ? "cold_booted" : "current");
             status.put("wall_ms", (System.nanoTime() - started) / 1_000_000);
@@ -129,17 +138,33 @@ final class LayeredIndex implements AutoCloseable {
             });
             status.put("model_warnings", model.warnings().size());
             if (!model.warnings().isEmpty()) status.put("model_warnings_shown", List.copyOf(model.warnings().subList(0, Math.min(WARNINGS_SHOWN, model.warnings().size()))));
-            project.status = Map.copyOf(status);
-        } catch (Exception | LinkageError failure) {
+            outcome = Map.copyOf(status);
+        } catch (CancellationException cancelled) {
+            outcome = Map.of("state", "cancelled");
+        } catch (Throwable failure) {
+            // Anything, an Error too: a status left at "booting" would never change.
             LOG.log(System.Logger.Level.WARNING, "LOCAL boot of " + root + " failed", failure);
-            project.status = Map.of("state", "failed", "error", String.valueOf(failure));
+            outcome = Map.of("state", "failed", "error", String.valueOf(failure));
+            if (failure instanceof VirtualMachineError fatal) { publish(project, outcome); throw fatal; }
         }
+        publish(project, outcome);
+    }
+
+    /** The outcome of a boot; if another is already waiting for this project, it says so and keeps the outcome as the last one. */
+    private void publish(Project project, Map<String, Object> outcome) {
+        synchronized (project) { project.status = project.waiting ? waiting(outcome) : outcome; }
+    }
+
+    private Map<String, Object> waiting(Map<String, Object> last) {
+        var state = machine.isDone() ? "queued" : "waiting_for_machine";
+        return last.containsKey("state") && !last.get("state").equals(state) && !last.get("state").equals("waiting_for_machine")
+                ? Map.of("state", state, "last", last) : Map.of("state", state);
     }
 
     /** {@code {machine: {...}, projects: {root: {...}}}}, as {@code daemon.status} shows it. */
     Map<String, Object> status() {
         var byRoot = new TreeMap<String, Object>();
-        projects.forEach((root, project) -> byRoot.put(root.toString(), project.status));
+        projects.forEach((root, project) -> { synchronized (project) { byRoot.put(root.toString(), project.status); } });
         return Map.of("machine", machineStatus, "projects", byRoot);
     }
 
@@ -150,9 +175,15 @@ final class LayeredIndex implements AutoCloseable {
         return out.toString();
     }
 
-    /** Stops the worker; a boot in progress is given a few seconds to finish its writes. A LOCAL root is published last, so one cut short leaves the previous root. */
+    /**
+     * Cancels a running boot and waits for it to end, so the store is closed before the daemon goes on closing. A LOCAL root is
+     * published last, so a boot cut short leaves the previous root.
+     */
     @Override public void close() {
         worker.shutdownNow();
-        try { worker.awaitTermination(10, TimeUnit.SECONDS); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+        try {
+            if (!worker.awaitTermination(CLOSE_WAIT_SECONDS, TimeUnit.SECONDS))
+                LOG.log(System.Logger.Level.WARNING, "a LOCAL boot did not end within {0} s of closing", CLOSE_WAIT_SECONDS);
+        } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
     }
 }

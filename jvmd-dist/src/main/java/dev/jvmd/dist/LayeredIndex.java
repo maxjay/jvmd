@@ -1,6 +1,7 @@
 package dev.jvmd.dist;
 
 import dev.jvmd.boot.BootDecision;
+import dev.jvmd.boot.BuildOutputs;
 import dev.jvmd.boot.provider.MavenModel;
 import dev.jvmd.core.Config;
 import dev.jvmd.core.hash.Identity;
@@ -10,6 +11,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -54,6 +56,11 @@ final class LayeredIndex implements AutoCloseable {
     /** Hands work to the worker; once closed, work is dropped rather than failing whoever completes MACHINE. */
     private final Executor onWorker = task -> { try { worker.execute(task); } catch (RejectedExecutionException closed) { /* closing */ } };
     private final Map<Path, Project> projects = new ConcurrentHashMap<>();
+    /** Per build output directory, the types the build rewrote after javac, and their source files, from the last LOCAL boot. */
+    private final Map<Path, Rewrites> rewrites = new ConcurrentHashMap<>();
+
+    /** One module's types the build rewrote after javac (internal names), and the source files that declare them (absolute). */
+    record Rewrites(String module, Set<String> types, Set<Path> sources) { }
     private volatile Map<String, Object> machineStatus = Map.of("state", "not_started");
     /** The thread booting MACHINE (main's), and when it has finished: closing cancels the boot and waits for it. Guarded by this. */
     private Thread machineThread;
@@ -159,6 +166,8 @@ final class LayeredIndex implements AutoCloseable {
                 status.put("faults", r.faults().size());
             });
             status.put("model_warnings", model.warnings().size());
+            var rewritten = compareBuildOutputs(root, model);
+            if (!rewritten.isEmpty()) status.put("rewritten_by_build", rewritten);
             if (!model.warnings().isEmpty()) status.put("model_warnings_shown", List.copyOf(model.warnings().subList(0, Math.min(WARNINGS_SHOWN, model.warnings().size()))));
             outcome = Map.copyOf(status);
         } catch (CancellationException cancelled) {
@@ -170,6 +179,36 @@ final class LayeredIndex implements AutoCloseable {
             if (failure instanceof VirtualMachineError fatal) { publish(project, outcome); throw fatal; }
         }
         publish(project, outcome);
+    }
+
+    /**
+     * Which classes in the build's output the build rewrote after javac (weaving, enhancement, instrumentation), compared with LOCAL's
+     * javac view. Runs and hot swaps leave those to the build. Returns the modules that have any, with their count; a failure to
+     * compare is logged and leaves the last answer.
+     */
+    private Map<String, Object> compareBuildOutputs(Path root, MavenModel.Result model) {
+        var summary = new TreeMap<String, Object>();
+        try {
+            for (var report : BuildOutputs.compare(indexDir, model.parse(), model.outputs())) {
+                var sources = new java.util.HashSet<Path>();
+                for (var source : report.rewrittenSources()) sources.add(root.resolve(source).toAbsolutePath().normalize());
+                rewrites.put(report.classes().toAbsolutePath().normalize(), new Rewrites(report.module(), Set.copyOf(report.rewritten()), Set.copyOf(sources)));
+                if (report.rewrites()) summary.put(report.module(), Map.of("types", report.rewritten().size(), "examples", report.rewritten().subList(0, Math.min(3, report.rewritten().size()))));
+            }
+        } catch (IOException | RuntimeException failed) {
+            LOG.log(System.Logger.Level.WARNING, "comparing the build output of " + root + " with LOCAL failed", failed);
+        }
+        return summary;
+    }
+
+    /** The module's types the build rewrote after javac, if the last LOCAL boot found any; {@code classes} is its build output. */
+    Rewrites rewrites(Path classes) { return rewrites.get(classes.toAbsolutePath().normalize()); }
+
+    /** The rewrites of the module whose source this file is, if it declares a rewritten type. */
+    Rewrites rewritesDeclaredIn(Path source) {
+        var file = source.toAbsolutePath().normalize();
+        for (var module : rewrites.values()) if (module.sources().contains(file)) return module;
+        return null;
     }
 
     /** The outcome of a boot; if another is already waiting for this project, it says so and keeps the outcome as the last one. */

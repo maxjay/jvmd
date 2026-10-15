@@ -27,8 +27,9 @@ public final class MavenModel {
     /**
      * @param json     the model document; its digest is the model hash of the LOCAL root
      * @param warnings what the model cannot express and therefore left out, one line each
+     * @param outputs  the build's class output directory per module name: not part of the model, which describes sources
      */
-    public record Result(byte[] json, List<String> warnings) {
+    public record Result(byte[] json, List<String> warnings, Map<String, Path> outputs) {
         public ProjectModel parse() { return ProjectModel.parse(json); }
     }
 
@@ -41,12 +42,14 @@ public final class MavenModel {
         var root = Path.of(resolution.root()).toAbsolutePath().normalize();
         var repo = repository.toAbsolutePath().normalize();
         var names = new HashMap<String, String>();
+        var outputs = new HashMap<String, Path>();
         var modules = new ArrayList<Resolution.Module>();
         for (var m : resolution.modules()) {
             if (m.packaging().equals("pom")) continue;
             var dir = Path.of(m.directory()).toAbsolutePath().normalize();
             // "." for a jar module at the reactor root: no subdirectory module can have that name.
             names.put(m.gav(), dir.equals(root) ? "." : slashes(root.relativize(dir)));
+            outputs.put(names.get(m.gav()), Path.of(m.classes()).toAbsolutePath().normalize());
             modules.add(m);
         }
         var coordinates = new HashMap<String, String>();
@@ -84,7 +87,7 @@ public final class MavenModel {
                     processing(m.testProcessing(), release(m), name + " (test)", warnings), m.testProcessing(), repo);
         }
         try {
-            return new Result(Json.MAPPER.writeValueAsBytes(doc), List.copyOf(warnings));
+            return new Result(Json.MAPPER.writeValueAsBytes(doc), List.copyOf(warnings), Map.copyOf(outputs));
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException(e); }
     }
 

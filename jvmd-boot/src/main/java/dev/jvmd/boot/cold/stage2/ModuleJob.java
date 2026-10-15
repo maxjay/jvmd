@@ -44,8 +44,8 @@ final class ModuleJob {
 
     ModuleJob(Boot boot) { this.boot = boot; }
 
-    /** A source file found under a source root: javac reads it, once, when it asks for it. */
-    private record Found(String path, Path file, long mtimeNanos) { }
+    /** A source file found under a source root, with its size and modification time from one stat: javac reads it, once, when it asks for it. */
+    record Found(String path, Path file, long size, long mtimeNanos) { }
 
     /**
      * The class-file target the build writes: {@code --release}, else {@code -target}, either as two arguments or with {@code =}, else
@@ -96,7 +96,7 @@ final class ModuleJob {
         // 3. Header-compile the scope's source files. A module-info.java is parsed with the rest and never entered.
         var options = module.javacOptions();
         int release = HeaderCompiler.effectiveRelease(module.release(), options.contains("--enable-preview"), Runtime.version().feature());
-        var found = sources(module.scope(scope).sourceRoots());
+        var found = sources(boot.model, module.scope(scope).sourceRoots());
         var toCompile = new ArrayList<HeaderCompiler.Source>(found.size());
         for (var file : found) toCompile.add(new HeaderCompiler.Source(file.path(), file.file()));
         boot.sourceFiles.addAndGet(found.size());
@@ -117,7 +117,7 @@ final class ModuleJob {
             for (var u : compiled.units) unitsByPath.put(u.path, u);
             // 4. Each compilation unit, in path order: the scope's files, then what its processors wrote (stamped with no time).
             var units = new ArrayList<Found>(found);
-            for (var u : compiled.units) if (u.generated) units.add(new Found(u.path, null, 0));
+            for (var u : compiled.units) if (u.generated) units.add(new Found(u.path, null, 0, 0));
             for (var file : units) {
                 var unit = unitsByPath.get(file.path());
                 var kappa = unit.kappa == null ? sums.zero() : unit.kappa; // javac could not read it: the file is a parse fault
@@ -323,11 +323,11 @@ final class ModuleJob {
     // ---- source files ------------------------------------------------------------------------------------------------------
 
     /** Step 1.4: regular {@code *.java} under the source roots, in path order, one stat each. A root that does not exist is skipped. */
-    private List<Found> sources(List<String> roots) throws IOException {
+    static List<Found> sources(ProjectModel model, List<String> roots) throws IOException {
         var byPath = new TreeMap<String, Path>(Enumerate::compareNames);
-        var base = Path.of(boot.model.root()).toAbsolutePath().normalize();
+        var base = Path.of(model.root()).toAbsolutePath().normalize();
         for (var root : roots) {
-            var dir = boot.model.resolve(root);
+            var dir = model.resolve(root);
             if (!Files.isDirectory(dir)) continue;
             try (var walk = Files.walk(dir)) {
                 for (var file : walk.filter(p -> p.toString().endsWith(".java") && Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS)).toList()) {
@@ -340,8 +340,9 @@ final class ModuleJob {
         }
         var out = new ArrayList<Found>(byPath.size());
         for (var e : byPath.entrySet()) {
-            var instant = Files.readAttributes(e.getValue(), BasicFileAttributes.class).lastModifiedTime().toInstant();
-            out.add(new Found(e.getKey(), e.getValue(), instant.getEpochSecond() * 1_000_000_000L + instant.getNano()));
+            var attributes = Files.readAttributes(e.getValue(), BasicFileAttributes.class);
+            var instant = attributes.lastModifiedTime().toInstant();
+            out.add(new Found(e.getKey(), e.getValue(), attributes.size(), instant.getEpochSecond() * 1_000_000_000L + instant.getNano()));
         }
         return out;
     }

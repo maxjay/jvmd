@@ -6,30 +6,39 @@ import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.tree.ContentTree;
 import dev.jvmd.core.tree.Entry;
 import dev.jvmd.core.tree.Root;
+import dev.jvmd.index.layer.local.FileRow;
 import dev.jvmd.index.layer.local.LocalFormat;
 import dev.jvmd.index.layer.local.LocalRoot;
 import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ModuleRecord;
 import dev.jvmd.index.layer.local.ProjectModel;
+import dev.jvmd.index.layer.local.Route;
 import dev.jvmd.index.layer.local.RouteEntry;
 import dev.jvmd.index.layer.machine.Format;
 import dev.jvmd.index.layer.machine.Keys;
 import dev.jvmd.index.layer.machine.MachineStore;
 import dev.jvmd.index.layer.machine.MachineTree;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.function.Function;
+import java.util.zip.ZipFile;
 
 /**
  * Stage 2 (stage 2, 4 and 5.6): the LOCAL cold boot of one project. Input: the project model and a committed MACHINE. Output: the
@@ -74,8 +83,110 @@ public final class Stage2 {
         return digest.hash(root.toString().replace('\\', '/').getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * How close to the start of the boot that read it a file's modification time must be for the file to have changed again since
+     * without a new time: one tick of the coarsest common file system clock (FAT's two seconds).
+     */
+    static final long RACY_MILLIS = 2_000;
+
+    /**
+     * Why the project's committed LOCAL root no longer describes it, or empty if it still does (demo plan A3). Until warm boot exists a
+     * root is reused only when nothing it was built from changed, as far as can be seen without reading what MACHINE indexed:
+     * <ul>
+     * <li>the root verifies, and its FORMAT, MACHINE root and model bytes are the current ones;
+     * <li>the source files are the ones it has rows for. A file whose size differs from its row's has changed. One whose modification
+     *     time differs, or is within {@link #RACY_MILLIS} of the start of the boot that read it (so it could have changed again since
+     *     within one tick), is hashed and compared with its row's κ; any other file is unchanged;
+     * <li>no jar the root bound to nothing, because it was missing or could not be read, can now be opened.
+     * </ul>
+     * Not compared, so not detected; warm boot has to bind them: a jar or the JDK changed in place, since MACHINE is never re-committed;
+     * the bytes of jars indexed on the spot (A7); processor paths and their configuration (A9); a file restored with another content
+     * but its old size and time.
+     *
+     * <p>The rows compared are the root's own, read through its tree, so a row that an unfinished later boot wrote, or that belongs to a
+     * file an earlier generation had, is never taken for the root's. Anything that cannot be read is a reason as well: the cold boot that
+     * follows reports it if it is the project's fault. Reads the F and RT ranges of the tree, stats each source file once, and reads only
+     * the files whose stamps cannot vouch for them.
+     */
+    public static Optional<String> stale(Digest digest, LocalStore store, ProjectModel model, String format, Path repository) {
+        try {
+            return check(digest, store, model, format, repository);
+        } catch (IOException | RuntimeException unreadable) {
+            return Optional.of("it cannot be checked: " + unreadable);
+        }
+    }
+
+    private static Optional<String> check(Digest digest, LocalStore store, ProjectModel model, String format, Path repository) throws IOException {
+        var projectKey = projectKey(digest, model);
+        var bytes = store.get(LocalStore.localRootKey(projectKey));
+        if (bytes == null) return Optional.of("no committed root");
+        // FORMAT first: the root of an older FORMAT may not decode with this codec.
+        if (!LocalRoot.formatOf(bytes).equals(format)) return Optional.of("FORMAT " + LocalRoot.formatOf(bytes) + " is not " + format);
+        LocalRoot root;
+        try { root = LocalRoot.decode(digest, bytes); } catch (RuntimeException unreadable) { return Optional.of("the committed root does not verify"); }
+        var machine = store.get(MachineStore.ROOT_KEY);
+        if (machine == null || !MachineTree.decodeRoot(digest, machine).digest().equals(root.machineRoot())) return Optional.of("MACHINE changed");
+        if (!digest.hash(model.bytes()).equals(root.modelHash())) return Optional.of("the project model changed");
+
+        Function<Identity, byte[]> nodes = h -> store.get(MachineStore.nodeKey(h));
+        var tree = new ContentTree(digest);
+        var files = new HashMap<String, FileRow>();
+        var routes = new ArrayList<Route>();
+        var foreign = new ArrayList<String>();
+        var filePrefix = LocalStore.fileKey(projectKey, "");
+        tree.forEach(root.local().hash(), nodes, filePrefix, ContentTree.prefixEnd(filePrefix), entry -> {
+            var path = new String(entry.key(), filePrefix.length, entry.key().length - filePrefix.length, StandardCharsets.UTF_8);
+            if (path.startsWith(ModuleJob.GENERATED)) return; // derived from the files around it, which this compares
+            var row = committed(digest, store, entry);
+            if (row == null) foreign.add("file row of " + path);
+            else files.put(path, FileRow.decode(path, row, digest.width()));
+        });
+        var routePrefix = LocalStore.routePrefix(projectKey);
+        tree.forEach(root.local().hash(), nodes, routePrefix, ContentTree.prefixEnd(routePrefix), entry -> {
+            var row = committed(digest, store, entry);
+            if (row == null) foreign.add("route row");
+            else routes.add(Route.decode(row, digest.width()));
+        });
+        if (!foreign.isEmpty()) return Optional.of("the " + foreign.getFirst() + " is not the one the root committed");
+
+        var unbound = new TreeSet<String>();
+        for (var route : routes)
+            for (var entry : route.entries())
+                if (entry instanceof RouteEntry.Jar jar && jar.defaultK() == null) unbound.add(jar.location());
+        for (var location : unbound) if (opens(repository.resolve(location))) return Optional.of(location + " can now be read");
+
+        var stamp = store.get(LocalStore.bootStartKey(projectKey));
+        // No stamp: every file is as close to the boot as can be, and is hashed.
+        long started = stamp == null || stamp.length != Long.BYTES ? Long.MAX_VALUE : ByteBuffer.wrap(stamp).getLong();
+        var seen = new HashSet<String>();
+        for (var module : model.modules())
+            for (var scope : List.of(module.main(), module.test()))
+                for (var found : ModuleJob.sources(model, scope.sourceRoots())) {
+                    if (!seen.add(found.path())) continue;
+                    var row = files.get(found.path());
+                    if (row == null) return Optional.of(found.path() + " was added");
+                    if (row.size() != found.size()) return Optional.of(found.path() + " changed");
+                    boolean vouched = row.mtimeNanos() == found.mtimeNanos() && found.mtimeNanos() / 1_000_000 < started - RACY_MILLIS;
+                    if (!vouched && !digest.hash(Files.readAllBytes(found.file())).equals(row.kappa())) return Optional.of(found.path() + " changed");
+                }
+        for (var path : files.keySet()) if (!seen.contains(path)) return Optional.of(path + " was removed");
+        return Optional.empty();
+    }
+
+    /** The row a tree entry names, or null if the raw row under its key is not that one. */
+    private static byte[] committed(Digest digest, LocalStore store, Entry entry) {
+        var row = store.get(entry.key());
+        return row != null && digest.hash(row).equals(entry.h()) ? row : null;
+    }
+
+    private static boolean opens(Path jar) {
+        if (!Files.isRegularFile(jar)) return false;
+        try (var zip = new ZipFile(jar.toFile())) { return true; } catch (IOException unreadable) { return false; }
+    }
+
     public Result run(LocalStore store, ProjectModel model) throws IOException {
         long started = System.nanoTime();
+        long startedAt = System.currentTimeMillis(); // before any source file is statted: the skip rule's reference (see stale)
         // Step 1: model and order, one thread.
         model.validate();
         var order = Order.of(model);
@@ -144,6 +255,8 @@ public final class Stage2 {
                 store.sync();
                 var format = LocalFormat.of(Format.of(digest, jdkFeature));
                 store.putLocalRoot(digest, projectKey, LocalRoot.encode(digest, format, local, machineRoot, digest.hash(model.bytes())));
+                store.put(LocalStore.bootStartKey(projectKey), ByteBuffer.allocate(Long.BYTES).putLong(startedAt).array());
+                store.flush();
 
                 var leaves = new java.util.TreeMap<String, Identity>();
                 var annotations = new java.util.TreeMap<String, Identity>();

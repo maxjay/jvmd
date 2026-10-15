@@ -111,7 +111,9 @@ public final class Application implements AutoCloseable {
         dispatcher.register("document.change",(s,p)->document(s,p,"change"));
         dispatcher.register("document.close",(s,p)->document(s,p,"close"));
         dispatcher.register("run.start",this::run);
-        dispatcher.register("debug.op",(session,params)->runs(session).operation(Dispatcher.required(params,"run_session"),Dispatcher.required(params,"op"),params.path("args")));
+        dispatcher.register("debug.op",(session,params)->{
+            return runs(session).operation(Dispatcher.required(params,"run_session"),Dispatcher.required(params,"op"),params.path("args"));
+        });
         dispatcher.register("deps.graph", (s, p) -> dependencyGraph(refresh(s), p));
         dispatcher.register("symbol.atPosition",(s,p)->{
             Path path=sourcePath(s,Dispatcher.required(p,"path"));
@@ -1005,7 +1007,18 @@ public final class Application implements AutoCloseable {
     private Envelope run(Session session,com.fasterxml.jackson.databind.JsonNode params)throws Exception{
         if(dirty(session))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","run","reason","Save editor changes before compiling a run"));
         String target=Dispatcher.required(params,"target");var graph=(Resolution)session.state("resolution");if(graph!=null)graph=refresh(session);
-        var matches=workspaceFind(session,target,false).stream().filter(s->Set.of("class","record","enum","method").contains(s.get("kind"))).toList();
+        // Modules whose post-compile goals the caller says leave the classes as javac wrote them (an OSGi manifest, an index).
+        var ignoredNames=new ArrayList<String>();
+        if(params.has("ignore_post_compile")){
+            var value=params.get("ignore_post_compile");if(!value.isArray())throw RpcException.invalid("ignore_post_compile must be a list of modules");
+            for(var name:value){if(!name.isTextual()||name.asText().isBlank())throw RpcException.invalid("ignore_post_compile must be a list of modules");ignoredNames.add(name.asText());}
+        }
+        if(graph==null&&!ignoredNames.isEmpty())throw RpcException.invalid("ignore_post_compile needs a Maven project");
+        Set<String> ignored=graph==null?Set.of():ignoredModules(graph,ignoredNames);
+        // A fully qualified name is found by its source file; only a short name needs the workspace analyzed, which takes minutes on a
+        // large reactor.
+        var bySource=mainBySource(session,graph,target);
+        var matches=bySource!=null?List.of(bySource):workspaceFind(session,target,false).stream().filter(s->Set.of("class","record","enum","method").contains(s.get("kind"))).toList();
         if(matches.size()!=1)return page(1,"live","candidates",matches,0,20,matches.size()>1?List.of("ambiguous"):List.of("No workspace main class matched the target"));
         var symbol=matches.getFirst();String main=Objects.toString(symbol.get("fqn"),symbol.get("name_path").toString().replace('/','$'));
         Path source=Path.of(symbol.get("source_file").toString());var sourceRoots=new LinkedHashSet<Path>();var classpath=new LinkedHashSet<Path>();var coordinates=new LinkedHashMap<Path,String>();var targets=new ArrayList<dev.jvmd.runtime.RunManager.Target>();List<String> options;
@@ -1015,14 +1028,27 @@ public final class Application implements AutoCloseable {
             var compiled=dev.jvmd.runtime.RuntimeCompiler.compile(config.jdkHome(),session.root(),List.of(source),List.copyOf(classpath),List.copyOf(sourceRoots),options,java.time.Duration.ofSeconds(60));dev.jvmd.runtime.RuntimeCompiler.publish(compiled,output);
             targets.add(new dev.jvmd.runtime.RunManager.Target(session.root(),List.copyOf(sourceRoots),List.copyOf(classpath),options,output));
         }else{
-            var module=graph.modules().stream().filter(m->source.startsWith(Path.of(m.directory()))).max(Comparator.comparingInt(m->m.directory().length())).orElseThrow();output=Path.of(module.classes());options=runtimeCompilerOptions(module);
-            compileRuntimeModule(session,graph,module,new HashSet<>(),new HashSet<>());
-            classpath.add(output);graph.classpaths().getOrDefault(module.gav()+":runtime",graph.classpaths().getOrDefault(module.gav()+":main",List.of())).forEach(path->classpath.add(Path.of(path)));
+            var module=graph.modules().stream().filter(m->source.startsWith(Path.of(m.directory()))).max(Comparator.comparingInt(m->m.directory().length())).orElseThrow();output=runOutput(session,graph,module,ignored);options=runtimeCompilerOptions(module);
+            var compiled=new HashSet<String>();var summaries=new HashMap<Path,String>();
+            compileRuntimeModule(session,graph,module,compiled,new HashSet<>(),summaries,ignored);
+            classpath.add(output);classpath.add(Path.of(module.classes()));
+            var order=graph.compileOrder().get(module.gav()+":runtime");
+            if(order!=null)runtimeClasspath(session,graph,module,order,compiled,classpath,summaries,ignored);
+            else for(String path:graph.classpaths().getOrDefault(module.gav()+":runtime",graph.classpaths().getOrDefault(module.gav()+":main",List.of()))){
+                var sibling=graph.modules().stream().filter(m->Path.of(m.classes()).equals(Path.of(path))).findFirst().orElse(null);
+                if(sibling!=null)classpath.add(runOutput(session,graph,sibling,ignored));
+                classpath.add(Path.of(path));
+            }
             for(var local:graph.modules()){
                 var roots=local.sources().stream().map(Path::of).toList();sourceRoots.addAll(roots);coordinates.put(Path.of(local.directory()),local.gav());
-                var compilePath=new LinkedHashSet<Path>();compilePath.add(Path.of(local.classes()));graph.classpaths().getOrDefault(local.gav()+":main",List.of()).forEach(path->compilePath.add(Path.of(path)));overlay(session,graph).dependencies(graph,local.gav(),false).forEach(m->compilePath.add(Path.of(m.classes())));
-                targets.add(new dev.jvmd.runtime.RunManager.Target(Path.of(local.directory()),roots,List.copyOf(compilePath),runtimeCompilerOptions(local),Path.of(local.classes())));
+                var compilePath=new LinkedHashSet<Path>();compilePath.add(runOutput(session,graph,local,ignored));compilePath.add(Path.of(local.classes()));compilePath.addAll(compileClasspath(session,graph,local,ignored));
+                var steps=postCompile(graph,local);String refusal=steps.isEmpty()||ignored.contains(local.gav())?null:postCompileReason("hotswap",graph,local,steps);
+                targets.add(new dev.jvmd.runtime.RunManager.Target(Path.of(local.directory()),roots,List.copyOf(compilePath),runtimeCompilerOptions(local),runOutput(session,graph,local,ignored),refusal));
             }
+            // Every jvmd folder on the launch classpath exists before the JVM starts: the JDK takes an entry that is not a directory at
+            // startup for a jar and never looks at it again, which would hide every class a later hot swap publishes there.
+            var folders=config.stateDir().resolve("run-classes").resolve("modules");
+            for(var entry:classpath)if(entry.startsWith(folders))Files.createDirectories(entry);
             for(var node:graph.nodes())if(node.path()!=null&&node.winner()==null)coordinates.put(Path.of(node.path()),node.gav());
         }
         var arguments=new ArrayList<String>();for(var argument:params.path("args")){if(!argument.isTextual())throw RpcException.invalid("Run arguments must be strings");arguments.add(argument.asText());}if(arguments.size()>1000)throw RpcException.invalid("Too many application arguments");
@@ -1031,21 +1057,183 @@ public final class Application implements AutoCloseable {
         var request=new dev.jvmd.runtime.RunManager.Request(launch,new dev.jvmd.runtime.SourceLookup(List.copyOf(sourceRoots),coordinates),config.jdkHome(),List.copyOf(sourceRoots),options,output,List.copyOf(targets));
         return runs(session).start(request);
     }
+    /**
+     * The runtime classpath in Maven's order. A reactor module is in its place whether or not it was built: one whose classes are older
+     * than its sources has no file in the resolved graph, and is compiled from source here (runtime-only ones included).
+     */
+    private void runtimeClasspath(Session session,Resolution graph,Resolution.Module module,List<String> order,Set<String> compiled,Set<Path> classpath,Map<Path,String> summaries,Set<String> ignored)throws Exception{
+        for(String entry:order){
+            if(!entry.startsWith(Resolution.REACTOR)){classpath.add(Path.of(entry));continue;}
+            String reference=entry.substring(Resolution.REACTOR.length());boolean tests=reference.endsWith(":tests");
+            String gav=tests?reference.substring(0,reference.length()-":tests".length()):reference;
+            var sibling=graph.modules().stream().filter(m->m.gav().equals(gav)).findFirst().orElse(null);
+            if(sibling==null||sibling.gav().equals(module.gav()))continue;
+            boolean unbuilt=!Files.isDirectory(Path.of(sibling.classes()));
+            compileRuntimeModule(session,graph,sibling,compiled,new HashSet<>(),summaries,ignored);
+            if(!tests)classpath.add(runOutput(session,graph,sibling,ignored));
+            classpath.add(Path.of(tests?sibling.testClasses():sibling.classes()));
+            if(unbuilt&&Files.isDirectory(Path.of(sibling.directory()).resolve("src/main/resources")))
+                session.warn("run_resources: "+sibling.gav()+" was never built, so its resources are not on the run's classpath; build it once with Maven");
+        }
+    }
+    /**
+     * The plugin goals of a module's build that rewrite its classes after javac (weaving, enhancement, instrumentation), from its POM.
+     * jvmd only runs javac and annotation processors, so it never puts its own copy of such a module's classes before the build's.
+     */
+    private static List<String> postCompile(Resolution graph,Resolution.Module module){return graph.postCompile().getOrDefault(module.gav(),List.of());}
+    private static String postCompileReason(String capability,Resolution graph,Resolution.Module module,List<String> steps){
+        var root=Path.of(graph.root()).toAbsolutePath().normalize();var directory=Path.of(module.directory()).toAbsolutePath().normalize();
+        String relative=root.relativize(directory).toString().replace('\\','/');
+        String rebuild=relative.isEmpty()?"mvn process-classes in "+root:"from "+root+": mvn -pl "+relative+" -am process-classes";
+        return "The build of "+module.gav()+" rewrites its classes after javac ("+String.join(", ",steps)+"), which jvmd does not repeat, so jvmd does not put its own compile of that module before the build's. Rebuild it with Maven ("
+                +rebuild+"), then "+(capability.equals("hotswap")?"restart the run.":"run again.")+" If those goals leave the class files as javac wrote them, start the run with ignore_post_compile: [\""+module.gav()+"\"].";
+    }
+    private static RpcException postCompiled(String capability,Resolution graph,Resolution.Module module,List<String> steps){
+        return new RpcException(-32003,"unsupported_capability",Map.of("capability",capability,"reason",postCompileReason(capability,graph,module,steps)));
+    }
+    /**
+     * Where jvmd writes the classes it compiles itself for a module (a run's stale module, a hot swap): its own state, never the build's
+     * output directory. The build may have rewritten its classes after javac (weaving, enhancement, instrumentation), and trusts them
+     * as current by timestamp, so jvmd writing there both loses that work and leaks into the build. This directory comes before the
+     * build's classes on every classpath: what jvmd compiled wins, and the build's own classes serve everything else.
+     */
+    private Path runOutput(Session session,Resolution graph,Resolution.Module module,Set<String> ignored){
+        var directory=Path.of(module.directory()).toAbsolutePath().normalize();
+        String name=directory.getFileName()==null?"root":directory.getFileName().toString();
+        // Per session root as well: two roots that share a module see different reactors, and would otherwise recompile over each other.
+        String key=session.root().toAbsolutePath().normalize()+"\u0000"+directory;
+        // A module whose post-compile goals a run ignores gets a folder of its own: jvmd's plain compile of it is seen only by runs that
+        // ignore them too, never by a run on the build's processed classes.
+        if(ignored.contains(module.gav())&&!postCompile(graph,module).isEmpty())key+="\u0000ignore-post-compile";
+        return config.stateDir().resolve("run-classes").resolve("modules").resolve(name+"-"+Hashing.sha256(key.getBytes(java.nio.charset.StandardCharsets.UTF_8)).substring(0,12));
+    }
+    /** The gavs of the modules {@code names} names, each as groupId:artifactId:version, groupId:artifactId or artifactId. */
+    private static Set<String> ignoredModules(Resolution graph,List<String> names){
+        var gavs=new LinkedHashSet<String>();
+        for(String name:names){
+            var matched=graph.modules().stream().filter(m->{String[] parts=m.gav().split(":");return m.gav().equals(name)||parts.length>=2&&(parts[1].equals(name)||(parts[0]+":"+parts[1]).equals(name));}).map(Resolution.Module::gav).toList();
+            if(matched.isEmpty())throw RpcException.invalid("ignore_post_compile names no module of the project: "+name);
+            gavs.addAll(matched);
+        }
+        return Set.copyOf(gavs);
+    }
+    /**
+     * What a whole-module compile was made from: the JDK, the options, every source file's path, size and modification time, every
+     * classpath and processor path entry's state, and in a module with processing every {@code lombok.config} on its sources' directory
+     * chains. Kept beside the folder, outside every classpath root; a compile is reused only while this is equal.
+     */
+    private String fingerprint(Resolution.Module module,List<Path> files,List<Path> classpath,List<String> options,Map<Path,String> summaries)throws java.io.IOException{
+        var jdk=config.jdkHome().toAbsolutePath().normalize();
+        var text=new StringBuilder("jdk ").append(jdk).append('|').append(summary(jdk.resolve("release"),summaries)).append('\n');
+        text.append(String.join("\u0000",options)).append('\n');
+        for(var file:files.stream().sorted().toList())text.append(file).append('|').append(stamp(file)).append('\n');
+        for(var entry:classpath)text.append(entry).append('|').append(summary(entry,summaries)).append('\n');
+        if(module.processing().enabled()){
+            for(String entry:module.processing().path())text.append("processor ").append(entry).append('|').append(summary(Path.of(entry),summaries)).append('\n');
+            var directories=new TreeSet<Path>();
+            for(var file:files)for(var directory=file.getParent();directory!=null&&directories.add(directory);directory=directory.getParent()){}
+            for(var directory:directories){var lombok=directory.resolve("lombok.config");if(Files.isRegularFile(lombok))text.append(lombok).append('|').append(stamp(lombok)).append('\n');}
+        }
+        return Hashing.sha256(text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+    private static String stamp(Path file)throws java.io.IOException{var a=Files.readAttributes(file,java.nio.file.attribute.BasicFileAttributes.class);return a.size()+"|"+a.lastModifiedTime().toMillis();}
+    /**
+     * A classpath entry's state: a jvmd folder by its own fingerprint; a directory by every class file's relative path, size and time; a
+     * file by size and time. A directory is summarised once per run.start, as jvmd never writes one it summarises.
+     */
+    private static String summary(Path entry,Map<Path,String> summaries)throws java.io.IOException{
+        var own=fingerprintFile(entry);if(Files.isRegularFile(own))return Files.readString(own);
+        var known=summaries.get(entry);if(known!=null)return known;
+        String value;
+        if(Files.isDirectory(entry)){
+            var text=new StringBuilder();
+            try(var walk=Files.walk(entry)){for(var file:walk.filter(p->p.toString().endsWith(".class")).sorted().toList())text.append(entry.relativize(file)).append('|').append(stamp(file)).append('\n');}
+            value=Hashing.sha256(text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }else if(Files.isRegularFile(entry))value=stamp(entry);
+        else value="absent";
+        summaries.put(entry,value);return value;
+    }
+    /** Removes the class files of {@code out} that {@code keep} does not name. The folder itself stays: runs already started have it on their classpath. */
+    private static void retain(Path out,Set<String> keep)throws java.io.IOException{
+        if(!Files.isDirectory(out))return;
+        try(var walk=Files.walk(out)){for(var file:walk.filter(p->p.toString().endsWith(".class")).toList())if(!keep.contains(out.relativize(file).toString().replace('\\','/')))Files.deleteIfExists(file);}
+    }
+    private static Path fingerprintFile(Path out){return out.resolveSibling(out.getFileName()+".fingerprint");}
+    /** A module's compile classpath in Maven's order, a reactor module as its jvmd-compiled classes and then the build's. */
+    private List<Path> compileClasspath(Session session,Resolution graph,Resolution.Module module,Set<String> ignored)throws Exception{
+        var classpath=new LinkedHashSet<Path>();
+        var order=graph.compileOrder().get(module.gav()+":main");
+        if(order==null){
+            // The module's own output is in Maven's list first; here it goes last, as below.
+            graph.classpaths().getOrDefault(module.gav()+":main",List.of()).stream().map(Path::of).filter(path->!path.equals(Path.of(module.classes()))).forEach(classpath::add);
+            for(var dependency:overlay(session,graph).dependencies(graph,module.gav(),false)){classpath.add(runOutput(session,graph,dependency,ignored));classpath.add(Path.of(dependency.classes()));}
+            classpath.add(Path.of(module.classes()));
+            return List.copyOf(classpath);
+        }
+        for(String entry:order){
+            if(!entry.startsWith(Resolution.REACTOR)){classpath.add(Path.of(entry));continue;}
+            String reference=entry.substring(Resolution.REACTOR.length());boolean tests=reference.endsWith(":tests");
+            String gav=tests?reference.substring(0,reference.length()-":tests".length()):reference;
+            var sibling=graph.modules().stream().filter(m->m.gav().equals(gav)).findFirst().orElse(null);
+            if(sibling==null||sibling.gav().equals(module.gav()))continue;
+            if(!tests)classpath.add(runOutput(session,graph,sibling,ignored));
+            classpath.add(Path.of(tests?sibling.testClasses():sibling.classes()));
+        }
+        // Last: classes only the build has for this module (another language's compiler, a generator), never shadowing its sources.
+        classpath.add(Path.of(module.classes()));
+        return List.copyOf(classpath);
+    }
+    /** The main class {@code target} names, if it is fully qualified and exactly one source root holds its top-level source file. */
+    private Map<String,Object> mainBySource(Session session,Resolution graph,String target)throws Exception{
+        if(!javax.lang.model.SourceVersion.isName(target.replace('$','.'))||!target.contains("."))return null;
+        String topLevel=target.contains("$")?target.substring(0,target.indexOf('$')):target;String relative=topLevel.replace('.','/')+".java";
+        var roots=new LinkedHashSet<Path>();
+        if(graph!=null)for(var module:graph.modules())for(var root:module.sources())roots.add(Path.of(root));
+        else roots.addAll(workspace(session).roots());
+        var found=roots.stream().map(root->root.resolve(relative).toAbsolutePath().normalize()).filter(Files::isRegularFile).distinct().toList();
+        if(found.size()!=1)return null;
+        var file=found.getFirst();
+        // On a case-insensitive file system Main.java answers for app.main too.
+        if(!file.toRealPath().getFileName().toString().equals(relative.substring(relative.lastIndexOf('/')+1)))return null;
+        if(target.contains("$")){
+            var text=Files.readString(file);
+            for(String nested:target.substring(target.indexOf('$')+1).split("\\$"))
+                if(!java.util.regex.Pattern.compile("\\b(class|interface|enum|record)\\s+"+java.util.regex.Pattern.quote(nested)+"\\b").matcher(text).find())return null;
+        }
+        return Map.of("fqn",target,"name_path",target,"source_file",file.toString(),"kind","class");
+    }
     private static List<String> runtimeCompilerOptions(Resolution.Module module){
         var options=new ArrayList<>(module.compilerOptions());var processor=module.processing();
         if(processor.enabled()){
             options.add("-proc:full");if(!processor.path().isEmpty())options.addAll(List.of("-processorpath",String.join(java.io.File.pathSeparator,processor.path())));if(!processor.names().isEmpty())options.addAll(List.of("-processor",String.join(",",processor.names())));
         }return List.copyOf(options);
     }
-    private void compileRuntimeModule(Session session,Resolution graph,Resolution.Module module,Set<String> finished,Set<String> visiting)throws Exception{
+    private void compileRuntimeModule(Session session,Resolution graph,Resolution.Module module,Set<String> finished,Set<String> visiting,Map<Path,String> summaries,Set<String> ignored)throws Exception{
         if(finished.contains(module.gav()))return;if(!visiting.add(module.gav()))throw RpcException.invalid("Runtime module dependency cycle: "+module.gav());
-        var dependencies=overlay(session,graph).dependencies(graph,module.gav(),false);for(var dependency:dependencies)compileRuntimeModule(session,graph,dependency,finished,visiting);
-        if(!module.packaging().equals("pom")&&overlay(session,graph).requiresSource(module)){
-            var roots=module.sources().stream().filter(path->!module.processing().enabled()||!path.contains("/generated-sources")).map(Path::of).toList();var files=new ArrayList<Path>();
-            for(Path root:roots)if(Files.isDirectory(root))files.addAll(classpathFiles.inventory(root,".java"));
-            if(!files.isEmpty()){
-                var classpath=new LinkedHashSet<Path>();classpath.add(Path.of(module.classes()));graph.classpaths().getOrDefault(module.gav()+":main",List.of()).forEach(path->classpath.add(Path.of(path)));dependencies.forEach(m->classpath.add(Path.of(m.classes())));
-                var compiled=dev.jvmd.runtime.RuntimeCompiler.compile(config.jdkHome(),Path.of(module.directory()),files,List.copyOf(classpath),roots,runtimeCompilerOptions(module),java.time.Duration.ofSeconds(60));dev.jvmd.runtime.RuntimeCompiler.publish(compiled,Path.of(module.classes()));
+        var dependencies=overlay(session,graph).dependencies(graph,module.gav(),false);for(var dependency:dependencies)compileRuntimeModule(session,graph,dependency,finished,visiting,summaries,ignored);
+        if(!module.packaging().equals("pom")){
+            var out=runOutput(session,graph,module,ignored);
+            synchronized(dev.jvmd.runtime.RuntimeCompiler.outputLock(out)){
+                Files.createDirectories(out);
+                // The build is current again: its classes are the module's, and what jvmd compiled before is dropped.
+                if(!overlay(session,graph).requiresSource(module)){Files.deleteIfExists(fingerprintFile(out));retain(out,Set.of());}
+                else{
+                    var roots=module.sources().stream().filter(path->!module.processing().enabled()||!path.contains("/generated-sources")).map(Path::of).toList();var files=new ArrayList<Path>();
+                    for(Path root:roots)if(Files.isDirectory(root))files.addAll(classpathFiles.inventory(root,".java"));
+                    if(!files.isEmpty()){
+                        var steps=postCompile(graph,module);if(!steps.isEmpty()&&!ignored.contains(module.gav()))throw postCompiled("run",graph,module,steps);
+                        var classpath=compileClasspath(session,graph,module,ignored);var options=runtimeCompilerOptions(module);
+                        String fingerprint=fingerprint(module,files,classpath,options,summaries);var recorded=fingerprintFile(out);
+                        if(!Files.isRegularFile(recorded)||!Files.readString(recorded).equals(fingerprint)){
+                            var compiled=dev.jvmd.runtime.RuntimeCompiler.compile(config.jdkHome(),Path.of(module.directory()),files,classpath,roots,options,java.time.Duration.ofSeconds(60));
+                            // In place, each class file replaced atomically, then the ones this compile no longer has removed: the folder
+                            // never disappears from under a run that has it on its classpath. No fingerprint while it is being written.
+                            Files.deleteIfExists(recorded);
+                            dev.jvmd.runtime.RuntimeCompiler.publish(compiled,out);retain(out,compiled.classes().keySet());
+                            Files.writeString(recorded,fingerprint);
+                        }
+                    }
+                }
             }
         }visiting.remove(module.gav());finished.add(module.gav());
     }
@@ -1280,6 +1468,9 @@ public final class Application implements AutoCloseable {
             app.bootMachine();
             server.ready();
             System.out.println("READY " + config.socket());
+            server.await();
+        } catch (java.util.concurrent.CancellationException shuttingDown) {
+            // daemon.shutdown arrived while MACHINE was booting: closing cancelled the boot, and the server finishes closing.
             server.await();
         } catch(Exception|LinkageError e) {
             server.close();

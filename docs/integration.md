@@ -421,12 +421,23 @@ Breakpoint line numbers are **one-based**, unlike LSP positions. Breakpoints can
 | `locals` | Frame token; optional limit/cursor |
 | `inspect` | Object handle; depth up to 4 and breadth up to 20, or `release: true` |
 | `eval` | Expression, frame token, tier 1 or 2 |
-| `hotswap` | Changed Java source paths; inspect `restart_required` and per-module results |
+| `hotswap` | Changed Java source paths. Exactly those files are compiled, with no source path, against the classes the program runs and the classes compiled for this swap, a module before the modules that depend on it: a reference to an edit that was not passed fails to compile. Then every class is redefined in one call, which applies to all or none, so `restart_required` means the program still runs entirely on its old classes. Inspect `restart_required` and per-module results. Refused (`unsupported_capability`) in a module whose build rewrites classes after javac (below) |
+| `output` | The application's stdout and stderr: the last `tail` characters (default 16,384), or everything after `since` (pass the previous `written`); `alive`, `exit_code` once it has exited, `truncated` and `complete` |
 | `restart`, `stop` | Restart returns a new run ID; stop releases that run |
 | `histogram` | Bounded class histogram, or `args.jfr` recording settings |
 | `instances`, `referrers` | Type reference or object handle; explicit `max` required, capped at 1000 |
 
-Poll `session.status` (or the `status` tool) for run state and stopped threads while a debug UI is active. There is no socket push subscription for breakpoint events or application stdout/stderr. Keep polling modest and stop it when the view closes.
+Classes jvmd compiles for a run or a hot swap go to its own state directory (`run-classes/`), one folder per module and session root, which comes before the build's output on the run's classpath. jvmd never writes the build's output directory.
+- A module's compile there is reused while a fingerprint of its inputs is unchanged: the JDK, the options, its sources, its compile classpath and processor path (a directory by every class file's path, size and time), and in a module with annotation processing every `lombok.config` above its sources. Like Maven's own check, it uses sizes and times, so an edit that keeps both is missed.
+- Once the build's output is current again, the folder is emptied. It is never removed, because runs already started have it on their classpath.
+
+jvmd only runs javac and annotation processors. So for a module whose POM runs a goal that rewrites classes after javac, jvmd uses the build's output and never its own compile: a run is refused while that module's sources are newer than its build output, and a hot swap of a file in it is refused, both asking for a rebuild with Maven (`mvn -pl <module> -am process-classes` from the root). Such a goal is:
+- any goal that runs at `process-classes`, bound there or by its mojo's default phase (read from the plugin's descriptor when the model gives the plugin's version and the plugin is in the local repository; a plugin downloaded later is picked up on the next resolution);
+- a known enhancer or weaver at any phase, such as `hibernate-enhance-maven-plugin:enhance`, `aspectj-maven-plugin:compile` or `byte-buddy-maven-plugin:transform`.
+
+Not counted: an execution bound to phase `none`, and known goals that only write beside the classes or check them (`maven-bundle-plugin:manifest`, `bnd-maven-plugin:bnd-process`, `jandex`, `sisu-maven-plugin:main-index`, `maven-plugin-plugin:descriptor`, `animal-sniffer` and `forbiddenapis` checks). Any other `process-classes` goal counts, including ones that do not change classes, such as an `antrun` task. If a module's goals leave its classes as javac wrote them, name it in `run.start`'s `ignore_post_compile` (its `groupId:artifactId:version`, `groupId:artifactId` or `artifactId`): for that run, jvmd compiles the module itself when it is stale and allows hot swaps in it. That compile goes to a folder of its own, which only runs that name the module see; a run on the build's processed classes never loads it. Not seen: plugins injected by Maven tiles, and `maven-compiler-plugin` with an AspectJ `compilerId`.
+
+Poll `session.status` (or the `status` tool) for run state and stopped threads while a debug UI is active. There is no socket push subscription for breakpoint events or application stdout/stderr; poll `output` with `since` for the latter. Keep polling modest and stop it when the view closes.
 
 Frame tokens expire after execution resumes, stepping, evaluation that invokes target methods, or class redefinition. Reacquire frames after these actions. Object handles expire after 60 seconds; release them when an inspector closes. Debuggee locals need compiler debug metadata (`-g`).
 

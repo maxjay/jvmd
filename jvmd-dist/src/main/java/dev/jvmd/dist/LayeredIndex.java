@@ -55,6 +55,10 @@ final class LayeredIndex implements AutoCloseable {
     private final Executor onWorker = task -> { try { worker.execute(task); } catch (RejectedExecutionException closed) { /* closing */ } };
     private final Map<Path, Project> projects = new ConcurrentHashMap<>();
     private volatile Map<String, Object> machineStatus = Map.of("state", "not_started");
+    /** The thread booting MACHINE (main's), and when it has finished: closing cancels the boot and waits for it. Guarded by this. */
+    private Thread machineThread;
+    private boolean closing;
+    private final java.util.concurrent.CountDownLatch machineEnded = new java.util.concurrent.CountDownLatch(1);
 
     /** A project's latest requested resolution, and what became of the last boot. Its fields are guarded by itself. */
     private static final class Project {
@@ -71,7 +75,15 @@ final class LayeredIndex implements AutoCloseable {
 
     /** Stage 1 on the calling thread; a failure is rethrown (for {@code main}, a start failure). The projects requested so far then boot. */
     void bootMachine() throws IOException {
-        if (machine.isDone() || "booting".equals(machineStatus.get("state"))) throw new IllegalStateException("MACHINE is booted once");
+        synchronized (this) {
+            if (closing) throw new CancellationException("the daemon is closing");
+            if (machineThread != null) throw new IllegalStateException("MACHINE is booted once");
+            machineThread = Thread.currentThread();
+        }
+        try { bootMachineOnThisThread(); } finally { machineEnded.countDown(); }
+    }
+
+    private void bootMachineOnThisThread() throws IOException {
         machineStatus = Map.of("state", "booting");
         long started = System.nanoTime();
         try {
@@ -87,6 +99,16 @@ final class LayeredIndex implements AutoCloseable {
             machineStatus = Map.copyOf(status);
             machine.complete(null);
         } catch (IOException | RuntimeException | Error failure) {
+            boolean cancelled;
+            synchronized (this) { cancelled = closing; }
+            if (cancelled) {
+                // Closing interrupted the boot (stage 1 starts no further job, ends the running ones and writes no ROOT).
+                Thread.interrupted();
+                machineStatus = Map.of("state", "cancelled");
+                var cancellation = new CancellationException("MACHINE boot cancelled: the daemon is closing");
+                machine.completeExceptionally(cancellation);
+                throw cancellation;
+            }
             machineStatus = Map.of("state", "failed", "error", String.valueOf(failure));
             machine.completeExceptionally(failure);
             throw failure;
@@ -176,12 +198,21 @@ final class LayeredIndex implements AutoCloseable {
     }
 
     /**
-     * Cancels a running boot and waits for it to end, so the store is closed before the daemon goes on closing. A LOCAL root is
-     * published last, so a boot cut short leaves the previous root.
+     * Cancels a running boot, MACHINE's or a LOCAL one, and waits for it to end, so the store is closed before the daemon goes on
+     * closing and releases its lock: a daemon asked to shut down while it boots writes nothing after that. A root is published last, so
+     * a boot cut short leaves the previous one.
      */
     @Override public void close() {
+        Thread booting;
+        synchronized (this) {
+            closing = true;
+            booting = machineThread;
+        }
+        if (booting != null && machineEnded.getCount() > 0) booting.interrupt();
         worker.shutdownNow();
         try {
+            if (booting != null && !machineEnded.await(CLOSE_WAIT_SECONDS, TimeUnit.SECONDS))
+                LOG.log(System.Logger.Level.WARNING, "the MACHINE boot did not end within {0} s of closing", CLOSE_WAIT_SECONDS);
             if (!worker.awaitTermination(CLOSE_WAIT_SECONDS, TimeUnit.SECONDS))
                 LOG.log(System.Logger.Level.WARNING, "a LOCAL boot did not end within {0} s of closing", CLOSE_WAIT_SECONDS);
         } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }

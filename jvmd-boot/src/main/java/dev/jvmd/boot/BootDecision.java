@@ -71,6 +71,8 @@ public final class BootDecision {
      * @throws IllegalStateException if MACHINE has not been booted
      */
     public static Optional<Stage2.Result> local(Path indexDir, ProjectModel model, Path repository) throws IOException {
+        // A model that is no longer valid is never kept, even if a root was committed for it under older rules.
+        model.validate();
         var digest = Sha256.INSTANCE;
         int jdkFeature = Runtime.version().feature();
         var format = Format.of(digest, jdkFeature);

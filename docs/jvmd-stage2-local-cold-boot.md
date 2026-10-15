@@ -379,7 +379,7 @@ Kotlin/Scala/Groovy contribute through compiled class files, not SourceFacts. Bu
 
 One RocksDB per MACHINE generation contains shared nodes/leaves and project-prefixed LOCAL records. One atomic write retains the previous LROOT, updates current X inserts/deletes, and swaps LROOT. Historical empty X values live in immutable LOCAL nodes. Garbage collection of other unreachable records and the history retention policy are deferred.
 
-Current representation is `layout=4;parser=6;local=26`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write. Parser 6 and LOCAL 26 write every string as lossless modified UTF-8 (amendments 2.1); parser 5 and LOCAL 6–23 named other codecs on the unmerged stage 3 branch and are skipped.
+Current representation is `layout=4;parser=7;local=26`, plus digest/JDK/javac fields. Parser 3 isolated the changed warning/N/innerName representation from PR #59; parser 4 retains full warning annotations in A/EA. LOCAL 2 added recoverable bindings/absences, LOCAL 3 exact T header observations, LOCAL 4 path-addressed reverse records, LOCAL 5 current reverse publication and persistent leaf-set identities/definer state. These changes require cold rebuilding, never migration. A shared derivable cache may be read directly; node/AL dedup must not add one storage-existence read per content-addressed write. Parser 7 and LOCAL 26 write every string as lossless modified UTF-8 (amendments 2.1); parsers 5 and 6 and LOCAL 6–23 named other codecs on the unmerged stage 3 branch and are skipped.
 
 ## 10. Implementation and completion rules
 
@@ -483,7 +483,7 @@ LSTART|project = u64 wall-clock milliseconds at which the publishing boot starte
 ### B.8 FORMAT
 
 ```text
-machine = layout=4;digest=<name>;jdk=<feature>;parser=6
+machine = layout=4;digest=<name>;jdk=<feature>;parser=7
 local   = <machine>;local=26;javac=<runtime feature>
 ```
 

@@ -52,9 +52,58 @@ class LosslessStringsTest {
         }
     }
 
+    /** Every single code unit, in the order of its encoding: compare must rise strictly along it, which covers every pair of them. */
+    @Test void compareIsByteOrderForEveryCodeUnitAndSharedPrefixes() {
+        var units = new java.util.ArrayList<String>();
+        for (int c = 0; c < 0x10000; c++) units.add(String.valueOf((char) c));
+        units.sort((a, b) -> Arrays.compareUnsigned(Mutf8.encode(a), Mutf8.encode(b)));
+        for (int i = 1; i < units.size(); i++) assertThat(Mutf8.compare(units.get(i - 1), units.get(i))).isNegative();
+        var random = new Random(5);
+        for (int i = 0; i < 20_000; i++) {
+            var prefix = randomString(random);
+            var a = prefix + randomString(random);
+            var b = prefix + randomString(random);
+            assertThat(Integer.signum(Mutf8.compare(a, b))).as(a + " vs " + b).isEqualTo(Integer.signum(Arrays.compareUnsigned(Mutf8.encode(a), Mutf8.encode(b))));
+        }
+    }
+
+    /**
+     * A jar's classes are walked in owner order, and that must be the order of their keys, or the leaf cannot be built. Owners that
+     * differ by NUL sort differently as bytes than as Strings.
+     */
+    @Test void ownersThatDifferByNulBuildTheirLeafInKeyOrder() throws Exception {
+        var owners = List.of("p/A", "p/A\0", "p/A\0x", "p/A\u007F", "p/A$B", "p/A\ud83d\ude00", "p/A\uff21");
+        var jar = new java.io.ByteArrayOutputStream();
+        try (var zip = new java.util.zip.ZipOutputStream(jar)) {
+            for (var owner : owners) {
+                zip.putNextEntry(new java.util.zip.ZipEntry(owner + ".class"));
+                var pool = java.lang.classfile.constantpool.ConstantPoolBuilder.of();
+                zip.write(ClassFile.of().build(pool.classEntry(pool.utf8Entry(owner)), pool, c -> c
+                        .withFlags(ClassFile.ACC_PUBLIC).withSuperclass(ConstantDescs.CD_Object)
+                        .withField("f", ConstantDescs.CD_int, ClassFile.ACC_PUBLIC)));
+                zip.closeEntry();
+            }
+        }
+        var digest = Sha256.INSTANCE;
+        var entries = dev.jvmd.boot.cold.stage1.Entries.zip(jar.toByteArray(), 25);
+        var items = entries.classes();
+        assertThat(items).extracting(dev.jvmd.boot.cold.stage1.Entries.Item::owner).containsExactlyInAnyOrderElementsOf(owners);
+        var byString = items.stream().sorted(java.util.Comparator.comparing(dev.jvmd.boot.cold.stage1.Entries.Item::owner)).toList();
+        assertThat(byString).as("String order differs here").isNotEqualTo(items);
+
+        var builder = new dev.jvmd.index.layer.machine.LeafBuilder(new dev.jvmd.core.tree.ContentTree(digest), new ContentTreeTest.MapSink());
+        for (var item : items) for (var fact : ClassFacts.of(digest, entries.read(item), item.owner()).facts()) builder.add(fact);
+        builder.seal();
+        assertThat(builder.build().typeCount()).isEqualTo(owners.size());
+
+        var wrong = new dev.jvmd.index.layer.machine.LeafBuilder(new dev.jvmd.core.tree.ContentTree(digest), new ContentTreeTest.MapSink());
+        assertThatThrownBy(() -> { for (var item : byString) for (var fact : ClassFacts.of(digest, entries.read(item), item.owner()).facts()) wrong.add(fact); })
+                .as("in String order the keys are not increasing").isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test void onlyCanonicalEncodingsDecode() {
-        for (var bad : List.of("00", "41006", "80", "bf", "c0", "c081", "c1bf", "c241", "e0", "e0a0", "e08080", "e09fbf", "e0a041", "eda0", "f0908080", "f8", "ff")) {
-            var bytes = HexFormat.of().parseHex(bad.length() % 2 == 0 ? bad : bad + "0");
+        for (var bad : List.of("00", "410060", "80", "bf", "c0", "c081", "c1bf", "c241", "e0", "e0a0", "e08080", "e09fbf", "e0a041", "eda0", "f0908080", "f8", "ff")) {
+            var bytes = HexFormat.of().parseHex(bad);
             assertThatThrownBy(() -> Mutf8.decode(bytes, 0, bytes.length)).as(bad).isInstanceOf(IllegalArgumentException.class);
         }
         assertThatThrownBy(() -> new Codec.Reader(HexFormat.of().parseHex("4142")).zstr()).as("no terminator").isInstanceOf(IllegalArgumentException.class);

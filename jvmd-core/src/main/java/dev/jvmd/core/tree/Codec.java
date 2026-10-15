@@ -44,18 +44,12 @@ public final class Codec {
         }
         /** {@code str}: u32 byte length, then modified UTF-8. */
         public Writer str(String s) {
-            int n = Mutf8.length(s);
-            u32(n);
-            ensure(n);
-            length = Mutf8.encode(s, buffer, length);
-            return this;
+            var bytes = Mutf8.encode(s);
+            u32(bytes.length);
+            return raw(bytes);
         }
         /** {@code zstr}: modified UTF-8, then one 0x00. NUL inside the string is {@code C0 80}, so the 0x00 only ever terminates. */
-        public Writer zstr(String s) {
-            ensure(Mutf8.length(s) + 1);
-            length = Mutf8.encode(s, buffer, length);
-            return u8(0);
-        }
+        public Writer zstr(String s) { raw(Mutf8.encode(s)); return u8(0); }
         public Writer id(Identity id) { return raw(id.view()); }
         /** {@code opt<str>}. */
         public Writer optStr(String s) { if (s == null) return u8(0); u8(1); return str(s); }
@@ -94,7 +88,10 @@ public final class Codec {
             java.util.Objects.checkFromIndexSize(position, n, bytes.length);
             position += n;
         }
-        /** @throws IllegalArgumentException if the bytes are not canonical modified UTF-8 */
+        /**
+         * @throws IllegalArgumentException if the bytes are not canonical modified UTF-8
+         * @throws IndexOutOfBoundsException if the length runs past the end
+         */
         public String str() {
             int n = count();
             var out = Mutf8.decode(bytes, position, n);

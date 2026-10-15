@@ -18,12 +18,21 @@ public final class Mutf8 {
         int n = 0;
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            n += c != 0 && c <= 0x7F ? 1 : c <= 0x7FF ? 2 : 3;
+            n = Math.addExact(n, c != 0 && c <= 0x7F ? 1 : c <= 0x7FF ? 2 : 3);
         }
         return n;
     }
 
     public static byte[] encode(String s) {
+        // Most strings are ASCII without NUL: one byte per character, which the JDK's own encoder writes fastest. (UTF-8's length
+        // cannot tell: it writes an unpaired surrogate as the one byte '?'.)
+        int n = s.length(), ascii = 0;
+        while (ascii < n) {
+            char c = s.charAt(ascii);
+            if (c == 0 || c > 0x7F) break;
+            ascii++;
+        }
+        if (ascii == n) return s.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
         var out = new byte[length(s)];
         encode(s, out, 0);
         return out;

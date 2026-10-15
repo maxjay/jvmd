@@ -4,14 +4,12 @@ import dev.jvmd.core.hash.Digest;
 import dev.jvmd.core.hash.Identity;
 import java.io.IOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -94,7 +92,7 @@ public final class Enumerate {
         names.sort(Enumerate::compareNames);
         var out = new ArrayList<Location>(names.size());
         for (var module : names) {
-            var bh = digest.hash(jdkDigest.view(), module.getBytes(StandardCharsets.UTF_8), new byte[] {0});
+            var bh = digest.hash(jdkDigest.view(), new dev.jvmd.core.tree.Codec.Writer().zstr(module).toBytes());
             out.add(new Location("jrt:/" + module + "@" + jdkHome, attributes.size(), mtimeNanos(attributes), null, module, jrt, bh));
         }
         return out;

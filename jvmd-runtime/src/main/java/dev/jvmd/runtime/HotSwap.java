@@ -12,7 +12,9 @@ public final class HotSwap {
     public HotSwap(DebugSession debug){this.debug=debug;}
     public Envelope apply(Path compilerHome,List<Path> changed,List<Path> sourceRoots,List<String> options,Path output)throws Exception{return apply(compilerHome,changed,sourceRoots,options,output,debug.launch().classpath());}
     public Envelope apply(Path compilerHome,List<Path> changed,List<Path> sourceRoots,List<String> options,Path output,List<Path> classpath)throws Exception{
-        long started=System.nanoTime();debug.vm();var compiled=RuntimeCompiler.compile(compilerHome,debug.launch().directory(),changed,classpath,sourceRoots,options,Duration.ofSeconds(60));
+        // Exactly the changed files: javac would otherwise compile any other source it finds newer than its class, and publish that too.
+        var exact=new ArrayList<>(options);if(!exact.contains("-implicit:none"))exact.add("-implicit:none");
+        long started=System.nanoTime();debug.vm();var compiled=RuntimeCompiler.compile(compilerHome,debug.launch().directory(),changed,classpath,sourceRoots,exact,Duration.ofSeconds(60));
         long compiledAt=System.nanoTime();var classes=new LinkedHashMap<ReferenceType,byte[]>();var names=new ArrayList<String>();
         for(var entry:compiled.classes().entrySet()){
             String name=entry.getKey().substring(0,entry.getKey().length()-6).replace('/','.');names.add(name);

@@ -238,64 +238,95 @@ class RunMavenMainTest {
     }
 
     /**
-     * A class the build rewrote after javac (here, a method added to Entity, as weaving or enhancement would) is the build's: the
-     * daemon finds it by comparing the build output with LOCAL, a run keeps the build's version when it compiles the module, a hot swap
-     * of its file is refused, and a run is refused once its source has changed since the build.
+     * A module whose POM runs a goal that rewrites classes after javac (bound to process-classes, as weaving or enhancement is) is left to
+     * the build: a run uses its build output while that is current, a hot swap in it is refused, and once a source is newer than the
+     * build output a run is refused rather than put a plain compile before the build's classes.
      */
-    @Test void classesTheBuildRewroteAreLeftToTheBuild() throws Exception {
+    @Test void aModuleWhoseBuildRewritesItsClassesIsLeftToTheBuild() throws Exception {
+        var root = reactor("app");
+        Files.createDirectories(root.resolve("app"));
+        Files.writeString(root.resolve("app/pom.xml"), "<project><modelVersion>4.0.0</modelVersion>" + PARENT + "<artifactId>app</artifactId>"
+                + "<build><plugins><plugin><groupId>org.example</groupId><artifactId>weaver-maven-plugin</artifactId><version>1</version>"
+                + "<executions><execution><phase>process-classes</phase><goals><goal>weave</goal></goals></execution></executions></plugin></plugins></build></project>");
+        var main = root.resolve("app/src/main/java/app/Main.java");
+        Files.createDirectories(main.getParent());
+        Files.writeString(main, """
+                package app;
+                public class Main {
+                    static String value() { return "built"; }
+                    public static void main(String[] args) throws Exception { System.out.println(value()); for (int i = 0; i < 1200; i++) Thread.sleep(25); }
+                }
+                """);
+        build(root, "app", List.of());
+        try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
+            String session = TestSupport.open(app, root);
+            var run = new Run(app, session, call(app, "run.start", Map.of("session", session, "target", "app.Main", "debug", true)).path("run_session").asText());
+            awaitOutput(run, "built");
+            Files.setLastModifiedTime(main, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 5_000));
+            var refused = TestSupport.request(app.dispatcher(), "debug.op", Map.of("session", session, "run_session", run.id(), "op", "hotswap", "args", Map.of("path", main.toString())));
+            assertThat(refused.path("error").toString()).as(refused.toPrettyString()).contains("org.example:weaver-maven-plugin:weave@process-classes").contains("Rebuild");
+            call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "stop", "args", Map.of()));
+            var blocked = TestSupport.request(app.dispatcher(), "run.start", Map.of("session", session, "target", "app.Main", "debug", false));
+            assertThat(blocked.path("error").toString()).as(blocked.toPrettyString()).contains("weaver-maven-plugin").contains("Rebuild");
+        }
+    }
+
+    /** A class only the build has for a module (another compiler's output, a generator's) stays visible when jvmd compiles the module. */
+    @Test void aClassOnlyTheBuildHasStaysOnTheModulesClasspath() throws Exception {
+        var root = reactor("app");
+        module(root, "app", "", Map.of("app/Main.java", "package app; public class Main { public static void main(String[] args) { System.out.println(Extra.text()); } }"));
+        var extra = Files.createDirectories(temp.resolve("extra-src/app")).resolve("Extra.java");
+        Files.writeString(extra, "package app; public class Extra { public static String text() { return \"from the build only\"; } }");
+        var classes = Files.createDirectories(root.resolve("app/target/classes"));
+        assertThat(ToolProvider.getSystemJavaCompiler().run(null, null, null, "-d", classes.toString(), extra.toString())).isZero();
+        // Main is newer than the build output, so jvmd compiles the module, against the build's Extra.
+        Files.setLastModifiedTime(root.resolve("app/src/main/java/app/Main.java"), java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 5_000));
+        try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
+            var output = finished(start(app, root, "app.Main"));
+            assertThat(output.path("output").asText()).as(output.toPrettyString()).contains("from the build only");
+        }
+    }
+
+    /** jvmd's compile of a module is redone when a dependency it was compiled against changed, though its own sources did not. */
+    @Test void aDependencyChangeRecompilesItsDependents() throws Exception {
+        var root = reactor("core", "app");
+        module(root, "core", "", Map.of("core/Names.java", "package core; public class Names { public static final String NAME = \"first\"; }"));
+        module(root, "app", dependency("fixture", "core", null), Map.of("app/Main.java", "package app; public class Main { public static void main(String[] args) { System.out.println(\"name \" + core.Names.NAME); } }"));
+        try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
+            assertThat(finished(start(app, root, "app.Main")).path("output").asText()).contains("name first");
+            var names = root.resolve("core/src/main/java/core/Names.java");
+            Files.writeString(names, Files.readString(names).replace("first", "second"));
+            Files.setLastModifiedTime(names, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + 5_000));
+            assertThat(finished(start(app, root, "app.Main")).path("output").asText()).as("the constant is compiled into Main").contains("name second");
+        }
+    }
+
+    /** A hot swap compiles exactly the files it is given, though javac would compile any other edited source it reaches. */
+    @Test void aHotSwapCompilesOnlyTheNamedFiles() throws Exception {
         var root = reactor("app");
         module(root, "app", "", Map.of(
-                "app/Entity.java", "package app; public class Entity { public String name() { return \"entity\"; } }",
+                "app/Other.java", "package app; public class Other { static String text() { return \"other\"; } }",
                 "app/Main.java", """
                         package app;
                         public class Main {
-                            static String value() { return "one"; }
-                            public static void main(String[] args) throws Exception {
-                                boolean woven = java.util.Arrays.stream(Entity.class.getMethods()).anyMatch(m -> m.getName().equals("_woven"));
-                                System.out.println("woven=" + woven + " " + value());
-                                for (int i = 0; i < 1200; i++) Thread.sleep(25);
-                            }
+                            static String value() { return "one " + Other.text(); }
+                            public static void main(String[] args) throws Exception { for (int i = 0; i < 1200; i++) { System.out.println(value()); Thread.sleep(25); } }
                         }
                         """));
         build(root, "app", List.of());
-        var entityClass = root.resolve("app/target/classes/app/Entity.class");
-        var file = java.lang.classfile.ClassFile.of();
-        Files.write(entityClass, file.transformClass(file.parse(Files.readAllBytes(entityClass)), java.lang.classfile.ClassTransform.endHandler(b ->
-                b.withMethodBody("_woven", java.lang.constant.MethodTypeDesc.of(java.lang.constant.ConstantDescs.CD_void), java.lang.classfile.ClassFile.ACC_PUBLIC, code -> code.return_()))));
         try (var app = new Application(TestSupport.config(temp, Duration.ofHours(1)))) {
-            app.bootMachine();
             String session = TestSupport.open(app, root);
-            JsonNode project = null;
-            long deadline = System.nanoTime() + Duration.ofSeconds(120).toNanos();
-            while (System.nanoTime() < deadline) {
-                var projects = TestSupport.request(app.dispatcher(), "daemon.status", Map.of()).path("result").path("result").path("layered_index").path("projects");
-                project = projects.elements().hasNext() ? projects.elements().next() : null;
-                if (project != null && project.path("state").asText().equals("cold_booted")) break;
-                Thread.sleep(50);
-            }
-            assertThat(project.path("rewritten_by_build").path("app").path("types").asInt()).as(project.toPrettyString()).isEqualTo(1);
-            assertThat(project.path("rewritten_by_build").path("app").path("examples").get(0).asText()).isEqualTo("app/Entity");
-
-            // Main changed since the build: the module is compiled by jvmd, but the build's Entity is kept.
-            var main = root.resolve("app/src/main/java/app/Main.java");
-            Thread.sleep(20);
-            Files.writeString(main, Files.readString(main).replace("\"one\"", "\"two\""));
             var run = new Run(app, session, call(app, "run.start", Map.of("session", session, "target", "app.Main", "debug", true)).path("run_session").asText());
-            awaitOutput(run, "woven=true two");
-
-            var entity = root.resolve("app/src/main/java/app/Entity.java");
-            var refused = TestSupport.request(app.dispatcher(), "debug.op", Map.of("session", session, "run_session", run.id(), "op", "hotswap", "args", Map.of("path", entity.toString())));
-            assertThat(refused.path("error").toString()).as(refused.toPrettyString()).contains("rewrites").contains("Entity.java");
-            Files.writeString(main, Files.readString(main).replace("\"two\"", "\"three\""));
+            awaitOutput(run, "one other");
+            var other = root.resolve("app/src/main/java/app/Other.java");
+            Files.writeString(other, Files.readString(other).replace("\"other\"", "\"edited\""));
+            var main = root.resolve("app/src/main/java/app/Main.java");
+            Files.writeString(main, Files.readString(main).replace("\"one \"", "\"two \""));
             var swapped = call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "hotswap", "args", Map.of("path", main.toString())));
-            assertThat(swapped.path("restart_required").asBoolean()).as(swapped.toPrettyString()).isFalse();
+            assertThat(swapped.path("classes")).as(swapped.toPrettyString()).hasSize(1);
+            assertThat(swapped.path("classes").get(0).asText()).isEqualTo("app.Main");
+            awaitOutput(run, "two other");
             call(app, "debug.op", Map.of("session", session, "run_session", run.id(), "op", "stop", "args", Map.of()));
-
-            // Entity changed since the build: jvmd cannot make the build's version of it, so it does not run a plain one.
-            Thread.sleep(20);
-            Files.writeString(entity, Files.readString(entity).replace("\"entity\"", "\"changed\""));
-            var blocked = TestSupport.request(app.dispatcher(), "run.start", Map.of("session", session, "target", "app.Main", "debug", false));
-            assertThat(blocked.path("error").toString()).as(blocked.toPrettyString()).contains("changed since the build").contains("Rebuild");
         }
     }
 

@@ -112,7 +112,7 @@ public final class Application implements AutoCloseable {
         dispatcher.register("document.close",(s,p)->document(s,p,"close"));
         dispatcher.register("run.start",this::run);
         dispatcher.register("debug.op",(session,params)->{
-            if("hotswap".equals(params.path("op").asText()))refuseRewritten(session,params.path("args"));
+            if("hotswap".equals(params.path("op").asText()))refusePostCompiled(session,params.path("args"));
             return runs(session).operation(Dispatcher.required(params,"run_session"),Dispatcher.required(params,"op"),params.path("args"));
         });
         dispatcher.register("deps.graph", (s, p) -> dependencyGraph(refresh(s), p));
@@ -1027,7 +1027,11 @@ public final class Application implements AutoCloseable {
             classpath.add(output);classpath.add(Path.of(module.classes()));
             var order=graph.compileOrder().get(module.gav()+":runtime");
             if(order!=null)runtimeClasspath(session,graph,module,order,compiled,classpath);
-            else graph.classpaths().getOrDefault(module.gav()+":runtime",graph.classpaths().getOrDefault(module.gav()+":main",List.of())).forEach(path->classpath.add(Path.of(path)));
+            else for(String path:graph.classpaths().getOrDefault(module.gav()+":runtime",graph.classpaths().getOrDefault(module.gav()+":main",List.of()))){
+                var sibling=graph.modules().stream().filter(m->Path.of(m.classes()).equals(Path.of(path))).findFirst().orElse(null);
+                if(sibling!=null)classpath.add(runOutput(sibling));
+                classpath.add(Path.of(path));
+            }
             for(var local:graph.modules()){
                 var roots=local.sources().stream().map(Path::of).toList();sourceRoots.addAll(roots);coordinates.put(Path.of(local.directory()),local.gav());
                 var compilePath=new LinkedHashSet<Path>();compilePath.add(runOutput(local));compilePath.add(Path.of(local.classes()));compilePath.addAll(compileClasspath(session,graph,local));
@@ -1060,23 +1064,26 @@ public final class Application implements AutoCloseable {
                 session.warn("run_resources: "+sibling.gav()+" was never built, so its resources are not on the run's classpath; build it once with Maven");
         }
     }
-    /** Whether a source file changed after the module's build output was written (its newest class file). */
-    private static boolean newerThanBuild(Path source,Resolution.Module module)throws java.io.IOException{
-        var classes=Path.of(module.classes());if(!Files.isDirectory(classes))return true;
-        long built;try(var files=Files.walk(classes)){built=files.filter(p->p.toString().endsWith(".class")).mapToLong(p->{try{return Files.getLastModifiedTime(p).toMillis();}catch(java.io.IOException e){return 0;}}).max().orElse(0);}
-        return Files.getLastModifiedTime(source).toMillis()>built;
+    /**
+     * The plugin goals of a module's build that rewrite its classes after javac (weaving, enhancement, instrumentation), from its POM.
+     * jvmd only runs javac and annotation processors, so it never puts its own copy of such a module's classes before the build's.
+     */
+    private static List<String> postCompile(Resolution graph,Resolution.Module module){return graph.postCompile().getOrDefault(module.gav(),List.of());}
+    private static RpcException postCompiled(String capability,Resolution.Module module,List<String> steps){
+        String directory=module.directory();
+        return new RpcException(-32003,"unsupported_capability",Map.of("capability",capability,"reason","The build of "+module.gav()+" rewrites its classes after javac ("
+                +String.join(", ",steps)+"), which jvmd does not repeat, so jvmd does not put its own compile of that module before the build's. Rebuild the module with Maven (mvn process-classes in "+directory+"), then "+(capability.equals("hotswap")?"restart the run.":"run again.")));
     }
-    /** A hot swap of a file that declares a type the build rewrites after javac would put plain javac output in its place: refused. */
-    private void refuseRewritten(Session session,com.fasterxml.jackson.databind.JsonNode args){
+    /** A hot swap of a file in a module whose build rewrites its classes after javac: refused, as the swapped class would be plain javac output. */
+    private void refusePostCompiled(Session session,com.fasterxml.jackson.databind.JsonNode args){
+        var graph=(Resolution)session.state("resolution");if(graph==null)return;
         var paths=new ArrayList<String>();for(var path:args.path("paths"))paths.add(path.asText());if(args.hasNonNull("path"))paths.add(args.get("path").asText());
         for(String value:paths){
-            var file=session.root().resolve(value).toAbsolutePath().normalize();var rewritten=layered.rewritesDeclaredIn(file);
-            if(rewritten!=null)throw new RpcException(-32003,"unsupported_capability",Map.of("capability","hotswap","reason",
-                    file+" declares a type that the build of "+rewritten.module()+" rewrites after javac (weaving, enhancement or instrumentation); a hot swap would put plain javac output in its place. Rebuild the module with the build and restart the run."));
+            var file=session.root().resolve(value).toAbsolutePath().normalize();
+            var module=graph.modules().stream().filter(m->file.startsWith(Path.of(m.directory()).toAbsolutePath().normalize())).max(Comparator.comparingInt(m->m.directory().length())).orElse(null);
+            if(module!=null&&!postCompile(graph,module).isEmpty())throw postCompiled("hotswap",module,postCompile(graph,module));
         }
     }
-    /** Written into a module's {@link #runOutput} after a whole-module compile; its time is the compile's start, its text the file count. */
-    private static final String COMPILED_MARKER=".jvmd-compiled";
     /**
      * Where jvmd writes the classes it compiles itself for a module (a run's stale module, a hot swap): its own state, never the build's
      * output directory. The build may have rewritten its classes after javac (weaving, enhancement, instrumentation), and trusts them
@@ -1088,14 +1095,25 @@ public final class Application implements AutoCloseable {
         String name=directory.getFileName()==null?"root":directory.getFileName().toString();
         return config.stateDir().resolve("run-classes").resolve("modules").resolve(name+"-"+Hashing.sha256(directory.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)).substring(0,12));
     }
-    /** Whether {@code out} holds a whole-module compile of exactly these files, made after each of them last changed. */
-    private static boolean compiledSince(Path out,List<Path> files)throws java.io.IOException{
-        var marker=out.resolve(COMPILED_MARKER);
-        if(!Files.isRegularFile(marker)||!Files.readString(marker).equals(Integer.toString(files.size())))return false;
-        long compiledAt=Files.getLastModifiedTime(marker).toMillis();
-        for(var file:files)if(Files.getLastModifiedTime(file).toMillis()>=compiledAt)return false;
-        return true;
+    /**
+     * What a whole-module compile was made from: every source file's path, size and modification time, every classpath entry's state (a
+     * jvmd folder by its own fingerprint, a directory by its class files' count and newest time, a file by size and time) and the
+     * options. Kept beside the folder, outside every classpath root; a compile is reused only while this is equal.
+     */
+    private static String fingerprint(List<Path> files,List<Path> classpath,List<String> options)throws java.io.IOException{
+        var text=new StringBuilder(String.join("\u0000",options)).append('\n');
+        for(var file:files.stream().sorted().toList()){var a=Files.readAttributes(file,java.nio.file.attribute.BasicFileAttributes.class);text.append(file).append('|').append(a.size()).append('|').append(a.lastModifiedTime().toMillis()).append('\n');}
+        for(var entry:classpath){
+            text.append(entry).append('|');
+            var own=fingerprintFile(entry);
+            if(Files.isRegularFile(own))text.append(Files.readString(own));
+            else if(Files.isDirectory(entry))try(var walk=Files.walk(entry)){var stats=walk.filter(p->p.toString().endsWith(".class")).mapToLong(p->{try{return Files.getLastModifiedTime(p).toMillis();}catch(java.io.IOException e){return -1;}}).summaryStatistics();text.append(stats.getCount()).append('|').append(stats.getMax());}
+            else if(Files.isRegularFile(entry))text.append(Files.size(entry)).append('|').append(Files.getLastModifiedTime(entry).toMillis());
+            text.append('\n');
+        }
+        return Hashing.sha256(text.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
+    private static Path fingerprintFile(Path out){return out.resolveSibling(out.getFileName()+".fingerprint");}
     /** A module's compile classpath in Maven's order, a reactor module as its jvmd-compiled classes and then the build's. */
     private List<Path> compileClasspath(Session session,Resolution graph,Resolution.Module module)throws Exception{
         var classpath=new LinkedHashSet<Path>();
@@ -1103,6 +1121,7 @@ public final class Application implements AutoCloseable {
         if(order==null){
             graph.classpaths().getOrDefault(module.gav()+":main",List.of()).forEach(path->classpath.add(Path.of(path)));
             for(var dependency:overlay(session,graph).dependencies(graph,module.gav(),false)){classpath.add(runOutput(dependency));classpath.add(Path.of(dependency.classes()));}
+            classpath.add(Path.of(module.classes()));
             return List.copyOf(classpath);
         }
         for(String entry:order){
@@ -1114,6 +1133,8 @@ public final class Application implements AutoCloseable {
             if(!tests)classpath.add(runOutput(sibling));
             classpath.add(Path.of(tests?sibling.testClasses():sibling.classes()));
         }
+        // Last: classes only the build has for this module (another language's compiler, a generator), never shadowing its sources.
+        classpath.add(Path.of(module.classes()));
         return List.copyOf(classpath);
     }
     /** The main class {@code target} names, if it is fully qualified and exactly one source root holds its top-level source file. */
@@ -1147,24 +1168,23 @@ public final class Application implements AutoCloseable {
         if(!module.packaging().equals("pom")){
             var out=runOutput(module);
             // The build is current again: its classes are the module's, and what jvmd compiled before is dropped.
-            if(!overlay(session,graph).requiresSource(module))deleteQuietly(out);
+            if(!overlay(session,graph).requiresSource(module)){deleteQuietly(out);Files.deleteIfExists(fingerprintFile(out));}
             else{
                 var roots=module.sources().stream().filter(path->!module.processing().enabled()||!path.contains("/generated-sources")).map(Path::of).toList();var files=new ArrayList<Path>();
                 for(Path root:roots)if(Files.isDirectory(root))files.addAll(classpathFiles.inventory(root,".java"));
-                if(!files.isEmpty()&&!compiledSince(out,files)){
-                    var rewritten=layered.rewrites(Path.of(module.classes()));
-                    if(rewritten!=null)for(var source:rewritten.sources())
-                        if(Files.isRegularFile(source)&&newerThanBuild(source,module))throw new RpcException(-32003,"unsupported_capability",Map.of("capability","run","reason",
-                                source+" changed since the build, and the build rewrites what it declares after javac (weaving, enhancement or instrumentation), which jvmd cannot repeat. Rebuild "+rewritten.module()+" with the build, then run again."));
-                    long started=System.currentTimeMillis();
-                    var compiled=dev.jvmd.runtime.RuntimeCompiler.compile(config.jdkHome(),Path.of(module.directory()),files,compileClasspath(session,graph,module),roots,runtimeCompilerOptions(module),java.time.Duration.ofSeconds(60));
-                    // The types the build rewrote are the build's: a plain compile of them would hide its version.
-                    if(rewritten!=null){
-                        var kept=new LinkedHashMap<String,byte[]>(compiled.classes());kept.keySet().removeIf(name->rewritten.types().contains(name.substring(0,name.length()-".class".length())));
-                        compiled=new dev.jvmd.runtime.RuntimeCompiler.Compilation(kept,compiled.elapsedMillis(),compiled.output(),compiled.mode());
+                if(!files.isEmpty()){
+                    var steps=postCompile(graph,module);if(!steps.isEmpty())throw postCompiled("run",module,steps);
+                    var classpath=compileClasspath(session,graph,module);var options=runtimeCompilerOptions(module);
+                    String fingerprint=fingerprint(files,classpath,options);var recorded=fingerprintFile(out);
+                    if(!Files.isDirectory(out)||!Files.isRegularFile(recorded)||!Files.readString(recorded).equals(fingerprint)){
+                        var compiled=dev.jvmd.runtime.RuntimeCompiler.compile(config.jdkHome(),Path.of(module.directory()),files,classpath,roots,options,java.time.Duration.ofSeconds(60));
+                        // Published beside the folder and then moved into place, so a run reading it never sees it half written.
+                        var next=out.resolveSibling(out.getFileName()+".next");deleteQuietly(next);dev.jvmd.runtime.RuntimeCompiler.publish(compiled,next);
+                        var old=out.resolveSibling(out.getFileName()+".old");deleteQuietly(old);
+                        if(Files.exists(out))Files.move(out,old,java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                        Files.move(next,out,java.nio.file.StandardCopyOption.ATOMIC_MOVE);deleteQuietly(old);
+                        Files.writeString(recorded,fingerprint);
                     }
-                    deleteQuietly(out);dev.jvmd.runtime.RuntimeCompiler.publish(compiled,out);
-                    var marker=out.resolve(COMPILED_MARKER);Files.writeString(marker,Integer.toString(files.size()));Files.setLastModifiedTime(marker,java.nio.file.attribute.FileTime.fromMillis(started));
                 }
             }
         }visiting.remove(module.gav());finished.add(module.gav());

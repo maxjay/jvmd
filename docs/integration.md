@@ -421,13 +421,13 @@ Breakpoint line numbers are **one-based**, unlike LSP positions. Breakpoints can
 | `locals` | Frame token; optional limit/cursor |
 | `inspect` | Object handle; depth up to 4 and breadth up to 20, or `release: true` |
 | `eval` | Expression, frame token, tier 1 or 2 |
-| `hotswap` | Changed Java source paths; inspect `restart_required` and per-module results. Refused (`unsupported_capability`) for a file that declares a type the build rewrites after javac; see `rewritten_by_build` below |
+| `hotswap` | Changed Java source paths, compiled exactly (`-implicit:none`); inspect `restart_required` and per-module results. Refused (`unsupported_capability`) in a module whose build rewrites classes after javac (below) |
 | `output` | The application's stdout and stderr: the last `tail` characters (default 16,384), or everything after `since` (pass the previous `written`); `alive`, `exit_code` once it has exited, `truncated` and `complete` |
 | `restart`, `stop` | Restart returns a new run ID; stop releases that run |
 | `histogram` | Bounded class histogram, or `args.jfr` recording settings |
 | `instances`, `referrers` | Type reference or object handle; explicit `max` required, capped at 1000 |
 
-Classes jvmd compiles for a run or a hot swap go to its own state directory (`run-classes/`), which comes before the build's output on the run's classpath; jvmd never writes the build's output directory, and drops its copy of a module once the build is current again. After each LOCAL boot, `daemon.status` reports under `layered_index.projects.<root>.rewritten_by_build` the types whose class files differ from javac's view of their source, that is, types the build changed after compiling (weaving, bytecode enhancement, instrumentation), found without knowing which plugin did it. Runs keep the build's version of those types; a run is refused while one of their sources is newer than the build, and a hot swap of their files is refused.
+Classes jvmd compiles for a run or a hot swap go to its own state directory (`run-classes/`), which comes before the build's output on the run's classpath. jvmd never writes the build's output directory. A module's compile there is reused while a fingerprint of its sources, its compile classpath and its options is unchanged, and dropped once the build's output is current again. jvmd only runs javac and annotation processors, so for a module whose POM runs a goal that rewrites classes after javac (any goal bound to `process-classes`, and known enhancers and weavers such as `hibernate-enhance-maven-plugin:enhance` or `aspectj-maven-plugin:compile`), it uses the build's output and never its own compile: a run is refused while that module's sources are newer than its build output, and a hot swap of a file in it is refused, both asking for a rebuild with Maven.
 
 Poll `session.status` (or the `status` tool) for run state and stopped threads while a debug UI is active. There is no socket push subscription for breakpoint events or application stdout/stderr; poll `output` with `since` for the latter. Keep polling modest and stop it when the view closes.
 

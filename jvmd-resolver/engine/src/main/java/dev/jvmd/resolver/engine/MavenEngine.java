@@ -101,7 +101,8 @@ public final class MavenEngine implements AutoCloseable {
         for (Path path : build.inputs.stream().sorted().toList()) inputs.add(input(path, build.strong.contains(path)));
         String fingerprint = Hashing.sha256((context+Json.MAPPER.writeValueAsString(inputs)).getBytes(StandardCharsets.UTF_8));
         var graph = new Resolution(root.toString(), List.copyOf(build.modules), List.copyOf(build.nodes.values()),
-                List.copyOf(build.edges), Map.copyOf(build.classpaths), List.copyOf(build.warnings), fingerprint, true, false, Map.copyOf(build.compileOrder));
+                List.copyOf(build.edges), Map.copyOf(build.classpaths), List.copyOf(build.warnings), fingerprint, true, false, Map.copyOf(build.compileOrder),
+                Map.copyOf(build.postCompile));
         Cached cached = new Cached(context, inputs, graph);
         if (workspace == null) {
             Path temp = Files.createTempFile(directory, "graph-", ".tmp");
@@ -123,6 +124,7 @@ public final class MavenEngine implements AutoCloseable {
         final Set<Resolution.Edge> edges = new LinkedHashSet<>();
         final Map<String, List<String>> classpaths = new LinkedHashMap<>();
         final Map<String, List<String>> compileOrder = new LinkedHashMap<>();
+        final Map<String, List<String>> postCompile = new LinkedHashMap<>();
         final List<String> warnings = new ArrayList<>();
     }
     private Build build(Path root,List<Path> roots,boolean ignoreVersions,org.apache.maven.settings.Settings settings, boolean offline,
@@ -198,6 +200,7 @@ public final class MavenEngine implements AutoCloseable {
             build.classpaths.put(gav + ":main", List.copyOf(main)); build.classpaths.put(gav + ":test", List.copyOf(test));build.classpaths.put(gav+":runtime",List.copyOf(runtime));
             build.compileOrder.put(gav + ":main", List.copyOf(mainOrder)); build.compileOrder.put(gav + ":test", List.copyOf(testOrder));
             build.compileOrder.put(gav + ":runtime", List.copyOf(runtimeOrder));
+            build.postCompile.put(gav, postCompile(model));
         }
         build.dependencyMillis=(System.nanoTime()-modelsAt)/1e6;build.warnings.addAll(localOverlay.warnings());
         return build;
@@ -251,6 +254,31 @@ public final class MavenEngine implements AutoCloseable {
         return new Dependency(artifact, d.getScope(), d.isOptional(), d.getExclusions().stream()
                 .map(e -> new Exclusion(e.getGroupId(), e.getArtifactId(), "*", "*")).toList());
     }
+    /** Goals that rewrite classes after javac at their default phase, so a POM need not bind them to {@code process-classes}. */
+    private static final Set<String> CLASS_REWRITERS = Set.of(
+            "org.hibernate.orm.tooling:hibernate-enhance-maven-plugin:enhance", "org.hibernate.orm:hibernate-maven-plugin:enhance",
+            "org.codehaus.mojo:aspectj-maven-plugin:compile", "dev.aspectj:aspectj-maven-plugin:compile",
+            "org.jacoco:jacoco-maven-plugin:instrument", "com.ethlo.persistence.tools:eclipselink-maven-plugin:weave",
+            "de.empulse.eclipselink:staticweave-maven-plugin:weave", "org.apache.openjpa:openjpa-maven-plugin:enhance",
+            "io.ebean:ebean-maven-plugin:enhance");
+
+    /**
+     * The plugin goals of a module's build that rewrite its main classes after javac: any goal bound to {@code process-classes}, and the
+     * known rewriters wherever they run. From the effective model, so inherited and profile-activated plugins count.
+     */
+    static List<String> postCompile(org.apache.maven.model.Model model) {
+        var out = new ArrayList<String>();
+        if (model.getBuild() == null) return out;
+        for (var plugin : model.getBuild().getPlugins())
+            for (var execution : plugin.getExecutions())
+                for (var goal : execution.getGoals()) {
+                    String key = plugin.getGroupId() + ":" + plugin.getArtifactId() + ":" + goal;
+                    String phase = execution.getPhase() == null || execution.getPhase().isBlank() ? "default" : execution.getPhase();
+                    if (phase.equals("process-classes") || CLASS_REWRITERS.contains(key)) out.add(key + "@" + phase);
+                }
+        return List.copyOf(out);
+    }
+
     private static void walk(DependencyNode node, String parent, String root, Build build,
                              Set<String> main, Set<String> test,Set<String> runtime, Set<DependencyNode> seen,
                              java.util.function.Function<org.eclipse.aether.artifact.Artifact,String> reactor, Set<String> mainOrder, Set<String> testOrder,
@@ -287,7 +315,7 @@ public final class MavenEngine implements AutoCloseable {
     }
     private String contextFingerprint() {
         String properties = environment.systemProperties().entrySet().stream().map(e -> e.getKey() + "=" + e.getValue()).sorted().collect(java.util.stream.Collectors.joining("\n"));
-        return Hashing.sha256(("workspace-models-v8\n" + models.mavenVersion() + "\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
+        return Hashing.sha256(("workspace-models-v9\n" + models.mavenVersion() + "\n" + config.mavenMajor() + "\n" + config.m2Repo() + "\n" + properties).getBytes(StandardCharsets.UTF_8));
     }
     private static ProjectModelState.Input input(Path path, boolean strong) throws Exception {
         path = path.toAbsolutePath().normalize();

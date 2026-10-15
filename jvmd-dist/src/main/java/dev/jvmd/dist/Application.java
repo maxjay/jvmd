@@ -1325,6 +1325,9 @@ public final class Application implements AutoCloseable {
             server.ready();
             System.out.println("READY " + config.socket());
             server.await();
+        } catch (java.util.concurrent.CancellationException shuttingDown) {
+            // daemon.shutdown arrived while MACHINE was booting: closing cancelled the boot, and the server finishes closing.
+            server.await();
         } catch(Exception|LinkageError e) {
             server.close();
             throw e;

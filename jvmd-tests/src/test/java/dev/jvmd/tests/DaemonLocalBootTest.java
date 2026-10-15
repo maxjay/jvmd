@@ -22,6 +22,29 @@ import org.junit.jupiter.api.io.TempDir;
 class DaemonLocalBootTest {
     @TempDir Path temp;
 
+    /**
+     * daemon.shutdown can arrive while MACHINE boots on main. Closing cancels that boot and waits for it, so the daemon has stopped
+     * writing its store before it releases its lock, and no ROOT is published.
+     */
+    @Test void closingDuringTheMachineBootCancelsItAndWaitsForIt() throws Exception {
+        var config = TestSupport.config(temp, Duration.ofHours(1));
+        var app = new Application(config);
+        var outcome = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        var boot = Thread.ofPlatform().start(() -> { try { app.bootMachine(); } catch (Throwable t) { outcome.set(t); } });
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        while (!layered(app).path("machine").path("state").asText().equals("booting")) {
+            assertThat(System.nanoTime()).as("the boot starts").isLessThan(deadline);
+            Thread.sleep(1);
+        }
+        app.close();
+        assertThat(boot.isAlive()).as("close returns only once the boot has ended").isFalse();
+        assertThat(outcome.get()).isInstanceOf(java.util.concurrent.CancellationException.class);
+        var generation = dev.jvmd.index.rocks.layer.Generation.of(config.stateDir().resolve("machine"),
+                dev.jvmd.index.layer.machine.Format.of(dev.jvmd.core.hash.digests.Sha256.INSTANCE, Runtime.version().feature()));
+        assertThat(generation.hasRoot()).as("a cancelled boot publishes nothing").isFalse();
+        assertThatThrownBy(app::bootMachine).as("a closed daemon boots nothing").isInstanceOf(java.util.concurrent.CancellationException.class);
+    }
+
     @Test void openingAMavenProjectBootsItsLocalLayerAfterMachine() throws Exception {
         var root = MavenFixtures.project(temp.resolve("app"), "<properties><maven.compiler.release>17</maven.compiler.release></properties>");
         Files.createDirectories(root.resolve("src/main/java/app"));

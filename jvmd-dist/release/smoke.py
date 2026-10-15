@@ -97,22 +97,48 @@ def rpc(sock_path, method):
         return result["result"]["result"]
 
 
-def wait_for_daemon_exit(sock_path, timeout=90):
-    """daemon.shutdown only acknowledges. The daemon then closes (a background LOCAL boot included), deletes its socket and
-    releases its lock; its state directory must not be deleted before that."""
+def wait_for_layered_index(sock_path, timeout=180):
+    """The daemon boots MACHINE before READY and each opened project's LOCAL layer after it, in the background. Shutting down mid-boot
+    is supported, but the smoke test checks the release's index boots end to end, and a settled daemon makes the teardown deterministic."""
+    deadline = time.monotonic() + timeout
+    while True:
+        layered = rpc(sock_path, "daemon.status")["layered_index"]
+        projects = layered["projects"].values()
+        if layered["machine"]["state"] in ("cold_booted", "committed") and not any(
+                p["state"] in ("waiting_for_machine", "queued", "booting") for p in projects):
+            print("layered_index: " + json.dumps(layered))
+            assert all(p["state"] in ("cold_booted", "current") for p in projects), layered
+            return
+        if time.monotonic() > deadline:
+            raise AssertionError(f"layered index did not settle within {timeout} s: {layered}")
+        time.sleep(0.2)
+
+
+def wait_for_daemon_exit(sock_path, state_dir, timeout=90):
+    """daemon.shutdown only acknowledges. The daemon then cancels and waits out any boot, closes its stores, deletes its socket and
+    releases its lock last; the JVM exits after that. Its state directory must not be deleted before."""
     lock_path = sock_path.with_name(sock_path.name + ".lock")
     deadline = time.monotonic() + timeout
+    while True:
+        try:
+            with open(lock_path, "a") as handle:
+                fcntl.lockf(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.lockf(handle, fcntl.LOCK_UN)
+            break
+        except (BlockingIOError, PermissionError):
+            if time.monotonic() > deadline:
+                raise AssertionError(f"daemon did not release its lock within {timeout} s of daemon.shutdown")
+            time.sleep(0.05)
+    # The launcher puts -Djvmd.state=<state_dir> on the daemon's command line: wait for that JVM to be gone as well.
     while time.monotonic() < deadline:
-        if not sock_path.exists():
-            try:
-                with open(lock_path, "a") as handle:
-                    fcntl.lockf(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    fcntl.lockf(handle, fcntl.LOCK_UN)
-                return
-            except OSError:
-                pass
+        try:
+            alive = subprocess.run(["pgrep", "-f", str(state_dir)], capture_output=True).returncode == 0
+        except FileNotFoundError:
+            return
+        if not alive:
+            return
         time.sleep(0.05)
-    raise AssertionError(f"daemon did not exit within {timeout} s of daemon.shutdown")
+    raise AssertionError(f"daemon JVM still running {timeout} s after daemon.shutdown")
 
 
 def check_launcher_paths(image, work):
@@ -227,6 +253,7 @@ def main():
                 lsp = None
                 # Closing LSP must not kill the daemon used by MCP.
                 assert len(mcp.send("tools/list", {})["tools"]) == 14
+                wait_for_layered_index(socket_path)
                 mcp.close()
                 mcp = None
         finally:
@@ -240,7 +267,7 @@ def main():
                     client.process.wait(timeout=10)
             if socket_path.exists():
                 rpc(socket_path, "daemon.shutdown")
-                wait_for_daemon_exit(socket_path)
+                wait_for_daemon_exit(socket_path, work / "cache/jvmd")
         evidence = {"distribution": json.loads((image / "distribution.json").read_text()),
                     "checksum": "passed", "corruption_rejected": True, "upgrade_selection": "passed", "immutable_launch_paths": True,
                     "relocated_aot": "used", "bundled_node": True, "mcp_tools": 14,

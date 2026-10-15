@@ -205,6 +205,7 @@ E/EA targets seed implicit declaration dependencies but are not a complete looku
 | `DF\|leafSet` | Persisted all-definer, multiple-definer and disjoint roots |
 | `X\|H5\|...` | Current empty dependency/project/path reverse records |
 | `LROOT\|project` | Current commitment; prior commitments retained under numbered keys |
+| `LSTART\|project` | Wall-clock start of the boot that published the current commitment; a hint for the boot decision (5.7), outside the tree |
 | `C\|...`, `RS\|...` | Legacy reserved codecs; no records written by Stage 2 |
 
 ## 5. Pseudocode
@@ -302,7 +303,15 @@ Current raw X keys are a secondary index maintained only by LROOT publication; o
 
 ### 5.7 Boot decision
 
-Open the MACHINE generation for current FORMAT. Compare the stored project's LOCAL format with LocalFormat.of(current machine format). A matching commitment logs one skip line because warm boot is not implemented. Missing or incompatible LOCAL format causes a cold rebuild in the shared store; old roots remain history. A changed MACHINE FORMAT selects a different generation directory. Never decode old fact codecs as current or migrate records in place.
+Open the MACHINE generation for current FORMAT. A committed root is kept only while nothing it was built from changed (demo plan A3); warm boot not being implemented, anything else is a cold rebuild in the shared store, and old roots remain history. The root is kept, with one skip line, when all of these hold:
+
+- its LOCAL format is LocalFormat.of(current machine format) (checked before the root is decoded), it verifies, and its MACHINE root and model hash are the current ones;
+- its F rows, read through its own tree with each row's digest checked against the tree entry, are exactly the current source files. A file whose size differs is changed. A file whose modification time differs, or lies within two seconds (one FAT tick) of `LSTART|project`, is read and compared with the row's κ; any other file is unchanged without being read. A missing stamp means every file is read;
+- no jar entry of its RT rows (read the same way) that bound to nothing can now be opened.
+
+Not compared, and so the business of warm boot: a jar or the JDK changed in place (MACHINE is never re-committed), the bytes of jars indexed on the spot, processor paths and their configuration, and a file restored with other content under its old size and time. Anything that cannot be read is itself a reason to rebuild. The F and RT ranges are walked over their key range only; no X or other prefix is read. `LSTART|project` is written after LROOT, so a stamp lost or left by an earlier boot is earlier than the root's own and only makes more files be read.
+
+A changed MACHINE FORMAT selects a different generation directory. Never decode old fact codecs as current or migrate records in place.
 
 ## 6. Code structure
 
@@ -354,7 +363,7 @@ Memory includes active javac tasks/scope facts, persistent state versions, compl
 22. Persisted DF reopens lazily across boots/checkouts, preserves historical snapshots and opens only changed O leaves for a derived state; large/random histories equal fresh folds.
 23. Planned ancestry, persistent leaf-set Diff and conflict apply preserve fresh-build roots across workers and add/remove/move/repeat histories. A small route edit never reopens an unrelated large O universe. Shared nodes are readable after any root-publishing flush.
 24. `Deprecated.since` changes A/a only; full Deprecated/SafeVarargs values remain recoverable; source and binary A match.
-25. Incompatible MACHINE parser/LOCAL versions cold boot; old generations remain opaque/untouched. A second start of the current format takes the skip branch.
+25. Incompatible MACHINE parser/LOCAL versions cold boot; old generations remain opaque/untouched. A second start of the current format takes the skip branch only while 5.7 finds nothing changed: an edited, added or removed source file, a changed model, a jar that can now be read or a row that is not the root's own causes a cold rebuild.
 26. Repeated reverse churn leaves prefix work proportional to current consumers in memory and Rocks, including reopen. Old LOCAL roots still verify after current X deletion. Failed publication leaves root and reverse keys unchanged.
 27. Fresh repeated cold boots and another checkout reuse exact DF/DC: zero O-universe traversal and zero conflict build/apply/node emission. Count work, not just equal output bytes.
 
@@ -468,6 +477,7 @@ LROOT|project = str FORMAT || id local.hash || id local.sum || u32 count || u8 l
               || id machineRoot || id modelHash || id commitment
 commitment = Digest(all preceding value bytes)
 history key = LROOT|project|u32 n, counting from 1
+LSTART|project = u64 wall-clock milliseconds at which the publishing boot started (before any source file was statted)
 ```
 
 ### B.8 FORMAT

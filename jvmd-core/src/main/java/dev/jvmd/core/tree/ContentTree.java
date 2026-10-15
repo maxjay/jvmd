@@ -132,6 +132,36 @@ public final class ContentTree {
         for (var child : Node.children(bytes, width)) forEach(child.hash(), reader, out);
     }
 
+    /**
+     * Every entry with {@code from <= key < to} (null bounds are open) in key order, reading only the nodes that can hold one: a child
+     * wholly before or after the range is not read.
+     */
+    public void forEach(Identity hash, Function<Identity, byte[]> reader, byte[] from, byte[] to, java.util.function.Consumer<Entry> out) {
+        forEach(hash, reader, from, to, null, out);
+    }
+
+    private void forEach(Identity hash, Function<Identity, byte[]> reader, byte[] from, byte[] to, byte[] nodeEnd, java.util.function.Consumer<Entry> out) {
+        var bytes = reader.apply(hash);
+        int width = digest.width();
+        if (Node.level(bytes) == 0) {
+            for (var e : Node.entries(bytes, width)) {
+                if (from != null && Arrays.compareUnsigned(e.key(), from) < 0) continue;
+                if (to != null && Arrays.compareUnsigned(e.key(), to) >= 0) return;
+                out.accept(e);
+            }
+            return;
+        }
+        var children = Node.children(bytes, width);
+        for (int i = 0; i < children.size(); i++) {
+            var child = children.get(i);
+            // The child covers [child.first, end); end == null means unbounded above.
+            byte[] end = i + 1 < children.size() ? children.get(i + 1).first() : nodeEnd;
+            if (from != null && end != null && Arrays.compareUnsigned(end, from) <= 0) continue;
+            if (to != null && Arrays.compareUnsigned(child.first(), to) >= 0) return;
+            forEach(child.hash(), reader, from, to, end, out);
+        }
+    }
+
     /** Recomputes every hash, sum and count under the root from the stored bytes; throws if any disagrees. */
     public void verify(Root root, Function<Identity, byte[]> reader) {
         var node = check(root.hash(), reader);

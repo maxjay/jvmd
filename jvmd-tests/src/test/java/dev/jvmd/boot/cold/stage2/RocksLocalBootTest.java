@@ -17,6 +17,7 @@ import dev.jvmd.index.rocks.layer.Generation;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +33,111 @@ import org.junit.jupiter.api.Test;
  */
 @Tag("phase-3")
 class RocksLocalBootTest {
+    /** Demo plan A3: a committed root is reused only while nothing it was built from changed; anything else is a cold rebuild. */
+    @Test void aCommittedRootIsReusedOnlyWhileNothingItWasBuiltFromChanged() throws Exception {
+        var repository = Files.createTempDirectory("stage2-skip-repo");
+        var project = Files.createTempDirectory("stage2-skip-project");
+        var indexDir = Files.createTempDirectory("stage2-skip-index");
+        try {
+            Stage2Support.jar(repository, Fixtures.LIB_AB_14, Fixtures.libAB(false), List.of());
+            Stage2Support.jar(repository, Fixtures.LIB_X, Fixtures.libX(), List.of());
+            Stage2Support.jar(repository, Fixtures.LIB_T, Fixtures.libT(), List.of());
+            Stage2Support.write(project, Fixtures.multi());
+            var ab = Stage2Support.Dep.jar("org.example:libAB:1.4.0", Fixtures.LIB_AB_14);
+            var x = Stage2Support.Dep.jar("org.example:libX:1.0", Fixtures.LIB_X);
+            var t = Stage2Support.Dep.jar("org.example:libT:1.0", Fixtures.LIB_T);
+            var common = Stage2Support.Dep.module("org.example:common:1.0", "common");
+            var mods = new Stage2Support.Mod[] {
+                    new Stage2Support.Mod("common", "org.example:common:1.0", List.of(ab)),
+                    new Stage2Support.Mod("server-a", "org.example:server-a:1.0", List.of(common, ab, x)).withTest(List.of(t)),
+                    new Stage2Support.Mod("server-b", "org.example:server-b:1.0", List.of(x, ab, common)),
+                    new Stage2Support.Mod("tool", "org.example:tool:1.0", List.of())};
+            var model = ProjectModel.parse(Stage2Support.model(project, mods));
+            var config = new Config(Stage2Support.JDK, null, repository, 3, Duration.ofHours(1), 1024, false, indexDir, indexDir.resolve("sock"));
+            assertThat(BootDecision.machine(indexDir, config)).isPresent();
+            assertThat(BootDecision.local(indexDir, model, repository)).as("the first boot").isPresent();
+            assertThat(BootDecision.local(indexDir, model, repository)).as("nothing changed").isEmpty();
+
+            var server = project.resolve("server-a/src/main/java/a/Server.java");
+            var path = "server-a/src/main/java/a/Server.java";
+            // Same size, another time: the time says the file changed.
+            var written = Files.getLastModifiedTime(server).toMillis();
+            Files.writeString(server, Files.readString(server).replace("run()", "ran()"));
+            Files.setLastModifiedTime(server, FileTime.fromMillis(written + 2_000));
+            assertThat(reason(indexDir, model, repository)).isEqualTo(path + " changed");
+            assertThat(BootDecision.local(indexDir, model, repository)).as("a source file changed").isPresent();
+            assertThat(BootDecision.local(indexDir, model, repository)).as("and is current again").isEmpty();
+
+            // Only the time changed: the content is compared and the root kept.
+            Files.setLastModifiedTime(server, FileTime.fromMillis(System.currentTimeMillis() + 5_000));
+            assertThat(BootDecision.local(indexDir, model, repository)).as("a touched file whose content is the same").isEmpty();
+
+            // A boot reads a file stamped within a tick of its start; the file then changes within that tick (same size, same time).
+            var tick = FileTime.fromMillis(System.currentTimeMillis());
+            Files.writeString(server, Files.readString(server).replace("ran()", "rin()"));
+            Files.setLastModifiedTime(server, tick);
+            assertThat(BootDecision.local(indexDir, model, repository)).as("a boot that reads it at that time").isPresent();
+            Files.writeString(server, Files.readString(server).replace("rin()", "run()"));
+            Files.setLastModifiedTime(server, tick);
+            assertThat(reason(indexDir, model, repository)).as("the stamp cannot vouch for the file, so its content is compared").isEqualTo(path + " changed");
+            assertThat(BootDecision.local(indexDir, model, repository)).isPresent();
+            assertThat(BootDecision.local(indexDir, model, repository)).isEmpty();
+
+            var added = project.resolve("tool/src/main/java/t/Added.java");
+            Files.createDirectories(added.getParent());
+            Files.writeString(added, "package t; public class Added { }");
+            assertThat(reason(indexDir, model, repository)).isEqualTo("tool/src/main/java/t/Added.java was added");
+            assertThat(BootDecision.local(indexDir, model, repository)).as("a source file was added").isPresent();
+            Files.delete(added);
+            assertThat(reason(indexDir, model, repository)).isEqualTo("tool/src/main/java/t/Added.java was removed");
+            assertThat(BootDecision.local(indexDir, model, repository)).as("a source file was removed").isPresent();
+            assertThat(BootDecision.local(indexDir, model, repository)).isEmpty();
+
+            // A jar that is not there binds to nothing; when it appears, the root is rebuilt against it.
+            var late = Stage2Support.Dep.jar("org.example:late:1.0", "org/example/late/1.0/late-1.0.jar");
+            var changedModel = ProjectModel.parse(Stage2Support.model(project, mods[0], mods[1], mods[2],
+                    new Stage2Support.Mod("tool", "org.example:tool:1.0", List.of(late)).withOptions("-parameters")));
+            assertThat(reason(indexDir, changedModel, repository)).isEqualTo("the project model changed");
+            assertThat(BootDecision.local(indexDir, changedModel, repository)).as("the project model changed").isPresent();
+            assertThat(BootDecision.local(indexDir, changedModel, repository)).as("the jar is still missing").isEmpty();
+            var lateJar = repository.resolve("org/example/late/1.0/late-1.0.jar");
+            Files.createDirectories(lateJar.getParent());
+            Files.writeString(lateJar, "not an archive");
+            assertThat(BootDecision.local(indexDir, changedModel, repository)).as("a file that still cannot be read").isEmpty();
+            Files.delete(lateJar);
+            Stage2Support.jar(repository, "org/example/late/1.0/late-1.0.jar", Fixtures.libX(), List.of());
+            assertThat(reason(indexDir, changedModel, repository)).isEqualTo("org/example/late/1.0/late-1.0.jar can now be read");
+            assertThat(BootDecision.local(indexDir, changedModel, repository)).isPresent();
+            assertThat(BootDecision.local(indexDir, changedModel, repository)).isEmpty();
+
+            // The rows compared are the root's own: a raw row written over one of them, by an unfinished later boot say, is not.
+            var digest = Sha256.INSTANCE;
+            var format = Format.of(digest, Runtime.version().feature());
+            var projectKey = Stage2.projectKey(digest, changedModel);
+            try (var store = Generation.of(indexDir, format).openLocal()) {
+                store.put(LocalStore.fileKey(projectKey, "tool/src/main/java/tool/Main.java"), new byte[] {1, 2, 3});
+                store.flush();
+            }
+            assertThat(reason(indexDir, changedModel, repository)).isEqualTo("the file row of tool/src/main/java/tool/Main.java is not the one the root committed");
+            assertThat(BootDecision.local(indexDir, changedModel, repository)).isPresent();
+            try (var store = Generation.of(indexDir, format).openLocal()) {
+                store.put(LocalStore.routeKey(projectKey, "tool", LocalStore.MAIN), new byte[] {1, 2, 3});
+                store.flush();
+            }
+            assertThat(reason(indexDir, changedModel, repository)).isEqualTo("the route row is not the one the root committed");
+            assertThat(BootDecision.local(indexDir, changedModel, repository)).isPresent();
+
+            // A root built on another MACHINE commit.
+            try (var store = Generation.of(indexDir, format).openLocal()) {
+                var root = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(projectKey)));
+                store.putLocalRoot(digest, projectKey, LocalRoot.encode(digest, root.format(), root.local(), digest.hash(new byte[] {1}), root.modelHash()));
+            }
+            assertThat(reason(indexDir, changedModel, repository)).isEqualTo("MACHINE changed");
+            assertThat(BootDecision.local(indexDir, changedModel, repository)).isPresent();
+            assertThat(BootDecision.local(indexDir, changedModel, repository)).isEmpty();
+        } finally { Stage2Support.delete(repository); Stage2Support.delete(project); Stage2Support.delete(indexDir); }
+    }
+
     @Test void aColdBootEndsWithALocalRootAndASecondStartSkips() throws Exception {
         var repository = Files.createTempDirectory("stage2-rocks-repo");
         var project = Files.createTempDirectory("stage2-rocks-project");
@@ -70,15 +176,16 @@ class RocksLocalBootTest {
             try (var store = Generation.of(indexDir, format).open()) {
                 var kinds = new TreeMap<String, Integer>();
                 for (var key : store.keys()) kinds.merge(kind(key), 1, Integer::sum);
-                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT");
+                assertThat(kinds.keySet()).as("record kinds on disk").isSubsetOf("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "LSTART");
                 assertThat(kinds).as("C| and RS| are empty after a cold boot").doesNotContainKeys("C", "RS");
                 for (var key : store.keys()) if (kind(key).equals("X")) assertThat(key[2]).as("header range reverse keys have their own namespace").isEqualTo((byte) 'H');
-                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT");
+                assertThat(kinds).containsKeys("L", "N", "P", "ROOT", "AL", "SL", "S", "ST", "MOD", "RT", "F", "X", "DD", "DS", "DC", "DF", "LROOT", "LSTART");
                 assertThat(kinds.get("MOD")).isEqualTo(4);
                 assertThat(kinds.get("RT")).isEqualTo(8);
                 assertThat(kinds.get("SL")).isEqualTo(8);
                 assertThat(kinds.get("F")).isEqualTo(Fixtures.multi().size());
                 assertThat(kinds.get("LROOT")).isEqualTo(1);
+                assertThat(kinds.get("LSTART")).as("the skip rule's stamp").isEqualTo(1);
 
                 var root = LocalRoot.decode(digest, store.get(LocalStore.localRootKey(projectKey)));
                 assertThat(root.format()).isEqualTo(LocalFormat.of(format));
@@ -123,11 +230,20 @@ class RocksLocalBootTest {
         } finally { Stage2Support.delete(repository); Stage2Support.delete(project); Stage2Support.delete(indexDir); }
     }
 
+    /** Why {@link BootDecision#local} would rebuild the project's root, or null if it would keep it. */
+    private static String reason(Path indexDir, ProjectModel model, Path repository) throws Exception {
+        var digest = Sha256.INSTANCE;
+        var format = Format.of(digest, Runtime.version().feature());
+        try (var store = Generation.of(indexDir, format).openLocal()) {
+            return Stage2.stale(digest, store, model, LocalFormat.of(format), repository).orElse(null);
+        }
+    }
+
     /** The record kind of a key, as the table in section 4 names them. */
     private static String kind(byte[] key) {
         if (new String(key, StandardCharsets.US_ASCII).equals("ROOT")) return "ROOT";
         var text = new String(key, StandardCharsets.ISO_8859_1);
-        for (var tag : List.of("LROOT|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "DF|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
+        for (var tag : List.of("LROOT|", "LSTART|", "SL|", "AL|", "MOD|", "RT|", "RS|", "DD|", "DS|", "DC|", "DF|", "ST|", "F|", "C|", "X|", "S|")) if (text.startsWith(tag)) return tag.substring(0, tag.length() - 1);
         if (key[0] == 'L' && key.length == 33) return "L";
         if (key[0] == 'N' && key.length == 33) return "N";
         if (key[0] == 'P') return "P";

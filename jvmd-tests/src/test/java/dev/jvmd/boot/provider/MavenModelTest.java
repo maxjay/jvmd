@@ -28,12 +28,24 @@ class MavenModelTest {
         return new Resolution(ROOT.toString(), List.of(modules), List.of(), List.of(), Map.of(), List.of(), "", true, false, order);
     }
 
-    @Test void anUnsetProcIsFullProcessingFoundOnTheClasspath() {
+    @Test void anUnsetProcBelowRelease23IsFullProcessingFoundOnTheClasspathAndSaysSo() {
         var unset = new Resolution.Processing(List.of("/cp/a.jar"), List.of(), false, false, "", "", false);
-        var model = MavenModel.of(resolution(module("a", unset)), REPO, ROOT).parse();
-        var processing = model.modules().getFirst().main().processing();
+        var result = MavenModel.of(resolution(module("a", unset)), REPO, ROOT);
+        var processing = result.parse().modules().getFirst().main().processing();
         assertThat(processing.mode()).as("javac before 23 processed without being asked").isEqualTo("full");
         assertThat(processing.processorPath()).as("found on the classpath, as javac does without a processor path").isEmpty();
+        assertThat(result.warnings()).anyMatch(w -> w.startsWith("a (main): proc is not set"));
+    }
+
+    @Test void anUnsetProcAtRelease23OrLaterIsNone() {
+        var unset = new Resolution.Processing(List.of("/cp/a.jar"), List.of(), false, false, "", "", false);
+        var dir = ROOT.resolve("a");
+        var modern = new Resolution.Module("g:a:1", dir.toString(), "jar", List.of(dir.resolve("src/main/java").toString()), List.of(),
+                dir.resolve("target/classes").toString(), dir.resolve("target/test-classes").toString(), "25", List.of(),
+                List.of("--release", "25"), List.of("--release", "25"), unset, Resolution.Processing.none());
+        var result = MavenModel.of(resolution(modern), REPO, ROOT);
+        assertThat(result.parse().modules().getFirst().main().processing().enabled()).as("built by 23 or later: no implicit processing").isFalse();
+        assertThat(result.warnings()).noneMatch(w -> w.contains("proc is not set"));
     }
 
     @Test void procNoneIsNoProcessingAndOnlyIsKept() {

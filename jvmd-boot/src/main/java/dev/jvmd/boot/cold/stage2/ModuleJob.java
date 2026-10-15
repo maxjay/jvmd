@@ -47,13 +47,18 @@ final class ModuleJob {
     /** A source file found under a source root: javac reads it, once, when it asks for it. */
     private record Found(String path, Path file, long mtimeNanos) { }
 
-    /** The class-file target the build writes: {@code --release}, else {@code -target}, else the language level. */
+    /**
+     * The class-file target the build writes: {@code --release}, else {@code -target}, either as two arguments or with {@code =}, else
+     * {@code release}, the effective language level (never zero: javac's own default when the model states none).
+     */
     static int target(List<String> options, int release) {
         for (var flag : List.of("--release", "-target", "--target")) {
-            int i = options.indexOf(flag);
-            if (i >= 0 && i + 1 < options.size()) {
-                var value = options.get(i + 1).strip();
-                try { return Integer.parseInt(value.startsWith("1.") ? value.substring(2) : value); } catch (NumberFormatException e) { break; }
+            for (int i = 0; i < options.size(); i++) {
+                String value = options.get(i).equals(flag) && i + 1 < options.size() ? options.get(i + 1)
+                        : options.get(i).startsWith(flag + "=") ? options.get(i).substring(flag.length() + 1) : null;
+                if (value == null) continue;
+                value = value.strip();
+                try { return Integer.parseInt(value.startsWith("1.") ? value.substring(2) : value); } catch (NumberFormatException e) { return release; }
             }
         }
         return release;
@@ -107,7 +112,7 @@ final class ModuleJob {
                 processing, processorPath, GENERATED + module.name() + (scope == LocalStore.MAIN ? "/main/" : "/test/"));
         boot.headerNanos.addAndGet(System.nanoTime() - headerStarted);
         try (compiled) {
-            var extract = new SourceFacts(digest, compiled.elements, compiled.types, options.contains("-parameters"), target(options, module.release()) >= 11);
+            var extract = new SourceFacts(digest, compiled.elements, compiled.types, options.contains("-parameters"), target(options, release) >= 11);
             var unitsByPath = new HashMap<String, HeaderCompiler.Unit>();
             for (var u : compiled.units) unitsByPath.put(u.path, u);
             // 4. Each compilation unit, in path order: the scope's files, then what its processors wrote (stamped with no time).

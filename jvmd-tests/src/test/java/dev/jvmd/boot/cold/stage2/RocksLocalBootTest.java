@@ -32,6 +32,51 @@ import org.junit.jupiter.api.Test;
  */
 @Tag("phase-3")
 class RocksLocalBootTest {
+    /** Demo plan A3: a committed root is reused only while nothing it was built from changed; anything else is a cold rebuild. */
+    @Test void aCommittedRootIsReusedOnlyWhileNothingItWasBuiltFromChanged() throws Exception {
+        var repository = Files.createTempDirectory("stage2-skip-repo");
+        var project = Files.createTempDirectory("stage2-skip-project");
+        var indexDir = Files.createTempDirectory("stage2-skip-index");
+        try {
+            Stage2Support.jar(repository, Fixtures.LIB_AB_14, Fixtures.libAB(false), List.of());
+            Stage2Support.jar(repository, Fixtures.LIB_X, Fixtures.libX(), List.of());
+            Stage2Support.jar(repository, Fixtures.LIB_T, Fixtures.libT(), List.of());
+            Stage2Support.write(project, Fixtures.multi());
+            var ab = Stage2Support.Dep.jar("org.example:libAB:1.4.0", Fixtures.LIB_AB_14);
+            var x = Stage2Support.Dep.jar("org.example:libX:1.0", Fixtures.LIB_X);
+            var t = Stage2Support.Dep.jar("org.example:libT:1.0", Fixtures.LIB_T);
+            var common = Stage2Support.Dep.module("org.example:common:1.0", "common");
+            var mods = new Stage2Support.Mod[] {
+                    new Stage2Support.Mod("common", "org.example:common:1.0", List.of(ab)),
+                    new Stage2Support.Mod("server-a", "org.example:server-a:1.0", List.of(common, ab, x)).withTest(List.of(t)),
+                    new Stage2Support.Mod("server-b", "org.example:server-b:1.0", List.of(x, ab, common)),
+                    new Stage2Support.Mod("tool", "org.example:tool:1.0", List.of())};
+            var model = ProjectModel.parse(Stage2Support.model(project, mods));
+            var config = new Config(Stage2Support.JDK, null, repository, 3, Duration.ofHours(1), 1024, false, indexDir, indexDir.resolve("sock"));
+            assertThat(BootDecision.machine(indexDir, config)).isPresent();
+            assertThat(BootDecision.local(indexDir, model, repository)).as("the first boot").isPresent();
+            assertThat(BootDecision.local(indexDir, model, repository)).as("nothing changed").isEmpty();
+
+            var server = project.resolve("server-a/src/main/java/a/Server.java");
+            Files.writeString(server, Files.readString(server) + "\n// edited\n");
+            Files.setLastModifiedTime(server, java.nio.file.attribute.FileTime.fromMillis(Files.getLastModifiedTime(server).toMillis() + 2_000));
+            assertThat(BootDecision.local(indexDir, model, repository)).as("a source file changed").isPresent();
+            assertThat(BootDecision.local(indexDir, model, repository)).as("and is current again").isEmpty();
+
+            var added = project.resolve("tool/src/main/java/t/Added.java");
+            Files.createDirectories(added.getParent());
+            Files.writeString(added, "package t; public class Added { }");
+            assertThat(BootDecision.local(indexDir, model, repository)).as("a source file was added").isPresent();
+            Files.delete(added);
+            assertThat(BootDecision.local(indexDir, model, repository)).as("a source file was removed").isPresent();
+            assertThat(BootDecision.local(indexDir, model, repository)).isEmpty();
+
+            var changedModel = ProjectModel.parse(Stage2Support.model(project, mods[0], mods[1], mods[2], mods[3].withOptions("-parameters")));
+            assertThat(BootDecision.local(indexDir, changedModel, repository)).as("the project model changed").isPresent();
+            assertThat(BootDecision.local(indexDir, changedModel, repository)).isEmpty();
+        } finally { Stage2Support.delete(repository); Stage2Support.delete(project); Stage2Support.delete(indexDir); }
+    }
+
     @Test void aColdBootEndsWithALocalRootAndASecondStartSkips() throws Exception {
         var repository = Files.createTempDirectory("stage2-rocks-repo");
         var project = Files.createTempDirectory("stage2-rocks-project");

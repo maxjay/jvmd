@@ -3,7 +3,6 @@ package dev.jvmd.boot;
 import dev.jvmd.boot.cold.stage1.Stage1;
 import dev.jvmd.boot.cold.stage2.Stage2;
 import dev.jvmd.index.layer.local.LocalFormat;
-import dev.jvmd.index.layer.local.LocalRoot;
 import dev.jvmd.index.layer.local.LocalStore;
 import dev.jvmd.index.layer.local.ProjectModel;
 import dev.jvmd.core.Config;
@@ -78,10 +77,15 @@ public final class BootDecision {
         var generation = Generation.of(indexDir, format);
         // One open of the store answers everything: whether MACHINE is committed, whether this project is, and the boot itself.
         try (var store = generation.openLocal()) {
-            var existing = store.get(LocalStore.localRootKey(Stage2.projectKey(digest, model)));
-            if (existing != null && LocalRoot.formatOf(existing).equals(LocalFormat.of(format))) {
-                LOG.log(System.Logger.Level.INFO, "local generation for {0} committed; warm boot not implemented, skipping", model.root());
-                return Optional.empty();
+            // A committed root is kept only while nothing it was built from changed (demo plan A3); without warm boot, a change is a
+            // cold rebuild, and the old root stays as history.
+            if (store.get(LocalStore.localRootKey(Stage2.projectKey(digest, model))) != null) {
+                var stale = Stage2.stale(digest, store, model, LocalFormat.of(format));
+                if (stale.isEmpty()) {
+                    LOG.log(System.Logger.Level.INFO, "local generation for {0} committed and current; skipping", model.root());
+                    return Optional.empty();
+                }
+                LOG.log(System.Logger.Level.INFO, "local generation for {0} is stale ({1}); cold booting, warm boot not implemented", model.root(), stale.get());
             }
             var stage2 = new Stage2(digest, new ContentTree(digest), jdkFeature, Runtime.getRuntime().availableProcessors(), repository, ClassFacts::of);
             var result = stage2.run(store, model);

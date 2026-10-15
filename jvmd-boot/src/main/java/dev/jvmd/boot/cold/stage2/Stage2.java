@@ -6,6 +6,7 @@ import dev.jvmd.core.hash.Identity;
 import dev.jvmd.core.tree.ContentTree;
 import dev.jvmd.core.tree.Entry;
 import dev.jvmd.core.tree.Root;
+import dev.jvmd.index.layer.local.FileRow;
 import dev.jvmd.index.layer.local.LocalFormat;
 import dev.jvmd.index.layer.local.LocalRoot;
 import dev.jvmd.index.layer.local.LocalStore;
@@ -72,6 +73,51 @@ public final class Stage2 {
         Path root = Path.of(model.root()).toAbsolutePath().normalize();
         try { root = root.toRealPath(); } catch (IOException notThere) { /* the path as given */ }
         return digest.hash(root.toString().replace('\\', '/').getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Why the project's committed LOCAL root no longer describes it, or empty if it still does (demo plan A3). Until warm boot exists a
+     * root is reused only when nothing it was built from changed: it verifies, and its FORMAT, MACHINE root and model bytes, and every
+     * source file's size and modification time, are those it recorded, with no file added or removed. Anything else is a cold rebuild;
+     * the reason is for the log. Reads the root, MACHINE's root and the project's file rows, and stats each source file once.
+     */
+    public static java.util.Optional<String> stale(Digest digest, LocalStore store, ProjectModel model, String format) throws IOException {
+        var projectKey = projectKey(digest, model);
+        var bytes = store.get(LocalStore.localRootKey(projectKey));
+        if (bytes == null) return java.util.Optional.of("no committed root");
+        LocalRoot root;
+        try { root = LocalRoot.decode(digest, bytes); } catch (RuntimeException unreadable) { return java.util.Optional.of("the committed root does not verify"); }
+        if (!root.format().equals(format)) return java.util.Optional.of("FORMAT " + root.format() + " is not " + format);
+        var machine = store.get(MachineStore.ROOT_KEY);
+        if (machine == null || !MachineTree.decodeRoot(digest, machine).digest().equals(root.machineRoot())) return java.util.Optional.of("MACHINE changed");
+        if (!digest.hash(model.bytes()).equals(root.modelHash())) return java.util.Optional.of("the project model changed");
+
+        // The file rows of the committed generation are its LOCAL tree's F entries, each with the digest of its row: a raw row of a file
+        // an earlier generation had, or one a later write replaced, is not this root's.
+        var prefix = LocalStore.fileKey(projectKey, "");
+        var committed = new java.util.HashMap<String, FileRow>();
+        var replaced = new boolean[1];
+        new ContentTree(digest).forEach(root.local().hash(), h -> store.get(MachineStore.nodeKey(h)), entry -> {
+            var key = entry.key();
+            if (key.length < prefix.length || !Arrays.equals(key, 0, prefix.length, prefix, 0, prefix.length)) return;
+            var path = new String(key, prefix.length, key.length - prefix.length, StandardCharsets.UTF_8);
+            if (path.startsWith(ModuleJob.GENERATED)) return; // derived from the files around it, which this compares
+            var row = store.get(key);
+            if (row == null || !digest.hash(row).equals(entry.h())) { replaced[0] = true; return; }
+            committed.put(path, FileRow.decode(path, row, digest.width()));
+        });
+        if (replaced[0]) return java.util.Optional.of("a file row is not the one the root committed");
+        var current = new java.util.HashSet<String>();
+        for (var module : model.modules())
+            for (var scope : List.of(module.main(), module.test()))
+                for (var found : ModuleJob.sources(model, scope.sourceRoots())) {
+                    if (!current.add(found.path())) continue;
+                    var row = committed.get(found.path());
+                    if (row == null) return java.util.Optional.of(found.path() + " was added");
+                    if (row.mtimeNanos() != found.mtimeNanos() || row.size() != Files.size(found.file())) return java.util.Optional.of(found.path() + " changed");
+                }
+        for (var path : committed.keySet()) if (!current.contains(path)) return java.util.Optional.of(path + " was removed");
+        return java.util.Optional.empty();
     }
 
     public Result run(LocalStore store, ProjectModel model) throws IOException {

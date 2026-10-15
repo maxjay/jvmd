@@ -45,7 +45,7 @@ final class ModuleJob {
     ModuleJob(Boot boot) { this.boot = boot; }
 
     /** A source file found under a source root: javac reads it, once, when it asks for it. */
-    private record Found(String path, Path file, long mtimeNanos) { }
+    record Found(String path, Path file, long mtimeNanos) { }
 
     /**
      * The class-file target the build writes: {@code --release}, else {@code -target}, either as two arguments or with {@code =}, else
@@ -96,7 +96,7 @@ final class ModuleJob {
         // 3. Header-compile the scope's source files. A module-info.java is parsed with the rest and never entered.
         var options = module.javacOptions();
         int release = HeaderCompiler.effectiveRelease(module.release(), options.contains("--enable-preview"), Runtime.version().feature());
-        var found = sources(module.scope(scope).sourceRoots());
+        var found = sources(boot.model, module.scope(scope).sourceRoots());
         var toCompile = new ArrayList<HeaderCompiler.Source>(found.size());
         for (var file : found) toCompile.add(new HeaderCompiler.Source(file.path(), file.file()));
         boot.sourceFiles.addAndGet(found.size());
@@ -323,11 +323,11 @@ final class ModuleJob {
     // ---- source files ------------------------------------------------------------------------------------------------------
 
     /** Step 1.4: regular {@code *.java} under the source roots, in path order, one stat each. A root that does not exist is skipped. */
-    private List<Found> sources(List<String> roots) throws IOException {
+    static List<Found> sources(ProjectModel model, List<String> roots) throws IOException {
         var byPath = new TreeMap<String, Path>(Enumerate::compareNames);
-        var base = Path.of(boot.model.root()).toAbsolutePath().normalize();
+        var base = Path.of(model.root()).toAbsolutePath().normalize();
         for (var root : roots) {
-            var dir = boot.model.resolve(root);
+            var dir = model.resolve(root);
             if (!Files.isDirectory(dir)) continue;
             try (var walk = Files.walk(dir)) {
                 for (var file : walk.filter(p -> p.toString().endsWith(".java") && Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS)).toList()) {

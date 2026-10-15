@@ -57,8 +57,9 @@ public final class RocksIndexStore implements IndexStore {
     RocksIndexStore(Path root,RocksArtifactRepository repository,RocksMemory memory,RocksArtifactAdmission admission)throws Exception{
         this.repository=repository;this.admission=admission;Files.createDirectories(root);options=memory.options(64);
         state=RocksDB.open(options,root.toString());sourceOverlay=new SourceOverlay(state);
+        long restoreStarted=dev.jvmd.core.BootEvents.nanos();
         try{
-            for(byte[] value:values("A|")){
+            for(byte[] value:values("A|")){dev.jvmd.core.BootEvents.count("restore.artifact_manifests",1);
                 var artifact=Json.MAPPER.readValue(value,StoredArtifact.class);
                 if(!repository.contains(artifact.input().key().cacheKey())&&!artifact.input().context().kind().equals("sources"))
                     throw new IllegalStateException("Artifact manifest references absent generation: "+artifact.id());
@@ -69,6 +70,12 @@ public final class RocksIndexStore implements IndexStore {
             migrateSources();
             byte[] sequence=state.get(bytes("next-source"));if(sequence!=null)nextSource=Long.parseLong(new String(sequence,StandardCharsets.UTF_8));
             sequence=state.get(bytes("next-artifact"));if(sequence!=null)nextArtifact=Math.max(nextArtifact,Long.parseLong(new String(sequence,StandardCharsets.UTF_8)));
+            dev.jvmd.core.BootEvents.timed("restore.metadata_store",restoreStarted);
+            dev.jvmd.core.BootEvents.provider("store.artifacts",this::diagnosticArtifacts);
+            dev.jvmd.core.BootEvents.provider("store.semantic_work",this::semanticWork);
+            dev.jvmd.core.BootEvents.provider("store.observation_caches",()->{synchronized(this){return Map.of("semantic_lookups",semanticLookups.size(),
+                    "classpath_lookups",classpathLookups.size(),"classpath_sequences",classpathSequences.size(),"context_sequences",contextSequences.size(),
+                    "context_lookups",contextLookups.size(),"workspaces",workspaces.size(),"source_overlay_decodes",sourceOverlay.decoded());}});
         }catch(Exception error){sourceOverlay.close();state.close();options.close();durable.close();throw error;}
     }
     @Override public String backend(){return "rocksdb-sst";}
@@ -85,9 +92,23 @@ public final class RocksIndexStore implements IndexStore {
     private void save(WriteBatch batch,StoredArtifact artifact)throws Exception{
         batch.put(bytes("A|"+key(artifact.id())),Json.MAPPER.writeValueAsBytes(artifact));batch.put(bytes("next-artifact"),bytes(Long.toString(nextArtifact)));
     }
+    /** Benchmark diagnostics only: the in-memory artifact view in canonical path order, without numeric handles. */
+    private synchronized List<List<Object>> diagnosticArtifacts(){
+        var rows=new ArrayList<List<Object>>();
+        for(var value:artifacts.values()){
+            var input=value.input();var context=input.context();
+            rows.add(Arrays.asList(context.path(),context.gav(),context.kind(),input.key().cacheKey(),input.key().binarySha256(),
+                    input.size(),input.mtime(),value.docsKey(),value.codeKey(),value.resolutionIdentity(),value.symbols(),value.edges(),
+                    value.classReferences(),value.sourceRevision(),value.simpleNames(),unmatched.get(value.id())));
+        }
+        rows.sort(Comparator.comparing((List<Object> row)->(String)row.get(0)));
+        return rows;
+    }
     private void installed(StoredArtifact artifact)throws Exception{
         var prior=artifacts.put(artifact.id(),artifact);paths.put(artifact.input().context().path(),artifact.id());metadataWrites++;
+        dev.jvmd.core.BootEvents.count("store.metadata_installs",1);
         if(!Objects.equals(prior,artifact)){
+            dev.jvmd.core.BootEvents.count("store.observation_refreshes",1);
             refreshSemanticObservations(prior==null?List.of(artifact):List.of(prior,artifact),null);
         }
     }
@@ -153,8 +174,8 @@ public final class RocksIndexStore implements IndexStore {
     private StoredArtifact required(long id){ensureOpen();var value=artifacts.get(id);if(value==null)throw new IllegalArgumentException("Unknown artifact: "+id);return value;}
     private void ensureOpen(){if(closed)throw new IllegalStateException("Index store is closed");}
     private synchronized AutoCloseable admitBuild(){
-        ensureOpen();if(closing)throw new IllegalStateException("Index store is closing");builds++;
-        return ()->{synchronized(this){builds--;notifyAll();}};
+        ensureOpen();if(closing)throw new IllegalStateException("Index store is closing");builds++;dev.jvmd.core.BootEvents.count("store.builds_in_flight",1);
+        return ()->{synchronized(this){builds--;dev.jvmd.core.BootEvents.count("store.builds_in_flight",-1);notifyAll();}};
     }
     private static ArtifactRecord record(StoredArtifact value){var input=value.input();return new ArtifactRecord(value.id(),input.context().gav(),input.context().kind(),input.key().binarySha256(),input.context().path(),input.size(),input.mtime(),value.docsKey()!=null,value.codeKey()!=null,!input.context().kind().equals("sources"));}
     @Override public synchronized ArtifactRecord artifact(Path path){Long id=paths.get(location(path));return id==null?null:record(required(id));}

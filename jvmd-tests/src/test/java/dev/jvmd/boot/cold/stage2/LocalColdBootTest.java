@@ -614,9 +614,10 @@ class LocalColdBootTest {
         var project = multiProject();
         try {
             var booted = boot(digest, multiModel(project, false), 4);
-            // MACHINE and shared DF/DD/DS/DC/S/ST records may be read; nothing of the project's own.
+            // MACHINE (including the annotation leaves AL a sibling's stubs carry) and shared DF/DD/DS/DC/S/ST records may be read;
+            // nothing of the project's own.
             assertThat(booted.store().readsBeforeRoot()).isNotEmpty().doesNotContainAnyElementsOf(List.of("MOD", "RT", "F", "C", "X", "RS", "LROOT"));
-            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "ROOT", "DD", "DS", "DC", "DF", "S", "ST");
+            assertThat(new java.util.HashSet<>(booted.store().readsBeforeRoot())).isSubsetOf("P", "L", "N", "AL", "ROOT", "DD", "DS", "DC", "DF", "S", "ST");
             var events = booted.store().events();
             assertThat(events.indexOf("sync")).as("sync once, then the root").isLessThan(events.indexOf("putLocalRoot"));
             assertThat(events.stream().filter("sync"::equals).count()).isEqualTo(1);
@@ -1065,7 +1066,8 @@ class LocalColdBootTest {
         var k = booted.result().leaves().get(leaf);
         Stubs.stubs(digest, new ContentTree(digest), leaf(digest, store, k), nodes(store), cache);
         var out = new HashMap<String, Identity>();
-        for (var ref : Stubs.decodeList(lists.get(k), digest.width())) out.put(ref.internalName(), ref.stKey());
+        // The leaf's one list, whatever its key (S|Digest(RENDERER || k)).
+        for (var ref : Stubs.decodeList(lists.values().iterator().next(), digest.width())) out.put(ref.internalName(), ref.stKey());
         return out;
     }
 
@@ -1217,13 +1219,14 @@ class LocalColdBootTest {
         var typeKey = new dev.jvmd.core.tree.Codec.Writer().zstr("p/O").toBytes();
         byte[] first = new dev.jvmd.core.tree.Codec.Writer().zstr(bmp).optStr("\uFF21").u16(9).toBytes();
         byte[] second = new dev.jvmd.core.tree.Codec.Writer().zstr(supplementary).optStr("\uD835\uDC00").u16(8).toBytes();
-        var expected = digest.hash(typeKey, oSum.view(), first, second); // bytes order: EF.. before F0..
-        var wrongOrder = digest.hash(typeKey, oSum.view(), second, first);
+        byte[] renderer = {0, Stubs.RENDERER};
+        var expected = digest.hash(typeKey, oSum.view(), first, second, renderer); // bytes order: EF.. before F0..
+        var wrongOrder = digest.hash(typeKey, oSum.view(), second, first, renderer);
         var a = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(bmp, "\uFF21", 9), new Stubs.Member(supplementary, "\uD835\uDC00", 8)));
         var b = Stubs.stKey(digest, "p/O", oSum, List.of(new Stubs.Member(supplementary, "\uD835\uDC00", 8), new Stubs.Member(bmp, "\uFF21", 9)));
         assertThat(a).as("whatever order the members arrive in").isEqualTo(b);
         assertThat(a).isEqualTo(expected).isNotEqualTo(wrongOrder);
-        assertThat(Stubs.stKey(digest, "p/O", oSum, List.of())).as("no members: exactly Digest(typeKey || oSum)").isEqualTo(digest.hash(typeKey, oSum.view()));
+        assertThat(Stubs.stKey(digest, "p/O", oSum, List.of())).as("no members: exactly Digest(typeKey || oSum || 0 || RENDERER)").isEqualTo(digest.hash(typeKey, oSum.view(), renderer));
     }
 
     // ---- declaration reads: everything a declaration resolved a name through outside bodies ------------------------------------------------

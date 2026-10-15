@@ -49,12 +49,14 @@ class ProcessedMavenProjectTest {
         // misses the file is caught: fluent accessors change the API (x() for getX(), so k), and no @lombok.Generated changes a.
         files.put("lombok.config", "lombok.accessors.fluent = true\nlombok.addLombokGeneratedAnnotation = false\n");
         var lombok = "<dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><version>1.18.48</version><scope>provided</scope></dependency>";
-        files.put("lib/pom.xml", module("lib", lombok));
-        files.put("core/pom.xml", module("core", """
-                <dependency><groupId>corp.proc</groupId><artifactId>lib</artifactId><version>1.0</version></dependency>
+        var jpa = """
                 <dependency><groupId>jakarta.persistence</groupId><artifactId>jakarta.persistence-api</artifactId><version>3.1.0</version></dependency>
                 <dependency><groupId>org.hibernate.orm</groupId><artifactId>hibernate-jpamodelgen</artifactId><version>6.6.53.Final</version><scope>provided</scope></dependency>
-                """ + lombok));
+                """;
+        files.put("lib/pom.xml", module("lib", jpa + lombok));
+        files.put("core/pom.xml", module("core", """
+                <dependency><groupId>corp.proc</groupId><artifactId>lib</artifactId><version>1.0</version></dependency>
+                """ + jpa + lombok));
         files.put("lib/src/main/java/lib/Point.java", """
                 package lib;
                 @lombok.Value @lombok.Builder
@@ -65,12 +67,18 @@ class ProcessedMavenProjectTest {
                 @lombok.Getter @lombok.Setter @lombok.NoArgsConstructor(access = lombok.AccessLevel.PRIVATE)
                 public class Settings { private String name; private int size; public static Settings create() { return new Settings(); } }
                 """);
+        // The mapped superclass is in the sibling: core's metamodel extends Base_ only if the processor sees @MappedSuperclass on Base,
+        // which it reads from lib's stub.
+        files.put("lib/src/main/java/lib/Base.java", """
+                package lib;
+                @jakarta.persistence.MappedSuperclass
+                public abstract class Base { @jakarta.persistence.Id protected Long id; protected String tenant; }
+                """);
         files.put("core/src/main/java/core/Item.java", """
                 package core;
                 import jakarta.persistence.Entity;
-                import jakarta.persistence.Id;
                 @Entity @lombok.Getter
-                public class Item { @Id Long id; String name; int count; }
+                public class Item extends lib.Base { String name; int count; }
                 """);
         files.put("core/src/main/java/core/Uses.java", """
                 package core;

@@ -89,7 +89,7 @@ final class ModuleJob {
         // 2. Stubs for siblings; jars go on the classpath as jars.
         var classpath = new ArrayList<Path>();
         for (var binding : bound.bindings()) {
-            if (binding.origin() == Bound.Origin.SIBLING) classpath.add(boot.stubDir(binding.k()));
+            if (binding.origin() == Bound.Origin.SIBLING) classpath.add(boot.stubDir(binding.k(), binding.a()));
             else if (binding.entry() instanceof RouteEntry.Jar jar) classpath.add(boot.repository.resolve(jar.location()));
         }
 
